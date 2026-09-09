@@ -4,11 +4,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AuthGuestBanner from '../components/AuthGuestBanner';
 import LeagueSwitcher from '../components/LeagueSwitcher';
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import {
   ScheduleStackParamList,
   TeamStackParamList,
@@ -44,6 +46,8 @@ import TeamChatScreen from '../screens/team/TeamChatScreen';
 
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
+import { getSurfacePalette } from '../theme/ui';
+import { getTabBarLayout } from './layout';
 
 const Tab = createBottomTabNavigator();
 const ScheduleStack = createNativeStackNavigator<ScheduleStackParamList>();
@@ -54,10 +58,15 @@ const StatsStack = createNativeStackNavigator<StatsStackParamList>();
 const CaptainStack = createNativeStackNavigator<CaptainStackParamList>();
 
 function AppHeaderBackground() {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const palette = getSurfacePalette(reduceTransparency);
+
   return (
     <View style={StyleSheet.absoluteFill}>
       <LinearGradient
-        colors={['rgba(8, 14, 27, 0.96)', 'rgba(10, 18, 33, 0.92)', 'rgba(6, 10, 20, 0.98)']}
+        colors={reduceTransparency
+          ? [palette.elevated, palette.elevated]
+          : ['rgba(8, 14, 27, 0.96)', 'rgba(10, 18, 33, 0.92)', 'rgba(6, 10, 20, 0.98)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -74,10 +83,15 @@ function AppHeaderBackground() {
 }
 
 function AppTabBackground() {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const palette = getSurfacePalette(reduceTransparency);
+
   return (
     <View style={StyleSheet.absoluteFill}>
       <LinearGradient
-        colors={['rgba(8, 13, 24, 0.98)', 'rgba(11, 18, 33, 0.94)', 'rgba(8, 12, 22, 0.98)']}
+        colors={reduceTransparency
+          ? [palette.elevated, palette.elevated]
+          : ['rgba(8, 13, 24, 0.98)', 'rgba(11, 18, 33, 0.94)', 'rgba(8, 12, 22, 0.98)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -189,6 +203,8 @@ export default function RootNavigation() {
   const { activeTheme } = useLeague();
   const { isGuest } = useAuth();
   const isCaptain = useIsCaptain();
+  const insets = useSafeAreaInsets();
+  const tabBarLayout = getTabBarLayout(insets.bottom);
 
   return (
     <View style={{ flex: 1 }}>
@@ -208,39 +224,45 @@ export default function RootNavigation() {
           backgroundColor: activeTheme.backgroundColor,
         },
         tabBarShowLabel: true,
+        tabBarAccessibilityLabel: `${route.name} tab`,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.tabActive,
         tabBarInactiveTintColor: colors.tabInactive,
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '700',
-          marginTop: 2,
+          fontSize: 10,
+          fontWeight: '800',
+          marginTop: 0,
+        },
+        tabBarItemStyle: {
+          minHeight: tabBarLayout.itemMinHeight,
+          paddingVertical: 2,
         },
         tabBarStyle: {
           backgroundColor: 'transparent',
           borderTopWidth: 0,
-          height: 80,
-          paddingTop: 8,
-          paddingBottom: 10,
+          height: tabBarLayout.height,
+          paddingTop: tabBarLayout.paddingTop,
+          paddingBottom: tabBarLayout.paddingBottom,
           overflow: 'hidden',
         },
         tabBarBackground: () => <AppTabBackground />,
-        tabBarIcon: ({ color, size }: any) => {
+        tabBarIcon: ({ color, size, focused }: any) => {
           const iconSize = size + 1;
 
           if (route.name === 'Schedule') {
-            return <Ionicons name="calendar-outline" size={iconSize} color={color} />;
+            return <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={iconSize} color={color} />;
           }
 
           if (route.name === 'Stats') {
-            return <Ionicons name="stats-chart-outline" size={iconSize} color={color} />;
+            return <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={iconSize} color={color} />;
           }
 
           if (route.name === 'Home') {
-            return <Ionicons name="home-outline" size={iconSize} color={color} />;
+            return <Ionicons name={focused ? 'home' : 'home-outline'} size={iconSize} color={color} />;
           }
 
           if (route.name === 'Discover') {
-            return <Ionicons name="compass-outline" size={iconSize} color={color} />;
+            return <Ionicons name={focused ? 'compass' : 'compass-outline'} size={iconSize} color={color} />;
           }
 
           if (route.name === 'Team') {
@@ -255,7 +277,7 @@ export default function RootNavigation() {
             );
           }
 
-          return <Ionicons name="person-outline" size={iconSize} color={color} />;
+          return <Ionicons name={focused ? 'person' : 'person-outline'} size={iconSize} color={color} />;
         },
       })}
     >

@@ -26,6 +26,7 @@ import RevealView from '../components/RevealView';
 import ScheduleConflictList from '../components/ScheduleConflictList';
 import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
 import { getScheduleConflicts } from '../lib/scheduleConflicts';
 import {
@@ -38,7 +39,7 @@ import {
 import { supabase } from '../lib/supabase/client';
 import { getLeagueGames, mapGameStatus, type GameRow } from '../lib/supabase/data';
 import colors from '../theme/colors';
-import { getContrastTextColor } from '../theme/contrast';
+import { getSurfacePalette, ui } from '../theme/ui';
 
 type HomeScreenProps = {
   navigation?: any;
@@ -118,6 +119,8 @@ function openLeagueSite(slug: string) {
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { activeLeague, setActiveLeague, activeTheme, availableLeagues, isGuestLeague } = useLeague();
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const surfacePalette = getSurfacePalette(reduceTransparency);
   const { width } = useWindowDimensions();
   const isCompact = width < 390;
 
@@ -506,7 +509,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 </Text>
               </View>
             </View>
-            <Pressable style={styles.iconButton} onPress={openUpdates}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Updates${notificationCount ? `, ${notificationCount} unread` : ''}`}
+              style={[styles.iconButton, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke }]}
+              onPress={openUpdates}
+            >
               <Ionicons name="notifications-outline" size={20} color={activeTheme.textColor} />
               {notificationCount > 0 ? (
                 <View style={styles.notificationBadge}>
@@ -525,7 +533,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               <RevealView delay={80}>
                 <View style={[styles.quickActionsRow, isCompact && styles.quickActionsRowCompact]}>
                   <Pressable
-                    style={[styles.quickActionCard, isCompact && styles.quickActionCardCompact]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open full schedule"
+                    style={[styles.quickActionCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke }, isCompact && styles.quickActionCardCompact]}
                     onPress={() => navigation?.navigate?.('Schedule')}
                   >
                     <Ionicons name="calendar-outline" size={18} color={colors.primary} />
@@ -534,7 +544,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   </Pressable>
 
                   <Pressable
-                    style={[styles.quickActionCard, isCompact && styles.quickActionCardCompact]}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Open ${activeLeague.name} website`}
+                    style={[styles.quickActionCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke }, isCompact && styles.quickActionCardCompact]}
                     onPress={() => openLeagueSite(activeLeague.slug)}
                   >
                     <Ionicons name="globe-outline" size={18} color={colors.primary} />
@@ -551,7 +563,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
                 {nextGame ? (
                   <Pressable
-                    style={[styles.nextGameCard, { borderLeftColor: teamAccentColor }]}
+                    accessibilityRole="button"
+                    accessibilityHint="Open next game details"
+                    style={[styles.nextGameCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke, borderLeftColor: teamAccentColor }]}
                     onPress={() => navigateToGame(nextGame.id, activeLeague.id)}
                   >
                     <LinearGradient
@@ -630,6 +644,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                                 : { backgroundColor: colors.bgInteractive },
                             ]}
                             onPress={() => handleCheckin('confirmed')}
+                            accessibilityRole="button"
+                            accessibilityLabel="Check in for next game"
+                            accessibilityState={{ selected: myCheckinStatus === 'confirmed' }}
                           >
                             <Ionicons
                               name="checkmark"
@@ -654,6 +671,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                                 : { backgroundColor: colors.bgInteractive },
                             ]}
                             onPress={() => handleCheckin('tentative')}
+                            accessibilityRole="button"
+                            accessibilityLabel="Mark next game as maybe"
+                            accessibilityState={{ selected: myCheckinStatus === 'tentative' }}
                           >
                             <Ionicons
                               name="help"
@@ -678,6 +698,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                                 : { backgroundColor: colors.bgInteractive },
                             ]}
                             onPress={() => handleCheckin('out')}
+                            accessibilityRole="button"
+                            accessibilityLabel="Decline next game"
+                            accessibilityState={{ selected: myCheckinStatus === 'out' }}
                           >
                             <Ionicons
                               name="close"
@@ -702,7 +725,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                     )}
                   </Pressable>
                 ) : (
-                  <View style={[styles.noGameCard, { borderLeftColor: activeTheme.secondaryColor }]}>
+                  <View style={[styles.noGameCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke, borderLeftColor: activeTheme.secondaryColor }]}>
                     <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} style={{ marginBottom: 4 }} />
                     <Text style={styles.noGameTitle}>No upcoming games</Text>
                     <Text style={styles.noGameSub}>Check back soon. League schedule updates will land here automatically.</Text>
@@ -759,9 +782,9 @@ const styles = StyleSheet.create({
   logo: { fontSize: 18, fontWeight: '900', letterSpacing: 0.3, flexShrink: 1 },
   logoSub: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginTop: 1 },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: ui.minTouchTarget,
+    height: ui.minTouchTarget,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -1019,7 +1042,7 @@ const styles = StyleSheet.create({
   quickActionCard: {
     flex: 1,
     backgroundColor: colors.bgSurface,
-    borderRadius: 14,
+    borderRadius: ui.radius.card,
     borderWidth: 1,
     borderColor: colors.glassStroke,
     padding: 12,
@@ -1030,7 +1053,7 @@ const styles = StyleSheet.create({
   quickActionMeta: { color: colors.textSecondary, fontSize: 12, lineHeight: 16, fontWeight: '600' },
   nextGameCard: {
     backgroundColor: colors.bgSurface,
-    borderRadius: 16,
+    borderRadius: ui.radius.panel,
     borderWidth: 1,
     borderColor: colors.glassStrokeStrong,
     borderLeftWidth: 4,
@@ -1079,8 +1102,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
+    minHeight: ui.minTouchTarget,
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.glassStroke,
   },
@@ -1100,7 +1124,7 @@ const styles = StyleSheet.create({
   },
   noGameCard: {
     backgroundColor: colors.bgSurface,
-    borderRadius: 14,
+    borderRadius: ui.radius.card,
     borderWidth: 1,
     borderColor: colors.glassStroke,
     borderLeftWidth: 4,
