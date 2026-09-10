@@ -8,18 +8,35 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "macos-tahoe-26.5-xcode-26.6"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "buildConfiguration": "Release"
+      }
+    },
+    "ios-simulator": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "environment": "production",
+      "ios": {
+        "simulator": true,
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "buildConfiguration": "Release"
       }
     },
     "production": {
+      "distribution": "store",
+      "environment": "production",
       "autoIncrement": true,
       "ios": {
+        "simulator": false,
+        "image": "macos-tahoe-26.5-xcode-26.6",
         "buildConfiguration": "Release"
       },
       "android": {
@@ -31,8 +48,8 @@
     "production": {
       "ios": {
         "appleId": "nick@bridg3.io",
-        "ascAppId": "TODO_REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "TODO_REPLACE_WITH_APPLE_TEAM_ID"
+        "ascAppId": "6759818670",
+        "appleTeamId": "C88U8Q3SMR"
       }
     }
   }
