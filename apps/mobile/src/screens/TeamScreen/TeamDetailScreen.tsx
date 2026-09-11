@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -16,7 +17,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import Avatar from '../../components/Avatar';
+import BrandAtmosphere from '../../components/BrandAtmosphere';
 import GameCard from '../../components/GameCard';
+import TeamLogo from '../../components/TeamLogo';
+import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import {
   type CheckinStatus,
   getGameCheckinSummary,
@@ -41,15 +46,18 @@ import {
 } from '../../lib/supabase/captain';
 import { supabase } from '../../lib/supabase/client';
 import { mapGameStatus } from '../../lib/supabase/data';
+import { getTeamActiveSeason } from '../../lib/supabase/team';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
 import { TeamStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
+import { ui } from '../../theme/ui';
 
 type Props = NativeStackScreenProps<TeamStackParamList, 'TeamDetail'>;
 
 type TeamInfo = {
   id: string;
   name: string;
+  logo_url: string | null;
   primary_color: string | null;
   secondary_color: string | null;
 };
@@ -72,10 +80,34 @@ type RosterPlayer = {
   is_goalie: boolean;
   leadership_role: string | null;
   player_name: string;
-  player_email: string | null;
+  avatar_url: string | null;
+  games_played: number;
   goals: number;
   assists: number;
   points: number;
+};
+
+type TeamRosterQueryRow = {
+  id: string;
+  player_id: string;
+  jersey_number: number | null;
+  position: string | null;
+  is_goalie: boolean | null;
+  leadership_role: string | null;
+};
+
+type ProfileQueryRow = {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+};
+
+type PlayerSeasonStatsQueryRow = {
+  player_id: string;
+  games_played: number | null;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
 };
 
 type UpcomingGame = {
@@ -97,6 +129,14 @@ type LeagueInfo = {
   id: string;
   name: string;
   slug: string | null;
+};
+
+type ActiveSeasonInfo = {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  status: string;
 };
 
 type NextGameAvailability = {
@@ -184,10 +224,13 @@ function formatCaptainRole(role: CaptainRole | null) {
 }
 
 function buildAvailabilityCounts(
-  rosterCount: number,
+  roster: RosterPlayer[],
   statusMap: Record<string, CheckinStatus>,
 ): NextGameAvailability {
-  const statuses = Object.values(statusMap);
+  const rosterPlayerIds = new Set(roster.map((player) => player.player_id));
+  const statuses = Object.entries(statusMap)
+    .filter(([playerId]) => rosterPlayerIds.has(playerId))
+    .map(([, status]) => status);
   const confirmed = statuses.filter((status) => status === 'confirmed').length;
   const tentative = statuses.filter((status) => status === 'tentative').length;
   const out = statuses.filter((status) => status === 'out').length;
@@ -196,7 +239,7 @@ function buildAvailabilityCounts(
     confirmed,
     tentative,
     out,
-    pending: Math.max(rosterCount - statuses.length, 0),
+    pending: Math.max(roster.length - statuses.length, 0),
   };
 }
 
@@ -252,10 +295,12 @@ function StatBox({ label, value, compact = false }: { label: string; value: stri
 export default function TeamDetailScreen({ route, navigation }: Props) {
   const { teamId, leagueId } = route.params;
   const { width } = useWindowDimensions();
+  const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const isCompact = width < 390;
 
   const [team, setTeam] = React.useState<TeamInfo | null>(null);
   const [league, setLeague] = React.useState<LeagueInfo | null>(null);
+  const [activeSeason, setActiveSeason] = React.useState<ActiveSeasonInfo | null>(null);
   const [standing, setStanding] = React.useState<StandingInfo | null>(null);
   const [roster, setRoster] = React.useState<RosterPlayer[]>([]);
   const [upcomingGames, setUpcomingGames] = React.useState<UpcomingGame[]>([]);
@@ -268,6 +313,8 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [subCandidates, setSubCandidates] = React.useState<SubCandidate[]>([]);
   const [loadingSubCandidates, setLoadingSubCandidates] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [isRosterMember, setIsRosterMember] = React.useState(false);
   const [lineupSavingPlayerId, setLineupSavingPlayerId] = React.useState<string | null>(null);
   const [captainError, setCaptainError] = React.useState<string | null>(null);
 
@@ -285,10 +332,17 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [goalieCompensation, setGoalieCompensation] = React.useState('Free');
   const [goalieNotes, setGoalieNotes] = React.useState('');
   const [goalieSaving, setGoalieSaving] = React.useState(false);
+  const loadGenerationRef = React.useRef(0);
 
   const nextGame = upcomingGames[0] ?? null;
   const teamName = team?.name ?? 'Team';
   const primaryColor = team?.primary_color ?? colors.primary;
+  const publicSurface = reduceTransparency
+    ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
+    : { backgroundColor: 'rgba(10, 22, 40, 0.30)', borderColor: 'rgba(125, 190, 255, 0.22)' };
+  const seasonRecord = standing
+    ? `${standing.wins ?? 0}-${standing.losses ?? 0}-${standing.ties ?? 0}`
+    : '0-0-0';
   const nextOpponent = nextGame
     ? nextGame.home_team_id === teamId
       ? nextGame.away_team?.name ?? 'Opponent'
@@ -296,12 +350,13 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     : null;
 
   const refreshCaptainData = React.useCallback(
-    async (currentRoster: RosterPlayer[], currentNextGame: UpcomingGame | null) => {
+    async (currentRoster: RosterPlayer[], currentNextGame: UpcomingGame | null, generation: number) => {
       const [role, messages] = await Promise.all([
         getCaptainRole(teamId),
         getRecentTeamMessages(teamId, 5),
       ]);
 
+      if (generation !== loadGenerationRef.current) return;
       setCaptainRole(role);
       setTeamMessages(messages);
 
@@ -318,8 +373,9 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         getOpenGoalieRequest(currentNextGame.id, teamId),
       ]);
 
+      if (generation !== loadGenerationRef.current) return;
       setLineupStatuses(statusMap);
-      setNextGameAvailability(buildAvailabilityCounts(currentRoster.length, statusMap));
+      setNextGameAvailability(buildAvailabilityCounts(currentRoster, statusMap));
       setSubInvitations(invitationsResult.data ?? []);
       setGoalieRequest(openGoalieRequest);
     },
@@ -327,7 +383,8 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   );
 
   function navigateToGame(gameId: string) {
-    (navigation as any).navigate('Schedule', {
+    const rootNavigation = navigation as unknown as { navigate: (routeName: string, params: unknown) => void };
+    rootNavigation.navigate('Schedule', {
       screen: 'GamePreview',
       params: { gameId },
     });
@@ -335,17 +392,76 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   React.useEffect(() => {
     let isMounted = true;
+    const generation = ++loadGenerationRef.current;
 
     async function load() {
       setLoading(true);
+      setLoadError(null);
+      setTeam(null);
+      setLeague(null);
+      setActiveSeason(null);
+      setStanding(null);
+      setRoster([]);
+      setUpcomingGames([]);
+      setNextGameAvailability(null);
+      setIsRosterMember(false);
+      setCaptainRole(null);
+      setTeamMessages([]);
+      setLineupStatuses({});
+      setSubInvitations([]);
+      setGoalieRequest(null);
+      setSubCandidates([]);
+      setLoadingSubCandidates(false);
+      setLineupSavingPlayerId(null);
+      setCaptainError(null);
+      setReminderModalVisible(false);
+      setReminderMessage('');
+      setReminderSaving(false);
+      setSubModalVisible(false);
+      setSubSearch('');
+      setSubInviteMessage('');
+      setSubSavingPlayerId(null);
+      setGoalieModalVisible(false);
+      setGoalieSkillLevel('intermediate');
+      setGoalieCompensation('Free');
+      setGoalieNotes('');
+      setGoalieSaving(false);
 
-      const [teamRes, leagueRes, standingRes, rosterRes, gamesRes] = await Promise.all([
-        supabase.from('teams').select('id, name, primary_color, secondary_color').eq('id', teamId).single(),
+      const activeSeasonRes = await getTeamActiveSeason(leagueId);
+
+      if (!isMounted) return;
+
+      if (activeSeasonRes.error) {
+        setActiveSeason(null);
+        setLoadError('We could not determine the active season for this league.');
+        setLoading(false);
+        return;
+      }
+
+      const season = (activeSeasonRes.season as ActiveSeasonInfo | null) ?? null;
+      const activeSeasonId = season?.id ?? null;
+      if (!activeSeasonId) {
+        setActiveSeason(null);
+        setTeam(null);
+        setLeague(null);
+        setStanding(null);
+        setRoster([]);
+        setUpcomingGames([]);
+        setNextGameAvailability(null);
+        setLoading(false);
+        return;
+      }
+
+      setActiveSeason(season);
+
+      const [teamRes, leagueRes, standingRes, rosterRes, gamesRes, viewerRes] = await Promise.all([
+        supabase.from('teams').select('id, name, logo_url, primary_color, secondary_color').eq('id', teamId).eq('league_id', leagueId).maybeSingle(),
         supabase.from('leagues').select('id, name, slug').eq('id', leagueId).maybeSingle(),
         supabase
           .from('team_standings')
           .select('wins, losses, ties, points, goals_for, goals_against, games_played')
           .eq('team_id', teamId)
+          .eq('season_id', activeSeasonId)
           .limit(1)
           .maybeSingle(),
         supabase
@@ -353,7 +469,9 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           .select('id, player_id, jersey_number, position, is_goalie, leadership_role')
           .eq('team_id', teamId)
           .eq('league_id', leagueId)
-          .eq('status', 'active'),
+          .eq('season_id', activeSeasonId)
+          .eq('status', 'active')
+          .is('end_date', null),
         supabase
           .from('games')
           .select(
@@ -362,55 +480,94 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
              away_team:teams!games_away_team_id_fkey(name, primary_color)`,
           )
           .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
-          .eq('status', 'scheduled')
+          .eq('league_id', leagueId)
+          .eq('season_id', activeSeasonId)
+          .in('status', ['scheduled', 'in_progress'])
           .order('scheduled_at', { ascending: true })
-          .limit(4),
+          .limit(8),
+        supabase.auth.getUser(),
       ]);
 
       if (!isMounted) return;
 
+      if (teamRes.error || leagueRes.error || standingRes.error || rosterRes.error || gamesRes.error) {
+        setLoadError('Team details could not be loaded. Please try again.');
+        setLoading(false);
+        return;
+      }
+
       setTeam((teamRes.data as TeamInfo | null) ?? null);
       setLeague((leagueRes.data as LeagueInfo | null) ?? null);
       setStanding((standingRes.data as StandingInfo | null) ?? null);
-      setUpcomingGames(((gamesRes.data as any[]) ?? []) as UpcomingGame[]);
+      const gameRows = [...((gamesRes.data as unknown as UpcomingGame[] | null) ?? [])]
+        .sort((left, right) => {
+          const statusDifference = Number(right.status === 'in_progress') - Number(left.status === 'in_progress');
+          if (statusDifference !== 0) return statusDifference;
+          return new Date(left.scheduled_at).getTime() - new Date(right.scheduled_at).getTime();
+        })
+        .slice(0, 4);
+      setUpcomingGames(gameRows);
 
-      const rosterRows = (rosterRes.data ?? []) as any[];
-      const nextScheduledGame = (((gamesRes.data as any[]) ?? []) as UpcomingGame[])[0] ?? null;
+      const sortedRosterRows = [
+        ...((rosterRes.data as unknown as TeamRosterQueryRow[] | null) ?? []),
+      ].sort((left, right) => {
+        const jerseyDifference = (left.jersey_number ?? Number.MAX_SAFE_INTEGER) - (right.jersey_number ?? Number.MAX_SAFE_INTEGER);
+        if (jerseyDifference !== 0) return jerseyDifference;
+        return left.id.localeCompare(right.id);
+      });
+      const rosterRowsByPlayer = new Map<string, TeamRosterQueryRow>();
+      for (const row of sortedRosterRows) {
+        if (!rosterRowsByPlayer.has(row.player_id)) rosterRowsByPlayer.set(row.player_id, row);
+      }
+      const rosterRows = Array.from(rosterRowsByPlayer.values());
+      const nextScheduledGame = gameRows[0] ?? null;
 
       if (rosterRows.length > 0) {
         const playerIds = rosterRows.map((row) => row.player_id);
 
         const [profileRes, statsRes] = await Promise.all([
-          supabase.from('profiles').select('id, full_name, email').in('id', playerIds),
+          supabase.from('profiles').select('id, full_name, avatar_url').in('id', playerIds),
           supabase
-            .from('player_stats')
-            .select('player_id, goals, assists')
+            .from('player_season_stats')
+            .select('player_id, games_played, goals, assists, points')
             .in('player_id', playerIds)
-            .eq('league_id', leagueId),
+            .eq('season_id', activeSeasonId)
+            .eq('team_id', teamId),
         ]);
 
         if (!isMounted) return;
 
-        const nameMap = new Map<string, { fullName: string; email: string | null }>();
-        for (const profile of (profileRes.data ?? []) as any[]) {
+        if (profileRes.error || statsRes.error) {
+          setLoadError('Roster details could not be loaded. Please try again.');
+          setLoading(false);
+          return;
+        }
+
+        const nameMap = new Map<string, { fullName: string; avatarUrl: string | null }>();
+        for (const profile of (profileRes.data as unknown as ProfileQueryRow[] | null) ?? []) {
           nameMap.set(profile.id, {
             fullName: profile.full_name ?? 'Unknown',
-            email: profile.email ?? null,
+            avatarUrl: profile.avatar_url ?? null,
           });
         }
 
-        const statsMap = new Map<string, { goals: number; assists: number }>();
-        for (const statsRow of (statsRes.data ?? []) as any[]) {
+        const statsMap = new Map<string, { gamesPlayed: number; goals: number; assists: number; points: number }>();
+        for (const statsRow of (statsRes.data as unknown as PlayerSeasonStatsQueryRow[] | null) ?? []) {
           const existing = statsMap.get(statsRow.player_id);
-          statsMap.set(statsRow.player_id, {
-            goals: (existing?.goals ?? 0) + (statsRow.goals ?? 0),
-            assists: (existing?.assists ?? 0) + (statsRow.assists ?? 0),
-          });
+          const next = {
+            gamesPlayed: statsRow.games_played ?? 0,
+            goals: statsRow.goals ?? 0,
+            assists: statsRow.assists ?? 0,
+            points: statsRow.points ?? (statsRow.goals ?? 0) + (statsRow.assists ?? 0),
+          };
+          if (!existing || next.gamesPlayed > existing.gamesPlayed || next.points > existing.points) {
+            statsMap.set(statsRow.player_id, next);
+          }
         }
 
         const players: RosterPlayer[] = rosterRows
           .map((row) => {
-            const statLine = statsMap.get(row.player_id) ?? { goals: 0, assists: 0 };
+            const statLine = statsMap.get(row.player_id) ?? { gamesPlayed: 0, goals: 0, assists: 0, points: 0 };
             const profile = nameMap.get(row.player_id);
 
             return {
@@ -421,35 +578,53 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
               is_goalie: row.is_goalie ?? false,
               leadership_role: row.leadership_role ?? null,
               player_name: profile?.fullName ?? 'Unknown',
-              player_email: profile?.email ?? null,
+              avatar_url: profile?.avatarUrl ?? null,
+              games_played: statLine.gamesPlayed,
               goals: statLine.goals,
               assists: statLine.assists,
-              points: statLine.goals + statLine.assists,
+              points: statLine.points,
             };
           })
-          .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+          .sort((a, b) => {
+            const jerseyDifference = (a.jersey_number ?? Number.MAX_SAFE_INTEGER) - (b.jersey_number ?? Number.MAX_SAFE_INTEGER);
+            if (jerseyDifference !== 0) return jerseyDifference;
+            const nameDifference = a.player_name.localeCompare(b.player_name);
+            return nameDifference !== 0 ? nameDifference : a.player_id.localeCompare(b.player_id);
+          });
 
         setRoster(players);
+        setIsRosterMember(Boolean(viewerRes.data.user?.id && players.some((player) => player.player_id === viewerRes.data.user?.id)));
 
         if (nextScheduledGame) {
           const summary = await getGameCheckinSummary(nextScheduledGame.id, teamId);
           if (!isMounted) return;
 
+          const rosterPlayerIds = new Set(players.map((player) => player.player_id));
+          const confirmed = summary.confirmed.filter((entry) => entry.player && rosterPlayerIds.has(entry.player.id));
+          const tentative = summary.tentative.filter((entry) => entry.player && rosterPlayerIds.has(entry.player.id));
+          const out = summary.out.filter((entry) => entry.player && rosterPlayerIds.has(entry.player.id));
+          const respondedPlayerIds = new Set(
+            [...confirmed, ...tentative, ...out]
+              .map((entry) => entry.player?.id)
+              .filter((playerId): playerId is string => Boolean(playerId)),
+          );
+
           setNextGameAvailability({
-            confirmed: summary.confirmed.length,
-            tentative: summary.tentative.length,
-            out: summary.out.length,
-            pending: Math.max(players.length - summary.total, 0),
+            confirmed: confirmed.length,
+            tentative: tentative.length,
+            out: out.length,
+            pending: Math.max(players.length - respondedPlayerIds.size, 0),
           });
         } else {
           setNextGameAvailability(null);
         }
 
-        await refreshCaptainData(players, nextScheduledGame);
+        await refreshCaptainData(players, nextScheduledGame, generation);
       } else {
         setRoster([]);
+        setIsRosterMember(false);
         setNextGameAvailability(null);
-        await refreshCaptainData([], nextScheduledGame);
+        await refreshCaptainData([], nextScheduledGame, generation);
       }
 
       if (isMounted) {
@@ -461,6 +636,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
     return () => {
       isMounted = false;
+      if (loadGenerationRef.current === generation) loadGenerationRef.current += 1;
     };
   }, [leagueId, refreshCaptainData, teamId]);
 
@@ -511,6 +687,9 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   const openSubModal = async () => {
     if (!captainRole || !nextGame) return;
+    const generation = loadGenerationRef.current;
+    const operationLeagueId = leagueId;
+    const operationTeamId = teamId;
 
     setSubModalVisible(true);
     setSubSearch('');
@@ -521,7 +700,8 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     }
 
     setLoadingSubCandidates(true);
-    const result = await getLeagueSubPlayers(leagueId, teamId);
+    const result = await getLeagueSubPlayers(operationLeagueId, operationTeamId);
+    if (generation !== loadGenerationRef.current) return;
     setLoadingSubCandidates(false);
 
     if (!result.success) {
@@ -537,6 +717,10 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     nextStatus: CheckinStatus | 'waiting',
   ) => {
     if (!captainRole || !nextGame) return;
+    const generation = loadGenerationRef.current;
+    const operationGameId = nextGame.id;
+    const operationTeamId = teamId;
+    const operationRoster = roster;
 
     const previousStatuses = lineupStatuses;
     const updatedStatuses = { ...lineupStatuses };
@@ -549,18 +733,19 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     setCaptainError(null);
     setLineupSavingPlayerId(playerId);
     setLineupStatuses(updatedStatuses);
-    setNextGameAvailability(buildAvailabilityCounts(roster.length, updatedStatuses));
+    setNextGameAvailability(buildAvailabilityCounts(roster, updatedStatuses));
 
     const result =
       nextStatus === 'waiting'
-        ? await clearPlayerCheckinAsCaptain(nextGame.id, teamId, playerId)
-        : await updatePlayerCheckinAsCaptain(nextGame.id, teamId, playerId, nextStatus);
+        ? await clearPlayerCheckinAsCaptain(operationGameId, operationTeamId, playerId)
+        : await updatePlayerCheckinAsCaptain(operationGameId, operationTeamId, playerId, nextStatus);
 
+    if (generation !== loadGenerationRef.current) return;
     setLineupSavingPlayerId(null);
 
     if (!result.success) {
       setLineupStatuses(previousStatuses);
-      setNextGameAvailability(buildAvailabilityCounts(roster.length, previousStatuses));
+      setNextGameAvailability(buildAvailabilityCounts(operationRoster, previousStatuses));
       setCaptainError(result.error ?? 'Unable to update lineup.');
     }
   };
@@ -569,17 +754,24 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     if (!captainRole || !nextGame || !reminderMessage.trim()) {
       return;
     }
+    const generation = loadGenerationRef.current;
+    const operationTeamId = teamId;
+    const operationSeasonId = nextGame.season_id ?? null;
+    const operationOpponent = nextOpponent ?? 'opponent';
+    const operationMessage = reminderMessage.trim();
+    const operationTemplate = reminderTemplate;
 
     setCaptainError(null);
     setReminderSaving(true);
     const result = await postTeamMessage({
-      teamId,
-      seasonId: nextGame.season_id ?? null,
-      subject: `Check-in reminder vs ${nextOpponent ?? 'opponent'}`,
-      message: reminderMessage.trim(),
+      teamId: operationTeamId,
+      seasonId: operationSeasonId,
+      subject: `Check-in reminder vs ${operationOpponent}`,
+      message: operationMessage,
       messageType: 'checkin_reminder',
       isUrgent: true,
     });
+    if (generation !== loadGenerationRef.current) return;
     setReminderSaving(false);
 
     if (!result.success) {
@@ -588,17 +780,24 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     }
 
     setReminderModalVisible(false);
-    setReminderMessage(reminderTemplate);
-    setTeamMessages(await getRecentTeamMessages(teamId, 5));
+    setReminderMessage(operationTemplate);
+    const messages = await getRecentTeamMessages(operationTeamId, 5);
+    if (generation !== loadGenerationRef.current) return;
+    setTeamMessages(messages);
     Alert.alert('Reminder sent', 'Your team bulletin has been updated with a check-in reminder.');
   };
 
   const handleInviteSub = async (playerId: string) => {
     if (!captainRole || !nextGame) return;
+    const generation = loadGenerationRef.current;
+    const operationGameId = nextGame.id;
+    const operationTeamId = teamId;
+    const operationMessage = subInviteMessage;
 
     setCaptainError(null);
     setSubSavingPlayerId(playerId);
-    const result = await inviteSub(nextGame.id, teamId, playerId, subInviteMessage);
+    const result = await inviteSub(operationGameId, operationTeamId, playerId, operationMessage);
+    if (generation !== loadGenerationRef.current) return;
     setSubSavingPlayerId(null);
 
     if (!result.success) {
@@ -606,20 +805,27 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       return;
     }
 
-    const refreshed = await getTeamSubInvitations(teamId, [nextGame.id]);
+    const refreshed = await getTeamSubInvitations(operationTeamId, [operationGameId]);
+    if (generation !== loadGenerationRef.current) return;
     setSubInvitations(refreshed.data ?? []);
   };
 
   const handleRequestGoalie = async () => {
     if (!captainRole || !nextGame) return;
-
-    setCaptainError(null);
-    setGoalieSaving(true);
-    const result = await createGoalieRequest(nextGame.id, teamId, leagueId, {
+    const generation = loadGenerationRef.current;
+    const operationGameId = nextGame.id;
+    const operationTeamId = teamId;
+    const operationLeagueId = leagueId;
+    const operationRequest = {
       skillLevelNeeded: goalieSkillLevel,
       compensation: goalieCompensation,
       notes: goalieNotes,
-    });
+    };
+
+    setCaptainError(null);
+    setGoalieSaving(true);
+    const result = await createGoalieRequest(operationGameId, operationTeamId, operationLeagueId, operationRequest);
+    if (generation !== loadGenerationRef.current) return;
     setGoalieSaving(false);
 
     if (!result.success) {
@@ -627,7 +833,9 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       return;
     }
 
-    setGoalieRequest(await getOpenGoalieRequest(nextGame.id, teamId));
+    const refreshedRequest = await getOpenGoalieRequest(operationGameId, operationTeamId);
+    if (generation !== loadGenerationRef.current) return;
+    setGoalieRequest(refreshedRequest);
     setGoalieModalVisible(false);
     Alert.alert(
       'Goalie request posted',
@@ -645,37 +853,113 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  if (loadError) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Unable to load team</Text>
+          <View style={styles.backBtn} />
+        </View>
+        <View testID="team-error-state" style={styles.centeredState}>
+          <Ionicons name="alert-circle-outline" size={30} color={colors.accentRed} />
+          <Text style={styles.stateTitle}>Unable to load team</Text>
+          <Text style={styles.stateBody}>{loadError}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!activeSeason) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Team</Text>
+          <View style={styles.backBtn} />
+        </View>
+        <View testID="team-no-active-season-state" style={styles.centeredState}>
+          <Ionicons name="calendar-outline" size={30} color={colors.primary} />
+          <Text style={styles.stateTitle}>No active season</Text>
+          <Text style={styles.stateBody}>Roster and schedule will appear when this league activates a season.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!team) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Team</Text>
+          <View style={styles.backBtn} />
+        </View>
+        <View testID="team-missing-state" style={styles.centeredState}>
+          <Ionicons name="shield-outline" size={30} color={colors.textSecondary} />
+          <Text style={styles.stateTitle}>Team not found</Text>
+          <Text style={styles.stateBody}>This team is not part of the selected league.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <BrandAtmosphere accentColor={primaryColor} secondaryColor={team.secondary_color ?? colors.brandArena} intensity="medium" />
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {teamName}
-        </Text>
+        <Text style={styles.headerTitle}>TEAM</Text>
         <View style={styles.backBtn} />
       </View>
 
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {standing ? (
-          <View style={styles.recordCard}>
-            <Text style={styles.sectionTitle}>Season Record</Text>
-            <View style={[styles.statsRow, isCompact && styles.statsRowCompact]}>
-              <StatBox label="W" value={standing.wins ?? 0} compact={isCompact} />
-              <StatBox label="L" value={standing.losses ?? 0} compact={isCompact} />
-              <StatBox label="OTL" value={standing.ties ?? 0} compact={isCompact} />
-              <StatBox label="PTS" value={standing.points ?? 0} compact={isCompact} />
-              <StatBox label="GF" value={standing.goals_for ?? 0} compact={isCompact} />
-              <StatBox label="GA" value={standing.goals_against ?? 0} compact={isCompact} />
+        <View testID="team-identity-hero" style={[styles.heroCard, publicSurface]}>
+          <LinearGradient
+            testID="team-hero-gradient"
+            colors={reduceTransparency
+              ? ['rgba(12, 27, 49, 0)', 'rgba(12, 27, 49, 0)']
+              : [`${primaryColor}24`, 'rgba(7, 17, 31, 0.08)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[styles.heroIdentity, isCompact && styles.heroIdentityCompact]}>
+            <View style={[styles.heroLogoWell, { borderColor: `${primaryColor}55` }]}>
+              <TeamLogo logoUrl={team.logo_url} teamName={teamName} primaryColor={primaryColor} size={96} />
+            </View>
+            <View style={styles.heroCopy} testID="team-hero-copy">
+              <Text style={[styles.heroEyebrow, { color: primaryColor }]}>{league?.name ?? 'League'}</Text>
+              <Text style={styles.heroSeason}>{activeSeason.name} · Active season</Text>
+              <Text testID="team-hero-name" style={styles.heroName}>{teamName}</Text>
+              <View style={styles.heroRecordRow}>
+                <View>
+                  <Text style={styles.heroRecord}>{seasonRecord}</Text>
+                  <Text style={styles.heroRecordLabel}>Season record</Text>
+                </View>
+              </View>
             </View>
           </View>
-        ) : null}
+          <View style={styles.heroStatsRow}>
+            <StatBox label="GP" value={standing?.games_played ?? 0} compact />
+            <StatBox label="PTS" value={standing?.points ?? 0} compact />
+            <StatBox label="GF" value={standing?.goals_for ?? 0} compact />
+            <StatBox label="GA" value={standing?.goals_against ?? 0} compact />
+          </View>
+        </View>
 
         {(nextGame || league?.slug) && (
-          <View style={styles.opsCard}>
+          <View testID="team-operations-card" style={[styles.opsCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Team Operations</Text>
 
             {nextGame ? (
@@ -689,6 +973,9 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                     </Text>
                   </View>
                   <Pressable
+                    testID="team-open-game-action"
+                    accessibilityRole="button"
+                    accessibilityLabel="Open next game"
                     style={[styles.opsPrimaryButton, isCompact && styles.opsPrimaryButtonCompact]}
                     onPress={() => navigateToGame(nextGame.id)}
                   >
@@ -715,9 +1002,22 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             )}
 
             {league?.slug ? (
-              <Pressable style={styles.opsSecondaryButton} onPress={openLeagueSite}>
+              <Pressable testID="team-league-site-action" accessibilityRole="button" accessibilityLabel="Open league site" style={styles.opsSecondaryButton} onPress={openLeagueSite}>
                 <Ionicons name="globe-outline" size={16} color={colors.textPrimary} />
                 <Text style={styles.opsSecondaryButtonText}>Open League Site</Text>
+              </Pressable>
+            ) : null}
+
+            {isRosterMember ? (
+              <Pressable
+                testID="team-chat-action"
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${teamName} team chat`}
+                style={styles.opsSecondaryButton}
+                onPress={() => navigation.navigate('TeamChat', { teamId, leagueId, teamName })}
+              >
+                <Ionicons name="chatbubbles-outline" size={16} color={colors.textPrimary} />
+                <Text style={styles.opsSecondaryButtonText}>Team Chat</Text>
               </Pressable>
             ) : null}
           </View>
@@ -739,19 +1039,19 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             </View>
 
             <View style={[styles.captainActionRow, isCompact && styles.captainActionRowCompact]}>
-              <Pressable style={styles.captainActionButton} onPress={openReminderModal}>
+              <Pressable testID="team-captain-reminder-action" accessibilityRole="button" style={styles.captainActionButton} onPress={openReminderModal}>
                 <Ionicons name="notifications-outline" size={16} color={colors.primary} />
                 <Text style={styles.captainActionTitle}>Remind Team</Text>
                 <Text style={styles.captainActionMeta}>{pendingPlayers.length} awaiting response</Text>
               </Pressable>
 
-              <Pressable style={styles.captainActionButton} onPress={() => void openSubModal()}>
+              <Pressable testID="team-captain-sub-action" accessibilityRole="button" style={styles.captainActionButton} onPress={() => void openSubModal()}>
                 <Ionicons name="person-add-outline" size={16} color={colors.primary} />
                 <Text style={styles.captainActionTitle}>Request Sub</Text>
                 <Text style={styles.captainActionMeta}>{subInvitations.length} invites for this game</Text>
               </Pressable>
 
-              <Pressable style={styles.captainActionButton} onPress={() => setGoalieModalVisible(true)}>
+              <Pressable testID="team-captain-goalie-action" accessibilityRole="button" style={styles.captainActionButton} onPress={() => setGoalieModalVisible(true)}>
                 <Ionicons name="shield-half-outline" size={16} color={colors.primary} />
                 <Text style={styles.captainActionTitle}>Request Goalie</Text>
                 <Text style={styles.captainActionMeta}>{goalieRequest ? goalieRequest.status : 'No open request'}</Text>
@@ -771,7 +1071,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                 <View style={styles.pendingPlayersWrap}>
                   {pendingPlayers.map((player) => (
                     <View key={player.id} style={styles.pendingPlayerChip}>
-                      <Text style={styles.pendingPlayerText} numberOfLines={1}>
+                      <Text style={styles.pendingPlayerText}>
                         {player.player_name}
                       </Text>
                     </View>
@@ -834,10 +1134,10 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                   return (
                     <View key={player.id} style={[styles.lineupRow, isCompact && styles.lineupRowCompact]}>
                       <View style={styles.lineupPlayerCopy}>
-                        <Text style={styles.lineupPlayerName} numberOfLines={1}>
+                        <Text style={styles.lineupPlayerName}>
                           {player.player_name}
                         </Text>
-                        <Text style={styles.lineupPlayerMeta} numberOfLines={1}>
+                        <Text style={styles.lineupPlayerMeta}>
                           {player.jersey_number != null ? `#${player.jersey_number}` : 'No #'} ·{' '}
                           {formatRosterPosition(player.position, player.is_goalie)}
                           {player.leadership_role ? ` · ${player.leadership_role === 'captain' ? 'C' : 'A'}` : ''}
@@ -888,14 +1188,14 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         ) : null}
 
         {teamMessages.length > 0 ? (
-          <View style={styles.messagesCard}>
+          <View testID="team-bulletin-card" style={[styles.messagesCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Team Bulletin</Text>
             <View style={styles.messagesList}>
               {teamMessages.map((message) => (
                 <View key={message.id} style={styles.messageRow}>
                   <View style={styles.messageHeader}>
                     <View style={styles.messageTitleWrap}>
-                      <Text style={styles.messageTitle} numberOfLines={1}>
+                      <Text style={styles.messageTitle}>
                         {message.subject ?? 'Team update'}
                       </Text>
                       <Text style={styles.messageMeta}>
@@ -916,47 +1216,62 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         ) : null}
 
         {roster.length > 0 ? (
-          <View style={styles.rosterCard}>
-            <Text style={styles.sectionTitle}>Roster</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rosterTable}>
-              <View>
-                <View style={styles.rosterHeaderRow}>
-                  <Text style={[styles.rosterHeaderCell, styles.jerseyHeader]}>#</Text>
-                  <Text style={[styles.rosterHeaderCell, styles.nameHeader]}>Player</Text>
-                  <Text style={styles.rosterHeaderCell}>POS</Text>
-                  <Text style={styles.rosterHeaderCell}>G</Text>
-                  <Text style={styles.rosterHeaderCell}>A</Text>
-                  <Text style={styles.rosterHeaderCell}>PTS</Text>
-                </View>
-                {roster.map((player) => (
-                  <Pressable
-                    key={player.id}
-                    style={({ pressed }) => [styles.rosterRow, pressed && styles.rosterRowPressed]}
-                    onPress={() => navigateToPlayerCard(navigation, { playerId: player.player_id, leagueId })}
-                  >
-                    <Text style={[styles.rosterCell, styles.jerseyCell, { color: primaryColor }]}>
+          <View testID="team-roster-card" style={[styles.rosterCard, publicSurface]}>
+            <View style={styles.rosterTitleRow}>
+              <Text style={styles.sectionTitle}>Active Roster</Text>
+              <Text style={styles.rosterCount}>{roster.length} {roster.length === 1 ? 'player' : 'players'}</Text>
+            </View>
+            <View style={styles.rosterList}>
+              {roster.map((player) => (
+                <Pressable
+                  key={player.id}
+                  testID={`team-roster-player-${player.player_id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${player.player_name}'s player card`}
+                  style={({ pressed }) => [styles.rosterPlayerCard, pressed && styles.rosterRowPressed]}
+                  onPress={() => navigateToPlayerCard(navigation, { playerId: player.player_id, leagueId })}
+                >
+                  <View style={styles.rosterPlayerTopRow}>
+                    <Text style={[styles.rosterJersey, { color: primaryColor }]}>
                       {player.jersey_number != null ? `#${player.jersey_number}` : '—'}
                     </Text>
-                    <View style={styles.nameCellWrap}>
-                      <Text style={[styles.rosterCell, styles.nameCell]} numberOfLines={1}>
-                        {player.player_name}
+                    <Avatar uri={player.avatar_url} name={player.player_name} size={42} />
+                    <View testID={`team-roster-identity-${player.player_id}`} style={styles.rosterPlayerIdentity}>
+                      <Text style={styles.rosterPlayerName}>{player.player_name}</Text>
+                      <Text style={styles.rosterPlayerRole}>
+                        {formatRosterPosition(player.position, player.is_goalie)}
+                        {player.leadership_role ? ` · ${player.leadership_role === 'captain' ? 'C' : 'A'}` : ''}
                       </Text>
                     </View>
-                    <Text style={[styles.rosterCell, styles.posCell]}>
-                      {formatRosterPosition(player.position, player.is_goalie)}
-                    </Text>
-                    <Text style={[styles.rosterCell, styles.statCell]}>{player.goals}</Text>
-                    <Text style={[styles.rosterCell, styles.statCell]}>{player.assists}</Text>
-                    <Text style={[styles.rosterCell, styles.ptsCell]}>{player.points}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  </View>
+                  <View style={styles.rosterStatsRow}>
+                    {[
+                      ['GP', player.games_played],
+                      ['G', player.goals],
+                      ['A', player.assists],
+                      ['PTS', player.points],
+                    ].map(([label, value]) => (
+                      <View key={label} style={styles.rosterStatItem}>
+                        <Text style={[styles.rosterStatValue, label === 'PTS' && { color: primaryColor }]}>{value}</Text>
+                        <Text style={styles.rosterStatLabel}>{label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
           </View>
-        ) : null}
+        ) : (
+          <View testID="team-roster-empty-state" style={[styles.rosterCard, publicSurface]}>
+            <Text style={styles.sectionTitle}>Active Roster</Text>
+            <Text style={styles.emptyRosterTitle}>No active players</Text>
+            <Text style={styles.emptyRosterBody}>No players are listed for {activeSeason.name} yet.</Text>
+          </View>
+        )}
 
         {upcomingGames.length > 0 ? (
-          <View>
+          <View testID="team-schedule-card" style={[styles.scheduleCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Upcoming Games</Text>
             {upcomingGames.map((game) => (
               <GameCard
@@ -973,6 +1288,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                 scheduledAt={game.scheduled_at}
                 location={game.location}
                 compact
+                visualVariant="homeEditorial"
                 onPress={() => navigateToGame(game.id)}
               />
             ))}
@@ -980,7 +1296,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         ) : null}
       </ScrollView>
 
-      <Modal visible={reminderModalVisible} transparent animationType="fade" onRequestClose={() => setReminderModalVisible(false)}>
+      <Modal visible={reminderModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setReminderModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setReminderModalVisible(false)}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <View style={styles.modalHeaderRow}>
@@ -1015,7 +1331,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         </Pressable>
       </Modal>
 
-      <Modal visible={subModalVisible} transparent animationType="fade" onRequestClose={() => setSubModalVisible(false)}>
+      <Modal visible={subModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setSubModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setSubModalVisible(false)}>
           <Pressable style={styles.modalCardLarge} onPress={() => {}}>
             <View style={styles.modalHeaderRow}>
@@ -1086,7 +1402,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         </Pressable>
       </Modal>
 
-      <Modal visible={goalieModalVisible} transparent animationType="fade" onRequestClose={() => setGoalieModalVisible(false)}>
+      <Modal visible={goalieModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setGoalieModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setGoalieModalVisible(false)}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <View style={styles.modalHeaderRow}>
@@ -1169,10 +1485,15 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderCard,
   },
   backBtn: {
-    width: 40,
+    width: ui.minTouchTarget,
+    minHeight: ui.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     fontSize: 17,
     fontWeight: '800',
     color: colors.textPrimary,
@@ -1186,6 +1507,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  centeredState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 32,
+  },
+  stateTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  stateBody: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
@@ -1197,28 +1537,97 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 12,
   },
-  recordCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 16,
+  heroCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: colors.borderCard,
-    padding: 16,
+    padding: 18,
+    gap: 18,
   },
-  statsRow: {
+  heroIdentity: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
   },
-  statsRowCompact: {
+  heroIdentityCompact: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  heroLogoWell: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroCopy: {
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
+  },
+  heroEyebrow: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  heroSeason: {
+    marginTop: 3,
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  heroName: {
+    marginTop: 8,
+    color: colors.textPrimary,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+  },
+  heroRecordRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  heroRecord: {
+    color: colors.textPrimary,
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: '900',
+  },
+  heroRecordLabel: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  heroStatsRow: {
+    flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
     gap: 8,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderCard,
   },
   statBox: {
     alignItems: 'center',
-    flex: 1,
+    minWidth: 48,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   statBoxCompact: {
-    flexBasis: '31%',
+    flexBasis: 'auto',
   },
   statValue: {
     fontSize: 22,
@@ -1249,8 +1658,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   opsTextWrap: {
-    flex: 1,
     minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   opsTitle: {
     fontSize: 16,
@@ -1276,6 +1687,9 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   opsPrimaryButton: {
+    minHeight: ui.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 999,
     backgroundColor: colors.primary,
     paddingHorizontal: 14,
@@ -1290,6 +1704,7 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
   },
   opsSecondaryButton: {
+    minHeight: ui.minTouchTarget,
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
@@ -1324,7 +1739,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   captainHeaderCopy: {
-    flex: 1,
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   cardMeta: {
     fontSize: 12,
@@ -1356,8 +1774,11 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   captainActionButton: {
-    flex: 1,
+    minHeight: ui.minTouchTarget,
     minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     gap: 4,
     padding: 12,
     borderRadius: 14,
@@ -1385,7 +1806,10 @@ const styles = StyleSheet.create({
     borderColor: colors.accentRed + '30',
   },
   errorText: {
-    flex: 1,
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     fontSize: 12,
     lineHeight: 17,
     color: colors.accentRed,
@@ -1432,7 +1856,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   statusListTitle: {
-    flex: 1,
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     fontSize: 13,
     fontWeight: '700',
     color: colors.textPrimary,
@@ -1482,8 +1909,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   lineupPlayerCopy: {
-    flex: 1,
     minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   lineupPlayerName: {
     fontSize: 13,
@@ -1502,6 +1931,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   lineupActionPill: {
+    minHeight: ui.minTouchTarget,
     minWidth: 52,
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -1535,8 +1965,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   messageTitleWrap: {
-    flex: 1,
     minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   messageTitle: {
     fontSize: 14,
@@ -1573,75 +2005,104 @@ const styles = StyleSheet.create({
     borderColor: colors.borderCard,
     padding: 16,
   },
-  rosterTable: {
-    minWidth: 520,
-  },
-  rosterHeaderRow: {
+  rosterTitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-    marginBottom: 4,
-    columnGap: 8,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  rosterHeaderCell: {
-    fontSize: 11,
-    fontWeight: '800',
+  rosterCount: {
     color: colors.textSecondary,
-    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
   },
-  jerseyHeader: {
-    width: 52,
-    textAlign: 'left',
+  emptyRosterTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '800',
   },
-  nameHeader: {
-    flex: 1,
-    minWidth: 180,
-    textAlign: 'left',
+  emptyRosterBody: {
+    marginTop: 4,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
   },
-  rosterRow: {
+  rosterList: {
+    gap: 10,
+  },
+  rosterPlayerCard: {
+    minHeight: ui.minTouchTarget,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.borderCard,
+    backgroundColor: 'rgba(7, 17, 31, 0.42)',
+    gap: 12,
+  },
+  rosterPlayerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-    columnGap: 8,
+    gap: 10,
+  },
+  rosterJersey: {
+    width: 38,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  rosterPlayerIdentity: {
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
+  },
+  rosterPlayerName: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  rosterPlayerRole: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  rosterStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderCard,
+  },
+  rosterStatItem: {
+    minWidth: 48,
+    alignItems: 'center',
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
+  },
+  rosterStatValue: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  rosterStatLabel: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  scheduleCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
   },
   rosterRowPressed: {
     backgroundColor: colors.bgInteractive,
-  },
-  rosterCell: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  jerseyCell: {
-    width: 52,
-    textAlign: 'left',
-    fontWeight: '800',
-  },
-  nameCellWrap: {
-    flex: 1,
-    minWidth: 180,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  nameCell: {
-    flex: 1,
-    textAlign: 'left',
-  },
-  posCell: {
-    width: 44,
-  },
-  statCell: {
-    width: 44,
-  },
-  ptsCell: {
-    width: 50,
-    fontWeight: '800',
-    color: colors.primary,
   },
   modalOverlay: {
     flex: 1,
@@ -1673,17 +2134,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalTitle: {
-    flex: 1,
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     fontSize: 18,
     fontWeight: '900',
     color: colors.textPrimary,
   },
   modalCloseButton: {
-    width: 32,
-    height: 32,
+    width: ui.minTouchTarget,
+    height: ui.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
+    borderRadius: 22,
     backgroundColor: colors.bgInteractive,
   },
   modalMeta: {
@@ -1710,7 +2174,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   modalPrimaryButton: {
-    flex: 1,
+    minHeight: ui.minTouchTarget,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
@@ -1723,7 +2190,10 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
   },
   modalSecondaryButton: {
-    flex: 1,
+    minHeight: ui.minTouchTarget,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
@@ -1757,8 +2227,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderCard,
   },
   modalListCopy: {
-    flex: 1,
     minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   modalListTitle: {
     fontSize: 14,
@@ -1771,6 +2243,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   inlineActionButton: {
+    minHeight: ui.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 999,
@@ -1803,6 +2276,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   skillPill: {
+    minHeight: ui.minTouchTarget,
+    justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
