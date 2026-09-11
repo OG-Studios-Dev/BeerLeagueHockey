@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { addGameToCalendar } from '../lib/calendar';
 import colors from '../theme/colors';
+import { getHomeVisualPreferences } from '../theme/home';
 import { ui } from '../theme/ui';
 import GlassSurface from './GlassSurface';
 
@@ -22,6 +23,8 @@ type GameCardProps = {
   scheduledAt?: string;
   location?: string | null;
   compact?: boolean;
+  visualVariant?: 'default' | 'homeEditorial';
+  reduceTransparency?: boolean;
   onPress?: () => void;
 };
 
@@ -48,9 +51,13 @@ export default function GameCard({
   scheduledAt,
   location,
   compact = false,
+  visualVariant = 'default',
+  reduceTransparency = false,
   onPress,
 }: GameCardProps) {
   const statusStyle = getStatusStyle(status);
+  const isHomeEditorial = visualVariant === 'homeEditorial';
+  const homeVisuals = getHomeVisualPreferences(reduceTransparency, false);
   const showScore =
     (status === 'Final' || status === 'Live') &&
     typeof homeScore === 'number' &&
@@ -67,16 +74,27 @@ export default function GameCard({
   }
 
   const cardContent = (
-    <GlassSurface style={styles.card}>
+    <GlassSurface
+      style={[
+        styles.card,
+        isHomeEditorial
+          ? { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }
+          : undefined,
+      ]}
+    >
       <LinearGradient
-        colors={['rgba(255,255,255,0.08)', 'transparent', 'rgba(79,216,255,0.08)']}
+        colors={isHomeEditorial
+          ? [homeVisuals.surfaceTop, homeVisuals.surfaceBottom]
+          : ['rgba(255,255,255,0.08)', 'transparent', 'rgba(79,216,255,0.08)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.cardGlow}
       />
       <View style={[styles.dateStrip, compact ? styles.compactDateStrip : undefined]}>
         <LinearGradient
-          colors={['rgba(79,216,255,0.18)', 'rgba(108,124,255,0.08)']}
+          colors={isHomeEditorial
+            ? [homeVisuals.surfaceTop, homeVisuals.surfaceBottom]
+            : ['rgba(79,216,255,0.18)', 'rgba(108,124,255,0.08)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
@@ -90,18 +108,24 @@ export default function GameCard({
           <View style={[styles.badge, { backgroundColor: statusStyle.backgroundColor }]}>
             <Text style={[styles.badgeText, { color: statusStyle.textColor }]}>{status}</Text>
           </View>
-          <Text style={styles.rinkText} numberOfLines={1}>{rinkName}</Text>
+          <Text style={styles.rinkText} numberOfLines={isHomeEditorial ? undefined : 1}>{rinkName}</Text>
         </View>
 
         <View style={styles.teamsWrap}>
           <View style={styles.teamRow}>
-            <Text style={[styles.teamName, compact ? styles.compactTeamName : undefined]} numberOfLines={1}>
+            <Text
+              style={[styles.teamName, compact ? styles.compactTeamName : undefined]}
+              numberOfLines={isHomeEditorial ? undefined : 1}
+            >
               {awayTeam}
             </Text>
             {showScore ? <Text style={[styles.score, compact ? styles.compactScore : undefined]}>{awayScore}</Text> : null}
           </View>
           <View style={styles.teamRow}>
-            <Text style={[styles.teamName, compact ? styles.compactTeamName : undefined]} numberOfLines={1}>
+            <Text
+              style={[styles.teamName, compact ? styles.compactTeamName : undefined]}
+              numberOfLines={isHomeEditorial ? undefined : 1}
+            >
               {homeTeam}
             </Text>
             {showScore ? <Text style={[styles.score, compact ? styles.compactScore : undefined]}>{homeScore}</Text> : null}
@@ -130,6 +154,7 @@ export default function GameCard({
       style={({ pressed }) => [
         styles.shadowWrap,
         compact ? styles.compactShadowWrap : undefined,
+        isHomeEditorial ? styles.homeEditorialShadowWrap : undefined,
         pressed && styles.shadowWrapPressed,
       ]}
       onPress={onPress}
@@ -152,6 +177,13 @@ const styles = StyleSheet.create({
   },
   compactShadowWrap: {
     marginVertical: 3,
+  },
+  homeEditorialShadowWrap: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 0,
   },
   shadowWrapPressed: {
     transform: [{ scale: 0.988 }],

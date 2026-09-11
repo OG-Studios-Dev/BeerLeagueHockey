@@ -18,13 +18,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import blhLogo from '../../assets/blh-logo.png';
 import GameCard from '../components/GameCard';
-import BrandAtmosphere from '../components/BrandAtmosphere';
 import GuestBanner from '../components/GuestBanner';
 import LeagueMarketplace from '../components/LeagueMarketplace';
 import QuickCheckinActions from '../components/QuickCheckinActions';
 import RevealView from '../components/RevealView';
 import ScheduleConflictList from '../components/ScheduleConflictList';
-import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
@@ -39,7 +37,8 @@ import {
 import { supabase } from '../lib/supabase/client';
 import { getLeagueGames, mapGameStatus, type GameRow } from '../lib/supabase/data';
 import colors from '../theme/colors';
-import { getSurfacePalette, ui } from '../theme/ui';
+import { getHomeVisualPreferences, HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
+import { ui } from '../theme/ui';
 
 type HomeScreenProps = {
   navigation?: any;
@@ -113,16 +112,79 @@ function formatSyncTime(iso: string | null): string {
   return `Updated ${new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 }
 
+function getNextGameAccessibilityLabel(
+  game: NextGame,
+  summary: CheckinSummary,
+  isGuestLeague: boolean,
+) {
+  const awayTeam = game.away_team?.name ?? game.away_team_id;
+  const homeTeam = game.home_team?.name ?? game.home_team_id;
+  const availability = isGuestLeague
+    ? 'Join this league to check in'
+    : `${summary.confirmed} In · ${summary.tentative} Maybe · ${summary.out} Out`;
+
+  return [
+    `Next game, ${awayTeam} at ${homeTeam}`,
+    formatGameDate(game.scheduled_at),
+    game.location,
+    availability,
+  ].filter(Boolean).join('. ');
+}
+
 function openLeagueSite(slug: string) {
   Linking.openURL(`https://${slug}.beerleaguehockey.ca`).catch(() => {});
 }
 
+function HomeArenaBackdrop({
+  accentColor,
+  showAtmosphericGlow,
+}: {
+  accentColor: string;
+  showAtmosphericGlow: boolean;
+}) {
+  return (
+    <View testID="home-arena-backdrop" pointerEvents="none" style={styles.arenaBackdrop}>
+      <LinearGradient
+        colors={[homeTokens.canvas, homeTokens.navy, homeTokens.ink]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {showAtmosphericGlow ? (
+        <LinearGradient
+          testID="home-atmospheric-glow"
+          colors={[`${accentColor}24`, 'rgba(255, 255, 255, 0.03)', 'transparent']}
+          start={{ x: 0.05, y: 0 }}
+          end={{ x: 0.9, y: 0.62 }}
+          style={styles.arenaGlow}
+        />
+      ) : null}
+      <View testID="home-rink-lines" style={styles.arenaRink}>
+        <View style={styles.arenaCenterLine} />
+        <View style={styles.arenaCenterCircle} />
+        <View style={[styles.arenaFaceoffCircle, styles.arenaFaceoffTop]} />
+        <View style={[styles.arenaFaceoffCircle, styles.arenaFaceoffBottom]} />
+      </View>
+    </View>
+  );
+}
+
+function HomeSectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <View style={styles.sectionHeading}>
+      <Text style={styles.sectionEyebrow}>{eyebrow}</Text>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionRule} />
+    </View>
+  );
+}
+
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { activeLeague, setActiveLeague, activeTheme, availableLeagues, isGuestLeague } = useLeague();
-  const { reduceTransparency } = useAccessibilityPreferences();
-  const surfacePalette = getSurfacePalette(reduceTransparency);
+  const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
+  const homeVisuals = getHomeVisualPreferences(reduceTransparency, reduceMotion);
   const { width } = useWindowDimensions();
-  const isCompact = width < 390;
+  const isCompact = width < homeTokens.compactBreakpoint;
 
   const [games, setGames] = React.useState<GameRow[]>([]);
   const [userTeam, setUserTeam] = React.useState<UserTeam | null>(null);
@@ -488,57 +550,72 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const teamAccentColor = userTeam?.primary_color ?? activeTheme.primaryColor;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-      <BrandAtmosphere accentColor={teamAccentColor} secondaryColor={activeTheme.secondaryColor} intensity="medium" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: homeVisuals.canvas }]} edges={['left', 'right']}>
+      <HomeArenaBackdrop
+        accentColor={teamAccentColor}
+        showAtmosphericGlow={homeVisuals.showAtmosphericGlow}
+      />
       <GuestBanner />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={activeTheme.primaryColor} />}
         showsVerticalScrollIndicator={false}
       >
-        <RevealView delay={20}>
-            <View style={styles.headerRow}>
+        <RevealView delay={20} duration={homeVisuals.revealDuration}>
+            <View testID="home-editorial-header" style={styles.headerRow}>
               <View style={styles.brandWrap}>
-                <Image source={blhLogo} style={styles.smallLogo} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.logo, { color: activeTheme.primaryColor }]} numberOfLines={1}>
-                    {activeLeague.name}
-                </Text>
-                <Text style={styles.logoSub}>
-                  {isGuestLeague ? 'Preview mode' : formatSyncTime(lastUpdatedAt)}
-                </Text>
-              </View>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Updates${notificationCount ? `, ${notificationCount} unread` : ''}`}
-              style={[styles.iconButton, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke }]}
-              onPress={openUpdates}
-            >
-              <Ionicons name="notifications-outline" size={20} color={activeTheme.textColor} />
-              {notificationCount > 0 ? (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>{Math.min(notificationCount, 9)}</Text>
+                <View style={[styles.logoFrame, { borderColor: homeVisuals.stroke }]}>
+                  <Image source={blhLogo} style={styles.smallLogo} />
                 </View>
-              ) : null}
-            </Pressable>
+                <View style={styles.brandCopy}>
+                  <Text style={[styles.homeEyebrow, { color: teamAccentColor }]}>LEAGUE HOME</Text>
+                  <Text style={[styles.logo, isCompact && styles.logoCompact]}>
+                    {activeLeague.name}
+                  </Text>
+                  <Text style={styles.logoSub}>
+                    {isGuestLeague ? 'Preview mode' : formatSyncTime(lastUpdatedAt)}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Updates${notificationCount ? `, ${notificationCount} unread` : ''}`}
+                style={[styles.iconButton, { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }]}
+                onPress={openUpdates}
+              >
+                <Ionicons name="notifications-outline" size={20} color={homeTokens.text} />
+                {notificationCount > 0 ? (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>{Math.min(notificationCount, 9)}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
           </View>
         </RevealView>
 
         {loadingLeague ? (
-          <ActivityIndicator color={activeTheme.primaryColor} style={styles.loadingBlock} />
+          <View
+            testID="home-loading-panel"
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading league home"
+            accessibilityLiveRegion="polite"
+            style={[styles.loadingBlock, { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }]}
+          >
+            <ActivityIndicator color={teamAccentColor} />
+            <Text style={styles.loadingText}>Loading league home</Text>
+          </View>
         ) : (
           <>
             {!isGuestLeague ? (
-              <RevealView delay={80}>
-                <View style={[styles.quickActionsRow, isCompact && styles.quickActionsRowCompact]}>
+              <RevealView delay={80} duration={homeVisuals.revealDuration}>
+                <View testID="home-quick-actions" style={[styles.quickActionsRow, isCompact && styles.quickActionsRowCompact]}>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Open full schedule"
-                    style={[styles.quickActionCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke }, isCompact && styles.quickActionCardCompact]}
+                    style={[styles.quickActionCard, { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }, isCompact && styles.quickActionCardCompact]}
                     onPress={() => navigation?.navigate?.('Schedule')}
                   >
-                    <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    <Ionicons name="calendar-outline" size={18} color={teamAccentColor} />
                     <Text style={styles.quickActionTitle}>Full Schedule</Text>
                     <Text style={styles.quickActionMeta}>See every game in this league</Text>
                   </Pressable>
@@ -546,10 +623,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   <Pressable
                     accessibilityRole="link"
                     accessibilityLabel={`Open ${activeLeague.name} website`}
-                    style={[styles.quickActionCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke }, isCompact && styles.quickActionCardCompact]}
+                    style={[styles.quickActionCard, { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }, isCompact && styles.quickActionCardCompact]}
                     onPress={() => openLeagueSite(activeLeague.slug)}
                   >
-                    <Ionicons name="globe-outline" size={18} color={colors.primary} />
+                    <Ionicons name="globe-outline" size={18} color={teamAccentColor} />
                     <Text style={styles.quickActionTitle}>League Site</Text>
                     <Text style={styles.quickActionMeta}>{activeLeague.slug}.beerleaguehockey.ca</Text>
                   </Pressable>
@@ -557,35 +634,39 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               </RevealView>
             ) : null}
 
-            <RevealView delay={140}>
+            <RevealView delay={140} duration={homeVisuals.revealDuration}>
               <>
-                <SectionHeader title="Next Game" />
+                <HomeSectionHeading eyebrow="ON DECK" title="Next game" />
 
                 {nextGame ? (
                   <Pressable
+                    testID="home-next-game-panel"
                     accessibilityRole="button"
+                    accessibilityLabel={getNextGameAccessibilityLabel(nextGame, checkinSummary, isGuestLeague)}
                     accessibilityHint="Open next game details"
-                    style={[styles.nextGameCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke, borderLeftColor: teamAccentColor }]}
+                    style={[styles.nextGameCard, { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }]}
                     onPress={() => navigateToGame(nextGame.id, activeLeague.id)}
                   >
                     <LinearGradient
-                      colors={['rgba(255,255,255,0.08)', `${teamAccentColor}18`, 'transparent']}
+                      testID="home-stage-glass-gradient"
+                      colors={[homeVisuals.surfaceTop, homeVisuals.surfaceBottom]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.featuredCardGlow}
                     />
+                    <View pointerEvents="none" style={styles.matchupRinkLine} />
                     <View style={[styles.ngHeaderRow, isCompact && styles.stackHeaderRow]}>
                       <Text style={[styles.ngLabel, { color: teamAccentColor }]}>NEXT GAME</Text>
                       <Text style={styles.ngDateLabel}>{formatGameDate(nextGame.scheduled_at)}</Text>
                     </View>
 
-                    <View style={[styles.ngTeamsRow, isCompact && styles.ngTeamsRowCompact]}>
+                    <View testID="home-matchup-teams" style={[styles.ngTeamsRow, isCompact && styles.ngTeamsRowCompact]}>
                       <View style={[styles.ngTeamBlock, isCompact && styles.ngTeamBlockCompact]}>
                         <TeamLogo
                           logoUrl={nextGame.away_team?.logo_url ?? null}
                           teamName={nextGame.away_team?.name ?? '?'}
                           primaryColor={nextGame.away_team?.primary_color ?? colors.primary}
-                          size={48}
+                          size={isCompact ? 40 : 52}
                         />
                         <Text
                           style={[
@@ -593,20 +674,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                             isCompact && styles.ngTeamNameCompact,
                             nextGame.away_team_id === userTeam?.id && styles.ngTeamNameMyTeam,
                           ]}
-                          numberOfLines={2}
                         >
                           {nextGame.away_team?.name ?? nextGame.away_team_id}
                         </Text>
                       </View>
 
-                      <Text style={[styles.ngVs, { color: colors.primary }]}>VS</Text>
+                      <Text style={styles.ngVs}>VS</Text>
 
                       <View style={[styles.ngTeamBlock, styles.ngTeamBlockRight, isCompact && styles.ngTeamBlockCompact]}>
                         <TeamLogo
                           logoUrl={nextGame.home_team?.logo_url ?? null}
                           teamName={nextGame.home_team?.name ?? '?'}
                           primaryColor={nextGame.home_team?.primary_color ?? colors.primary}
-                          size={48}
+                          size={isCompact ? 40 : 52}
                         />
                         <Text
                           style={[
@@ -615,7 +695,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                             isCompact && styles.ngTeamNameCompact,
                             nextGame.home_team_id === userTeam?.id && styles.ngTeamNameMyTeam,
                           ]}
-                          numberOfLines={2}
                         >
                           {nextGame.home_team?.name ?? nextGame.home_team_id}
                         </Text>
@@ -625,7 +704,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                     {nextGame.location ? (
                       <View style={styles.ngLocationRow}>
                         <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
-                        <Text style={styles.ngLocationText} numberOfLines={1}>
+                        <Text style={styles.ngLocationText}>
                           {nextGame.location}
                         </Text>
                       </View>
@@ -725,7 +804,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                     )}
                   </Pressable>
                 ) : (
-                  <View style={[styles.noGameCard, { backgroundColor: surfacePalette.surface, borderColor: surfacePalette.stroke, borderLeftColor: activeTheme.secondaryColor }]}>
+                  <View testID="home-empty-game-panel" style={[styles.noGameCard, { backgroundColor: homeVisuals.surface, borderColor: homeVisuals.stroke }]}>
                     <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} style={{ marginBottom: 4 }} />
                     <Text style={styles.noGameTitle}>No upcoming games</Text>
                     <Text style={styles.noGameSub}>Check back soon. League schedule updates will land here automatically.</Text>
@@ -736,11 +815,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
             {recentFinals.length > 0 ? (
               <>
-                <SectionHeader title="Recent Results" />
+                <HomeSectionHeading eyebrow="FINAL HORN" title="Recent results" />
                 {recentFinals.map((game) => (
                   <GameCard
                     key={game.id}
                     compact
+                    visualVariant="homeEditorial"
+                    reduceTransparency={reduceTransparency}
                     homeTeam={game.home_team?.name ?? game.home_team_id}
                     awayTeam={game.away_team?.name ?? game.away_team_id}
                     dateLabel={formatDate(game.scheduled_at)}
@@ -762,28 +843,122 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 24, gap: 8 },
-  loadingBlock: { marginVertical: 24 },
-  headerRow: {
-    marginTop: 0,
-    marginBottom: 6,
-    flexDirection: 'row',
+  arenaBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  arenaGlow: {
+    position: 'absolute',
+    top: -80,
+    left: -60,
+    right: -80,
+    height: 360,
+    borderRadius: 180,
+  },
+  arenaRink: {
+    position: 'absolute',
+    width: 250,
+    height: 470,
+    right: -120,
+    top: 120,
+    borderWidth: 1,
+    borderColor: homeTokens.rinkLine,
+    borderRadius: 125,
+    transform: [{ rotate: '-10deg' }],
+  },
+  arenaCenterLine: {
+    position: 'absolute',
+    top: '50%',
+    right: 0,
+    left: 0,
+    height: 1,
+    backgroundColor: homeTokens.rinkLine,
+  },
+  arenaCenterCircle: {
+    position: 'absolute',
+    top: 191,
+    left: 81,
+    width: 86,
+    height: 86,
+    borderWidth: 1,
+    borderColor: homeTokens.rinkLine,
+    borderRadius: 43,
+  },
+  arenaFaceoffCircle: {
+    position: 'absolute',
+    left: 98,
+    width: 52,
+    height: 52,
+    borderWidth: 1,
+    borderColor: homeTokens.rinkLine,
+    borderRadius: 26,
+  },
+  arenaFaceoffTop: { top: 58 },
+  arenaFaceoffBottom: { bottom: 58 },
+  content: {
+    paddingHorizontal: homeTokens.contentPadding,
+    paddingTop: 6,
+    paddingBottom: 32,
+    gap: 10,
+  },
+  loadingBlock: {
+    minHeight: 120,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderRadius: homeTokens.cardRadius,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    color: homeTokens.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  headerRow: {
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    paddingVertical: 12,
   },
   brandWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    alignItems: 'flex-start',
+    gap: 10,
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
-  smallLogo: { width: 28, height: 28 },
-  logo: { fontSize: 18, fontWeight: '900', letterSpacing: 0.3, flexShrink: 1 },
-  logoSub: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginTop: 1 },
+  logoFrame: {
+    width: homeTokens.minTouchTarget,
+    height: homeTokens.minTouchTarget,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: homeTokens.control,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallLogo: { width: 30, height: 30 },
+  brandCopy: { flex: 1, minWidth: 0 },
+  homeEyebrow: { fontSize: 10, lineHeight: 13, fontWeight: '900', letterSpacing: 1.8 },
+  logo: {
+    color: homeTokens.text,
+    fontSize: 24,
+    lineHeight: 27,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    flexShrink: 1,
+  },
+  logoCompact: {
+    fontSize: 19,
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
+  logoSub: { fontSize: 11, color: homeTokens.textSecondary, fontWeight: '600', marginTop: 4 },
   iconButton: {
-    width: ui.minTouchTarget,
-    height: ui.minTouchTarget,
+    width: homeTokens.minTouchTarget,
+    height: homeTokens.minTouchTarget,
+    minHeight: homeTokens.minTouchTarget,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
@@ -791,10 +966,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSurface,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    shadowColor: colors.brandRink,
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
   },
   notificationBadge: {
     position: 'absolute',
@@ -814,6 +989,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     color: colors.textPrimary,
+  },
+  sectionHeading: {
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  sectionEyebrow: {
+    color: homeTokens.success,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+    letterSpacing: 1.8,
+  },
+  sectionTitle: {
+    color: homeTokens.text,
+    fontSize: 25,
+    lineHeight: 29,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginTop: 1,
+  },
+  sectionRule: {
+    width: 38,
+    height: 2,
+    marginTop: 8,
+    borderRadius: 1,
+    backgroundColor: homeTokens.success,
   },
   syncRow: { marginBottom: 4 },
   syncPill: {
@@ -1037,39 +1238,50 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   crossLeagueMetaText: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
-  quickActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 2 },
+  quickActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   quickActionsRowCompact: { flexDirection: 'column' },
   quickActionCard: {
     flex: 1,
-    backgroundColor: colors.bgSurface,
-    borderRadius: ui.radius.card,
+    minHeight: 88,
+    backgroundColor: homeTokens.surface,
+    borderRadius: homeTokens.cardRadius,
     borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: 12,
+    borderColor: homeTokens.stroke,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 6,
+    justifyContent: 'center',
   },
   quickActionCardCompact: { flex: 0 },
-  quickActionTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800' },
-  quickActionMeta: { color: colors.textSecondary, fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  quickActionTitle: { color: homeTokens.text, fontSize: 15, fontWeight: '900' },
+  quickActionMeta: { color: homeTokens.textSecondary, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   nextGameCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: ui.radius.panel,
+    minHeight: homeTokens.minTouchTarget,
+    backgroundColor: homeTokens.surface,
+    borderRadius: homeTokens.panelRadius,
     borderWidth: 1,
-    borderColor: colors.glassStrokeStrong,
-    borderLeftWidth: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 6,
-    gap: 10,
+    borderColor: homeTokens.stroke,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 8,
+    gap: 12,
     overflow: 'hidden',
-    shadowColor: colors.brandRink,
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: '#000000',
+    shadowOpacity: 0.34,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+  },
+  matchupRinkLine: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: homeTokens.rinkLine,
   },
   ngHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  ngLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
-  ngDateLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  ngLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.6 },
+  ngDateLabel: { fontSize: 12, color: homeTokens.textSecondary, fontWeight: '700' },
   ngTeamsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1079,22 +1291,42 @@ const styles = StyleSheet.create({
   ngTeamsRowCompact: {
     flexDirection: 'column',
     alignItems: 'stretch',
-    gap: 12,
+    gap: 10,
   },
-  ngTeamBlock: { flex: 1, alignItems: 'flex-start', gap: 6 },
+  ngTeamBlock: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    alignItems: 'flex-start',
+    gap: 6,
+  },
   ngTeamBlockRight: { alignItems: 'flex-end' },
-  ngTeamBlockCompact: { alignItems: 'center' },
-  ngTeamName: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, lineHeight: 17 },
-  ngTeamNameRight: { textAlign: 'right' },
-  ngTeamNameCompact: { textAlign: 'center' },
-  ngTeamNameMyTeam: {
-    color: colors.textPrimary,
-    fontWeight: '900',
-    textDecorationLine: 'underline',
+  ngTeamBlockCompact: {
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  ngVs: { fontSize: 16, fontWeight: '900', marginHorizontal: 8 },
-  ngLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -2 },
-  ngLocationText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', flex: 1 },
+  ngTeamName: { fontSize: 16, fontWeight: '900', color: homeTokens.textSecondary, lineHeight: 19 },
+  ngTeamNameRight: { textAlign: 'right' },
+  ngTeamNameCompact: { flex: 1, textAlign: 'left', fontSize: 14, lineHeight: 18 },
+  ngTeamNameMyTeam: {
+    color: homeTokens.text,
+    fontWeight: '900',
+  },
+  ngVs: {
+    alignSelf: 'center',
+    color: homeTokens.text,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginHorizontal: 6,
+  },
+  ngLocationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: -2 },
+  ngLocationText: { fontSize: 12, lineHeight: 17, color: homeTokens.textSecondary, fontWeight: '700', flex: 1 },
   ngCheckinRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   ngCheckinBtn: {
     flex: 1,
@@ -1106,33 +1338,33 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.glassStroke,
+    borderColor: homeTokens.stroke,
   },
   ngCheckinBtnText: { fontSize: 13, fontWeight: '800' },
   ngCheckinSummary: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: homeTokens.textSecondary,
     textAlign: 'center',
     fontWeight: '600',
   },
   guestCheckinHint: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: homeTokens.textSecondary,
     textAlign: 'center',
     fontWeight: '600',
     paddingVertical: 4,
   },
   noGameCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: ui.radius.card,
+    minHeight: 118,
+    backgroundColor: homeTokens.surface,
+    borderRadius: homeTokens.cardRadius,
     borderWidth: 1,
-    borderColor: colors.glassStroke,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.borderCard,
-    padding: 14,
-    gap: 3,
-    marginBottom: 6,
+    borderColor: homeTokens.stroke,
+    padding: 16,
+    gap: 5,
+    marginBottom: 8,
+    justifyContent: 'center',
   },
-  noGameTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
-  noGameSub: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  noGameTitle: { fontSize: 17, fontWeight: '900', color: homeTokens.text },
+  noGameSub: { fontSize: 13, color: homeTokens.textSecondary, lineHeight: 19 },
 });
