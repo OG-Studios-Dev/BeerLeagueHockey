@@ -7,7 +7,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AccessibilityPreferencesProvider } from './src/context/AccessibilityPreferencesContext';
-import { LeagueProvider } from './src/context/LeagueContext';
+import MembershipDiagnosticsCard from './src/components/MembershipDiagnosticsCard';
+import { LeagueProvider, useLeague } from './src/context/LeagueContext';
 import RootNavigation from './src/navigation';
 import LeagueSelectScreen from './src/screens/auth/LeagueSelectScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
@@ -28,6 +29,7 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 
 function AppContent() {
   const { session, isLoading, isGuest } = useAuth();
+  const { membershipDiagnostics, membershipStatus, retryMemberships } = useLeague();
 
   if (isLoading) {
     return (
@@ -51,12 +53,24 @@ function AppContent() {
   }
 
   return (
-    <AuthStack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Splash" component={SplashScreen} />
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <AuthStack.Screen name="SignUp" component={SignUpScreen} />
-    </AuthStack.Navigator>
+    <View style={styles.authShell}>
+      <View style={styles.authNavigation}>
+        <AuthStack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+          <AuthStack.Screen name="Splash" component={SplashScreen} />
+          <AuthStack.Screen name="Login" component={LoginScreen} />
+          <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+        </AuthStack.Navigator>
+      </View>
+      {membershipStatus === 'error' || membershipStatus === 'incomplete' ? (
+        <MembershipDiagnosticsCard
+          diagnostics={membershipDiagnostics}
+          status={membershipStatus}
+          onRetry={retryMemberships}
+          initiallyExpanded
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -78,6 +92,11 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  authShell: {
+    flex: 1,
+    backgroundColor: '#0A0F1E',
+  },
+  authNavigation: { flex: 1 },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',

@@ -14,7 +14,8 @@ interface AuthContextType {
   signInWithApple: () => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   continueAsGuest: () => void;
-  signOut: () => Promise<void>;
+  exitGuest: () => void;
+  signOut: () => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,18 +26,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isGuest, setIsGuest] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setIsLoading(false);
-    });
+    let isMounted = true;
+    let isBootstrapCurrent = true;
+
+    void supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (!isMounted || !isBootstrapCurrent) return;
+        setSession(session);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (!isMounted || !isBootstrapCurrent) return;
+        setIsLoading(false);
+      });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return;
+      isBootstrapCurrent = false;
       setSession(nextSession);
+      setIsLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      isBootstrapCurrent = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signInWithEmail = async (email: string, password: string) => {
@@ -68,9 +85,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuest(true);
   };
 
-  const signOut = async () => {
+  const exitGuest = () => {
     setIsGuest(false);
-    await supabase.auth.signOut();
+  };
+
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) {
+        return { error: new Error(error.message) };
+      }
+
+      setIsGuest(false);
+      return { error: null };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error : new Error('Unable to log out on this device'),
+      };
+    }
   };
 
   return (
@@ -85,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithApple,
         signInWithGoogle,
         continueAsGuest,
+        exitGuest,
         signOut,
       }}
     >

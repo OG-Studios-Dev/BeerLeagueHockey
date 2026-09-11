@@ -15,16 +15,33 @@ function normalizeHex(color: string): string | null {
   return value;
 }
 
+function relativeLuminance(hex: string) {
+  const channels = [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)]
+    .map((value) => parseInt(value, 16) / 255)
+    .map((value) => value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4);
+
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(firstLuminance: number, secondLuminance: number) {
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 export function getContrastTextColor(backgroundColor?: string | null) {
   if (!backgroundColor) return colors.textOnPrimary;
 
   const hex = normalizeHex(backgroundColor);
   if (!hex) return colors.textPrimary;
 
-  const r = parseInt(hex.slice(0, 2), 16) / 255;
-  const g = parseInt(hex.slice(2, 4), 16) / 255;
-  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const backgroundLuminance = relativeLuminance(hex);
+  const primaryTextHex = normalizeHex(colors.textPrimary)!;
+  const onPrimaryTextHex = normalizeHex(colors.textOnPrimary)!;
+  const primaryTextContrast = contrastRatio(backgroundLuminance, relativeLuminance(primaryTextHex));
+  const onPrimaryTextContrast = contrastRatio(backgroundLuminance, relativeLuminance(onPrimaryTextHex));
 
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance > 0.62 ? colors.textOnPrimary : colors.textPrimary;
+  return primaryTextContrast > onPrimaryTextContrast ? colors.textPrimary : colors.textOnPrimary;
 }

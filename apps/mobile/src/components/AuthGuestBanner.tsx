@@ -10,13 +10,19 @@ import colors from '../theme/colors';
  * Tapping "Sign In" exits guest mode and returns to the auth flow.
  */
 export default function AuthGuestBanner() {
-  const { signOut } = useAuth();
+  const { exitGuest } = useAuth();
 
   return (
     <View style={styles.container}>
       <Ionicons name="lock-closed-outline" size={16} color="#FFFFFF" />
       <Text style={styles.text}>Sign in to unlock all features</Text>
-      <Pressable style={styles.button} onPress={signOut}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Sign in"
+        hitSlop={6}
+        style={styles.button}
+        onPress={exitGuest}
+      >
         <Text style={styles.buttonText}>Sign In</Text>
       </Pressable>
     </View>
@@ -39,6 +45,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   button: {
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 12,
     paddingVertical: 6,

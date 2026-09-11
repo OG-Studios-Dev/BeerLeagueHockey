@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import React from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
@@ -17,13 +16,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
+import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
 import { getLeagueMarketplace, type LeagueMatch } from '../lib/leagueMarketplace';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
+import { getContrastTextColor } from '../theme/contrast';
+import MembershipDiagnosticsCard from './MembershipDiagnosticsCard';
 import TeamLogo from './TeamLogo';
 
 type SortMode = 'nearest' | 'fit';
+type MembershipActionState = 'available' | 'loading' | 'unavailable' | 'guest';
 
 // --- Skeleton Card ---
 function SkeletonCard() {
@@ -58,6 +62,7 @@ function FitBadge({ label, color }: { label: string; color: string }) {
 function LeagueCard({
   item,
   isMember,
+  membershipActionState,
   isCompact,
   onViewPress,
   onJoinPress,
@@ -65,6 +70,7 @@ function LeagueCard({
 }: {
   item: LeagueMatch;
   isMember: boolean;
+  membershipActionState: MembershipActionState;
   isCompact: boolean;
   onViewPress: (item: LeagueMatch) => void;
   onJoinPress: (item: LeagueMatch) => void;
@@ -126,7 +132,7 @@ function LeagueCard({
         >
           <Text style={[styles.joinBtnText, { color: accentColor }]}>Enter League →</Text>
         </TouchableOpacity>
-      ) : (
+      ) : membershipActionState === 'available' ? (
         <View style={[styles.actionRow, isCompact && styles.actionRowCompact]}>
           <TouchableOpacity
             style={[styles.actionBtnOutline, { borderColor: accentColor, flex: 1 }]}
@@ -142,6 +148,32 @@ function LeagueCard({
           >
             <Text style={styles.actionBtnGhostText}>Request to Join</Text>
           </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[styles.actionRow, isCompact && styles.actionRowCompact]}>
+          <TouchableOpacity
+            style={[styles.actionBtnOutline, { borderColor: accentColor, flex: 1 }]}
+            onPress={() => onViewPress(item)}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.actionBtnOutlineText, { color: accentColor }]}>View League</Text>
+          </TouchableOpacity>
+          {membershipActionState === 'guest' ? (
+            <TouchableOpacity
+              accessibilityLabel="Sign in to request league membership"
+              style={[styles.actionBtnGhost, { flex: 1 }]}
+              onPress={() => onJoinPress(item)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.actionBtnGhostText}>Sign In to Join</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.actionBtnGhost, styles.disabledMembershipAction, { flex: 1 }]}>
+              <Text style={styles.actionBtnGhostText}>
+                {membershipActionState === 'loading' ? 'Checking membership…' : 'Membership unavailable'}
+              </Text>
+            </View>
+          )}
         </View>
       )}
     </Pressable>
@@ -164,8 +196,16 @@ export default function LeagueMarketplace({
   showJoinedLeagues = false,
   includeTopInset = true,
 }: LeagueMarketplaceProps) {
-  const { availableLeagues, setActiveLeague } = useLeague();
-  const { width } = useWindowDimensions();
+  const {
+    availableLeagues,
+    setActiveLeague,
+    membershipStatus,
+    membershipDiagnostics,
+    retryMemberships,
+  } = useLeague();
+  const { session, isGuest, exitGuest } = useAuth();
+  const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
+  const { width, height } = useWindowDimensions();
   const isCompact = width < 390;
   const canGoBack = typeof navigation?.canGoBack === 'function' ? navigation.canGoBack() : false;
 
@@ -180,10 +220,22 @@ export default function LeagueMarketplace({
 
   // Load marketplace
   React.useEffect(() => {
-    (async () => {
+    let active = true;
+    void (async () => {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      const result = await getLeagueMarketplace(user?.id ?? null);
+      let userId: string | null = null;
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error) userId = user?.id ?? null;
+      } catch {}
+
+      let result: Awaited<ReturnType<typeof getLeagueMarketplace>>;
+      try {
+        result = await getLeagueMarketplace(userId);
+      } catch {
+        result = { leagues: [], userRating: null, userTier: null };
+      }
+      if (!active) return;
       setLeagues(result.leagues);
       setUserRating(result.userRating);
 
@@ -205,14 +257,25 @@ export default function LeagueMarketplace({
         }
       }
 
-      setLoading(false);
+      if (active) setLoading(false);
     })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const memberIds = React.useMemo(
     () => new Set(availableLeagues.map((l) => l.id)),
     [availableLeagues],
   );
+
+  const membershipActionState: MembershipActionState = isGuest
+    ? 'guest'
+    : !session || membershipStatus === 'loading'
+      ? 'loading'
+      : membershipStatus === 'ready' || membershipStatus === 'empty'
+        ? 'available'
+        : 'unavailable';
 
   const sorted = React.useMemo(() => {
     const list = [...leagues];
@@ -255,6 +318,10 @@ export default function LeagueMarketplace({
   };
 
   const handleJoinPress = (item: LeagueMatch) => {
+    if (isGuest) {
+      exitGuest();
+      return;
+    }
     Alert.alert(
       'Request to Join',
       `Contact your league admin to join ${item.name}. Visit beerleaguehockey.ca to learn more.`,
@@ -292,6 +359,37 @@ export default function LeagueMarketplace({
       </ScrollView>
     </View>
   ) : null;
+
+  const membershipFailure = !isGuest && session && (membershipStatus === 'error' || membershipStatus === 'incomplete');
+  const listHeader = (
+    <>
+      {membershipFailure ? (
+        <View style={styles.membershipNotice} accessibilityRole="alert">
+          <Text style={styles.membershipNoticeTitle}>
+            {membershipStatus === 'error' ? "Couldn't load leagues" : 'Membership unavailable'}
+          </Text>
+          <Text style={styles.membershipNoticeBody}>
+            We could not confirm all of your league memberships. Existing league access is kept when available.
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading league memberships"
+            style={styles.membershipRetry}
+            onPress={retryMemberships}
+          >
+            <Text style={styles.membershipRetryText}>Retry</Text>
+          </TouchableOpacity>
+          <MembershipDiagnosticsCard
+            diagnostics={membershipDiagnostics}
+            status={membershipStatus}
+            onRetry={retryMemberships}
+            initiallyExpanded
+          />
+        </View>
+      ) : null}
+      {joinedLeagueStrip}
+    </>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={includeTopInset ? ['top'] : ['left', 'right']}>
@@ -372,11 +470,12 @@ export default function LeagueMarketplace({
           data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={joinedLeagueStrip}
+          ListHeaderComponent={listHeader}
           renderItem={({ item }) => (
             <LeagueCard
               item={item}
               isMember={memberIds.has(item.id)}
+              membershipActionState={membershipActionState}
               isCompact={isCompact}
               onViewPress={handleViewLeague}
               onJoinPress={handleJoinPress}
@@ -396,81 +495,178 @@ export default function LeagueMarketplace({
         />
       )}
 
-      <Modal visible={selectedLeague != null} transparent animationType="fade" onRequestClose={() => setSelectedLeague(null)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedLeague(null)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
+      <Modal
+        visible={selectedLeague != null}
+        transparent
+        animationType={reduceMotion ? 'none' : 'fade'}
+        onRequestClose={() => setSelectedLeague(null)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable
+            accessible={false}
+            style={[styles.modalOverlay, reduceTransparency && styles.modalOverlayOpaque]}
+            onPress={() => setSelectedLeague(null)}
+          />
+          <SafeAreaView pointerEvents="box-none" edges={['top', 'bottom']} style={styles.modalSafeArea}>
             {selectedLeague ? (
-              <>
-                <View style={styles.modalHeader}>
-                  <TeamLogo
-                    logoUrl={selectedLeague.logo_url}
-                    teamName={selectedLeague.short_name ?? selectedLeague.name}
-                    primaryColor={selectedLeague.primary_color ?? colors.primary}
-                    size={56}
-                  />
-                  <View style={styles.modalHeaderCopy}>
-                    <Text style={styles.modalTitle}>{selectedLeague.name}</Text>
-                    <Text style={styles.modalSubtitle}>
-                      {[selectedLeague.city, selectedLeague.distanceKm != null ? `${selectedLeague.distanceKm} km away` : null]
-                        .filter(Boolean)
-                        .join(' · ')}
+              <View
+                accessibilityViewIsModal
+                accessibilityLabel={`${selectedLeague.name} league details`}
+                style={[styles.modalCard, { maxHeight: Math.max(280, height - 32) }]}
+              >
+                <ScrollView
+                  bounces={false}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.modalContent}
+                >
+                  <View style={styles.modalHeader}>
+                    <TeamLogo
+                      logoUrl={selectedLeague.logo_url}
+                      teamName={selectedLeague.short_name ?? selectedLeague.name}
+                      primaryColor={selectedLeague.primary_color ?? colors.primary}
+                      size={56}
+                    />
+                    <View style={styles.modalHeaderCopy}>
+                      <Text style={styles.modalTitle}>{selectedLeague.name}</Text>
+                      <Text style={styles.modalSubtitle}>
+                        {[
+                          selectedLeague.city,
+                          selectedLeague.distanceKm != null ? `${selectedLeague.distanceKm} km away` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Close league details"
+                      hitSlop={8}
+                      style={styles.modalCloseButton}
+                      onPress={() => setSelectedLeague(null)}
+                    >
+                      <Ionicons name="close" size={22} color={colors.textPrimary} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.modalBadges}>
+                    <FitBadge label={selectedLeague.fitLabel} color={selectedLeague.fitColor} />
+                    {selectedLeague.leagueMedianRating ? (
+                      <FitBadge label={`Median: ${selectedLeague.leagueMedianRating}`} color={colors.primary} />
+                    ) : null}
+                    {selectedLeague.leagueRatingRange ? (
+                      <FitBadge label={`Range: ${selectedLeague.leagueRatingRange}`} color={colors.textSecondary} />
+                    ) : null}
+                  </View>
+
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Why it fits</Text>
+                    <Text style={styles.modalSectionBody}>
+                      BLH Overview ranks leagues using your location and player-rating fit. This league is currently marked as{' '}
+                      <Text style={[styles.modalSectionBody, { color: selectedLeague.fitColor }]}>
+                        {selectedLeague.fitLabel.toLowerCase()}
+                      </Text>
+                      .
                     </Text>
                   </View>
-                </View>
 
-                <View style={styles.modalBadges}>
-                  <FitBadge label={selectedLeague.fitLabel} color={selectedLeague.fitColor} />
-                  {selectedLeague.leagueMedianRating ? (
-                    <FitBadge label={`Median: ${selectedLeague.leagueMedianRating}`} color={colors.primary} />
-                  ) : null}
-                  {selectedLeague.leagueRatingRange ? (
-                    <FitBadge label={`Range: ${selectedLeague.leagueRatingRange}`} color={colors.textSecondary} />
-                  ) : null}
-                </View>
-
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Why it fits</Text>
-                  <Text style={styles.modalSectionBody}>
-                    BLH Overview ranks leagues using your location and player-rating fit. This league is currently marked as{' '}
-                    <Text style={[styles.modalSectionBody, { color: selectedLeague.fitColor }]}>{selectedLeague.fitLabel.toLowerCase()}</Text>.
-                  </Text>
-                </View>
-
-                <View style={styles.modalActions}>
-                  {memberIds.has(selectedLeague.id) ? (
-                    <TouchableOpacity
-                      style={[styles.modalPrimaryButton, { backgroundColor: selectedLeague.primary_color ?? colors.primary }]}
-                      onPress={() => {
-                        setSelectedLeague(null);
-                        handleSelectLeague(selectedLeague);
-                      }}
-                      activeOpacity={0.82}
-                    >
-                      <Text style={styles.modalPrimaryButtonText}>Open League</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <>
+                  {membershipFailure ? (
+                    <View style={styles.modalMembershipNotice} accessibilityRole="alert">
+                      <Text style={styles.membershipNoticeTitle}>
+                        {membershipStatus === 'error' ? "Couldn't load leagues" : 'Membership unavailable'}
+                      </Text>
+                      <Text style={styles.membershipNoticeBody}>
+                        Membership actions are paused until the league check succeeds.
+                      </Text>
                       <TouchableOpacity
-                        style={[styles.modalPrimaryButton, { backgroundColor: selectedLeague.primary_color ?? colors.primary }]}
-                        onPress={() => openLeagueSite(selectedLeague)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Retry loading league memberships from league details"
+                        style={styles.membershipRetry}
+                        onPress={retryMemberships}
+                      >
+                        <Text style={styles.membershipRetryText}>Retry</Text>
+                      </TouchableOpacity>
+                      <MembershipDiagnosticsCard
+                        diagnostics={membershipDiagnostics}
+                        status={membershipStatus}
+                        onRetry={retryMemberships}
+                      />
+                    </View>
+                  ) : null}
+
+                  <View style={styles.modalActions}>
+                    {memberIds.has(selectedLeague.id) ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.modalPrimaryButton,
+                          { backgroundColor: selectedLeague.primary_color ?? colors.primary },
+                        ]}
+                        onPress={() => {
+                          setSelectedLeague(null);
+                          handleSelectLeague(selectedLeague);
+                        }}
                         activeOpacity={0.82}
                       >
-                        <Text style={styles.modalPrimaryButtonText}>Open League Site</Text>
+                        <Text
+                          style={[
+                            styles.modalPrimaryButtonText,
+                            { color: getContrastTextColor(selectedLeague.primary_color ?? colors.primary) },
+                          ]}
+                        >
+                          Open League
+                        </Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.modalSecondaryButton}
-                        onPress={() => handleJoinPress(selectedLeague)}
-                        activeOpacity={0.82}
-                      >
-                        <Text style={styles.modalSecondaryButtonText}>Request to Join</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[
+                            styles.modalPrimaryButton,
+                            { backgroundColor: selectedLeague.primary_color ?? colors.primary },
+                          ]}
+                          onPress={() => openLeagueSite(selectedLeague)}
+                          activeOpacity={0.82}
+                        >
+                          <Text
+                            style={[
+                              styles.modalPrimaryButtonText,
+                              { color: getContrastTextColor(selectedLeague.primary_color ?? colors.primary) },
+                            ]}
+                          >
+                            Open League Site
+                          </Text>
+                        </TouchableOpacity>
+                        {membershipActionState === 'available' ? (
+                          <TouchableOpacity
+                            style={styles.modalSecondaryButton}
+                            onPress={() => handleJoinPress(selectedLeague)}
+                            activeOpacity={0.82}
+                          >
+                            <Text style={styles.modalSecondaryButtonText}>Request to Join</Text>
+                          </TouchableOpacity>
+                        ) : membershipActionState === 'guest' ? (
+                          <TouchableOpacity
+                            accessibilityLabel="Sign in to request league membership"
+                            style={styles.modalSecondaryButton}
+                            onPress={() => handleJoinPress(selectedLeague)}
+                            activeOpacity={0.82}
+                          >
+                            <Text style={styles.modalSecondaryButtonText}>Sign In to Join</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={[styles.modalSecondaryButton, styles.disabledMembershipAction]}>
+                            <Text style={styles.modalSecondaryButtonText}>
+                              {membershipActionState === 'loading' ? 'Checking membership…' : 'Membership unavailable'}
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    )}
+                  </View>
+                </ScrollView>
+              </View>
             ) : null}
-          </Pressable>
-        </Pressable>
+          </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -567,6 +763,27 @@ const styles = StyleSheet.create({
   },
 
   listContent: { paddingHorizontal: 16, paddingBottom: 40, gap: 10 },
+  membershipNotice: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.accentRed,
+    backgroundColor: colors.bgSurface,
+    padding: 14,
+    gap: 8,
+    marginBottom: 10,
+  },
+  membershipNoticeTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '900' },
+  membershipNoticeBody: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  membershipRetry: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.bgInteractive,
+  },
+  membershipRetryText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   joinedLeaguesSection: {
     gap: 8,
     paddingBottom: 10,
@@ -670,6 +887,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionBtnGhostText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  disabledMembershipAction: { opacity: 0.72, justifyContent: 'center', alignItems: 'center' },
 
   // Skeleton
   skeletonCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.bgInteractive },
@@ -681,18 +899,31 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 36 },
   emptyText: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
   emptySubtext: { fontSize: 13, color: colors.textSecondary },
-  modalOverlay: {
+  modalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(2, 6, 23, 0.86)',
+  },
+  modalOverlayOpaque: {
+    backgroundColor: '#020617',
+  },
+  modalSafeArea: {
+    flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
   modalCard: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: '#0C1B31',
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.glassStrokeStrong,
+    overflow: 'hidden',
+  },
+  modalContent: {
     padding: 18,
+    paddingBottom: 22,
     gap: 16,
   },
   modalHeader: {
@@ -703,6 +934,18 @@ const styles = StyleSheet.create({
   modalHeaderCopy: {
     flex: 1,
     minWidth: 0,
+  },
+  modalCloseButton: {
+    width: 44,
+    height: 44,
+    marginTop: -6,
+    marginRight: -6,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgInteractive,
+    borderWidth: 1,
+    borderColor: colors.borderCard,
   },
   modalTitle: {
     fontSize: 20,
@@ -734,6 +977,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.textPrimary,
+  },
+  modalMembershipNotice: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.accentRed,
+    padding: 12,
+    gap: 8,
   },
   modalActions: {
     gap: 10,

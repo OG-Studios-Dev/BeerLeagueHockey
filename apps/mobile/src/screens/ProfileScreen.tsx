@@ -2,6 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
+  Alert,
   Linking,
   ActivityIndicator,
   Pressable,
@@ -16,9 +17,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../components/Avatar';
 import BrandAtmosphere from '../components/BrandAtmosphere';
+import MembershipDiagnosticsCard from '../components/MembershipDiagnosticsCard';
 import RevealView from '../components/RevealView';
 import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
+import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { supabase } from '../lib/supabase/client';
@@ -181,7 +184,16 @@ function formatRecord(wins: number, losses: number, ties: number) {
 }
 
 export default function ProfileScreen({ navigation }: { navigation: any }) {
-  const { activeLeague, activeTheme, setActiveLeague, availableLeagues } = useLeague();
+  const { isGuest, exitGuest, signOut } = useAuth();
+  const {
+    activeLeague,
+    activeTheme,
+    setActiveLeague,
+    availableLeagues,
+    membershipStatus,
+    membershipDiagnostics,
+    retryMemberships,
+  } = useLeague();
   const { width } = useWindowDimensions();
   const isCompact = width < 390;
 
@@ -199,6 +211,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const [activeTeams, setActiveTeams] = React.useState<ActiveTeamCard[]>([]);
   const [teamStandings, setTeamStandings] = React.useState<TeamStanding[]>([]);
   const [isCaptain, setIsCaptain] = React.useState(false);
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+  const isSigningOutRef = React.useRef(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -513,7 +527,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
       }
     }
 
-    load();
+    void load().catch(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -634,9 +652,72 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     Linking.openURL(`https://${team.leagueSlug}.beerleaguehockey.ca`).catch(() => {});
   };
 
+  const handleAccountAction = () => {
+    if (isSigningOutRef.current) return;
+
+    if (isGuest) {
+      exitGuest();
+      return;
+    }
+
+    Alert.alert(
+      'Log Out?',
+      'You will need to sign in again to access your teams and private league information on this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            if (isSigningOutRef.current) return;
+            isSigningOutRef.current = true;
+            setIsSigningOut(true);
+            try {
+              const { error } = await signOut();
+              if (error) {
+                Alert.alert('Unable to Log Out', error.message);
+              }
+            } finally {
+              isSigningOutRef.current = false;
+              setIsSigningOut(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="medium" />
+      <View style={styles.accountActionBar}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isGuest ? 'Sign in' : 'Log out'}
+          accessibilityState={{ busy: isSigningOut, disabled: isSigningOut }}
+          disabled={isSigningOut}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.accountActionButton,
+            pressed && !isSigningOut && styles.accountActionButtonPressed,
+          ]}
+          onPress={handleAccountAction}
+        >
+          {isSigningOut ? (
+            <ActivityIndicator size="small" color={colors.textPrimary} />
+          ) : (
+            <Ionicons name={isGuest ? 'log-in-outline' : 'log-out-outline'} size={18} color={colors.textPrimary} />
+          )}
+          <Text style={styles.accountActionText}>
+            {isSigningOut ? 'Signing Out…' : isGuest ? 'Sign In' : 'Log Out'}
+          </Text>
+        </Pressable>
+      </View>
+      <MembershipDiagnosticsCard
+        diagnostics={membershipDiagnostics}
+        status={membershipStatus}
+        onRetry={retryMemberships}
+      />
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={activeTheme.primaryColor} />
@@ -1149,6 +1230,27 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: 16, paddingBottom: 32, gap: 0 },
+  accountActionBar: {
+    zIndex: 1,
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  accountActionButton: {
+    minWidth: 104,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.glassStrokeStrong,
+    backgroundColor: colors.bgElevated,
+  },
+  accountActionButtonPressed: { opacity: 0.72 },
+  accountActionText: { color: colors.textPrimary, fontSize: 14, fontWeight: '800' },
 
   headerCard: {
     marginTop: 10,

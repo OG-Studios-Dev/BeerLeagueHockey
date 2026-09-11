@@ -175,3 +175,7 @@ apps/remotion/build/
 /apps/mobile/android
 # Exclude Git metadata files/directories at any depth, including worktree .git files.
 .git
+
+# Approved upload-only exclusions for local agent runtime output and settings.
+/.claude/orchestration.log
+/.claude/settings.local.json
