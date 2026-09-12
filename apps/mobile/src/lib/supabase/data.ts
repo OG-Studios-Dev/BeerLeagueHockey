@@ -259,6 +259,7 @@ export async function getStatsLeaders(
   limit = 20,
   divisionId?: string | null,
   seasonId?: string | null,
+  options: { throwOnError?: boolean } = {},
 ): Promise<PlayerStatRow[]> {
   const { data: rpcData, error: rpcError } = await supabase.rpc('get_stats_leaders', {
     p_league_id: leagueId,
@@ -300,7 +301,11 @@ export async function getStatsLeaders(
     .order(statType, { ascending: false })
     .limit(limit);
 
-  if (error || !stats) return [];
+  if (error) {
+    if (options.throwOnError) throw new Error(error.message);
+    return [];
+  }
+  if (!stats) return [];
 
   return dedupByPlayerId((stats as any[]).map((s) => ({
     player_id: s.player_id,

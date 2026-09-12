@@ -8,7 +8,9 @@ import GuestBanner from '../components/GuestBanner';
 import PillToggle from '../components/PillToggle';
 import PlayerRow from '../components/PlayerRow';
 import SectionHeader from '../components/SectionHeader';
+import StatsLeadersCard, { type StatsLeaderMetric, type StatsLeaderStatus } from '../components/StatsLeadersCard';
 import { useLeague } from '../context/LeagueContext';
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { supabase } from '../lib/supabase/client';
 import { getStatsLeaders, getGoalieLeaders, type GoalieStatRow, type PlayerStatRow } from '../lib/supabase/data';
@@ -81,6 +83,26 @@ export default function StatsScreen() {
   const [goalies, setGoalies] = React.useState<EnrichedGoalie[]>([]);
   const [globalLeaders, setGlobalLeaders] = React.useState<GlobalLeagueLeaders[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const [leaderMetric, setLeaderMetric] = React.useState<StatsLeaderMetric>('goals');
+  const [leaderRetry, setLeaderRetry] = React.useState(0);
+  const [leaderSnapshot, setLeaderSnapshot] = React.useState<{ scope: string; status: StatsLeaderStatus; rows: EnrichedPlayer[] }>({ scope: '', status: 'loading', rows: [] });
+  const leaderLeagueId = activeLeague?.id;
+  const leaderDivisionId = activeDivision?.id;
+  const leaderScope = `${leaderLeagueId ?? ''}:${leaderDivisionId ?? ''}:${leaderMetric}`;
+  const leaderCard = leaderSnapshot.scope === leaderScope ? leaderSnapshot : { status: 'loading' as const, rows: [] };
+
+  React.useEffect(() => {
+    let current = true;
+    if (!leaderLeagueId) return;
+    setLeaderSnapshot({ scope: leaderScope, status: 'loading', rows: [] });
+    // Query the selected metric's top five, not a client sort of the points table.
+    getStatsLeaders(leaderLeagueId, leaderMetric, 5, leaderDivisionId, undefined, { throwOnError: true })
+      .then(enrichWithAvatars)
+      .then((rows) => { if (current) setLeaderSnapshot({ scope: leaderScope, status: 'ready', rows }); })
+      .catch(() => { if (current) setLeaderSnapshot({ scope: leaderScope, status: 'error', rows: [] }); });
+    return () => { current = false; };
+  }, [leaderLeagueId, leaderDivisionId, leaderMetric, leaderRetry, leaderScope]);
 
   React.useEffect(() => {
     if (!activeLeague) {
@@ -207,39 +229,27 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-      <View style={styles.headerWrap}>
-        <SectionHeader title="League Leaders" />
-        <DivisionFilter
-          divisions={divisions}
-          activeDivision={activeDivision}
-          primaryColor={activeTheme.primaryColor}
-          onSelect={setActiveDivision}
-        />
-        <PillToggle options={tabs} selected={selectedTab} onChange={setSelectedTab} />
-      </View>
-
-      {loading ? (
-        <View style={styles.loadingWrap}><ActivityIndicator color={activeTheme.primaryColor} /></View>
-      ) : list.length === 0 ? (
-        <View style={styles.emptyWrap}><Text style={styles.emptyTitle}>{emptyMsg}</Text></View>
-      ) : (
-        <FlatList
-          data={list}
-          keyExtractor={(item, index) => `${item.player_id}-${index}`}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item, index }) => (
-            <PlayerRow
-              rank={index + 1}
-              name={item.player_name}
-              teamShortName={item.team_short_name}
-              highlight={index === 0}
-              avatarUrl={item.avatar_url}
-              stats={item.stats}
-              onPress={() => navigateToPlayerCard(navigation, { playerId: item.player_id, leagueId: activeLeague.id })}
-            />
-          )}
-        />
-      )}
+      <View style={styles.headerWrap}><SectionHeader title="Stats" /></View>
+      <FlatList
+        testID="stats-page-list"
+        data={loading ? [] : list}
+        keyExtractor={(item, index) => `${item.player_id}-${index}`}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <>
+            <StatsLeadersCard leagueName={activeLeague.name} divisionName={activeDivision?.name} metric={leaderMetric} leaders={leaderCard.rows} status={leaderCard.status} reduceTransparency={reduceTransparency} onMetricChange={setLeaderMetric} onRetry={() => setLeaderRetry((value) => value + 1)} onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id })} />
+            <View style={styles.tableControls}>
+              <Text accessibilityRole="header" style={styles.tableTitle}>Player stats</Text>
+              <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} />
+              <PillToggle options={tabs} selected={selectedTab} onChange={setSelectedTab} />
+            </View>
+          </>
+        }
+        ListEmptyComponent={loading ? <View style={styles.tableEmpty}><ActivityIndicator color={activeTheme.primaryColor} /></View> : <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>{emptyMsg}</Text></View>}
+        renderItem={({ item, index }) => (
+          <PlayerRow rank={index + 1} name={item.player_name} teamShortName={item.team_short_name} highlight={index === 0} avatarUrl={item.avatar_url} stats={item.stats} onPress={() => navigateToPlayerCard(navigation, { playerId: item.player_id, leagueId: activeLeague.id })} />
+        )}
+      />
     </SafeAreaView>
   );
 }
@@ -247,7 +257,10 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   headerWrap: { paddingHorizontal: 16, paddingBottom: 8 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 40 },
+  tableControls: { marginBottom: 10, gap: 8 },
+  tableTitle: { color: colors.textPrimary, fontSize: 18, lineHeight: 24, fontWeight: '800' },
+  tableEmpty: { paddingVertical: 28, alignItems: 'center', justifyContent: 'center' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
