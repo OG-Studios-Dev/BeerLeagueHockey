@@ -55,6 +55,7 @@ function runtime(getRows?: (...args: any[]) => Promise<any[]>, width = 390) {
       getStatsLeaders: async (...args: any[]) => { calls.push(args); if (getRows) return getRows(...args); return [...players].sort((a: any,b: any) => b[args[1]]-a[args[1]]).slice(0,args[2]); },
       getGoalieLeaders: async () => [],
     },
+    '../lib/supabase/publicStats': { getPublicGoalies: async () => ({ presentationSeason: null, source: 'empty', goalies: [] }) },
     '../theme/colors': colors,
   }).default;
   h.mount(() => Stats());

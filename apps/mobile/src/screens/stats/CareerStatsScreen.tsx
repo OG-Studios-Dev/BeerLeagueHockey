@@ -17,7 +17,7 @@ import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
 import { useAuth } from '../../context/AuthContext';
 import { useLeague } from '../../context/LeagueContext';
-import { supabase } from '../../lib/supabase/client';
+import { discoverCareerLeagues, loadCanonicalCareer, type CareerSeason } from '../../lib/supabase/publicStats';
 import colors from '../../theme/colors';
 
 type CareerTotals = {
@@ -25,139 +25,70 @@ type CareerTotals = {
   goals: number;
   assists: number;
   points: number;
-  penaltyMinutes: number;
-};
-
-type LeagueSeasonStat = {
-  seasonId: string;
-  seasonName: string;
-  leagueId: string;
-  leagueName: string;
-  teamName: string;
-  gamesPlayed: number;
-  goals: number;
-  assists: number;
-  points: number;
-  penaltyMinutes: number;
+  penaltyMinutes: number | null;
 };
 
 type LeagueGroup = {
   leagueId: string;
   leagueName: string;
-  seasons: LeagueSeasonStat[];
+  seasonCount: number;
+  seasons: CareerSeason[];
   expanded: boolean;
 };
 
-export default function CareerStatsScreen({ navigation }: { navigation: any }) {
+export default function CareerStatsScreen({ navigation }: { navigation: { goBack(): void } }) {
   const { user } = useAuth();
-  const { activeTheme } = useLeague();
+  const { availableLeagues } = useLeague();
   const [totals, setTotals] = React.useState<CareerTotals>({
     gamesPlayed: 0,
     goals: 0,
     assists: 0,
     points: 0,
-    penaltyMinutes: 0,
+    penaltyMinutes: null,
   });
   const [leagueGroups, setLeagueGroups] = React.useState<LeagueGroup[]>([]);
   const [profile, setProfile] = React.useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [status, setStatus] = React.useState<'loading' | 'ready' | 'error'>(user ? 'loading' : 'ready');
   const [refreshing, setRefreshing] = React.useState(false);
+  const [retry, setRetry] = React.useState(0);
+  const [snapshotScope, setSnapshotScope] = React.useState('');
+  const requestGeneration = React.useRef(0);
+  const careerScope = `${user?.id ?? 'signed-out'}:${availableLeagues.map(({ id, name, slug }) => `${id}:${name}:${slug}`).join('|')}`;
+  const viewStatus = snapshotScope === careerScope ? status : (user ? 'loading' : 'ready');
 
   const loadStats = React.useCallback(async () => {
-    if (!user) return;
-
-    try {
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('full_name, avatar_url')
-        .eq('id', user.id)
-        .maybeSingle();
-      setProfile(profileData);
-
-      // Fetch all player_season_stats for this user across all seasons/leagues
-      const { data: statsData } = await supabase
-        .from('player_season_stats')
-        .select('season_id, goals, assists, points, games_played, penalty_minutes, team_id, team_name, season:seasons(id, name, league_id, league:leagues(id, name))')
-        .eq('player_id', user.id)
-        .order('season_id', { ascending: false });
-
-      if (!statsData || statsData.length === 0) {
-        // Fallback: try player_stats table aggregated
-        const { data: gameStats } = await supabase
-          .from('player_stats')
-          .select('goals, assists, points, penalty_minutes, game_id')
-          .eq('player_id', user.id);
-
-        if (gameStats && gameStats.length > 0) {
-          const t: CareerTotals = {
-            gamesPlayed: gameStats.length,
-            goals: gameStats.reduce((sum, s) => sum + (s.goals || 0), 0),
-            assists: gameStats.reduce((sum, s) => sum + (s.assists || 0), 0),
-            points: gameStats.reduce((sum, s) => sum + (s.points || 0), 0),
-            penaltyMinutes: gameStats.reduce((sum, s) => sum + (s.penalty_minutes || 0), 0),
-          };
-          setTotals(t);
-        }
-        setLeagueGroups([]);
-        return;
-      }
-
-      // Build per-season stats with league info
-      const seasonStats: LeagueSeasonStat[] = (statsData as any[]).map((row) => {
-        const season = Array.isArray(row.season) ? row.season[0] : row.season;
-        const league = season ? (Array.isArray(season.league) ? season.league[0] : season.league) : null;
-        return {
-          seasonId: row.season_id,
-          seasonName: season?.name ?? 'Unknown Season',
-          leagueId: league?.id ?? '',
-          leagueName: league?.name ?? 'Unknown League',
-          teamName: row.team_name ?? 'Unknown Team',
-          gamesPlayed: Number(row.games_played) || 0,
-          goals: Number(row.goals) || 0,
-          assists: Number(row.assists) || 0,
-          points: Number(row.points) || 0,
-          penaltyMinutes: Number(row.penalty_minutes) || 0,
-        };
-      });
-
-      // Calculate career totals
-      const t: CareerTotals = {
-        gamesPlayed: seasonStats.reduce((sum, s) => sum + s.gamesPlayed, 0),
-        goals: seasonStats.reduce((sum, s) => sum + s.goals, 0),
-        assists: seasonStats.reduce((sum, s) => sum + s.assists, 0),
-        points: seasonStats.reduce((sum, s) => sum + s.points, 0),
-        penaltyMinutes: seasonStats.reduce((sum, s) => sum + s.penaltyMinutes, 0),
-      };
-      setTotals(t);
-
-      // Group by league
-      const groupMap = new Map<string, LeagueGroup>();
-      for (const stat of seasonStats) {
-        if (!groupMap.has(stat.leagueId)) {
-          groupMap.set(stat.leagueId, {
-            leagueId: stat.leagueId,
-            leagueName: stat.leagueName,
-            seasons: [],
-            expanded: false,
-          });
-        }
-        groupMap.get(stat.leagueId)!.seasons.push(stat);
-      }
-      setLeagueGroups(Array.from(groupMap.values()));
-    } finally {
-      setLoading(false);
+    const generation = ++requestGeneration.current;
+    if (!user) {
+      setSnapshotScope(careerScope); setStatus('ready'); setLeagueGroups([]); setProfile(null);
+      return true;
     }
-  }, [user]);
+    setSnapshotScope(careerScope);
+    setStatus('loading');
+    try {
+      const seeds = availableLeagues.map(({ id, name, slug }) => ({ id, name, slug }));
+      const leagues = await discoverCareerLeagues(user.id, seeds);
+      const career = await loadCanonicalCareer(user.id, leagues);
+      if (generation !== requestGeneration.current) return false;
+      setProfile(career.player ? { full_name: career.player.name, avatar_url: career.player.avatarUrl } : null);
+      setTotals(career.totals);
+      setLeagueGroups(career.leagues.filter((league) => league.seasons.length > 0).map((league) => ({ leagueId: league.id, leagueName: league.name,
+        seasonCount: league.seasonCount, seasons: league.seasons, expanded: false })));
+      setStatus('ready');
+      return true;
+    } catch {
+      if (generation === requestGeneration.current) { setStatus('error'); return true; }
+      return false;
+    }
+  }, [user, availableLeagues, careerScope]);
 
   React.useEffect(() => {
     void loadStats();
-  }, [loadStats]);
+    return () => { requestGeneration.current += 1; };
+  }, [loadStats, retry]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await loadStats();
-    setRefreshing(false);
+    if (await loadStats()) setRefreshing(false);
   }, [loadStats]);
 
   const toggleLeague = (leagueId: string) => {
@@ -168,7 +99,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: any }) {
     );
   };
 
-  if (loading) {
+  if (viewStatus === 'loading') {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
@@ -180,6 +111,21 @@ export default function CareerStatsScreen({ navigation }: { navigation: any }) {
         </View>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!user || viewStatus === 'error') {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}><Ionicons name="chevron-back" size={24} color={colors.textPrimary} /></Pressable>
+          <Text style={styles.headerTitle}>Career Stats</Text><View style={styles.backBtn} />
+        </View>
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>{user ? 'Unable to load career stats' : 'Sign in to view career stats'}</Text>
+          {user ? <Pressable testID="career-retry" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></Pressable> : null}
         </View>
       </SafeAreaView>
     );
@@ -248,11 +194,13 @@ export default function CareerStatsScreen({ navigation }: { navigation: any }) {
               <Text style={styles.totalLabel}>PTS</Text>
             </View>
             <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.penaltyMinutes}</Text>
+              <Text style={styles.totalValue}>{totals.penaltyMinutes ?? '—'}</Text>
               <Text style={styles.totalLabel}>PIM</Text>
             </View>
           </View>
         </View>
+        {totals.penaltyMinutes === null ? <Text style={styles.pimNote}>PIM unavailable for some historical records.</Text> : null}
+        <Text style={styles.scopeNote}>Published leagues only · Demo results excluded</Text>
 
         {/* By League Breakdown */}
         {leagueGroups.length > 0 && (
@@ -260,11 +208,11 @@ export default function CareerStatsScreen({ navigation }: { navigation: any }) {
             <SectionHeader title="By League" />
             {leagueGroups.map((group) => (
               <View key={group.leagueId} style={styles.leagueGroupCard}>
-                <Pressable style={styles.leagueGroupHeader} onPress={() => toggleLeague(group.leagueId)}>
+                <Pressable testID={`career-league-${group.leagueId}`} style={styles.leagueGroupHeader} onPress={() => toggleLeague(group.leagueId)}>
                   <View style={styles.leagueGroupInfo}>
                     <Text style={styles.leagueGroupName}>{group.leagueName}</Text>
                     <Text style={styles.leagueGroupMeta}>
-                      {group.seasons.length} season{group.seasons.length !== 1 ? 's' : ''}
+                      {group.seasonCount} season{group.seasonCount !== 1 ? 's' : ''}
                     </Text>
                   </View>
                   <Ionicons
@@ -288,13 +236,13 @@ export default function CareerStatsScreen({ navigation }: { navigation: any }) {
                       <View key={`${season.seasonId}-${index}`} style={styles.tableRow}>
                         <View style={styles.tableTeamCol}>
                           <Text style={styles.seasonName} numberOfLines={1}>{season.seasonName}</Text>
-                          <Text style={styles.seasonTeam} numberOfLines={1}>{season.teamName}</Text>
+                          <Text style={styles.seasonTeam} numberOfLines={1}>{season.teamName ?? 'League aggregate'}{season.source === 'imported' ? ' · Imported' : ''}</Text>
                         </View>
                         <Text style={styles.tableCell}>{season.gamesPlayed}</Text>
                         <Text style={styles.tableCell}>{season.goals}</Text>
                         <Text style={styles.tableCell}>{season.assists}</Text>
                         <Text style={[styles.tableCell, styles.tableCellHighlight]}>{season.points}</Text>
-                        <Text style={styles.tableCell}>{season.penaltyMinutes}</Text>
+                        <Text style={styles.tableCell}>{season.penaltyMinutes ?? '—'}</Text>
                       </View>
                     ))}
                   </View>
@@ -378,6 +326,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     letterSpacing: 0.5,
   },
+  pimNote: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  scopeNote: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  retryText: { color: colors.primary, fontSize: 15, fontWeight: '800', marginTop: 14 },
 
   leagueGroupCard: {
     backgroundColor: colors.bgSurface,
