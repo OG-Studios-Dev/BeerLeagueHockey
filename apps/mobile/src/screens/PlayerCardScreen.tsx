@@ -626,6 +626,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                         >
                           <View style={styles.recordIdentity}>
                             <TeamLogo
+                              teamId={standing.teamId}
                               logoUrl={standing.teamLogoUrl}
                               teamName={standing.teamName}
                               primaryColor={accentColor}
@@ -674,6 +675,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                       <View style={[styles.teamCardTop, isCompact && styles.teamCardTopCompact]}>
                         <View style={styles.teamIdentity}>
                           <TeamLogo
+                            teamId={team.teamId}
                             logoUrl={team.teamLogoUrl ?? team.leagueLogoUrl}
                             teamName={team.teamName}
                             primaryColor={accentColor}

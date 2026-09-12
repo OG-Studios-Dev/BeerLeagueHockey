@@ -212,6 +212,7 @@ export default function TeamScreen({ navigation }: Props) {
                 <View style={styles.globalTeamHeader}>
                   <View style={styles.globalTeamIdentity}>
                     <TeamLogo
+                      teamId={team.teamId}
                       logoUrl={team.teamLogoUrl}
                       teamName={team.teamName}
                       primaryColor={team.teamPrimaryColor ?? colors.primary}
@@ -342,6 +343,7 @@ export default function TeamScreen({ navigation }: Props) {
             </Pressable>
             <View testID="team-list-identity-card" style={[styles.teamHeaderCard, publicSurface]}>
               <TeamLogo
+                teamId={userTeamId}
                 logoUrl={teamLogoUrl}
                 teamName={teamName}
                 primaryColor={primaryColor}

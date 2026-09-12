@@ -251,6 +251,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
               {teams.map((team) => (
                 <View key={team.id} style={styles.teamRow}>
                   <TeamLogo
+                    teamId={team.id}
                     logoUrl={team.logo_url}
                     teamName={team.name}
                     primaryColor={team.primary_color}

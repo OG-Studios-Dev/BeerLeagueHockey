@@ -215,6 +215,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
             {/* Team Identity */}
             <View style={styles.teamIdentity}>
               <TeamLogo
+                teamId={team.teamId}
                 logoUrl={team.teamLogoUrl}
                 teamName={team.teamName}
                 primaryColor={team.teamPrimaryColor}

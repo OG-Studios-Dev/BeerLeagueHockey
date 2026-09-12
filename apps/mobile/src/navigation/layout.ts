@@ -8,3 +8,25 @@ export function getTabBarLayout(bottomInset: number) {
     itemMinHeight: 44,
   } as const;
 }
+
+export function getMobileDockLayout(width: number, bottomInset: number, height: number, topInset: number) {
+  const compact = width < 360;
+  return {
+    outerHeight: 104 + bottomInset,
+    horizontalPadding: compact ? 8 : 12,
+    touchMin: 44,
+    crestSize: compact ? 78 : 90,
+    tileColumns: width <= 320 ? 2 : 3,
+    sheetMaxHeight: Math.max(280, height - topInset - bottomInset - 52),
+    compact,
+  } as const;
+}
+
+export function getDockAccessibilityVisuals(reduceMotion: boolean, reduceTransparency: boolean) {
+  return {
+    animate: !reduceMotion,
+    fadeSheet: !reduceMotion,
+    glassGradient: !reduceTransparency,
+    opaqueSurface: reduceTransparency,
+  } as const;
+}

@@ -663,6 +663,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                     <View testID="home-matchup-teams" style={[styles.ngTeamsRow, isCompact && styles.ngTeamsRowCompact]}>
                       <View style={[styles.ngTeamBlock, isCompact && styles.ngTeamBlockCompact]}>
                         <TeamLogo
+                          teamId={nextGame.away_team_id}
                           logoUrl={nextGame.away_team?.logo_url ?? null}
                           teamName={nextGame.away_team?.name ?? '?'}
                           primaryColor={nextGame.away_team?.primary_color ?? colors.primary}
@@ -683,6 +684,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
                       <View style={[styles.ngTeamBlock, styles.ngTeamBlockRight, isCompact && styles.ngTeamBlockCompact]}>
                         <TeamLogo
+                          teamId={nextGame.home_team_id}
                           logoUrl={nextGame.home_team?.logo_url ?? null}
                           teamName={nextGame.home_team?.name ?? '?'}
                           primaryColor={nextGame.home_team?.primary_color ?? colors.primary}

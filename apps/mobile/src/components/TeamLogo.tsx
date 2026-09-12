@@ -1,23 +1,47 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, type ImageSourcePropType, StyleSheet, Text, View } from 'react-native';
 
 import { BLH_DEFAULT_TEAM_LOGO_URL } from '../lib/imagePlaceholders';
+import { getBundledTeamLogoSource } from '../lib/teamLogoSources';
 
 type Props = {
   logoUrl: string | null;
+  teamId?: string | null;
   teamName: string;
   primaryColor?: string | null;
   size?: number;
 };
 
-export default function TeamLogo({ logoUrl, teamName, primaryColor, size = 40 }: Props) {
-  const [imageUri, setImageUri] = React.useState(logoUrl ?? BLH_DEFAULT_TEAM_LOGO_URL);
-  const [showInitialsFallback, setShowInitialsFallback] = React.useState(false);
+function resolveInitialSource(teamId?: string | null, logoUrl?: string | null): ImageSourcePropType {
+  return getBundledTeamLogoSource(teamId, logoUrl) ?? { uri: logoUrl ?? BLH_DEFAULT_TEAM_LOGO_URL };
+}
+
+type LogoFallbackState = {
+  identityKey: string;
+  imageSource: ImageSourcePropType;
+  usingDefault: boolean;
+  showInitialsFallback: boolean;
+};
+
+function resolveInitialState(teamId?: string | null, logoUrl?: string | null): LogoFallbackState {
+  const imageSource = resolveInitialSource(teamId, logoUrl);
+  return {
+    identityKey: JSON.stringify([teamId ?? null, logoUrl ?? null]),
+    imageSource,
+    usingDefault: typeof imageSource === 'object' && imageSource !== null
+      && 'uri' in imageSource && imageSource.uri === BLH_DEFAULT_TEAM_LOGO_URL,
+    showInitialsFallback: false,
+  };
+}
+
+export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size = 40 }: Props) {
+  const initialState = React.useMemo(() => resolveInitialState(teamId, logoUrl), [teamId, logoUrl]);
+  const [fallback, setFallback] = React.useState<LogoFallbackState>(initialState);
+  const current = fallback.identityKey === initialState.identityKey ? fallback : initialState;
 
   React.useEffect(() => {
-    setImageUri(logoUrl ?? BLH_DEFAULT_TEAM_LOGO_URL);
-    setShowInitialsFallback(false);
-  }, [logoUrl]);
+    setFallback(initialState);
+  }, [initialState]);
 
   const initials = teamName
     .split(' ')
@@ -25,21 +49,28 @@ export default function TeamLogo({ logoUrl, teamName, primaryColor, size = 40 }:
     .join('')
     .toUpperCase()
     .slice(0, 2);
-  const circleStyle = { width: size, height: size, borderRadius: size / 2 };
+  const imageFrameStyle = { width: size, height: size };
+  const circleStyle = { ...imageFrameStyle, borderRadius: size / 2 };
   const bgColor = primaryColor ?? '#22D3EE';
 
-  if (!showInitialsFallback) {
+  if (!current.showInitialsFallback) {
     return (
       <Image
-        source={{ uri: imageUri }}
-        style={[circleStyle, styles.image]}
+        alt={teamName}
+        accessibilityLabel={teamName}
+        source={current.imageSource}
+        style={[imageFrameStyle, styles.image]}
         onError={() => {
-          if (imageUri !== BLH_DEFAULT_TEAM_LOGO_URL) {
-            setImageUri(BLH_DEFAULT_TEAM_LOGO_URL);
+          if (!current.usingDefault) {
+            setFallback({
+              ...current,
+              imageSource: { uri: BLH_DEFAULT_TEAM_LOGO_URL },
+              usingDefault: true,
+            });
             return;
           }
 
-          setShowInitialsFallback(true);
+          setFallback({ ...current, showInitialsFallback: true });
         }}
       />
     );
@@ -55,6 +86,7 @@ export default function TeamLogo({ logoUrl, teamName, primaryColor, size = 40 }:
 const styles = StyleSheet.create({
   image: {
     backgroundColor: 'rgba(255,255,255,0.06)',
+    resizeMode: 'contain',
   },
   fallback: { alignItems: 'center', justifyContent: 'center' },
   initials: { color: '#000000', fontWeight: '800' },

@@ -9,6 +9,7 @@ import PillToggle from '../components/PillToggle';
 import QuickCheckinActions from '../components/QuickCheckinActions';
 import ScheduleConflictList from '../components/ScheduleConflictList';
 import SectionHeader from '../components/SectionHeader';
+import TeamLogo from '../components/TeamLogo';
 import { useLeague } from '../context/LeagueContext';
 import { getScheduleConflicts } from '../lib/scheduleConflicts';
 import { getMyCheckins, getMyCheckinsForTeams, type CheckinStatus, updateCheckin } from '../lib/supabase/checkins';
@@ -76,7 +77,15 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function ScheduleScreen({ navigation }: { navigation: any }) {
+export default function ScheduleScreen({
+  navigation,
+  initialTab = 'Upcoming',
+  standalone = false,
+}: {
+  navigation: any;
+  initialTab?: ScheduleTab;
+  standalone?: boolean;
+}) {
   const {
     activeLeague,
     activeTheme,
@@ -87,7 +96,7 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
     availableLeagues,
     setActiveLeague,
   } = useLeague();
-  const [selectedTab, setSelectedTab] = React.useState<ScheduleTab>('Upcoming');
+  const [selectedTab, setSelectedTab] = React.useState<ScheduleTab>(initialTab);
   const [season, setSeason] = React.useState<Season | null>(null);
   const [games, setGames] = React.useState<GameRow[]>([]);
   const [standings, setStandings] = React.useState<StandingRow[]>([]);
@@ -357,7 +366,7 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
         <View style={styles.screenPadding}>
-          <SectionHeader title="Schedule" />
+          <SectionHeader title={standalone ? initialTab : 'Schedule'} />
         </View>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Select a league to see the schedule</Text>
@@ -370,7 +379,7 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['left', 'right']}>
         <View style={styles.screenPadding}>
-          <SectionHeader title="Schedule" />
+          <SectionHeader title={standalone ? initialTab : 'Schedule'} />
           <Text style={styles.globalScheduleIntro}>
             Upcoming games across every BLH league you play in. Switch into a league when you want standings or league-only views.
           </Text>
@@ -440,7 +449,7 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
       <GuestBanner />
       <View style={styles.screenPadding}>
-        <SectionHeader title="Schedule" />
+        <SectionHeader title={standalone ? initialTab : 'Schedule'} />
       </View>
 
       <DivisionFilter
@@ -450,9 +459,11 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
         onSelect={setActiveDivision}
       />
 
-      <View style={styles.screenPadding}>
-        <PillToggle options={scheduleTabs} selected={selectedTab} onChange={setSelectedTab} />
-      </View>
+      {!standalone ? (
+        <View style={styles.screenPadding}>
+          <PillToggle options={scheduleTabs} selected={selectedTab} onChange={setSelectedTab} />
+        </View>
+      ) : null}
 
       {selectedTab === 'Upcoming' ? (
         loadingGames ? (
@@ -569,7 +580,6 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
               {standings.map((row, index) => {
                 const isLeader = index === 0;
                 const color = row.primary_color ?? activeTheme.primaryColor;
-                const initial = (row.short_name ?? row.team_name ?? '?')[0];
                 return (
                   <Pressable
                     key={row.team_id ?? index}
@@ -578,9 +588,13 @@ export default function ScheduleScreen({ navigation }: { navigation: any }) {
                     disabled={!row.team_id}
                   >
                     <View style={styles.teamCol}>
-                      <View style={[styles.teamCircle, { backgroundColor: color }]}>
-                        <Text style={styles.teamCircleText}>{initial}</Text>
-                      </View>
+                      <TeamLogo
+                        teamId={row.team_id}
+                        logoUrl={row.logo_url ?? null}
+                        teamName={row.team_name ?? row.short_name ?? 'Team'}
+                        primaryColor={color}
+                        size={28}
+                      />
                       <Text style={[styles.teamName, isLeader ? styles.leaderText : undefined]} numberOfLines={1}>
                         {row.team_name ?? '—'}
                       </Text>
@@ -652,8 +666,6 @@ const styles = StyleSheet.create({
   },
   leaderRow: { backgroundColor: 'rgba(34, 211, 238, 0.08)' },
   teamCol: { flex: 2.8, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  teamCircle: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  teamCircleText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   teamName: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, flex: 1 },
   rowText: { flex: 0.8, fontSize: 14, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   ptsText: { fontWeight: '800', color: colors.textPrimary },

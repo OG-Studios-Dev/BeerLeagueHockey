@@ -290,6 +290,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
           <View style={[styles.teamStrip, { backgroundColor: awayColor + '33' }]}>
             <Text style={[styles.teamHeroLabel, { color: awayColor }]}>AWAY</Text>
             <TeamLogo
+              teamId={game.away_team_id}
               logoUrl={game.away_team?.logo_url ?? null}
               teamName={awayName}
               primaryColor={awayColor}
@@ -301,6 +302,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
           <View style={[styles.teamStrip, { backgroundColor: homeColor + '33' }]}>
             <Text style={[styles.teamHeroLabel, { color: homeColor }]}>HOME</Text>
             <TeamLogo
+              teamId={game.home_team_id}
               logoUrl={game.home_team?.logo_url ?? null}
               teamName={homeName}
               primaryColor={homeColor}

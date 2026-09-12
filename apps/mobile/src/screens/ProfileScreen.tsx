@@ -767,6 +767,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                 {teamName != null ? (
                   <View style={styles.teamBadge}>
                     <TeamLogo
+                      teamId={roster?.team?.id ?? null}
                       logoUrl={roster?.team?.logo_url ?? null}
                       teamName={teamName}
                       primaryColor={primaryColor}
@@ -899,6 +900,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                         >
                           <View style={styles.standingIdentity}>
                             <TeamLogo
+                              teamId={standing.teamId}
                               logoUrl={standing.teamLogoUrl}
                               teamName={standing.teamName}
                               primaryColor={accentColor}
@@ -962,6 +964,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                       <View style={[styles.currentTeamHeader, isCompact && styles.currentTeamHeaderCompact]}>
                         <View style={styles.currentTeamIdentity}>
                           <TeamLogo
+                            teamId={team.teamId}
                             logoUrl={team.teamLogoUrl ?? team.leagueLogoUrl}
                             teamName={team.teamName}
                             primaryColor={accentColor}

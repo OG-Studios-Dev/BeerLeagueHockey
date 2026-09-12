@@ -213,6 +213,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
           <View style={styles.scoreRow}>
             <View style={styles.scoreTeam}>
               <TeamLogo
+                teamId={game.away_team_id}
                 logoUrl={game.away_team?.logo_url ?? null}
                 teamName={awayName}
                 primaryColor={awayColor}
@@ -227,6 +228,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
             </View>
             <View style={styles.scoreTeam}>
               <TeamLogo
+                teamId={game.home_team_id}
                 logoUrl={game.home_team?.logo_url ?? null}
                 teamName={homeName}
                 primaryColor={homeColor}

@@ -588,6 +588,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
 
                   <View style={[styles.upcomingIdentityRow, isCompact && styles.upcomingIdentityRowCompact]}>
                     <TeamLogo
+                      teamId={game.myTeamId}
                       logoUrl={game.home_team?.logo_url ?? game.away_team?.logo_url ?? null}
                       teamName={game.myTeamName}
                       primaryColor={game.home_team?.primary_color ?? game.away_team?.primary_color ?? colors.primary}
@@ -691,6 +692,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                 >
                   <View style={styles.teamWatchHeader}>
                     <TeamLogo
+                      teamId={team.teamId}
                       logoUrl={team.teamLogoUrl}
                       teamName={team.teamName}
                       primaryColor={team.teamPrimaryColor ?? colors.primary}

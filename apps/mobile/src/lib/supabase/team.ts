@@ -14,6 +14,7 @@ export type TeamAssignment = {
   team_name: string;
   primary_color: string | null;
   logo_url: string | null;
+  leadership_role: string | null;
 };
 
 export type TeamRosterMember = {
@@ -141,7 +142,7 @@ export async function getActiveSeasonTeamForUser(
 ): Promise<TeamAssignment | null> {
   const { data, error } = await supabase
     .from('team_rosters')
-    .select('id, team_id, league_id, season_id, joined_at, team:teams!team_rosters_team_id_fkey(id, name, primary_color, logo_url)')
+    .select('id, team_id, league_id, season_id, joined_at, leadership_role, team:teams!team_rosters_team_id_fkey(id, name, primary_color, logo_url)')
     .eq('player_id', userId)
     .eq('league_id', leagueId)
     .eq('season_id', seasonId)
@@ -163,6 +164,7 @@ export async function getActiveSeasonTeamForUser(
     team_name: team.name ?? 'Unknown team',
     primary_color: team.primary_color ?? null,
     logo_url: team.logo_url ?? null,
+    leadership_role: data.leadership_role ?? null,
   };
 }
 

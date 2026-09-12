@@ -936,7 +936,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           />
           <View style={[styles.heroIdentity, isCompact && styles.heroIdentityCompact]}>
             <View style={[styles.heroLogoWell, { borderColor: `${primaryColor}55` }]}>
-              <TeamLogo logoUrl={team.logo_url} teamName={teamName} primaryColor={primaryColor} size={96} />
+              <TeamLogo teamId={team.id} logoUrl={team.logo_url} teamName={teamName} primaryColor={primaryColor} size={96} />
             </View>
             <View style={styles.heroCopy} testID="team-hero-copy">
               <Text style={[styles.heroEyebrow, { color: primaryColor }]}>{league?.name ?? 'League'}</Text>

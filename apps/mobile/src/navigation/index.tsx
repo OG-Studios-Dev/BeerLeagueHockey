@@ -1,10 +1,8 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AuthGuestBanner from '../components/AuthGuestBanner';
 import LeagueSwitcher from '../components/LeagueSwitcher';
@@ -27,6 +25,7 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 import ScheduleScreen from '../screens/ScheduleScreen';
+import StandingsScreen from '../screens/StandingsScreen';
 import StatsScreen from '../screens/StatsScreen';
 import TeamScreen from '../screens/TeamScreen';
 import TeamDetailScreen from '../screens/TeamScreen/TeamDetailScreen';
@@ -44,18 +43,36 @@ import InvitePlayersScreen from '../screens/captain/InvitePlayersScreen';
 import LineupNotesScreen from '../screens/captain/LineupNotesScreen';
 import TeamChatScreen from '../screens/team/TeamChatScreen';
 
-import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 import { getSurfacePalette } from '../theme/ui';
-import { getTabBarLayout } from './layout';
+import MobileWebDock from './MobileWebDock';
 
 const Tab = createBottomTabNavigator();
 const ScheduleStack = createNativeStackNavigator<ScheduleStackParamList>();
+const StandingsStack = createNativeStackNavigator<ScheduleStackParamList>();
 const TeamStack = createNativeStackNavigator<TeamStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const DiscoverStack = createNativeStackNavigator<DiscoverStackParamList>();
 const StatsStack = createNativeStackNavigator<StatsStackParamList>();
 const CaptainStack = createNativeStackNavigator<CaptainStackParamList>();
+
+export const VISIBLE_DOCK_CONTROLS = ['Standings', 'Schedule', 'Team', 'Stats', 'More'] as const;
+
+// Mirrors the public page inventory in the current league-sites FloatingDock.
+// Visibility, season phase and authentication are applied at runtime.
+export const PUBLIC_MORE_PAGE_LABELS = [
+  'Teams',
+  'Players',
+  'Playoffs',
+  'News',
+  'Suspensions',
+  'History',
+  'Gallery',
+  'Events',
+  'Venues',
+  'About',
+  'Contact',
+] as const;
 
 function AppHeaderBackground() {
   const { reduceTransparency } = useAccessibilityPreferences();
@@ -82,31 +99,6 @@ function AppHeaderBackground() {
   );
 }
 
-function AppTabBackground() {
-  const { reduceTransparency } = useAccessibilityPreferences();
-  const palette = getSurfacePalette(reduceTransparency);
-
-  return (
-    <View style={StyleSheet.absoluteFill}>
-      <LinearGradient
-        colors={reduceTransparency
-          ? [palette.elevated, palette.elevated]
-          : ['rgba(8, 13, 24, 0.98)', 'rgba(11, 18, 33, 0.94)', 'rgba(8, 12, 22, 0.98)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={[`${colors.brandArena}20`, 'transparent']}
-        start={{ x: 0.8, y: 0 }}
-        end={{ x: 0.15, y: 1 }}
-        style={styles.tabGlow}
-      />
-      <View style={styles.tabHairline} />
-    </View>
-  );
-}
-
 function ScheduleNavigator() {
   return (
     <ScheduleStack.Navigator screenOptions={{ headerShown: false }}>
@@ -114,6 +106,16 @@ function ScheduleNavigator() {
       <ScheduleStack.Screen name="GamePreview" component={GamePreviewScreen} />
       <ScheduleStack.Screen name="GameRecap" component={GameRecapScreen} />
     </ScheduleStack.Navigator>
+  );
+}
+
+function StandingsNavigator() {
+  return (
+    <StandingsStack.Navigator screenOptions={{ headerShown: false }}>
+      <StandingsStack.Screen name="ScheduleList" component={StandingsScreen} />
+      <StandingsStack.Screen name="GamePreview" component={GamePreviewScreen} />
+      <StandingsStack.Screen name="GameRecap" component={GameRecapScreen} />
+    </StandingsStack.Navigator>
   );
 }
 
@@ -173,45 +175,17 @@ function CaptainNavigator() {
   );
 }
 
-// Hook to check if user is a captain on any team
-function useIsCaptain() {
-  const { user } = useAuth();
-  const [isCaptain, setIsCaptain] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!user) {
-      setIsCaptain(false);
-      return;
-    }
-
-    supabase
-      .from('team_rosters')
-      .select('leadership_role')
-      .eq('player_id', user.id)
-      .eq('status', 'active')
-      .in('leadership_role', ['captain', 'alternate_captain'])
-      .limit(1)
-      .then(({ data }) => {
-        setIsCaptain((data ?? []).length > 0);
-      });
-  }, [user?.id]);
-
-  return isCaptain;
-}
-
 export default function RootNavigation() {
   const { activeTheme } = useLeague();
   const { isGuest } = useAuth();
-  const isCaptain = useIsCaptain();
-  const insets = useSafeAreaInsets();
-  const tabBarLayout = getTabBarLayout(insets.bottom);
 
   return (
     <View style={{ flex: 1 }}>
       {isGuest ? <AuthGuestBanner /> : null}
       <Tab.Navigator
       initialRouteName="Home"
-      screenOptions={({ route }: any) => ({
+      tabBar={(props) => <MobileWebDock {...props} />}
+      screenOptions={() => ({
         headerShown: true,
         headerTitleAlign: 'center',
         headerStyle: {
@@ -223,79 +197,16 @@ export default function RootNavigation() {
         sceneStyle: {
           backgroundColor: activeTheme.backgroundColor,
         },
-        tabBarShowLabel: true,
-        tabBarAccessibilityLabel: `${route.name} tab`,
         tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: colors.tabActive,
-        tabBarInactiveTintColor: colors.tabInactive,
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '800',
-          marginTop: 0,
-        },
-        tabBarItemStyle: {
-          minHeight: tabBarLayout.itemMinHeight,
-          paddingVertical: 2,
-        },
-        tabBarStyle: {
-          backgroundColor: 'transparent',
-          borderTopWidth: 0,
-          height: tabBarLayout.height,
-          paddingTop: tabBarLayout.paddingTop,
-          paddingBottom: tabBarLayout.paddingBottom,
-          overflow: 'hidden',
-        },
-        tabBarBackground: () => <AppTabBackground />,
-        tabBarIcon: ({ color, size, focused }: any) => {
-          const iconSize = size + 1;
-
-          if (route.name === 'Schedule') {
-            return <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={iconSize} color={color} />;
-          }
-
-          if (route.name === 'Stats') {
-            return <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={iconSize} color={color} />;
-          }
-
-          if (route.name === 'Home') {
-            return <Ionicons name={focused ? 'home' : 'home-outline'} size={iconSize} color={color} />;
-          }
-
-          if (route.name === 'Discover') {
-            return <Ionicons name={focused ? 'compass' : 'compass-outline'} size={iconSize} color={color} />;
-          }
-
-          if (route.name === 'Team') {
-            return <MaterialCommunityIcons name="hockey-sticks" size={iconSize} color={color} />;
-          }
-
-          if (route.name === 'Captain') {
-            return (
-              <View>
-                <MaterialCommunityIcons name="shield-crown-outline" size={iconSize} color={color} />
-              </View>
-            );
-          }
-
-          return <Ionicons name={focused ? 'person' : 'person-outline'} size={iconSize} color={color} />;
-        },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Standings" component={StandingsNavigator} />
       <Tab.Screen name="Schedule" component={ScheduleNavigator} />
       <Tab.Screen name="Discover" component={DiscoverNavigator} />
       <Tab.Screen name="Stats" component={StatsNavigator} />
       <Tab.Screen name="Team" component={TeamNavigator} />
-      {isCaptain && (
-        <Tab.Screen
-          name="Captain"
-          component={CaptainNavigator}
-          options={{
-            tabBarBadge: undefined,
-            tabBarActiveTintColor: colors.brandGold,
-          }}
-        />
-      )}
+      <Tab.Screen name="Captain" component={CaptainNavigator} />
       <Tab.Screen name="Profile" component={ProfileNavigator} />
     </Tab.Navigator>
     </View>
@@ -315,21 +226,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     bottom: 0,
-    left: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.glassStroke,
-  },
-  tabGlow: {
-    ...StyleSheet.absoluteFillObject,
-    top: -12,
-    left: '35%',
-    bottom: '18%',
-    borderRadius: 999,
-  },
-  tabHairline: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
     left: 0,
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.glassStroke,

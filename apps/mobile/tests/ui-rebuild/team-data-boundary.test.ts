@@ -185,6 +185,27 @@ describe('Team-only Supabase boundary', () => {
     assert.ok(rosterQueries.every((query: Row) => query.filters.some((filter: Row) => filter.kind === 'is' && filter.column === 'end_date' && filter.value === null)));
   });
 
+  it('returns leadership only from the same newest current assignment used by the dock crest', async () => {
+    const captainDataset = {
+      ...dataset,
+      team_rosters: dataset.team_rosters.map((row) =>
+        row.id === 'a-1' ? { ...row, leadership_role: 'captain' } : row
+      ),
+    };
+    const teamData = loadTeamData(captainDataset);
+
+    const assignment = await teamData.getActiveSeasonTeamForUser('viewer', 'league-a', 'season-a');
+
+    assert.equal(assignment.leadership_role, 'captain');
+    const assignmentQuery = teamData.queryRecords.find((query: Row) =>
+      query.table === 'team_rosters' && query.filters.some((filter: Row) => filter.column === 'player_id' && filter.value === 'viewer')
+    );
+    assert.ok(assignmentQuery?.filters.some((filter: Row) => filter.kind === 'eq' && filter.column === 'league_id' && filter.value === 'league-a'));
+    assert.ok(assignmentQuery?.filters.some((filter: Row) => filter.kind === 'eq' && filter.column === 'season_id' && filter.value === 'season-a'));
+    assert.ok(assignmentQuery?.filters.some((filter: Row) => filter.kind === 'eq' && filter.column === 'status' && filter.value === 'active'));
+    assert.ok(assignmentQuery?.filters.some((filter: Row) => filter.kind === 'is' && filter.column === 'end_date' && filter.value === null));
+  });
+
   it('pairs each My Teams membership with its own league active season and deduplicates it', async () => {
     const teamData = loadTeamData(dataset);
     const result = await teamData.getActiveSeasonMembershipsForUser('viewer', [
