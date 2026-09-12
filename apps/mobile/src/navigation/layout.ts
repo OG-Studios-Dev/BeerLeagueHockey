@@ -12,10 +12,13 @@ export function getTabBarLayout(bottomInset: number) {
 export function getMobileDockLayout(width: number, bottomInset: number, height: number, topInset: number) {
   const compact = width < 360;
   return {
-    outerHeight: 104 + bottomInset,
-    horizontalPadding: compact ? 8 : 12,
+    outerHeight: (compact ? 114 : 124) + bottomInset,
+    horizontalPadding: compact ? 4 : 8,
     touchMin: 44,
-    crestSize: compact ? 78 : 90,
+    crestSize: compact ? 97.5 : 112.5,
+    crestArtSize: compact ? 87.5 : 102.5,
+    teamColumnWidth: compact ? 104 : 120,
+    topPadding: compact ? 34 : 42,
     tileColumns: width <= 320 ? 2 : 3,
     sheetMaxHeight: Math.max(280, height - topInset - bottomInset - 52),
     compact,

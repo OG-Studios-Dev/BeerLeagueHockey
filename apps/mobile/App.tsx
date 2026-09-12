@@ -1,4 +1,4 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer, type Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
@@ -27,6 +27,19 @@ type AppStackParamList = { Main: undefined; LeagueSelect: undefined; };
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 
+export const APP_NAVIGATION_THEME: Theme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: '#22D3EE',
+    background: '#07111F',
+    card: '#0A1628',
+    text: '#F7FBFF',
+    border: 'rgba(255, 255, 255, 0.12)',
+    notification: '#EF4444',
+  },
+};
+
 function AppContent() {
   const { session, isLoading, isGuest } = useAuth();
   const { membershipDiagnostics, membershipStatus, retryMemberships } = useLeague();
@@ -41,7 +54,7 @@ function AppContent() {
 
   if (session || isGuest) {
     return (
-      <AppStack.Navigator screenOptions={{ headerShown: false }}>
+      <AppStack.Navigator screenOptions={{ headerShown: false, contentStyle: styles.navigationCanvas }}>
         <AppStack.Screen name="Main" component={RootNavigation} />
         <AppStack.Screen
           name="LeagueSelect"
@@ -55,7 +68,7 @@ function AppContent() {
   return (
     <View style={styles.authShell}>
       <View style={styles.authNavigation}>
-        <AuthStack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+        <AuthStack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, contentStyle: styles.navigationCanvas }}>
           <AuthStack.Screen name="Splash" component={SplashScreen} />
           <AuthStack.Screen name="Login" component={LoginScreen} />
           <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
@@ -76,11 +89,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={styles.appRoot}>
       <AccessibilityPreferencesProvider>
         <AuthProvider>
           <LeagueProvider>
-            <NavigationContainer>
+            <NavigationContainer theme={APP_NAVIGATION_THEME}>
               <StatusBar style="light" />
               <AppContent />
             </NavigationContainer>
@@ -92,6 +105,13 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  appRoot: {
+    flex: 1,
+    backgroundColor: '#07111F',
+  },
+  navigationCanvas: {
+    backgroundColor: '#07111F',
+  },
   authShell: {
     flex: 1,
     backgroundColor: '#0A0F1E',

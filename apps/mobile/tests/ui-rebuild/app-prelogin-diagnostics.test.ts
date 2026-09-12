@@ -19,7 +19,14 @@ describe('unauthenticated app diagnostics reachability', () => {
     };
     const exports = compileCommonJs<{ default: () => unknown }>(new URL('../../App.tsx', import.meta.url), {
       react,
-      '@react-navigation/native': { NavigationContainer: passthrough },
+      '@react-navigation/native': {
+        NavigationContainer: passthrough,
+        DarkTheme: {
+          dark: true,
+          colors: { primary: '', background: '', card: '', text: '', border: '', notification: '' },
+          fonts: {},
+        },
+      },
       '@react-navigation/native-stack': { createNativeStackNavigator: () => stack },
       'expo-status-bar': { StatusBar: 'StatusBar' },
       'react-native': {

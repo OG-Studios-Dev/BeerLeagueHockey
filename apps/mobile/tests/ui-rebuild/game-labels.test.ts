@@ -163,35 +163,43 @@ const nextGame = {
   home_team: homeTeam, away_team: awayTeam,
 };
 const failNetwork = () => { throw new Error('The render harness must not call Supabase'); };
-const supabase = { auth: { getUser: failNetwork }, from: failNetwork };
-const data = load('../../src/lib/supabase/data.ts', { './client': { supabase } });
 
 function renderHome({
   game = nextGame as typeof nextGame | null,
   games = [] as GameRow[],
   guest = false,
 } = {}) {
-  // Seed the component's state slots in declaration order; do not execute data
-  // loading effects. useMemo and callbacks remain real, including recentFinals.
+  const publicHome = {
+    leagueId: league.id, leagueSlug: league.slug,
+    presentationSeason: { id: 'season-1' }, timezone: 'America/Toronto', weekKey: '2026-09-07:2026-09-13', divisions: [],
+    articles: { status: 'ready', data: [] },
+    weeklyGames: { status: 'ready', data: games },
+    leaders: { status: 'error', data: [], message: 'Unavailable' },
+    standings: { status: 'ready', data: [] }, photos: { status: 'ready', data: [] },
+    albums: { status: 'ready', data: [] }, community: { status: 'ready', data: [] },
+    sponsors: { status: 'ready', data: [{ id: 'blh-contract-fallback', name: 'Beer League Hockey', logo_url: null, website_url: 'https://beerleaguehockey.ca/', tier: 'platform', display_order: 0 }] },
+  };
+  // Seed the v2 component's state slots in declaration order; loading effects
+  // stay disabled so this remains a pure accessibility-name test.
   const state = [
-    games, homeTeam, game, false, // games, userTeam, nextGame, loadingLeague
-    [], [], false, {}, null, // global roster/games/loading/checkins/saving
-    false, null, // refreshing, lastUpdatedAt
-    'confirmed', { confirmed: 11, tentative: 2, out: 0 }, false, // check-in state
+    publicHome,
+    { status: 'ready', team: homeTeam, game },
+    false, 'goals', null, 0,
+    'confirmed', { confirmed: 11, tentative: 2, out: 0 }, false,
   ];
   let stateIndex = 0;
   const navigationCalls: unknown[][] = [];
-  const leagueSelections: unknown[] = [];
   const checkinCalls: unknown[][] = [];
   const HomeScreen = load<{ default: (props: object) => Tree }>('../../src/screens/HomeScreen.tsx', {
     react: {
+      Fragment: 'Fragment',
       useState: () => {
         assert.ok(stateIndex < state.length, 'Unexpected HomeScreen state slot');
         return [state[stateIndex++], () => {}];
       },
       useEffect: () => {},
-      useMemo: (factory: () => unknown) => factory(),
       useCallback: (callback: unknown) => callback,
+      useRef: (value: unknown) => ({ current: value }),
     },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-haptics': { ImpactFeedbackStyle: { Medium: 'medium' }, impactAsync: () => {} },
@@ -199,53 +207,62 @@ function renderHome({
     '../../assets/blh-logo.png': 'logo.png',
     '../context/LeagueContext': {
       useLeague: () => ({
-        activeLeague: league, availableLeagues: [league], isGuestLeague: guest,
-        setActiveLeague: (value: unknown) => { leagueSelections.push(value); },
+        activeLeague: league, isGuestLeague: guest,
         activeTheme: { primaryColor: '#22D3EE', secondaryColor: '#6366F1', backgroundColor: '#000000', textColor: '#FFFFFF' },
       }),
     },
-    '../lib/supabase/client': { supabase },
-    '../lib/supabase/data': data,
+    '../context/AuthContext': { useAuth: () => ({ user: { id: 'player-1' }, isGuest: false }) },
+    '../lib/supabase/client': { supabase: { from: failNetwork } },
+    '../lib/supabase/home': {
+      loadHomePublicSnapshot: failNetwork,
+      normalizeHomeGameStatus: (status: string) => status === 'completed' ? 'Final' : 'Scheduled',
+      toSafeWebUrl: (value: string) => value,
+    },
+    '../lib/supabase/team': { getTeamActiveSeason: failNetwork, getActiveSeasonTeamForUser: failNetwork },
+    '../navigation/playerCard': { navigateToPlayerCard: () => {} },
     '../lib/supabase/checkins': {
-      getGameCheckinSummary: failNetwork, getMyCheckins: failNetwork, getMyCheckinsForTeams: failNetwork,
+      getGameCheckinSummary: failNetwork, getMyCheckins: failNetwork,
       updateCheckin: async (...args: unknown[]) => { checkinCalls.push(args); return { success: true }; },
     },
-    '../components/GameCard': GameCard,
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.
-    ...Object.fromEntries(['BrandAtmosphere', 'GuestBanner', 'LeagueMarketplace', 'QuickCheckinActions',
-      'RevealView', 'ScheduleConflictList', 'SectionHeader', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
+    ...Object.fromEntries(['GuestBanner', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
   }).default;
   const tree = render(HomeScreen({ navigation: { navigate: (...args: unknown[]) => { navigationCalls.push(args); } } }));
   assert.equal(stateIndex, state.length, 'HomeScreen state fixture matches all hook slots');
-  return { tree, navigationCalls, leagueSelections, checkinCalls };
+  return { tree, navigationCalls, checkinCalls };
 }
 
 function nextGameCard(tree: Tree): Element {
-  const card = elements(tree).find((node) => node.type === 'Pressable' && visibleText(node).startsWith('NEXT GAME '));
+  const card = elements(tree).find((node) => node.props.testID === 'home-next-game-panel');
   assert.ok(card, 'Expected the rendered next-game card');
   return card;
 }
 
 describe('HomeScreen game accessibility', () => {
   it('announces next-game teams, date/time, venue and availability instead of only the detail instruction', async () => {
-    const { tree, navigationCalls, leagueSelections, checkinCalls } = renderHome();
+    const { tree, navigationCalls, checkinCalls } = renderHome();
     const card = nextGameCard(tree);
-    assert.equal(card.props.accessibilityRole, 'button');
-    assert.equal(visibleText(card), 'NEXT GAME Tue Sep 8 · 8:30 PM River Otters VS Harbour Wolves North Forum In Maybe Out 11 In · 2 Maybe · 0 Out');
-    expectAnnounced(card, ['River Otters', 'Harbour Wolves', 'Sep 8', '8:30 PM', 'North Forum', '11 In · 2 Maybe · 0 Out']);
-    assert.equal(card.props.accessibilityHint, 'Open next game details');
-    card.props.onPress?.();
-    assert.deepEqual(navigationCalls, [['Schedule', { screen: 'GamePreview', params: { gameId: 'next-game-1' } }]]);
-    assert.deepEqual(leagueSelections, [league]);
+    assert.equal(card.type, 'View');
+    assert.equal(card.props.accessibilityRole, undefined);
+    assert.equal(visibleText(card), 'Tue, Sep 8 · 8:30 PM River Otters VS Harbour Wolves North Forum In Maybe Out 11 In · 2 Maybe · 0 Out');
+    const detail = elements(card).find((node) => node.props.testID === 'home-next-game-details');
+    assert.ok(detail);
+    assert.equal(detail.props.accessibilityRole, 'button');
+    expectAnnounced(detail, ['River Otters', 'Harbour Wolves', 'Sep 8', '8:30 PM', 'North Forum', '11 In · 2 Maybe · 0 Out']);
+    assert.equal(detail.props.accessibilityHint, 'Open next game details');
 
-    const controls = elements(card).filter((node) => node.type === 'Pressable' && node !== card);
+    const controls = elements(card).filter((node) => node.type === 'Pressable' && node !== detail);
+    assert.equal(elements(detail).filter((node) => node.type === 'Pressable' && node !== detail).length, 0);
     assert.deepEqual(controls.map((node) => [node.props.accessibilityRole, node.props.accessibilityLabel, node.props.accessibilityState?.selected]), [
       ['button', 'Check in for next game', true],
       ['button', 'Mark next game as maybe', false],
       ['button', 'Decline next game', false],
     ]);
     for (const control of controls) await control.props.onPress?.();
+    assert.deepEqual(navigationCalls, [], 'check-in controls must never navigate to game details');
+    detail.props.onPress?.();
+    assert.deepEqual(navigationCalls, [['Schedule', { screen: 'GamePreview', initial: false, params: { gameId: 'next-game-1' } }]]);
     assert.deepEqual(checkinCalls, [
       ['next-game-1', 'home-1', 'confirmed'], ['next-game-1', 'home-1', 'tentative'], ['next-game-1', 'home-1', 'out'],
     ]);
@@ -254,19 +271,20 @@ describe('HomeScreen game accessibility', () => {
   it('retains the guest next-game join message in the accessible name', () => {
     const { tree } = renderHome({ guest: true });
     const card = nextGameCard(tree);
-    expectAnnounced(card, ['River Otters', 'Harbour Wolves', 'North Forum', 'Sep 8', '8:30 PM', 'Join this league to check in']);
+    const detail = elements(card).find((node) => node.props.testID === 'home-next-game-details');
+    assert.ok(detail);
+    expectAnnounced(detail, ['River Otters', 'Harbour Wolves', 'North Forum', 'Sep 8', '8:30 PM', 'Join this league to check in']);
     assert.equal(elements(card).filter((node) => node.type === 'Pressable').length, 1);
   });
 
-  it('keeps Recent Results scores and venue readable without inventing a detail action', () => {
+  it('keeps weekly final scores and venue readable on the native game destination', () => {
     const { tree } = renderHome({ game: null, games: [{
       ...nextGame, id: 'recent-game-1', season_id: 'season-1', status: 'completed', home_score: 4, away_score: 0,
     }] });
     const result = elements(tree).find((node) => node.type === 'Pressable' && visibleText(node).includes('Final'));
     assert.ok(result);
-    assert.equal(result.props.onPress, undefined);
-    assert.equal(result.props.disabled, true);
-    assert.equal(result.props.accessibilityRole, undefined);
+    assert.equal(typeof result.props.onPress, 'function');
+    assert.equal(result.props.accessibilityRole, 'button');
     assert.equal(result.props.accessibilityHint, undefined);
     expectAnnounced(result, ['Final', 'North Forum', 'River Otters 0', 'Harbour Wolves 4']);
   });

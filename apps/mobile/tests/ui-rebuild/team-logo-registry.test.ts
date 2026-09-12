@@ -109,4 +109,29 @@ describe('Hockey Life native artwork registry', () => {
     harness.render();
     assert.deepEqual(findNode(harness.output, (node) => node.type === 'Image')!.props.source, { uri: 'https://example.test/fallback.png' });
   });
+
+  it('keeps the shared image backing by default and removes it only for an explicit presentation opt-in', () => {
+    const harness = createHookHarness();
+    const props = {
+      teamId: 'team-a', logoUrl: null, teamName: 'Team A', transparentBacking: false,
+    };
+    const TeamLogo = compileCommonJs<{ default: (value: typeof props) => unknown }>(
+      new URL('../../src/components/TeamLogo.tsx', import.meta.url),
+      {
+        react: harness.react,
+        'react-native': {
+          Image: 'Image', Text: 'Text', View: 'View',
+          StyleSheet: { create: <T>(value: T) => value },
+        },
+        '../lib/imagePlaceholders': { BLH_DEFAULT_TEAM_LOGO_URL: 'https://example.test/fallback.png' },
+        '../lib/teamLogoSources': { getBundledTeamLogoSource: () => ({ bundled: 'team-a' }) },
+      },
+    ).default;
+    harness.mount(() => TeamLogo(props));
+    assert.equal(findNode(harness.output, (node) => node.type === 'Image')!.props.style[1].backgroundColor, 'rgba(255,255,255,0.06)');
+
+    props.transparentBacking = true;
+    harness.render();
+    assert.equal(findNode(harness.output, (node) => node.type === 'Image')!.props.style[2].backgroundColor, 'transparent');
+  });
 });

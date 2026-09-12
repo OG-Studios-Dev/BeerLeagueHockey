@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
 type DockState = {
   identityKey: string;
@@ -140,6 +140,38 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
 }
 
 describe('MobileWebDock component integration', () => {
+  it('renders the enlarged crest in a dedicated center column without visible Team text', () => {
+    const fixture = createDockFixture({
+      team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456' },
+    });
+    fixture.mount();
+
+    const teamControl = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-team');
+    const crest = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-team-crest');
+    const logo = findNode(crest, (node) => node.type === 'TeamLogo');
+    const surface = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-surface');
+
+    assert.equal(teamControl?.props.accessibilityLabel, 'Team, Team A');
+    const teamStyle = flattenStyle(teamControl?.props.style({ pressed: false }));
+    assert.deepEqual(
+      {
+        flexGrow: teamStyle.flexGrow,
+        flexShrink: teamStyle.flexShrink,
+        flexBasis: teamStyle.flexBasis,
+        width: teamStyle.width,
+        minWidth: teamStyle.minWidth,
+        maxWidth: teamStyle.maxWidth,
+      },
+      { flexGrow: 0, flexShrink: 0, flexBasis: 120, width: 120, minWidth: 120, maxWidth: 120 },
+    );
+    assert.equal(flattenStyle(crest?.props.style).width, 112.5);
+    assert.equal(logo?.props.size, 102.5);
+    assert.equal(logo?.props.transparentBacking, true);
+    assert.doesNotMatch(nodeText(teamControl), /Team/);
+    assert.equal(crest?.props.pointerEvents, 'none');
+    assert.equal(surface?.props.accessibilityLabel, 'Primary navigation');
+  });
+
   it('cancels deferred More actions on route/leaf changes and on unmount', () => {
     const routeFixture = createDockFixture({}, { reduceMotion: false, deferAnimations: true });
     routeFixture.mount();

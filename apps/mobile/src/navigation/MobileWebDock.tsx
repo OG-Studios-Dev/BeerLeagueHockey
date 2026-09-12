@@ -207,15 +207,23 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   if (keyboardVisible) return null;
 
   return (
-    <View testID="mobile-web-dock" style={[styles.dockOuter, { height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingBottom: Math.max(insets.bottom, 6) }]} pointerEvents="box-none">
-      <View style={[styles.dockShadow, { borderColor: `${primary}45` }]}>
+    <View testID="mobile-web-dock" style={[styles.dockOuter, { height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingBottom: Math.max(insets.bottom, 6), paddingTop: layout.topPadding }]} pointerEvents="box-none">
+      <View testID="dock-surface" accessibilityLabel="Primary navigation" style={[styles.dockShadow, { borderColor: `${primary}38` }]}>
         <LinearGradient
-          colors={reduceTransparency ? [palette.elevated, palette.elevated] : [`${primary}32`, 'rgba(9, 16, 30, 0.97)', `${secondary}24`]}
+          colors={reduceTransparency ? [palette.elevated, palette.elevated] : ['rgba(5, 9, 18, 0.99)', 'rgba(13, 23, 40, 0.985)', 'rgba(7, 13, 25, 0.99)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
+        <LinearGradient
+          pointerEvents="none"
+          colors={[`${primary}22`, 'transparent', `${secondary}18`]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
         <View style={styles.dockSheen} pointerEvents="none" />
+        <View style={styles.dockInnerRim} pointerEvents="none" />
         <View style={styles.controlsRow}>
           {CONTROLS.map((control) => {
             const active = control.key === 'More'
@@ -229,17 +237,24 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                 accessibilityRole="button"
                 accessibilityLabel={`${control.label}${isTeam && data.team ? `, ${data.team.team_name}` : ''}`}
                 accessibilityState={{ selected: active }}
+                aria-selected={active}
                 hitSlop={isTeam ? 0 : 4}
                 onPress={() => pressControl(control.key)}
                 style={({ pressed }) => [
                   styles.control,
                   { minWidth: layout.touchMin, minHeight: layout.touchMin },
-                  isTeam && styles.teamControl,
+                  !isTeam && active && [styles.controlActive, { borderColor: `${primary}48`, shadowColor: primary }],
+                  isTeam && [styles.teamControl, {
+                    flexBasis: layout.teamColumnWidth,
+                    width: layout.teamColumnWidth,
+                    minWidth: layout.teamColumnWidth,
+                    maxWidth: layout.teamColumnWidth,
+                  }],
                   pressed && styles.controlPressed,
                 ]}
               >
                 {isTeam ? (
-                  <View pointerEvents="none" style={[styles.crestWell, { width: layout.crestSize, height: layout.crestSize, borderRadius: layout.crestSize / 2, borderColor: active ? primary : 'rgba(255,255,255,0.28)' }]}>
+                  <View testID="dock-team-crest" pointerEvents="none" style={[styles.crestWell, { width: layout.crestSize, height: layout.crestSize, borderRadius: layout.crestSize / 2, borderColor: active ? primary : 'rgba(255,255,255,0.22)', shadowColor: active ? primary : '#000000' }]}>
                     {data.isLoading ? (
                       <ActivityIndicator color={primary} />
                     ) : data.team ? (
@@ -248,18 +263,22 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                         logoUrl={data.team.logo_url}
                         teamName={data.team.team_name}
                         primaryColor={data.team.primary_color}
-                        size={layout.crestSize - 8}
+                        size={layout.crestArtSize}
+                        transparentBacking
                       />
                     ) : (
                       <Ionicons name="shield-outline" size={38} color={active ? primary : colors.textSecondary} />
                     )}
                   </View>
                 ) : (
-                  <Ionicons name={control.icon} size={23} color={active ? primary : colors.tabInactive} />
+                  <Ionicons name={control.icon} size={22} color={active ? colors.textPrimary : '#D5DEEC'} />
                 )}
-                <Text numberOfLines={1} style={[styles.controlLabel, isTeam && styles.teamLabel, active && { color: primary }, layout.compact && styles.compactLabel]}>
-                  {control.label}
-                </Text>
+                {!isTeam ? (
+                  // Fixed dock labels cap scaling to fit reserved columns; content remains scalable.
+                  <Text numberOfLines={1} maxFontSizeMultiplier={layout.compact ? 1 : 1.1} style={[styles.controlLabel, active && { color: colors.textPrimary }, layout.compact && styles.compactLabel]}>
+                    {control.label}
+                  </Text>
+                ) : null}
               </Pressable>
             );
           })}
@@ -389,24 +408,24 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
 }
 
 const styles = StyleSheet.create({
-  dockOuter: { paddingTop: 30, backgroundColor: 'transparent' },
+  dockOuter: { backgroundColor: colors.bgBase },
   dockShadow: {
-    flex: 1, minHeight: 68, borderRadius: 25, borderWidth: 1, overflow: 'visible',
-    backgroundColor: 'rgba(8, 14, 27, 0.97)', shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.42, shadowRadius: 18, elevation: 18,
+    flex: 1, minHeight: 70, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth, overflow: 'visible',
+    backgroundColor: '#080F1C', shadowColor: '#000', shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.5, shadowRadius: 20, elevation: 18,
   },
-  dockSheen: { position: 'absolute', top: 1, right: 20, left: 20, height: 1, backgroundColor: 'rgba(255,255,255,0.24)' },
+  dockSheen: { position: 'absolute', top: 1, right: 24, left: 24, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.3)' },
+  dockInnerRim: { ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)' },
   controlsRow: { flex: 1, flexDirection: 'row', alignItems: 'stretch' },
-  control: { flex: 1, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 3, paddingTop: 7 },
-  teamControl: { marginTop: -28, minHeight: 96, paddingTop: 0, justifyContent: 'flex-end', paddingBottom: 6 },
+  control: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 44, minHeight: 44, marginVertical: 7, marginHorizontal: 0, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 2 },
+  controlActive: { backgroundColor: 'rgba(255,255,255,0.085)', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 2 },
+  teamControl: { flexGrow: 0, flexShrink: 0, marginTop: -38, marginBottom: 0, minHeight: 106, paddingTop: 0, justifyContent: 'flex-start', backgroundColor: 'transparent', borderColor: 'transparent' },
   controlPressed: { opacity: 0.68, transform: [{ scale: 0.97 }] },
-  controlLabel: { color: colors.tabInactive, fontSize: 10, lineHeight: 13, fontWeight: '800' },
-  teamLabel: { zIndex: 2, paddingHorizontal: 7, paddingVertical: 1, borderRadius: 8, backgroundColor: 'rgba(5,10,20,0.9)' },
+  controlLabel: { color: '#B8C4D6', fontSize: 10, lineHeight: 13, fontWeight: '800', letterSpacing: 0 },
   compactLabel: { fontSize: 9 },
   crestWell: {
-    position: 'absolute', top: 0, width: 90, height: 90, borderRadius: 45, borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#08101E', shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 16,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: '#07101D',
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.44, shadowRadius: 14, elevation: 16,
   },
   modalRoot: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 12 },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(1, 5, 12, 0.78)' },

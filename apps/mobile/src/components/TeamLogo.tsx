@@ -10,6 +10,7 @@ type Props = {
   teamName: string;
   primaryColor?: string | null;
   size?: number;
+  transparentBacking?: boolean;
 };
 
 function resolveInitialSource(teamId?: string | null, logoUrl?: string | null): ImageSourcePropType {
@@ -34,7 +35,7 @@ function resolveInitialState(teamId?: string | null, logoUrl?: string | null): L
   };
 }
 
-export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size = 40 }: Props) {
+export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size = 40, transparentBacking = false }: Props) {
   const initialState = React.useMemo(() => resolveInitialState(teamId, logoUrl), [teamId, logoUrl]);
   const [fallback, setFallback] = React.useState<LogoFallbackState>(initialState);
   const current = fallback.identityKey === initialState.identityKey ? fallback : initialState;
@@ -59,7 +60,7 @@ export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size
         alt={teamName}
         accessibilityLabel={teamName}
         source={current.imageSource}
-        style={[imageFrameStyle, styles.image]}
+        style={[imageFrameStyle, styles.image, transparentBacking && styles.transparentImage]}
         onError={() => {
           if (!current.usingDefault) {
             setFallback({
@@ -88,6 +89,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     resizeMode: 'contain',
   },
+  transparentImage: { backgroundColor: 'transparent' },
   fallback: { alignItems: 'center', justifyContent: 'center' },
   initials: { color: '#000000', fontWeight: '800' },
 });

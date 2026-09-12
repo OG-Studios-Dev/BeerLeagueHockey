@@ -180,7 +180,7 @@ export default function RootNavigation() {
   const { isGuest } = useAuth();
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={[styles.root, { backgroundColor: activeTheme.backgroundColor || colors.bgBase }]}>
       {isGuest ? <AuthGuestBanner /> : null}
       <Tab.Navigator
       initialRouteName="Home"
@@ -214,6 +214,10 @@ export default function RootNavigation() {
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.bgBase,
+  },
   headerGlow: {
     ...StyleSheet.absoluteFillObject,
     top: -32,

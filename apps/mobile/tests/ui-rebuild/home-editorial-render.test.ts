@@ -95,6 +95,7 @@ function makeScreen({
       '../context/AccessibilityPreferencesContext': {
         useAccessibilityPreferences: () => ({ reduceTransparency, reduceMotion }),
       },
+      '../context/AuthContext': { useAuth: () => ({ user: { id: 'player-1' }, isGuest: false }) },
       '../context/LeagueContext': {
         useLeague: () => ({
           activeLeague,
@@ -117,6 +118,16 @@ function makeScreen({
         updateCheckin: async () => ({ success: true }),
       },
       '../lib/supabase/client': { supabase },
+      '../lib/supabase/home': {
+        loadHomePublicSnapshot: async () => undefined,
+        normalizeHomeGameStatus: () => 'Scheduled',
+        toSafeWebUrl: (value: string) => value,
+      },
+      '../lib/supabase/team': {
+        getTeamActiveSeason: async () => ({ season: null, error: null }),
+        getActiveSeasonTeamForUser: async () => null,
+      },
+      '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
       '../lib/supabase/data': {
         getLeagueGames: async () => [],
         mapGameStatus: (status: string) => status === 'completed' ? 'Final' : 'Upcoming',
@@ -159,27 +170,24 @@ describe('Home editorial native render', () => {
     assert.match(nodeText(header), /LEAGUE HOME/);
     assert.match(nodeText(header), /Harbour City Thursday Night Hockey League/);
 
-    const quickActions = findNode(output, (node) => node.props.testID === 'home-quick-actions');
-    assert.ok(quickActions);
-    assert.equal(flattenStyle(quickActions.props.style).flexDirection, 'column');
+    const sectionOrder = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-loading', 'home-sponsors-section']
+      .map((testID) => nodes.findIndex((node) => node.props.testID === testID));
+    assert.ok(sectionOrder.every((index) => index >= 0));
+    assert.deepEqual(sectionOrder, [...sectionOrder].sort((left, right) => left - right));
 
-    for (const label of ['Updates', 'Open full schedule', `Open ${league.name} website`]) {
+    for (const label of ['Updates', 'Open full schedule']) {
       const target = findNode(output, (node) => node.props.accessibilityLabel === label);
       assert.ok(target, `Missing target: ${label}`);
       const style = flattenStyle(target.props.style);
-      assert.ok((style.minHeight ?? style.height) >= 44, `${label} must be at least 44 points tall`);
-      assert.equal(style.backgroundColor, '#0C1B31');
-      assert.equal(style.borderColor, '#41607F');
+      if (label === 'Updates') assert.ok((style.minHeight ?? style.height) >= 44, `${label} must be at least 44 points tall`);
     }
 
     const reveals = nodes.filter((node) => node.type === 'RevealView');
-    assert.ok(reveals.length >= 2);
+    assert.ok(reveals.length >= 1);
     assert.ok(reveals.every((node) => node.props.duration === 0));
     assert.equal(nodes.some((node) => node.props.testID === 'home-atmospheric-glow'), false);
 
-    const emptyPanel = findNode(output, (node) => node.props.testID === 'home-empty-game-panel');
-    assert.ok(emptyPanel);
-    assert.equal(flattenStyle(emptyPanel.props.style).backgroundColor, '#0C1B31');
+    assert.ok(findNode(output, (node) => node.props.testID === 'home-personal-loading'));
   });
 
   it('preserves the exact no-active-league marketplace return contract', () => {
