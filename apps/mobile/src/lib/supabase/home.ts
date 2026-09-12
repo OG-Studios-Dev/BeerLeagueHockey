@@ -450,7 +450,7 @@ function allFailedSnapshot(leagueId: string, leagueSlug: string): HomePublicSnap
 export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: string, now = new Date()): Promise<HomePublicSnapshot> {
   if (!SLUG_PATTERN.test(leagueSlug) || leagueSlug.length > 63) return allFailedSnapshot(leagueId, leagueSlug);
   const [leagueResult, seasonsResult] = await Promise.all([
-    supabase.from('leagues').select('id,name,slug,description,logo_url,banner_url,city,state,timezone,status,settings')
+    supabase.from('leagues').select('id,slug,timezone,status,settings')
       .eq('id', leagueId).eq('status', 'active').maybeSingle(),
     supabase.from('seasons').select('id,league_id,name,status,start_date,end_date,created_at')
       .eq('league_id', leagueId).order('start_date', { ascending: false }).order('created_at', { ascending: false }),
