@@ -121,9 +121,13 @@ export function mapGameStatus(status: string | null): 'Upcoming' | 'Live' | 'Fin
 // Seasons
 // ─────────────────────────────────────────
 
-export async function getCurrentSeason(leagueId: string): Promise<Season | null> {
-  for (const status of ['active', 'upcoming', 'completed'] as const) {
-    const { data } = await supabase
+export async function getCurrentSeason(
+  leagueId: string,
+  options: { throwOnError?: boolean } = {},
+): Promise<Season | null> {
+  // Match the operational season priority using actual season_status enum values.
+  for (const status of ['active', 'playoffs', 'draft', 'completed', 'archived'] as const) {
+    const { data, error } = await supabase
       .from('seasons')
       .select('id, name, start_date, end_date, status')
       .eq('league_id', leagueId)
@@ -131,15 +135,17 @@ export async function getCurrentSeason(leagueId: string): Promise<Season | null>
       .order('start_date', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (error && options.throwOnError) throw new Error(error.message);
     if (data) return data as Season;
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('seasons')
     .select('id, name, start_date, end_date, status')
     .eq('league_id', leagueId)
     .order('start_date', { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (error && options.throwOnError) throw new Error(error.message);
   return (data as Season) ?? null;
 }
 
@@ -268,7 +274,9 @@ export async function getStatsLeaders(
     p_division_id: divisionId ?? null,
   });
 
-  if (!rpcError && rpcData && Array.isArray(rpcData)) {
+  // Some deployed RPC versions return [] before season stats are wired up.
+  // Successful emptiness is not authoritative until the season view is checked.
+  if (!rpcError && Array.isArray(rpcData) && rpcData.length > 0) {
     return dedupByPlayerId((rpcData as any[]).map((s) => ({
       player_id: s.player_id,
       player_name: s.player_name ?? s.full_name ?? 'Unknown',
@@ -287,7 +295,7 @@ export async function getStatsLeaders(
     }))).slice(0, limit);
   }
 
-  const season = seasonId ? { id: seasonId } : await getCurrentSeason(leagueId);
+  const season = seasonId ? { id: seasonId } : await getCurrentSeason(leagueId, options);
   if (!season) return [];
 
   let query = supabase
@@ -299,6 +307,8 @@ export async function getStatsLeaders(
 
   const { data: stats, error } = await query
     .order(statType, { ascending: false })
+    .order('full_name', { ascending: true })
+    .order('player_id', { ascending: true })
     .limit(limit);
 
   if (error) {
