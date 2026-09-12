@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
-import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -17,10 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import Avatar from '../../components/Avatar';
 import BrandAtmosphere from '../../components/BrandAtmosphere';
-import GameCard from '../../components/GameCard';
-import TeamLogo from '../../components/TeamLogo';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import {
   type CheckinStatus,
@@ -45,12 +41,13 @@ import {
   updatePlayerCheckinAsCaptain,
 } from '../../lib/supabase/captain';
 import { supabase } from '../../lib/supabase/client';
-import { mapGameStatus } from '../../lib/supabase/data';
 import { getTeamActiveSeason } from '../../lib/supabase/team';
+import { loadTeamPageSnapshot, type TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
 import { TeamStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
 import { ui } from '../../theme/ui';
+import TeamPublicPage from './TeamPublicPage';
 
 type Props = NativeStackScreenProps<TeamStackParamList, 'TeamDetail'>;
 
@@ -301,7 +298,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [team, setTeam] = React.useState<TeamInfo | null>(null);
   const [league, setLeague] = React.useState<LeagueInfo | null>(null);
   const [activeSeason, setActiveSeason] = React.useState<ActiveSeasonInfo | null>(null);
-  const [standing, setStanding] = React.useState<StandingInfo | null>(null);
+  const [_standing, setStanding] = React.useState<StandingInfo | null>(null);
   const [roster, setRoster] = React.useState<RosterPlayer[]>([]);
   const [upcomingGames, setUpcomingGames] = React.useState<UpcomingGame[]>([]);
   const [nextGameAvailability, setNextGameAvailability] = React.useState<NextGameAvailability | null>(null);
@@ -333,6 +330,11 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [goalieNotes, setGoalieNotes] = React.useState('');
   const [goalieSaving, setGoalieSaving] = React.useState(false);
   const loadGenerationRef = React.useRef(0);
+  const publicLoadGenerationRef = React.useRef(0);
+  const [publicSnapshot, setPublicSnapshot] = React.useState<TeamPageSnapshot | null>(null);
+  const [publicLoading, setPublicLoading] = React.useState(true);
+  const [publicError, setPublicError] = React.useState<string | null>(null);
+  const [publicRetryToken, setPublicRetryToken] = React.useState(0);
 
   const nextGame = upcomingGames[0] ?? null;
   const teamName = team?.name ?? 'Team';
@@ -340,9 +342,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const publicSurface = reduceTransparency
     ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
     : { backgroundColor: 'rgba(10, 22, 40, 0.30)', borderColor: 'rgba(125, 190, 255, 0.22)' };
-  const seasonRecord = standing
-    ? `${standing.wins ?? 0}-${standing.losses ?? 0}-${standing.ties ?? 0}`
-    : '0-0-0';
   const nextOpponent = nextGame
     ? nextGame.home_team_id === teamId
       ? nextGame.away_team?.name ?? 'Opponent'
@@ -389,6 +388,39 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       params: { gameId },
     });
   }
+
+  React.useEffect(() => {
+    if (!activeSeason?.id) {
+      setPublicSnapshot(null);
+      setPublicError(null);
+      setPublicLoading(false);
+      return;
+    }
+    let isMounted = true;
+    const generation = ++publicLoadGenerationRef.current;
+    setPublicSnapshot(null);
+    setPublicError(null);
+    setPublicLoading(true);
+
+    void loadTeamPageSnapshot(teamId, leagueId, new Date(), activeSeason.id)
+      .then((result) => {
+        if (!isMounted || generation !== publicLoadGenerationRef.current) return;
+        setPublicSnapshot(result.data);
+        setPublicError(result.error);
+        setPublicLoading(false);
+      })
+      .catch(() => {
+        if (!isMounted || generation !== publicLoadGenerationRef.current) return;
+        setPublicSnapshot(null);
+        setPublicError('Public Team facts could not be loaded. Please try again.');
+        setPublicLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+      if (publicLoadGenerationRef.current === generation) publicLoadGenerationRef.current += 1;
+    };
+  }, [activeSeason?.id, leagueId, publicRetryToken, teamId]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -638,7 +670,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       isMounted = false;
       if (loadGenerationRef.current === generation) loadGenerationRef.current += 1;
     };
-  }, [leagueId, refreshCaptainData, teamId]);
+  }, [leagueId, publicRetryToken, refreshCaptainData, teamId]);
 
   const pendingPlayers = React.useMemo(
     () => roster.filter((player) => !lineupStatuses[player.player_id]),
@@ -910,6 +942,10 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  const matchingPublicSnapshot = publicSnapshot?.team.id === teamId && publicSnapshot.league.id === leagueId && publicSnapshot.season.id === activeSeason.id
+    ? publicSnapshot
+    : null;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={team.secondary_color ?? colors.brandArena} intensity="medium" />
@@ -924,40 +960,38 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View testID="team-identity-hero" style={[styles.heroCard, publicSurface]}>
-          <LinearGradient
-            testID="team-hero-gradient"
-            colors={reduceTransparency
-              ? ['rgba(12, 27, 49, 0)', 'rgba(12, 27, 49, 0)']
-              : [`${primaryColor}24`, 'rgba(7, 17, 31, 0.08)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
+        {matchingPublicSnapshot ? (
+          <TeamPublicPage
+            key={`${leagueId}:${teamId}`}
+            snapshot={matchingPublicSnapshot}
+            reduceTransparency={reduceTransparency}
+            onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId })}
+            onOpenGame={navigateToGame}
           />
-          <View style={[styles.heroIdentity, isCompact && styles.heroIdentityCompact]}>
-            <View style={[styles.heroLogoWell, { borderColor: `${primaryColor}55` }]}>
-              <TeamLogo teamId={team.id} logoUrl={team.logo_url} teamName={teamName} primaryColor={primaryColor} size={96} />
-            </View>
-            <View style={styles.heroCopy} testID="team-hero-copy">
-              <Text style={[styles.heroEyebrow, { color: primaryColor }]}>{league?.name ?? 'League'}</Text>
-              <Text style={styles.heroSeason}>{activeSeason.name} · Active season</Text>
-              <Text testID="team-hero-name" style={styles.heroName}>{teamName}</Text>
-              <View style={styles.heroRecordRow}>
-                <View>
-                  <Text style={styles.heroRecord}>{seasonRecord}</Text>
-                  <Text style={styles.heroRecordLabel}>Season record</Text>
-                </View>
-              </View>
-            </View>
+        ) : publicLoading ? (
+          <View testID="team-public-loading-state" style={styles.publicStateCard}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.stateBody}>Loading current Team page…</Text>
           </View>
-          <View style={styles.heroStatsRow}>
-            <StatBox label="GP" value={standing?.games_played ?? 0} compact />
-            <StatBox label="PTS" value={standing?.points ?? 0} compact />
-            <StatBox label="GF" value={standing?.goals_for ?? 0} compact />
-            <StatBox label="GA" value={standing?.goals_against ?? 0} compact />
+        ) : (
+          <View testID="team-public-error-state" style={styles.publicStateCard}>
+            <Ionicons name="alert-circle-outline" size={24} color={colors.accentRed} />
+            <Text style={styles.stateTitle}>Public Team page unavailable</Text>
+            <Text style={styles.stateBody}>{publicError ?? 'Current public Team facts are not available for this season.'}</Text>
+            <Pressable testID="team-public-retry" accessibilityRole="button" accessibilityLabel="Retry public Team page" onPress={() => {
+              setPublicSnapshot(null);
+              setPublicError(null);
+              setPublicLoading(true);
+              setActiveSeason(null);
+              setLoading(true);
+              setPublicRetryToken((value) => value + 1);
+            }} style={styles.publicRetryButton}>
+              <Text style={styles.publicRetryText}>Retry</Text>
+            </Pressable>
           </View>
-        </View>
+        )}
 
+        <View testID="team-operations-wrapper" style={styles.operationsWrapper}>
         {(nextGame || league?.slug) && (
           <View testID="team-operations-card" style={[styles.opsCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Team Operations</Text>
@@ -1215,85 +1249,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        {roster.length > 0 ? (
-          <View testID="team-roster-card" style={[styles.rosterCard, publicSurface]}>
-            <View style={styles.rosterTitleRow}>
-              <Text style={styles.sectionTitle}>Active Roster</Text>
-              <Text style={styles.rosterCount}>{roster.length} {roster.length === 1 ? 'player' : 'players'}</Text>
-            </View>
-            <View style={styles.rosterList}>
-              {roster.map((player) => (
-                <Pressable
-                  key={player.id}
-                  testID={`team-roster-player-${player.player_id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${player.player_name}'s player card`}
-                  style={({ pressed }) => [styles.rosterPlayerCard, pressed && styles.rosterRowPressed]}
-                  onPress={() => navigateToPlayerCard(navigation, { playerId: player.player_id, leagueId })}
-                >
-                  <View style={styles.rosterPlayerTopRow}>
-                    <Text style={[styles.rosterJersey, { color: primaryColor }]}>
-                      {player.jersey_number != null ? `#${player.jersey_number}` : '—'}
-                    </Text>
-                    <Avatar uri={player.avatar_url} name={player.player_name} size={42} />
-                    <View testID={`team-roster-identity-${player.player_id}`} style={styles.rosterPlayerIdentity}>
-                      <Text style={styles.rosterPlayerName}>{player.player_name}</Text>
-                      <Text style={styles.rosterPlayerRole}>
-                        {formatRosterPosition(player.position, player.is_goalie)}
-                        {player.leadership_role ? ` · ${player.leadership_role === 'captain' ? 'C' : 'A'}` : ''}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-                  </View>
-                  <View style={styles.rosterStatsRow}>
-                    {[
-                      ['GP', player.games_played],
-                      ['G', player.goals],
-                      ['A', player.assists],
-                      ['PTS', player.points],
-                    ].map(([label, value]) => (
-                      <View key={label} style={styles.rosterStatItem}>
-                        <Text style={[styles.rosterStatValue, label === 'PTS' && { color: primaryColor }]}>{value}</Text>
-                        <Text style={styles.rosterStatLabel}>{label}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <View testID="team-roster-empty-state" style={[styles.rosterCard, publicSurface]}>
-            <Text style={styles.sectionTitle}>Active Roster</Text>
-            <Text style={styles.emptyRosterTitle}>No active players</Text>
-            <Text style={styles.emptyRosterBody}>No players are listed for {activeSeason.name} yet.</Text>
-          </View>
-        )}
-
-        {upcomingGames.length > 0 ? (
-          <View testID="team-schedule-card" style={[styles.scheduleCard, publicSurface]}>
-            <Text style={styles.sectionTitle}>Upcoming Games</Text>
-            {upcomingGames.map((game) => (
-              <GameCard
-                key={game.id}
-                gameId={game.id}
-                homeTeam={game.home_team?.name ?? game.home_team_id}
-                awayTeam={game.away_team?.name ?? game.away_team_id}
-                dateLabel={formatDate(game.scheduled_at)}
-                timeLabel={formatTime(game.scheduled_at)}
-                rinkName={game.location ?? ''}
-                status={mapGameStatus(game.status)}
-                homeScore={game.home_score ?? undefined}
-                awayScore={game.away_score ?? undefined}
-                scheduledAt={game.scheduled_at}
-                location={game.location}
-                compact
-                visualVariant="homeEditorial"
-                onPress={() => navigateToGame(game.id)}
-              />
-            ))}
-          </View>
-        ) : null}
+        </View>
       </ScrollView>
 
       <Modal visible={reminderModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setReminderModalVisible(false)}>
@@ -1527,9 +1483,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   scrollContent: {
-    padding: 16,
+    paddingTop: 16,
     paddingBottom: 40,
     gap: 20,
+  },
+  operationsWrapper: { paddingHorizontal: 16, gap: 20 },
+  publicStateCard: {
+    marginHorizontal: 16,
+    minHeight: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.borderCard,
+    backgroundColor: '#03070D',
+    padding: 24,
+  },
+  publicRetryButton: {
+    minWidth: 104,
+    minHeight: ui.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+  },
+  publicRetryText: {
+    color: colors.textOnPrimary,
+    fontSize: 14,
+    fontWeight: '800',
   },
   sectionTitle: {
     fontSize: 16,

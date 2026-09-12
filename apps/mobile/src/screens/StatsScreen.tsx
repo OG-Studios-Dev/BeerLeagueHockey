@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import DivisionFilter from '../components/DivisionFilter';
@@ -12,6 +13,7 @@ import StatsLeadersCard, { type StatsLeaderMetric, type StatsLeaderStatus } from
 import { useLeague } from '../context/LeagueContext';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { navigateToPlayerCard } from '../navigation/playerCard';
+import type { StatsStackParamList } from '../navigation/types';
 import { supabase } from '../lib/supabase/client';
 import { getStatsLeaders, type PlayerStatRow } from '../lib/supabase/data';
 import { getPublicGoalies, type PublicGoalie } from '../lib/supabase/publicStats';
@@ -78,7 +80,7 @@ function mapGoalieRows(players: PublicGoalie[]): LeaderboardRow[] {
 }
 
 export default function StatsScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<StatsStackParamList>>();
   const { activeLeague, activeTheme, activeDivision, setActiveDivision, divisions, availableLeagues } = useLeague();
   const [selectedTab, setSelectedTab] = React.useState<StatsTab>('Skaters');
   const [skaters, setSkaters] = React.useState<EnrichedPlayer[]>([]);
@@ -261,7 +263,17 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-      <View style={styles.headerWrap}><SectionHeader title="Stats" /></View>
+      <View style={styles.headerRow}>
+        <View style={styles.headerTitleWrap}><SectionHeader title="Stats" /></View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('Leaderboards')}
+          style={styles.leaderboardsAction}
+          testID="stats-leaderboards-action"
+        >
+          <Text style={styles.leaderboardsActionText}>Leaderboards</Text>
+        </Pressable>
+      </View>
       <FlatList
         testID="stats-page-list"
         data={(selectedTab === 'Skaters' ? loading : goalieView.status === 'loading') ? [] : list}
@@ -294,7 +306,11 @@ export default function StatsScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 },
   headerWrap: { paddingHorizontal: 16, paddingBottom: 8 },
+  headerTitleWrap: { flex: 1 },
+  leaderboardsAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 },
+  leaderboardsActionText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   listContent: { paddingHorizontal: 16, paddingBottom: 40 },
   tableControls: { marginBottom: 10, gap: 8 },
   tableTitle: { color: colors.textPrimary, fontSize: 18, lineHeight: 24, fontWeight: '800' },

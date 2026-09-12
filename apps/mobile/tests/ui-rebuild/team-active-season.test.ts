@@ -25,15 +25,15 @@ const fixtures: Record<string, Row[]> = {
     { id: 'season-old', league_id: 'league-a', name: 'Winter 2025', status: 'completed', start_date: '2025-01-01' },
   ],
   team_rosters: [
-    { id: 'roster-ended', player_id: 'player-ended', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', end_date: '2026-09-11', jersey_number: 1, position: 'forward', is_goalie: false, leadership_role: null },
-    { id: 'roster-current', player_id: 'player-current', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', end_date: null, jersey_number: 12, position: 'forward', is_goalie: false, leadership_role: null },
-    { id: 'roster-current-duplicate', player_id: 'player-current', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', end_date: null, jersey_number: 88, position: 'forward', is_goalie: false, leadership_role: null },
-    { id: 'roster-returning', player_id: 'player-returning', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', end_date: null, jersey_number: 27, position: 'forward', is_goalie: false, leadership_role: null },
-    { id: 'roster-historical', player_id: 'player-historical', team_id: 'team-current', league_id: 'league-a', season_id: 'season-old', status: 'active', end_date: null, jersey_number: 19, position: 'defense', is_goalie: false, leadership_role: null },
-    { id: 'roster-wrong-team', player_id: 'player-wrong-team', team_id: 'team-other', league_id: 'league-a', season_id: 'season-current', status: 'active', end_date: null, jersey_number: 2, position: 'forward', is_goalie: false, leadership_role: null },
-    { id: 'roster-wrong-league', player_id: 'player-wrong-league', team_id: 'team-current', league_id: 'league-b', season_id: 'season-current', status: 'active', end_date: null, jersey_number: 3, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-ended', player_id: 'player-ended', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: '2026-09-11', jersey_number: 1, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-current', player_id: 'player-current', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: null, jersey_number: 12, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-current-duplicate', player_id: 'player-current', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: null, jersey_number: 88, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-returning', player_id: 'player-returning', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: null, jersey_number: 27, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-historical', player_id: 'player-historical', team_id: 'team-current', league_id: 'league-a', season_id: 'season-old', status: 'active', player_type: 'regular', end_date: null, jersey_number: 19, position: 'defense', is_goalie: false, leadership_role: null },
+    { id: 'roster-wrong-team', player_id: 'player-wrong-team', team_id: 'team-other', league_id: 'league-a', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: null, jersey_number: 2, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-wrong-league', player_id: 'player-wrong-league', team_id: 'team-current', league_id: 'league-b', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: null, jersey_number: 3, position: 'forward', is_goalie: false, leadership_role: null },
     { id: 'roster-inactive', player_id: 'player-inactive', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'inactive', end_date: null, jersey_number: 4, position: 'forward', is_goalie: false, leadership_role: null },
-    { id: 'roster-null-season', player_id: 'player-null-season', team_id: 'team-current', league_id: 'league-a', season_id: null, status: 'active', end_date: null, jersey_number: 5, position: 'forward', is_goalie: false, leadership_role: null },
+    { id: 'roster-null-season', player_id: 'player-null-season', team_id: 'team-current', league_id: 'league-a', season_id: null, status: 'active', player_type: 'regular', end_date: null, jersey_number: 5, position: 'forward', is_goalie: false, leadership_role: null },
   ],
   profiles: [
     { id: 'player-current', full_name: 'Current Casey', email: 'casey@example.invalid' },
@@ -68,7 +68,7 @@ function fixturesWithSecondRoute(): Record<string, Row[]> {
     seasons: [...fixtures.seasons, { id: 'season-b', league_id: 'league-b', name: 'Fall 2026 B', status: 'active', start_date: '2026-09-02', created_at: '2026-08-02' }],
     team_rosters: [
       ...fixtures.team_rosters,
-      { id: 'roster-b', player_id: 'player-b', team_id: 'team-b', league_id: 'league-b', season_id: 'season-b', status: 'active', end_date: null, jersey_number: 7, position: 'forward', is_goalie: false, leadership_role: null },
+      { id: 'roster-b', player_id: 'player-b', team_id: 'team-b', league_id: 'league-b', season_id: 'season-b', status: 'active', player_type: 'regular', end_date: null, jersey_number: 7, position: 'forward', is_goalie: false, leadership_role: null },
     ],
     profiles: [...fixtures.profiles, { id: 'player-b', full_name: 'Beta Blake', email: 'blake@example.invalid' }],
     player_season_stats: [...fixtures.player_season_stats, { player_id: 'player-b', team_id: 'team-b', season_id: 'season-b', games_played: 2, goals: 1, assists: 1, points: 2 }],
@@ -90,6 +90,7 @@ function createSupabase(dataset = fixtures, errors: Record<string, { message: st
   class Query {
     private filters: Array<(row: Row) => boolean> = [];
     private maximum: number | null = null;
+    private pageRange: [number, number] | null = null;
     private record: QueryRecord;
 
     constructor(private table: string) {
@@ -127,6 +128,7 @@ function createSupabase(dataset = fixtures, errors: Record<string, { message: st
       return this;
     }
     limit(value: number) { this.maximum = value; return this; }
+    range(from: number, to: number) { this.pageRange = [from, to]; return this; }
     private rows() {
       const rows = (dataset[this.table] ?? [])
         .filter((row) => this.filters.every((filter) => filter(row)))
@@ -144,7 +146,8 @@ function createSupabase(dataset = fixtures, errors: Record<string, { message: st
           }
           return 0;
         });
-      return this.maximum == null ? rows : rows.slice(0, this.maximum);
+      const limited = this.maximum == null ? rows : rows.slice(0, this.maximum);
+      return this.pageRange ? limited.slice(this.pageRange[0], this.pageRange[1] + 1) : limited;
     }
     async single() { return { data: this.rows()[0] ?? null, error: errors[this.table] ?? null }; }
     async maybeSingle() { return { data: this.rows()[0] ?? null, error: errors[this.table] ?? null }; }
@@ -169,6 +172,7 @@ function createRuntime({
   reduceTransparency = false,
   reduceMotion = false,
   userId = 'viewer-1' as string | null,
+  publicPageApi,
 }: {
   dataset?: Record<string, Row[]>;
   errors?: Record<string, { message: string }>;
@@ -178,6 +182,7 @@ function createRuntime({
   reduceTransparency?: boolean;
   reduceMotion?: boolean;
   userId?: string | null;
+  publicPageApi?: { loadTeamPageSnapshot: (teamId: string, leagueId: string) => Promise<Row> };
 } = {}) {
   const harness = createHookHarness();
   const navigationCalls: unknown[][] = [];
@@ -194,6 +199,21 @@ function createRuntime({
     borderCard: 'rgba(255, 255, 255, 0.1)', glassStrokeStrong: 'rgba(96, 165, 250, 0.28)',
     accentGreen: '#22C55E', accentRed: '#EF4444',
   };
+
+  const publicData = compileCommonJs<{ loadTeamPageSnapshot: (teamId: string, leagueId: string) => Promise<Row> }>(
+    new URL('../../src/lib/supabase/teamPage.ts', import.meta.url),
+    { './client': { supabase }, './team': teamData },
+  );
+  const PublicPage = compileCommonJs<{ default: (props: any) => unknown }>(
+    new URL('../../src/screens/TeamScreen/TeamPublicPage.tsx', import.meta.url), {
+      react: harness.react,
+      'react-native': { Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: {}, hairlineWidth: 1 }, useWindowDimensions: () => ({ width, height: 844, fontScale: 1 }) },
+      '@expo/vector-icons': { Ionicons: 'Ionicon' }, 'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
+      '../../components/Avatar': (props: Row) => createElement('Avatar', props), '../../components/TeamLogo': (props: Row) => createElement('TeamLogo', props),
+      '../../theme/colors': { __esModule: true, default: colors }, '../../theme/ui': { ui: { minTouchTarget: 44 } },
+      '../../assets/team-page/weekly-games-bg.jpg': 1, '../../assets/team-page/trophy.png': 2, '../../assets/team-page/jersey-primary.png': 3, '../../assets/team-page/jersey-secondary.png': 4, '../../assets/team-page/jersey-detail.png': 5,
+    },
+  ).default;
 
   const TeamDetailScreen = compileCommonJs<{ default: (props: Record<string, any>) => unknown }>(
     new URL('../../src/screens/TeamScreen/TeamDetailScreen.tsx', import.meta.url),
@@ -225,8 +245,10 @@ function createRuntime({
       '../../lib/supabase/client': { supabase },
       '../../lib/supabase/data': { mapGameStatus: (status: string) => status === 'completed' ? 'Final' : 'Upcoming' },
       '../../lib/supabase/team': { getTeamActiveSeason: teamData.getTeamActiveSeason },
+      '../../lib/supabase/teamPage': { loadTeamPageSnapshot: publicPageApi?.loadTeamPageSnapshot ?? publicData.loadTeamPageSnapshot },
+      './TeamPublicPage': (props: Row) => createElement('TeamPublicPage', props, props.snapshot.hero ? PublicPage(props) : null),
       '../../navigation/playerCard': { navigateToPlayerCard: (...args: unknown[]) => navigationCalls.push(args) },
-      '../../theme/colors': { default: colors },
+      '../../theme/colors': { __esModule: true, default: colors },
       '../../theme/ui': { ui: { minTouchTarget: 44, radius: { card: 18, panel: 24 } } },
     },
   ).default;
@@ -248,11 +270,68 @@ async function settle(runtime: ReturnType<typeof createRuntime>) {
 }
 
 describe('Team active-season data boundary', () => {
+  it('gives public composition sole page inset ownership and preserves operations spacing below it', async () => {
+    const output = await settle(createRuntime({ width: 320 }));
+    const scroll = findNode(output, (node) => node.type === 'ScrollView' && node.props.contentContainerStyle);
+    const inset = flattenStyle(scroll?.props.contentContainerStyle);
+    assert.equal(inset.paddingHorizontal ?? inset.padding ?? 0, 0);
+    assert.ok((inset.paddingBottom ?? 0) >= 40);
+    const ops = findNode(output, (node) => node.props.testID === 'team-operations-wrapper');
+    assert.ok(ops);
+    assert.equal(flattenStyle(ops.props.style).paddingHorizontal, 16);
+    assert.ok(findNode(ops, (node) => node.props.testID === 'team-operations-card'));
+  });
+
+  it('loads the actual public composition entry and retries a scoped public snapshot failure', async () => {
+    const calls: string[][] = [];
+    let attempt = 0;
+    const runtime = createRuntime({
+      publicPageApi: {
+        loadTeamPageSnapshot: async (teamId: string, leagueId: string) => {
+          calls.push([teamId, leagueId]);
+          attempt += 1;
+          return attempt === 1
+            ? { data: null, error: 'Public Team facts are temporarily unavailable.' }
+            : { data: { season: { id: 'season-current' }, team: { id: teamId, name: 'North Stars' }, league: { id: leagueId, primaryColor: '#22D3EE' } }, error: null };
+        },
+      },
+    });
+
+    let output = await settle(runtime);
+    assert.match(nodeText(findNode(output, (node) => node.props.testID === 'team-public-error-state')), /temporarily unavailable/i);
+    findNode(output, (node) => node.props.testID === 'team-public-retry')?.props.onPress();
+    output = await settle(runtime);
+
+    const composition = findNode(output, (node) => node.type === 'TeamPublicPage');
+    assert.ok(composition);
+    assert.equal(composition.props.snapshot.team.id, 'team-current');
+    assert.deepEqual(calls, [['team-current', 'league-a'], ['team-current', 'league-a']]);
+  });
+
+  it('fails closed on an adversarial season flip and clears operational controls before retrying both surfaces', async () => {
+    const runtime = createRuntime({
+      publicPageApi: {
+        loadTeamPageSnapshot: async (teamId: string, leagueId: string) => ({
+          data: { season: { id: 'season-flipped' }, team: { id: teamId }, league: { id: leagueId } },
+          error: null,
+        }),
+      },
+    });
+    let output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage'), undefined);
+    assert.ok(findNode(output, (node) => node.props.testID === 'team-public-error-state'));
+    const retry = findNode(output, (node) => node.props.testID === 'team-public-retry');
+    assert.ok(retry);
+    retry.props.onPress();
+    output = runtime.harness.render();
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-operations-wrapper'), undefined);
+  });
+
   it('excludes historical active-status memberships from the rendered roster', async () => {
     const output = await settle(createRuntime());
     const text = nodeText(output);
 
-    assert.match(text, /Current Casey/);
+    assert.match(text, /CASEY/);
     assert.doesNotMatch(text, /Historical Harper/);
   });
 
@@ -260,8 +339,8 @@ describe('Team active-season data boundary', () => {
     const runtime = createRuntime();
     const text = nodeText(await settle(runtime));
 
-    assert.equal(text.match(/Current Casey/g)?.length, 1);
-    assert.match(text, /Returning RileyF0GP0G0A0PTS/);
+    assert.equal(text.match(/CASEY/g)?.length, 1);
+    assert.equal(text.match(/RILEY/g)?.length, 1);
     for (const excludedName of ['Ended Evan', 'Other Team Owen', 'Other League Lena', 'Inactive Izzy', 'Seasonless Sam']) {
       assert.doesNotMatch(text, new RegExp(excludedName));
     }
@@ -285,11 +364,11 @@ describe('Team active-season data boundary', () => {
         season.id === 'season-current' ? { ...season, status: 'playoffs', name: 'Fall 2026 Playoffs' } : season
       ),
     };
-    const text = nodeText(await settle(createRuntime({ dataset })));
-
-    assert.match(text, /Fall 2026 Playoffs/);
+    const output = await settle(createRuntime({ dataset }));
+    const text = nodeText(output);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.season.name, 'Fall 2026 Playoffs');
     assert.match(text, /8-2-1/);
-    assert.match(text, /Current Casey|Returning Riley/);
+    assert.match(text, /CASEY|RILEY/);
     assert.match(text, /Current Opponent|Current Season Arena/);
     assert.doesNotMatch(text, /No active season/);
   });
@@ -303,11 +382,30 @@ describe('Team active-season data boundary', () => {
   });
 
   it('renders roster stats and schedule from the same active season and team only', async () => {
-    const text = nodeText(await settle(createRuntime()));
-
+    // The real producer now consumes raw rows, not player_season_stats. Keep the
+    // intended 4 GP / 2 G / 3 A fixture backed by four actual completed games.
+    const statGames = [0, 1, 2, 3].map((index) => ({
+      ...fixtures.games[0], id: `stat-game-${index}`, status: 'completed',
+      scheduled_at: `2026-09-0${index + 5}T23:00:00.000Z`, home_score: 2, away_score: 1,
+    }));
+    const playerStats = statGames.map((game, index) => ({
+      id: `raw-current-${index}`, player_id: 'player-current', team_id: 'team-current',
+      league_id: 'league-a', season_id: 'season-current', game_id: game.id,
+      goals: index < 2 ? 1 : 0, assists: index < 3 ? 1 : 0, penalty_minutes: 0,
+    }));
+    const dataset = { ...fixtures, games: [...fixtures.games, ...statGames], player_stats: [
+      ...playerStats,
+      { ...playerStats[0], id: 'raw-old-season', game_id: 'game-old', season_id: 'season-old', goals: 40, assists: 50 },
+      { ...playerStats[0], id: 'raw-other-team', team_id: 'team-other', goals: 20, assists: 30 },
+      { ...playerStats[0], id: 'raw-other-league', league_id: 'league-b', goals: 90, assists: 90 },
+    ] };
+    const output = await settle(createRuntime({ dataset }));
+    const text = nodeText(output);
+    const player = findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.roster.find((row: Row) => row.playerId === 'player-current');
+    assert.deepEqual([player.gamesPlayed, player.goals, player.assists, player.points], [4, 2, 3, 5]);
     assert.match(text, /GP/);
     assert.match(text, /Current Casey/);
-    assert.match(text, /Current CaseyF4GP2G3A5PTS/);
+    assert.match(text, /Current Casey5#12 • ~4 GP/);
     assert.match(text, /Current Opponent/);
     assert.match(text, /Current Season Arena/);
     assert.doesNotMatch(text, /Historical Opponent|Historical Arena|90/);
@@ -520,36 +618,34 @@ describe('Team active-season data boundary', () => {
     assert.deepEqual(runtime.alerts, []);
   });
 
-  it('adapts the pinned web Team identity, active-season record, roster, and glass treatment for 320pt native', async () => {
-    const output = await settle(createRuntime({ width: 320 }));
-    const hero = findNode(output, (node) => node.props.testID === 'team-identity-hero');
+  it('renders the current web public composition with its identity, roster and near-black surface at 320pt', async () => {
+    const runtime = createRuntime({ width: 320 });
+    let output = await settle(runtime);
+    const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
     assert.ok(hero);
-    assert.match(nodeText(hero), /Harbour League/);
-    assert.match(nodeText(hero), /Fall 2026/);
-    assert.match(nodeText(hero), /North Stars/);
-    assert.match(nodeText(hero), /8-2-1/);
-    assert.equal(flattenStyle(hero.props.style).backgroundColor, 'rgba(10, 22, 40, 0.30)');
-    assert.equal(flattenStyle(hero.props.style).borderColor, 'rgba(125, 190, 255, 0.22)');
-
-    const rosterCard = findNode(output, (node) => node.props.testID === 'team-roster-card');
-    assert.ok(rosterCard);
-    assert.equal(flattenStyle(rosterCard.props.style).backgroundColor, 'rgba(10, 22, 40, 0.30)');
-    assert.equal(findNode(rosterCard, (node) => node.type === 'ScrollView' && node.props.horizontal === true), undefined);
-
-    const playerName = findNode(rosterCard, (node) => node.type === 'Text' && nodeText(node) === 'Current Casey');
+    assert.match(nodeText(hero), /North Stars8-2-1/);
+    const composition = findNode(output, (node) => node.props.testID === 'team-public-composition');
+    assert.equal(flattenStyle(composition?.props.style).backgroundColor, '#03070D');
+    const props = findNode(output, (node) => node.type === 'TeamPublicPage')?.props;
+    assert.ok(props);
+    assert.equal(props.snapshot.season.id, 'season-current');
+    assert.equal(props.snapshot.league.id, 'league-a');
+    findNode(output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    output = runtime.harness.render();
+    const roster = findNode(output, (node) => node.props.testID === 'team-roster-list');
+    assert.ok(roster);
+    assert.equal(findNode(roster, (node) => node.type === 'ScrollView' && node.props.horizontal), undefined);
+    const playerName = findNode(roster, (node) => node.type === 'Text' && nodeText(node) === 'Current Casey');
     assert.ok(playerName);
     assert.equal(playerName.props.numberOfLines, undefined);
-    const nameWrap = findNode(rosterCard, (node) => node.props.testID === 'team-roster-identity-player-current');
-    assert.ok(nameWrap);
-    assert.equal(flattenStyle(nameWrap.props.style).flexBasis, 'auto');
   });
 
   it('uses the opaque Team fallback when reduced transparency is enabled', async () => {
     const output = await settle(createRuntime({ reduceTransparency: true, reduceMotion: true }));
-    const hero = findNode(output, (node) => node.props.testID === 'team-identity-hero');
+    const hero = findNode(output, (node) => node.props.testID === 'team-public-composition');
     assert.ok(hero);
-    assert.equal(flattenStyle(hero.props.style).backgroundColor, '#0C1B31');
-    assert.equal(flattenStyle(hero.props.style).borderColor, '#41607F');
+    assert.equal(flattenStyle(hero.props.style).backgroundColor, '#03070D');
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.reduceTransparency, true);
     const modal = findNode(output, (node) => node.type === 'Modal');
     assert.ok(modal);
     assert.equal(modal.props.animationType, 'none');
@@ -558,7 +654,7 @@ describe('Team active-season data boundary', () => {
   it('renders explicit active-season empty and missing-team states', async () => {
     const emptyDataset = { ...fixtures, team_rosters: [] };
     const emptyText = nodeText(await settle(createRuntime({ dataset: emptyDataset })));
-    assert.match(emptyText, /Active Roster/);
+    assert.match(emptyText, /Next Game Roster/);
     assert.match(emptyText, /No active players/);
 
     const missingDataset = { ...fixtures, teams: [] };
@@ -612,13 +708,13 @@ describe('Team active-season data boundary', () => {
     assert.match(nodeText(output), /1IN0MAYBE0OUT1WAITING/);
   });
 
-  it('opts Team schedule into wrapping GameCard presentation while preserving navigation semantics', async () => {
+  it('uses public schedule facts while preserving full native GamePreview navigation', async () => {
     const runtime = createRuntime();
     const output = await settle(runtime);
-    const gameCard = findNode(output, (node) => node.type === 'GameCard' && node.props.gameId === 'game-current');
+    const gameCard = findNode(output, (node) => node.props.testID === 'team-schedule-game-game-current');
     const goBack = findNode(output, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Go back');
 
-    assert.equal(gameCard?.props.visualVariant, 'homeEditorial');
+    assert.match(gameCard?.props.accessibilityLabel, /Current Opponent.*Oct.*1.*Current Season Arena/);
     assert.equal(goBack?.props.accessibilityRole, 'button');
 
     gameCard?.props.onPress();
@@ -637,7 +733,7 @@ describe('Team active-season data boundary', () => {
       leagues: [{ ...fixtures.leagues[0], name: 'Greater Harbour Metropolitan Thursday Night Hockey League' }],
       team_rosters: [
         ...fixtures.team_rosters,
-        { id: 'roster-zero', player_id: 'player-zero', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', end_date: null, jersey_number: 0, position: 'goaltender', is_goalie: true, leadership_role: 'captain' },
+        { id: 'roster-zero', player_id: 'player-zero', team_id: 'team-current', league_id: 'league-a', season_id: 'season-current', status: 'active', player_type: 'regular', end_date: null, jersey_number: 0, position: 'goaltender', is_goalie: true, leadership_role: 'captain' },
       ],
       profiles: [...fixtures.profiles, { id: 'player-zero', full_name: longPlayerName, avatar_url: null }],
       games: fixtures.games.map((game) => game.id === 'game-current' ? { ...game, location: longVenue } : game),
@@ -647,13 +743,15 @@ describe('Team active-season data boundary', () => {
 
     assert.match(text, new RegExp(longPlayerName));
     assert.match(text, /#0/);
-    assert.match(text, /G · C/);
+    assert.match(text, /GOALIE/);
+    assert.match(text, /Captain • #0/);
     assert.match(text, new RegExp(longVenue));
-    assert.ok(text.indexOf('#0') < text.indexOf('#12'), 'Jersey zero sorts before jersey twelve');
+    const members = findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.roster;
+    assert.deepEqual(members.map((row: Row) => row.jerseyNumber), [0, 12, 27], 'Jersey zero sorts before twelve');
     const playerName = findNode(output, (node) => node.type === 'Text' && nodeText(node) === longPlayerName);
     assert.ok(playerName);
     assert.equal(playerName.props.numberOfLines, undefined);
-    const gameCard = findNode(output, (node) => node.type === 'GameCard' && node.props.gameId === 'game-current');
-    assert.equal(gameCard?.props.location, longVenue);
+    const gameCard = findNode(output, (node) => node.props.testID === 'team-schedule-game-game-current');
+    assert.ok(gameCard?.props.accessibilityLabel.includes(longVenue));
   });
 });
