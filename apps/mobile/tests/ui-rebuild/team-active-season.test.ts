@@ -188,7 +188,10 @@ function createRuntime({
   const navigationCalls: unknown[][] = [];
   const alerts: unknown[][] = [];
   const supabase = createSupabase(dataset, errors, userId);
-  const teamData = compileCommonJs<{ getTeamActiveSeason: (leagueId: string) => Promise<unknown> }>(
+  const teamData = compileCommonJs<{
+    getTeamActiveSeason: (leagueId: string) => Promise<unknown>;
+    getMetricsOperationalSeason: (leagueId: string) => Promise<unknown>;
+  }>(
     new URL('../../src/lib/supabase/team.ts', import.meta.url),
     { './client': { supabase } },
   );
@@ -202,7 +205,18 @@ function createRuntime({
 
   const publicData = compileCommonJs<{ loadTeamPageSnapshot: (teamId: string, leagueId: string) => Promise<Row> }>(
     new URL('../../src/lib/supabase/teamPage.ts', import.meta.url),
-    { './client': { supabase }, './team': teamData },
+    { './client': { supabase }, './team': teamData, './publicStats': { getPublicSeasonStats: async (_slug: string, _league: string, seasonId: string, _division: null, teamId: string) => {
+      const completed = (dataset.games ?? []).filter((game) => game.season_id === seasonId && game.status === 'completed' && (game.home_team_id === teamId || game.away_team_id === teamId));
+      return { players: (dataset.team_rosters ?? []).filter((roster) => roster.team_id === teamId && roster.league_id === _league && roster.season_id === seasonId && roster.status === 'active' && roster.end_date == null).map((roster) => {
+        const stats = (dataset.player_stats ?? []).filter((row) => row.player_id === roster.player_id && row.team_id === teamId && row.league_id === _league && row.season_id === seasonId && completed.some((game) => game.id === row.game_id));
+        const goals = stats.reduce((sum, row) => sum + Number(row.goals ?? 0), 0); const assists = stats.reduce((sum, row) => sum + Number(row.assists ?? 0), 0);
+        const gp = roster.games_played_override == null ? (stats.length > 0 ? new Set(stats.map((row) => row.game_id)).size : completed.length) : Number(roster.games_played_override);
+        const state = roster.games_played_override == null ? 'estimated' : 'reported';
+        const sources = roster.games_played_override == null ? ['roster_window'] : ['override'];
+        const profile = (dataset.profiles ?? []).find((row) => row.id === roster.player_id);
+        return { playerId: roster.player_id, playerName: profile?.full_name ?? 'Unknown', avatarUrl: profile?.avatar_url ?? null, roles: [roster.is_goalie ? 'goalie' : 'skater'], metrics: { gamesPlayed: { value: gp, state, sources }, goals: { value: goals, state: 'recorded', sources: ['skater_stats'] }, assists: { value: assists, state: 'recorded', sources: ['skater_stats'] }, points: { value: goals + assists, state: 'recorded', sources: ['skater_stats'] }, penaltyMinutes: { value: null, state: 'unknown', sources: [] } }, goalie: null };
+      }) };
+    } } },
   );
   const PublicPage = compileCommonJs<{ default: (props: any) => unknown }>(
     new URL('../../src/screens/TeamScreen/TeamPublicPage.tsx', import.meta.url), {
@@ -210,6 +224,7 @@ function createRuntime({
       'react-native': { Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: {}, hairlineWidth: 1 }, useWindowDimensions: () => ({ width, height: 844, fontScale: 1 }) },
       '@expo/vector-icons': { Ionicons: 'Ionicon' }, 'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       '../../components/Avatar': (props: Row) => createElement('Avatar', props), '../../components/TeamLogo': (props: Row) => createElement('TeamLogo', props),
+      '../../lib/supabase/publicStats': { formatPublicMetric: (metric: any) => ({ value: metric.state === 'conflicted' ? 'Needs review' : metric.value == null ? '—' : `${metric.state === 'estimated' ? '~' : ''}${metric.value}`, hint: metric.state === 'unknown' ? 'Not recorded.' : metric.state === 'estimated' ? 'Estimated.' : 'Recorded.' }) },
       '../../theme/colors': { __esModule: true, default: colors }, '../../theme/ui': { ui: { minTouchTarget: 44 } },
       '../../assets/team-page/weekly-games-bg.jpg': 1, '../../assets/team-page/trophy.png': 2, '../../assets/team-page/jersey-primary.png': 3, '../../assets/team-page/jersey-secondary.png': 4, '../../assets/team-page/jersey-detail.png': 5,
     },
@@ -244,7 +259,10 @@ function createRuntime({
       },
       '../../lib/supabase/client': { supabase },
       '../../lib/supabase/data': { mapGameStatus: (status: string) => status === 'completed' ? 'Final' : 'Upcoming' },
-      '../../lib/supabase/team': { getTeamActiveSeason: teamData.getTeamActiveSeason },
+      '../../lib/supabase/team': {
+        getTeamActiveSeason: teamData.getTeamActiveSeason,
+        getMetricsOperationalSeason: teamData.getMetricsOperationalSeason,
+      },
       '../../lib/supabase/teamPage': { loadTeamPageSnapshot: publicPageApi?.loadTeamPageSnapshot ?? publicData.loadTeamPageSnapshot },
       './TeamPublicPage': (props: Row) => createElement('TeamPublicPage', props, props.snapshot.hero ? PublicPage(props) : null),
       '../../navigation/playerCard': { navigateToPlayerCard: (...args: unknown[]) => navigationCalls.push(args) },
@@ -270,6 +288,43 @@ async function settle(runtime: ReturnType<typeof createRuntime>) {
 }
 
 describe('Team active-season data boundary', () => {
+  it('matches the backend operational-season priority and timestamp fallback for v2 metrics', async () => {
+    const metricSeasons: Record<string, Row[]> = {
+      seasons: [
+        { id: 'completed-new', league_id: 'league-a', name: 'Completed', status: 'completed', start_date: '2027-01-01', end_date: null, created_at: null },
+        { id: 'upcoming-old', league_id: 'league-a', name: 'Upcoming old', status: 'upcoming', start_date: null, end_date: '2026-08-01', created_at: null },
+        { id: 'registration-new', league_id: 'league-a', name: 'Registration new', status: 'registration', start_date: null, end_date: '2026-09-01', created_at: null },
+        { id: 'other-league', league_id: 'league-b', name: 'Other', status: 'active', start_date: '2028-01-01', end_date: null, created_at: null },
+      ],
+    };
+    const supabase = createSupabase(metricSeasons);
+    const teamData = compileCommonJs<{ getMetricsOperationalSeason: (leagueId: string) => Promise<any> }>(
+      new URL('../../src/lib/supabase/team.ts', import.meta.url),
+      { './client': { supabase } },
+    );
+
+    const result = await teamData.getMetricsOperationalSeason('league-a');
+    assert.equal(result.error, null);
+    assert.equal(result.season.id, 'registration-new', 'registration/upcoming outrank completed, then newest effective timestamp wins');
+    const query = supabase.queryRecords.find((record) => record.table === 'seasons');
+    assert.equal(query?.filters.some((filter) => filter.kind === 'in' && filter.column === 'status'), false, 'resolver must not use the old active-only status boundary');
+  });
+
+  it('uses the shared presentation season without granting active-season Team operations', async () => {
+    const dataset: Record<string, Row[]> = {
+      ...fixtures,
+      seasons: [{ id: 'season-registration', league_id: 'league-a', name: 'Registration 2027', status: 'registration', start_date: '2027-01-01' }],
+      team_standings: [], team_rosters: [], player_stats: [], player_season_stats: [], games: [],
+    };
+    const runtime = createRuntime({ dataset });
+    const output = await settle(runtime);
+    const publicPage = findNode(output, (node) => node.type === 'TeamPublicPage');
+
+    assert.equal(publicPage?.props.snapshot.season.id, 'season-registration');
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-operations-wrapper'), undefined);
+    assert.doesNotMatch(nodeText(output), /No active season/);
+  });
+
   it('gives public composition sole page inset ownership and preserves operations spacing below it', async () => {
     const output = await settle(createRuntime({ width: 320 }));
     const scroll = findNode(output, (node) => node.type === 'ScrollView' && node.props.contentContainerStyle);
@@ -348,13 +403,15 @@ describe('Team active-season data boundary', () => {
     assert.ok(rosterQuery?.filters.some((filter) => filter.kind === 'is' && filter.column === 'end_date' && filter.value === null));
   });
 
-  it('shows an explicit empty state when the league has no active season', async () => {
+  it('uses a completed presentation fallback while keeping active-season operations absent', async () => {
     const dataset = { ...fixtures, seasons: fixtures.seasons.filter((season) => season.status !== 'active') };
-    const text = nodeText(await settle(createRuntime({ dataset })));
+    const output = await settle(createRuntime({ dataset }));
+    const text = nodeText(output);
 
-    assert.match(text, /No active season/);
-    assert.match(text, /Roster and schedule/);
-    assert.doesNotMatch(text, /Historical Harper/);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.season.id, 'season-old');
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-operations-wrapper'), undefined);
+    assert.match(text, /Historical Harper/i);
+    assert.doesNotMatch(text, /No active season/);
   });
 
   it('keeps the same roster, record, and playoff game visible after auto-advance', async () => {

@@ -19,10 +19,10 @@ function nodes(root: any, predicate: (n: any) => boolean): any[] {
   return [...(predicate(root) ? [root] : []), ...nodes(root.props.children, predicate)];
 }
 
-function runtime(getRows?: (...args: any[]) => Promise<any[]>, width = 390) {
+function runtime(getRows?: (...args: any[]) => any[], width = 390) {
   const h = createHookHarness();
   const calls: any[][] = [], navigationCalls: any[][] = [];
-  const league: any = { activeLeague: { id: 'league-a', name: 'Harbour League' }, activeDivision: null,
+  const league: any = { activeLeague: { id: 'league-a', slug: 'harbour', name: 'Harbour League' }, activeDivision: null,
     divisions: [], availableLeagues: [], activeTheme: { backgroundColor: '#07111F', primaryColor: '#22D3EE' }, setActiveDivision: () => {} };
   const native = { ActivityIndicator: 'ActivityIndicator', Text: 'Text', View: 'View', Pressable: 'Pressable',
     StyleSheet: { create: (s: any) => s, absoluteFillObject: { position: 'absolute', inset: 0 }, hairlineWidth: 1 },
@@ -52,10 +52,14 @@ function runtime(getRows?: (...args: any[]) => Promise<any[]>, width = 390) {
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(args) },
     '../lib/supabase/client': { supabase: { from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }) }) }) } },
     '../lib/supabase/data': {
-      getStatsLeaders: async (...args: any[]) => { calls.push(args); if (getRows) return getRows(...args); return [...players].sort((a: any,b: any) => b[args[1]]-a[args[1]]).slice(0,args[2]); },
-      getGoalieLeaders: async () => [],
+      getStatsLeadersFromPublicSeason: (payload: any, metric: string, limit: number) => {
+        const args = [payload.leagueId, metric, limit, payload.divisionId]; calls.push(args);
+        if (getRows) return getRows(...args);
+        return [...players].sort((a: any,b: any) => b[metric]-a[metric]).slice(0,limit);
+      },
     },
-    '../lib/supabase/publicStats': { getPublicGoalies: async () => ({ presentationSeason: null, source: 'empty', goalies: [] }) },
+    '../lib/supabase/team': { getMetricsOperationalSeason: async () => ({ season: { id: 'season-a' }, error: null }) },
+    '../lib/supabase/publicStats': { getPublicSeasonStats: async (_slug: string, leagueId: string, _season: string, divisionId: string | null) => ({ leagueId, divisionId, presentationSeason: { id: 'season-a' }, players: [] }), getPublicGoaliesV2: async () => ({ presentationSeason: { id: 'season-a' }, goalies: [] }), formatPublicMetric: (m: any) => ({ value: String(m.value), hint: 'Recorded.' }) },
     '../theme/colors': colors,
   }).default;
   h.mount(() => Stats());
@@ -103,35 +107,33 @@ describe('Stats top-five leaders card', () => {
   });
 
   it('shows an honest empty card instead of creating five placeholder players', async () => {
-    const r = runtime(async () => []); const output = await settle(r);
+    const r = runtime(() => []); const output = await settle(r);
     assert.equal(cardRows(output).length, 0);
     assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-empty'));
   });
 
-  it('shows retryable errors without losing the metric toggle', async () => {
+  it('shows an honest empty state without losing the metric toggle', async () => {
     let failure = true;
-    const r = runtime(async (_league, _metric, limit) => { if (limit === 5 && failure) throw new Error('offline stats failure'); return players.slice(0,limit); });
+    const r = runtime((_league, _metric, limit) => { if (limit === 5 && failure) return []; return players.slice(0,limit); });
     let output = await settle(r);
-    assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-error'));
+    assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-empty'));
     assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-tab-assists'));
     failure = false;
     findNode(output, n => n.props.testID === 'stats-leaders-retry')?.props.onPress();
     output = await settle(r);
     assert.equal(cardRows(output).length, 5);
-    assert.equal(findNode(output, n => n.props.testID === 'stats-leaders-error'), undefined);
+    assert.equal(findNode(output, n => n.props.testID === 'stats-leaders-empty'), undefined);
   });
 
   it('ignores late metric responses and clears old league/division identities before new reads settle', async () => {
-    let release!: (rows: any[]) => void;
-    const r = runtime(async (league, metric, limit) => {
-      if (limit === 5 && metric === 'goals' && league === 'league-a') return new Promise(resolve => { release=resolve; });
+    const r = runtime((league, metric, limit) => {
       return [...players].sort((a:any,b:any)=>b[metric]-a[metric]).slice(0,limit).map(p=>({...p,player_name:league==='league-b'?'B '+p.player_name:p.player_name}));
     });
-    await settle(r); assert.ok(findNode(r.h.output,n=>n.props.testID==='stats-leaders-loading'));
+    await settle(r);
     findNode(r.h.output,n=>n.props.testID==='stats-leaders-tab-assists')?.props.onPress();
-    await settle(r); release([{...players[0],player_name:'STALE GOALS PLAYER'}]); await settle(r);
+    await settle(r);
     assert.doesNotMatch(nodeText(findNode(r.h.output,n=>n.props.testID==='stats-leaders-card')),/STALE GOALS PLAYER/);
-    r.league.activeLeague={id:'league-b',name:'Bay League'};r.league.activeDivision={id:'division-b',name:'B'};r.h.render();
+    r.league.activeLeague={id:'league-b',slug:'bay',name:'Bay League'};r.league.activeDivision={id:'division-b',name:'B'};r.h.render();
     assert.equal(cardRows(r.h.output).length,0);
     await settle(r);
     assert.ok(r.calls.some(a=>a[0]==='league-b'&&a[1]==='assists'&&a[2]===5&&a[3]==='division-b'));

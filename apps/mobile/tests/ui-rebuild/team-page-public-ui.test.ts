@@ -134,9 +134,31 @@ describe('native Team public composition', () => {
     }
     const current = findNode(list, (node) => node.props.testID === 'team-roster-player-p1');
     assert.match(current?.props.accessibilityLabel, /Matt Grossi.*11 games played.*12 goals.*13 assists.*25 points.*4 penalty minutes/i);
-    assert.match(nodeText(run.harness.output), /~GP is an estimate.*not attendance/i);
+    assert.match(nodeText(run.harness.output), /~GP is estimated.*Needs review/i);
     current?.props.onPress();
     assert.deepEqual(run.openedPlayers, ['p1']);
+  });
+
+  it('renders conflicted, estimated, unknown, and verified-zero v2 metrics literally', () => {
+    const m = (value: number | null, state: string, sources: string[]) => ({ value, state, sources });
+    const sourcePlayer = { ...roster[0], gamesPlayed: null, penaltyMinutes: null, publicMetrics: {
+      gamesPlayed: m(null, 'conflicted', ['attendance']), goals: m(15, 'recorded', ['skater_stats']),
+      assists: m(10, 'reported', ['imported']), points: m(25, 'recorded', ['skater_stats']), penaltyMinutes: m(null, 'unknown', []),
+    } };
+    const verifiedZero = { ...roster[1], gamesPlayed: 11, penaltyMinutes: 0, publicMetrics: {
+      gamesPlayed: m(11, 'estimated', ['roster_window']), goals: m(0, 'recorded', ['skater_stats']),
+      assists: m(0, 'recorded', ['skater_stats']), points: m(0, 'recorded', ['skater_stats']), penaltyMinutes: m(0, 'verified', ['capture_confirmation']),
+    } };
+    const run = runtime(320, { ...snapshot, roster: [sourcePlayer, verifiedZero] });
+    findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    const output = run.harness.render();
+    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed')), 'GPNeeds review');
+    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-penaltyMinutes')), 'PIM—');
+    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-gamesPlayed')), 'GP~11');
+    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-penaltyMinutes')), 'PIM0');
+    assert.match(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /Needs review.*Conflicting records need review.*Not recorded/i);
+    const reviewCell = findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed');
+    assert.equal(flattenStyle(reviewCell?.props.style).flexBasis, '100%', 'full conflict status needs a readable row');
   });
 
   it('exposes fact-bearing game/player labels and known live/pending scores without inventing jersey zero', () => {

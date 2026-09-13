@@ -6,6 +6,7 @@ import { Image, ImageBackground, Pressable, StyleSheet, Text, useWindowDimension
 import Avatar from '../../components/Avatar';
 import TeamLogo from '../../components/TeamLogo';
 import type { TeamLeaderMetric, TeamPageGame, TeamPageLeader, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
+import { formatPublicMetric } from '../../lib/supabase/publicStats';
 import colors from '../../theme/colors';
 import { ui } from '../../theme/ui';
 
@@ -199,7 +200,7 @@ function LeaderCard({ leader, place, accent, metric, onOpenPlayer }: { leader: T
       <View style={[styles.leaderAvatarHalo, { width: portraitSize + 10, height: portraitSize + 10, borderColor: tone }]}><View style={[styles.leaderAvatarInner, { borderColor: `${tone}88` }]}><Avatar uri={leader.photoUrl} name={leader.name} size={portraitSize} /></View></View>
       <Text numberOfLines={2} style={styles.leaderName}>{leader.name}</Text>
       <Text style={[styles.leaderValue, { color: accent }]}>{leader.value}</Text>
-      <Text style={styles.leaderMeta}>{leader.jerseyNumber == null ? 'No #' : `#${leader.jerseyNumber}`} • {estimatedDisplay(leader.gamesPlayed, leader.gamesPlayedProvenance === 'estimated')} GP</Text>
+      <Text style={styles.leaderMeta}>{leader.jerseyNumber == null ? 'No #' : `#${leader.jerseyNumber}`} • {leader.gamesPlayedMetric ? formatPublicMetric(leader.gamesPlayedMetric).value : estimatedDisplay(leader.gamesPlayed, leader.gamesPlayedProvenance === 'estimated')} GP</Text>
     </Pressable>
   );
 }
@@ -209,13 +210,13 @@ function Leaders({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapsho
   const [bars, setBars] = React.useState(false);
   const leaders = snapshot.leaders[metric] ?? [];
   const podium = leaders.length <= 1 ? leaders : leaders.length === 2 ? [leaders[1], leaders[0]] : [leaders[1], leaders[0], leaders[2]];
-  const allPlayers = [...snapshot.roster].filter((player) => !player.isGoalie && player[metric] != null).sort((a, b) => (b[metric] ?? 0) - (a[metric] ?? 0) || a.name.localeCompare(b.name));
-  const max = Math.max(1, ...allPlayers.map((player) => player[metric] ?? 0));
+  const allPlayers = leaders;
+  const max = Math.max(1, ...allPlayers.map((player) => player.value));
   return (
     <View testID="team-leaders-section">
       <SectionHeading icon="bar-chart-outline" title="Team Leaders" accent={accent} />
       <View style={styles.readingPanel}>
-        <Text testID="team-gp-estimate-explanation" style={styles.estimateNote}>~GP is estimated from active-roster dates and completed public games; actual attendance may differ.</Text>
+        <Text testID="team-gp-estimate-explanation" style={styles.estimateNote}>~GP is estimated. — means not recorded. Conflicting GP displays “Needs review”.</Text>
         <View style={styles.leaderControls}>
           <View style={styles.segmented}>
             {METRICS.map((item) => {
@@ -228,7 +229,7 @@ function Leaders({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapsho
         {bars ? (
           <View testID="team-leader-bars" style={styles.bars}>
             {allPlayers.map((player) => {
-              const value = player[metric] ?? 0;
+              const value = player.value;
               return <Pressable key={player.playerId} accessibilityRole="button" accessibilityLabel={`${player.name}, ${value} ${METRIC_NAMES[metric]}, ${player.gamesPlayed == null ? 'games played unknown' : `${player.gamesPlayedProvenance === 'estimated' ? 'approximately ' : ''}${player.gamesPlayed} games played`}. Open player card.`} onPress={() => onOpenPlayer(player.playerId)} style={styles.barRow}><View style={styles.barIdentity}><Avatar uri={player.photoUrl} name={player.name} size={32} /><Text numberOfLines={1} style={styles.barName}>{player.name}</Text><Text style={[styles.barValue, { color: accent }]}>{value}</Text></View><View style={styles.barTrack}><View style={[styles.barFill, { width: `${Math.max(value > 0 ? 8 : 0, value / max * 100)}%`, backgroundColor: accent }]} /></View></Pressable>;
             })}
           </View>
@@ -289,7 +290,11 @@ function RosterStatRow({ player, onOpenPlayer }: { player: TeamPageRosterPlayer;
   const position = positionBucket(player) === 'goalie' ? 'G' : positionBucket(player) === 'defence' ? 'D' : 'F';
   const jersey = player.jerseyNumber == null ? 'No #' : `#${player.jerseyNumber}`;
   const leadership = player.leadershipRole === 'captain' ? ' • C' : player.leadershipRole === 'alternate_captain' ? ' • A' : '';
-  const facts = ROSTER_STAT_COLUMNS.map(({ key, spoken }) => `${key === 'gamesPlayed' && player.gamesPlayedProvenance === 'estimated' ? 'approximately ' : ''}${player[key] == null ? 'unknown' : player[key]} ${spoken}`).join(', ');
+  const metricFor = (key: (typeof ROSTER_STAT_COLUMNS)[number]['key']) => player.publicMetrics?.[key];
+  const displayFor = (key: (typeof ROSTER_STAT_COLUMNS)[number]['key']) => metricFor(key)
+    ? formatPublicMetric(metricFor(key)!).value
+    : key === 'gamesPlayed' ? estimatedDisplay(player[key], player.gamesPlayedProvenance === 'estimated') : nullableDisplay(player[key]);
+  const facts = ROSTER_STAT_COLUMNS.map(({ key, spoken }) => `${displayFor(key)} ${spoken}${metricFor(key) ? `, ${formatPublicMetric(metricFor(key)!).hint}` : ''}`).join(', ');
   return (
     <Pressable testID={`team-roster-player-${player.playerId}`} accessibilityRole="button" accessibilityLabel={`${player.name}, ${jersey}, ${position}${leadership}. ${facts}. Open player card.`} onPress={() => onOpenPlayer(player.playerId)} style={styles.rosterListRow}>
       <View style={styles.rosterListIdentity}>
@@ -298,11 +303,14 @@ function RosterStatRow({ player, onOpenPlayer }: { player: TeamPageRosterPlayer;
         <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
       </View>
       <View style={styles.rosterStatGrid}>
-        {ROSTER_STAT_COLUMNS.map(({ key, label }) => (
-          <View key={key} testID={`team-roster-stat-${player.playerId}-${key}`} style={styles.rosterStatCell}>
-            <Text style={styles.rosterStatLabel}>{label}</Text><Text style={styles.rosterStatValue}>{key === 'gamesPlayed' ? estimatedDisplay(player[key], player.gamesPlayedProvenance === 'estimated') : nullableDisplay(player[key])}</Text>
-          </View>
-        ))}
+        {ROSTER_STAT_COLUMNS.map(({ key, label }) => {
+          const value = displayFor(key);
+          return (
+            <View key={key} testID={`team-roster-stat-${player.playerId}-${key}`} style={[styles.rosterStatCell, value === 'Needs review' && styles.rosterStatCellStatus]}>
+              <Text style={styles.rosterStatLabel}>{label}</Text><Text style={styles.rosterStatValue}>{value}</Text>
+            </View>
+          );
+        })}
       </View>
     </Pressable>
   );
@@ -322,7 +330,7 @@ function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPag
     <View testID="team-roster-section">
       <View style={styles.rosterHeadingRow}><View style={styles.rosterHeadingCopy}><SectionHeading icon="people-outline" title={snapshot.nextGame ? 'Next Game Roster' : 'Roster'} accent={accent} /></View><View style={styles.iconToggle}><Pressable testID="team-roster-jersey-toggle" accessibilityRole="button" accessibilityLabel="Show jersey roster" onPress={() => setListView(false)} style={[styles.iconToggleButton, !listView && { backgroundColor: accent }]}><Ionicons name="shirt-outline" size={19} color={!listView ? '#02111B' : colors.textSecondary} /></Pressable><Pressable testID="team-roster-list-toggle" accessibilityRole="button" accessibilityLabel="Show roster list" onPress={() => setListView(true)} style={[styles.iconToggleButton, listView && { backgroundColor: accent }]}><Ionicons name="list" size={20} color={listView ? '#02111B' : colors.textSecondary} /></Pressable></View></View>
       <Text style={styles.rosterTruth}>{display.published ? 'Published next-game lineup' : snapshot.nextGame ? 'Current active-season roster • no published lineup' : 'Current active-season roster'}</Text>
-      <Text style={styles.estimateNote}>~GP is an estimate from roster dates and completed public games, not attendance.</Text>
+      <Text style={styles.estimateNote}>~ indicates an estimate. — means not recorded. “Needs review” marks conflicting records.</Text>
       {snapshot.acceptedSubstitutions.length > 0 ? <View testID="team-substitution-notes" style={styles.substitutionNotes}>{snapshot.acceptedSubstitutions.map((substitution) => <Text key={substitution.id} style={styles.substitutionNote}>🥖 {substitution.subPlayerName} subbing in{substitution.replacedPlayerName ? ` for ${substitution.replacedPlayerName}` : ''}</Text>)}</View> : null}
       {listView ? (
         <View testID="team-roster-list" style={styles.readingPanel}>{snapshot.roster.map((player) => <RosterStatRow key={player.playerId} player={player} onOpenPlayer={onOpenPlayer} />)}</View>
@@ -417,7 +425,7 @@ const styles = StyleSheet.create({
   rosterListRow: { minHeight: 88, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,.13)', paddingVertical: 12 },
   rosterListIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rosterListCopy: { flex: 1, minWidth: 0 }, rosterListName: { color: '#F7FBFF', fontSize: 13, lineHeight: 18, fontWeight: '900' }, rosterListMeta: { marginTop: 3, color: '#A8B4C8', fontSize: 10, lineHeight: 14 },
-  rosterStatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, rosterStatCell: { flexBasis: '17%', flexGrow: 1, flexShrink: 1, minWidth: 40, alignItems: 'center' },
+  rosterStatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, rosterStatCell: { flexBasis: '17%', flexGrow: 1, flexShrink: 1, minWidth: 40, alignItems: 'center' }, rosterStatCellStatus: { flexBasis: '100%' },
   rosterStatLabel: { color: '#A8B4C8', fontSize: 10, lineHeight: 14, fontWeight: '800', textAlign: 'center' }, rosterStatValue: { color: '#F7FBFF', fontSize: 15, lineHeight: 20, fontWeight: '900', textAlign: 'center' },
   rivalPanel: { borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,.14)', backgroundColor: '#080D14', padding: 16, gap: 15 }, rivalEyebrow: { color: '#748196', fontSize: 8, fontWeight: '900', letterSpacing: 1.25, textAlign: 'center' }, rivalTeams: { flexDirection: 'row', alignItems: 'center', gap: 10 }, rivalIdentity: { flex: 1, alignItems: 'center', gap: 7 }, rivalName: { minHeight: 30, color: '#F7FBFF', fontSize: 12, lineHeight: 15, fontWeight: '900' }, rivalVs: { color: '#586579', fontSize: 10, fontWeight: '900' }, rivalMetric: { gap: 5 }, rivalMetricHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, rivalMetricLabel: { color: '#748196', fontSize: 8, fontWeight: '900', letterSpacing: 1 }, rivalMetricValue: { minWidth: 46, color: '#E8EEF7', fontSize: 11, fontWeight: '900', textAlign: 'center' }, rivalBars: { flexDirection: 'row', gap: 8 }, rivalTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: '#171D27', overflow: 'hidden' }, rivalBarLeft: { alignSelf: 'flex-end', height: 5, borderRadius: 3 }, rivalBarRight: { height: 5, borderRadius: 3 }, h2hRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, rivalLeaderRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 }, rivalLeaderSide: { minWidth: 0, flex: 1 }, rivalLeaderName: { color: '#E8EEF7', fontSize: 10, fontWeight: '800' }, rivalLeaderValue: { marginTop: 2, fontSize: 11, fontWeight: '900' }, badgesRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', justifyContent: 'space-between' }, badge: { maxWidth: '100%', marginTop: 5, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(34,211,238,.28)', backgroundColor: 'rgba(34,211,238,.08)', paddingHorizontal: 9, paddingVertical: 5 }, badgeText: { color: '#B8F5FF', fontSize: 8, fontWeight: '900' }, carouselControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, carouselButton: { width: ui.minTouchTarget, height: ui.minTouchTarget, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,.13)' }, carouselDots: { color: '#22D3EE', fontSize: 14, letterSpacing: 4 },
   captainContact: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12 }, captainName: { color: '#F7FBFF', fontSize: 14, fontWeight: '900' }, captainMeta: { marginTop: 3, color: '#7D899C', fontSize: 11 },

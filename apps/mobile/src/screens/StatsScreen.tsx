@@ -14,9 +14,9 @@ import { useLeague } from '../context/LeagueContext';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import type { StatsStackParamList } from '../navigation/types';
-import { supabase } from '../lib/supabase/client';
-import { getStatsLeaders, type PlayerStatRow } from '../lib/supabase/data';
-import { getPublicGoalies, type PublicGoalie } from '../lib/supabase/publicStats';
+import { getStatsLeadersFromPublicSeason, type PlayerStatRow } from '../lib/supabase/data';
+import { getMetricsOperationalSeason } from '../lib/supabase/team';
+import { formatPublicMetric, getPublicGoaliesV2, getPublicSeasonStats, type PublicGoalieV2, type PublicSeasonStats } from '../lib/supabase/publicStats';
 import colors from '../theme/colors';
 
 type StatsTab = 'Skaters' | 'Goalies';
@@ -38,19 +38,6 @@ type GlobalLeagueLeaders = {
   estimated?: boolean;
 };
 
-async function enrichWithAvatars<T extends { player_id: string; avatar_url?: string | null }>(
-  players: T[],
-): Promise<Array<T & { avatar_url: string | null }>> {
-  if (players.length === 0) return [];
-  const playerIds = players.map((p) => p.player_id);
-  const { data: profiles } = await supabase.from('profiles').select('id, avatar_url').in('id', playerIds);
-  const avatarMap = new Map<string, string | null>((profiles ?? []).map((p: { id: string; avatar_url: string | null }) => [p.id, p.avatar_url]));
-  return players.map((player) => ({
-    ...player,
-    avatar_url: player.avatar_url ?? avatarMap.get(player.player_id) ?? null,
-  }));
-}
-
 function mapSkaterRows(players: EnrichedPlayer[]): LeaderboardRow[] {
   return players.map((player) => ({
     player_id: player.player_id,
@@ -58,23 +45,23 @@ function mapSkaterRows(players: EnrichedPlayer[]): LeaderboardRow[] {
     team_short_name: player.team_short_name,
     avatar_url: player.avatar_url,
     stats: [
-      { label: 'G', value: player.goals },
-      { label: 'A', value: player.assists },
-      { label: 'PTS', value: player.points },
+      { label: 'G', value: player.metrics ? formatPublicMetric(player.metrics.goals).value : player.goals ?? '—' },
+      { label: 'A', value: player.metrics ? formatPublicMetric(player.metrics.assists).value : player.assists ?? '—' },
+      { label: 'PTS', value: player.metrics ? formatPublicMetric(player.metrics.points).value : player.points ?? '—' },
     ],
   }));
 }
 
-function mapGoalieRows(players: PublicGoalie[]): LeaderboardRow[] {
+function mapGoalieRows(players: PublicGoalieV2[]): LeaderboardRow[] {
   return players.map((player) => ({
-    player_id: player.player_id,
-    player_name: player.player_name,
-    team_short_name: player.team_name,
-    avatar_url: player.avatar_url,
+    player_id: player.playerId,
+    player_name: player.playerName,
+    team_short_name: player.displayTeam?.name ?? 'Unknown team',
+    avatar_url: player.avatarUrl,
     stats: [
-      { label: 'W', value: player.wins },
-      { label: 'SV%', value: player.save_percentage === null ? '—' : player.save_percentage.toFixed(3) },
-      { label: 'GAA', value: player.goals_against_average === null ? '—' : player.goals_against_average.toFixed(2) },
+      { label: 'W', value: formatPublicMetric(player.metrics.wins).value },
+      { label: 'SV%', value: formatPublicMetric(player.metrics.savePercentage, 3).value },
+      { label: 'GAA', value: formatPublicMetric(player.metrics.goalsAgainstAverage, 2).value },
     ],
   }));
 }
@@ -83,22 +70,23 @@ export default function StatsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<StatsStackParamList>>();
   const { activeLeague, activeTheme, activeDivision, setActiveDivision, divisions, availableLeagues } = useLeague();
   const [selectedTab, setSelectedTab] = React.useState<StatsTab>('Skaters');
-  const [skaters, setSkaters] = React.useState<EnrichedPlayer[]>([]);
+  const [seasonSnapshot, setSeasonSnapshot] = React.useState<{ scope: string; status: StatsLeaderStatus | 'no-season'; payload: PublicSeasonStats | null }>({ scope: '', status: 'loading', payload: null });
   const [goalieRetry, setGoalieRetry] = React.useState(0);
-  const [goalieSnapshot, setGoalieSnapshot] = React.useState<{ scope: string; status: 'loading' | 'ready' | 'error'; rows: PublicGoalie[]; seasonName: string | null }>({ scope: '', status: 'loading', rows: [], seasonName: null });
+  const [goalieSnapshot, setGoalieSnapshot] = React.useState<{ scope: string; status: 'loading' | 'ready' | 'error' | 'no-season'; rows: PublicGoalieV2[]; seasonName: string | null }>({ scope: '', status: 'loading', rows: [], seasonName: null });
   const [globalLeaders, setGlobalLeaders] = React.useState<GlobalLeagueLeaders[]>([]);
   const [globalSnapshotScope, setGlobalSnapshotScope] = React.useState('');
-  const [loading, setLoading] = React.useState(false);
   const [globalStatus, setGlobalStatus] = React.useState<'loading' | 'ready' | 'error'>('loading');
   const { reduceTransparency } = useAccessibilityPreferences();
   const [leaderMetric, setLeaderMetric] = React.useState<StatsLeaderMetric>('goals');
   const [leaderRetry, setLeaderRetry] = React.useState(0);
-  const [leaderSnapshot, setLeaderSnapshot] = React.useState<{ scope: string; status: StatsLeaderStatus; rows: EnrichedPlayer[] }>({ scope: '', status: 'loading', rows: [] });
   const leaderLeagueId = activeLeague?.id;
   const activeLeagueSlug = activeLeague?.slug;
   const leaderDivisionId = activeDivision?.id;
-  const leaderScope = `${leaderLeagueId ?? ''}:${leaderDivisionId ?? ''}:${leaderMetric}`;
-  const leaderCard = leaderSnapshot.scope === leaderScope ? leaderSnapshot : { status: 'loading' as const, rows: [] };
+  const seasonScope = `${leaderLeagueId ?? ''}:${activeLeagueSlug ?? ''}:${leaderDivisionId ?? ''}`;
+  const seasonView = seasonSnapshot.scope === seasonScope ? seasonSnapshot : { status: 'loading' as const, payload: null };
+  const skaters = seasonView.payload ? getStatsLeadersFromPublicSeason(seasonView.payload, 'points', 50) as EnrichedPlayer[] : [];
+  const leaderRows = seasonView.payload ? getStatsLeadersFromPublicSeason(seasonView.payload, leaderMetric, 5) as EnrichedPlayer[] : [];
+  const leaderCard = { status: seasonView.status === 'no-season' ? 'ready' as const : seasonView.status, rows: leaderRows };
   const goalieScope = `${activeLeague?.id ?? ''}:${activeDivision?.id ?? ''}`;
   const goalieView = goalieSnapshot.scope === goalieScope ? goalieSnapshot : { status: 'loading' as const, rows: [], seasonName: null };
   const globalScope = `${selectedTab}:${availableLeagues.map((league) => `${league.id}:${league.slug}`).join('|')}`;
@@ -108,42 +96,36 @@ export default function StatsScreen() {
 
   React.useEffect(() => {
     let current = true;
-    if (!leaderLeagueId) return;
-    setLeaderSnapshot({ scope: leaderScope, status: 'loading', rows: [] });
-    // Query the selected metric's top five, not a client sort of the points table.
-    getStatsLeaders(leaderLeagueId, leaderMetric, 5, leaderDivisionId, undefined, { throwOnError: true })
-      .then(enrichWithAvatars)
-      .then((rows) => { if (current) setLeaderSnapshot({ scope: leaderScope, status: 'ready', rows }); })
-      .catch(() => { if (current) setLeaderSnapshot({ scope: leaderScope, status: 'error', rows: [] }); });
+    if (!leaderLeagueId || !activeLeagueSlug) return;
+    setSeasonSnapshot({ scope: seasonScope, status: 'loading', payload: null });
+    void getMetricsOperationalSeason(leaderLeagueId)
+      .then(({ season, error }) => {
+        if (error) throw new Error(error);
+        if (!season) {
+          if (current) setSeasonSnapshot({ scope: seasonScope, status: 'no-season', payload: null });
+          return null;
+        }
+        return getPublicSeasonStats(activeLeagueSlug, leaderLeagueId, season.id, leaderDivisionId ?? null);
+      })
+      .then((payload) => { if (current && payload) setSeasonSnapshot({ scope: seasonScope, status: 'ready', payload }); })
+      .catch(() => { if (current) setSeasonSnapshot({ scope: seasonScope, status: 'error', payload: null }); });
     return () => { current = false; };
-  }, [leaderLeagueId, leaderDivisionId, leaderMetric, leaderRetry, leaderScope]);
-
-  React.useEffect(() => {
-    if (!leaderLeagueId) {
-      setSkaters([]);
-      return;
-    }
-
-    setLoading(true);
-    setSkaters([]);
-    const divId = leaderDivisionId ?? undefined;
-    let current = true;
-    getStatsLeaders(leaderLeagueId, 'points', 50, divId).then(enrichWithAvatars)
-      .then((rows) => { if (current) setSkaters(rows); })
-      .catch(() => { if (current) setSkaters([]); })
-      .finally(() => { if (current) setLoading(false); });
-    return () => { current = false; };
-  }, [leaderLeagueId, leaderDivisionId]);
+  }, [activeLeagueSlug, leaderDivisionId, leaderLeagueId, leaderRetry, seasonScope]);
 
   React.useEffect(() => {
     let current = true;
     if (!leaderLeagueId || !activeLeagueSlug || selectedTab !== 'Goalies') return;
     setGoalieSnapshot({ scope: goalieScope, status: 'loading', rows: [], seasonName: null });
-    getPublicGoalies(activeLeagueSlug, leaderLeagueId, null, leaderDivisionId ?? null)
+    if (seasonView.status === 'error' || seasonView.status === 'no-season') {
+      setGoalieSnapshot({ scope: goalieScope, status: seasonView.status, rows: [], seasonName: null });
+      return;
+    }
+    if (!seasonView.payload) return () => { current = false; };
+    getPublicGoaliesV2(activeLeagueSlug, leaderLeagueId, seasonView.payload.presentationSeason.id, leaderDivisionId ?? null)
       .then((result) => { if (current) setGoalieSnapshot({ scope: goalieScope, status: 'ready', rows: result.goalies, seasonName: result.presentationSeason?.name ?? null }); })
       .catch(() => { if (current) setGoalieSnapshot({ scope: goalieScope, status: 'error', rows: [], seasonName: null }); });
     return () => { current = false; };
-  }, [activeLeagueSlug, leaderLeagueId, leaderDivisionId, selectedTab, goalieRetry, goalieScope]);
+  }, [activeLeagueSlug, leaderLeagueId, leaderDivisionId, selectedTab, goalieRetry, goalieScope, seasonView.payload, seasonView.status]);
 
   React.useEffect(() => {
     let current = true;
@@ -163,7 +145,11 @@ export default function StatsScreen() {
     Promise.all(
       availableLeagues.map(async (league) => {
         if (selectedTab === 'Skaters') {
-          const rows = await getStatsLeaders(league.id, 'points', 3).then(enrichWithAvatars);
+          const { season, error } = await getMetricsOperationalSeason(league.id);
+          if (error) throw new Error(error);
+          if (!season) return { leagueId: league.id, leagueName: league.name, primaryColor: league.theme.primaryColor, rows: [] } satisfies GlobalLeagueLeaders;
+          const payload = await getPublicSeasonStats(league.slug, league.id, season.id);
+          const rows = getStatsLeadersFromPublicSeason(payload, 'points', 3) as EnrichedPlayer[];
           return {
             leagueId: league.id,
             leagueName: league.name,
@@ -172,14 +158,17 @@ export default function StatsScreen() {
           } satisfies GlobalLeagueLeaders;
         }
 
-        const result = await getPublicGoalies(league.slug, league.id);
+        const { season, error } = await getMetricsOperationalSeason(league.id);
+        if (error) throw new Error(error);
+        if (!season) return { leagueId: league.id, leagueName: league.name, primaryColor: league.theme.primaryColor, rows: [] } satisfies GlobalLeagueLeaders;
+        const result = await getPublicGoaliesV2(league.slug, league.id, season.id);
         return {
           leagueId: league.id,
           leagueName: league.name,
           primaryColor: league.theme.primaryColor,
           rows: mapGoalieRows(result.goalies.slice(0, 3)),
           seasonName: result.presentationSeason?.name,
-          estimated: result.source === 'estimated',
+          estimated: result.goalies.some((goalie) => Object.values(goalie.metrics).some((metric) => metric.state === 'estimated')),
         } satisfies GlobalLeagueLeaders;
       }),
     )
@@ -260,6 +249,10 @@ export default function StatsScreen() {
       ? mapSkaterRows(skaters)
       : mapGoalieRows(goalieView.rows);
   const emptyMsg = selectedTab === 'Skaters' ? 'No skater stats yet' : 'No goalie stats yet';
+  const retrySeason = () => {
+    setLeaderRetry((value) => value + 1);
+    setGoalieRetry((value) => value + 1);
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
@@ -276,7 +269,7 @@ export default function StatsScreen() {
       </View>
       <FlatList
         testID="stats-page-list"
-        data={(selectedTab === 'Skaters' ? loading : goalieView.status === 'loading') ? [] : list}
+        data={(selectedTab === 'Skaters' ? seasonView.status === 'loading' : goalieView.status === 'loading') ? [] : list}
         keyExtractor={(item, index) => `${item.player_id}-${index}`}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
@@ -285,15 +278,21 @@ export default function StatsScreen() {
             <View style={styles.tableControls}>
               <Text accessibilityRole="header" style={styles.tableTitle}>Player stats</Text>
               {selectedTab === 'Goalies' && goalieView.seasonName ? <Text style={styles.seasonLabel}>{goalieView.seasonName}</Text> : null}
-              {selectedTab === 'Goalies' && goalieView.rows.some((row) => row.estimated) ? <Text style={styles.estimateNote}>Estimated from published game results.</Text> : null}
+              {selectedTab === 'Goalies' && goalieView.rows.some((row) => Object.values(row.metrics).some((metric) => metric.state === 'estimated')) ? <Text style={styles.estimateNote}>~ indicates an estimate; unavailable fields remain —.</Text> : null}
               <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} />
               <PillToggle options={tabs} selected={selectedTab} onChange={setSelectedTab} />
             </View>
           </>
         }
         ListEmptyComponent={selectedTab === 'Goalies' && goalieView.status === 'error'
-          ? <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>Unable to load goalie stats</Text><Pressable testID="goalies-retry" onPress={() => setGoalieRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></Pressable></View>
-          : (selectedTab === 'Skaters' ? loading : goalieView.status === 'loading')
+          ? <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>Unable to load goalie stats</Text><Pressable testID="goalies-retry" onPress={retrySeason}><Text style={styles.retryText}>Retry</Text></Pressable></View>
+          : selectedTab === 'Goalies' && goalieView.status === 'no-season'
+            ? <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>No season available</Text><Pressable testID="goalies-retry" onPress={retrySeason}><Text style={styles.retryText}>Retry</Text></Pressable></View>
+          : selectedTab === 'Skaters' && seasonView.status === 'error'
+            ? <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>Unable to load skater stats</Text><Pressable testID="skaters-retry" onPress={retrySeason}><Text style={styles.retryText}>Retry</Text></Pressable></View>
+          : selectedTab === 'Skaters' && seasonView.status === 'no-season'
+            ? <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>No season available</Text><Pressable testID="skaters-retry" onPress={retrySeason}><Text style={styles.retryText}>Retry</Text></Pressable></View>
+          : (selectedTab === 'Skaters' ? seasonView.status === 'loading' : goalieView.status === 'loading')
             ? <View style={styles.tableEmpty}><ActivityIndicator color={activeTheme.primaryColor} /></View>
             : <View style={styles.tableEmpty}><Text style={styles.emptyTitle}>{emptyMsg}</Text></View>}
         renderItem={({ item, index }) => (

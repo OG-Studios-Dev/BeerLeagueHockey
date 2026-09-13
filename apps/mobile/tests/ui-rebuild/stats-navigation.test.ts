@@ -27,8 +27,9 @@ describe('Stats navigation', () => {
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
       '../navigation/playerCard': { navigateToPlayerCard() {} },
       '../lib/supabase/client': { supabase: { from: () => ({ select: () => ({ in: async () => ({ data: [] }) }) }) } },
-      '../lib/supabase/data': { getStatsLeaders: async () => [] },
-      '../lib/supabase/publicStats': { getPublicGoalies: async () => ({ goalies: [], presentationSeason: null }) },
+      '../lib/supabase/data': { getStatsLeadersFromPublicSeason: () => [] },
+      '../lib/supabase/team': { getMetricsOperationalSeason: async () => ({ season: { id: 'season-a' }, error: null }) },
+      '../lib/supabase/publicStats': { getPublicSeasonStats: async () => ({ presentationSeason: { id: 'season-a' }, players: [] }), getPublicGoaliesV2: async () => ({ goalies: [], presentationSeason: { id: 'season-a' } }) },
       '../theme/colors': { __esModule: true, default: { bgBase: '#000', textPrimary: '#fff', textSecondary: '#aaa', primary: '#0ff', glassHighlight: '#333' } },
     }).default;
     h.mount(() => Screen());

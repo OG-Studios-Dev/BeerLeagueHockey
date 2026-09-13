@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import Avatar from './Avatar';
 import type { PlayerStatRow } from '../lib/supabase/data';
+import { formatPublicMetric } from '../lib/supabase/publicStats';
 import { ui } from '../theme/ui';
 
 export type StatsLeaderMetric = 'goals' | 'assists' | 'points';
@@ -43,7 +44,9 @@ function LeaderAvatar({ player, featured }: { player: StatsCardLeader; featured:
 
 export default function StatsLeadersCard({ leagueName, divisionName, metric, leaders, status, reduceTransparency = false, onMetricChange, onRetry, onOpenPlayer }: Props) {
   const rows = leaders.slice(0, 5);
-  const maximum = Math.max(1, ...rows.map((row) => row[metric]));
+  const numericValue = (row: StatsCardLeader) => row.metrics?.[metric].value ?? row[metric] ?? 0;
+  const displayValue = (row: StatsCardLeader) => row.metrics ? formatPublicMetric(row.metrics[metric]).value : row[metric] ?? '—';
+  const maximum = Math.max(1, ...rows.map(numericValue));
   return (
     <View testID="stats-leaders-card" style={styles.card}>
       <LinearGradient colors={reduceTransparency ? ['#0C1925', '#0C1925'] : ['#112B35', '#0B1723', '#090F19']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={styles.surface}>
@@ -79,7 +82,7 @@ export default function StatsLeadersCard({ leagueName, divisionName, metric, lea
               const featured = index === 0;
               const teamName = player.team_name || player.team_short_name;
               return (
-                <Pressable key={player.player_id} testID={`stats-leader-row-${player.player_id}`} accessibilityRole="button" accessibilityLabel={`${index + 1}. ${player.player_name}, ${teamName}, ${player[metric]} ${metric}. Open player card.`} onPress={() => onOpenPlayer(player.player_id)} style={({ pressed }) => [featured ? styles.featured : styles.row, pressed && styles.pressed]}>
+                <Pressable key={player.player_id} testID={`stats-leader-row-${player.player_id}`} accessibilityRole="button" accessibilityLabel={`${index + 1}. ${player.player_name}, ${teamName}, ${displayValue(player)} ${metric}. Open player card.`} onPress={() => onOpenPlayer(player.player_id)} style={({ pressed }) => [featured ? styles.featured : styles.row, pressed && styles.pressed]}>
                   {!featured ? <Text allowFontScaling={false} style={styles.rank}>{String(index + 1).padStart(2, '0')}</Text> : null}
                   <LeaderAvatar player={player} featured={featured} />
                   <View style={styles.playerCopy}>
@@ -88,10 +91,10 @@ export default function StatsLeadersCard({ leagueName, divisionName, metric, lea
                     <Text style={styles.teamName}>{teamName}</Text>
                   </View>
                   <View style={styles.score}>
-                    <Text testID={`stats-leader-value-${player.player_id}`} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.3} style={[styles.value, featured && styles.featuredValue]}>{player[metric]}</Text>
+                    <Text testID={`stats-leader-value-${player.player_id}`} numberOfLines={1} adjustsFontSizeToFit maxFontSizeMultiplier={1.3} style={[styles.value, featured && styles.featuredValue]}>{displayValue(player)}</Text>
                     {featured ? <Text style={styles.valueLabel}>{metric.toUpperCase()}</Text> : null}
                   </View>
-                  {!featured ? <View pointerEvents="none" style={styles.track}><View style={[styles.fill, { width: `${Math.max(0, player[metric]) / maximum * 100}%` }]} /></View> : null}
+                  {!featured ? <View pointerEvents="none" style={styles.track}><View style={[styles.fill, { width: `${Math.max(0, numericValue(player)) / maximum * 100}%` }]} /></View> : null}
                 </Pressable>
               );
             })}

@@ -101,6 +101,11 @@ function createSupabase(dataset: Dataset, fail?: (query: RecordedQuery) => strin
 }
 
 const activeSeason = { id: 'season-current', league_id: 'league-a', name: 'Fall 2026', status: 'active', start_date: '2026-08-01', end_date: null };
+const canonicalPublicStats = async () => ({ players: [{ playerId: 'player-a', playerName: 'Matt Current', avatarUrl: 'matt.jpg', roles: ['skater'], metrics: {
+  gamesPlayed: { value: 2, state: 'recorded', sources: ['skater_stats'] }, goals: { value: 2, state: 'recorded', sources: ['skater_stats'] },
+  assists: { value: 1, state: 'recorded', sources: ['skater_stats'] }, points: { value: 3, state: 'recorded', sources: ['skater_stats'] },
+  penaltyMinutes: { value: 4, state: 'reported', sources: ['skater_stats'] },
+}, goalie: null }] });
 
 function fixture(): Dataset {
   const dummyStats = Array.from({ length: 1000 }, (_, index) => ({
@@ -152,7 +157,8 @@ async function loadFixture(dataset: Dataset, fail?: (query: RecordedQuery) => st
   const database = createSupabase(dataset, fail);
   const loader = compileCommonJs<{ loadTeamPageSnapshot: (teamId: string, leagueId: string, now: Date) => Promise<TeamPageResult> }>(
     new URL('../../src/lib/supabase/teamPage.ts', import.meta.url),
-    { './client': { supabase: database.supabase }, './team': { getTeamActiveSeason: async () => ({ season: activeSeason, error: null }) } },
+    { './client': { supabase: database.supabase }, './team': { getMetricsOperationalSeason: async () => ({ season: activeSeason, error: null }) },
+      './publicStats': { getPublicSeasonStats: canonicalPublicStats } },
   );
   return { ...await loader.loadTeamPageSnapshot('team-a', 'league-a', new Date('2026-09-12T12:00:00Z')), queries: database.queries };
 }
@@ -199,7 +205,7 @@ describe('Team public loader producer boundary', () => {
     assert.equal(result.data.league.timezone, 'America/Vancouver');
     assert.deepEqual(result.data.roster.map((row: Row) => row.playerId), ['player-a']);
     assert.equal(result.data.roster[0].gamesPlayed, 2, 'both completed public games after join are estimate inputs');
-    assert.equal(result.data.roster[0].gamesPlayedProvenance, 'estimated');
+    assert.equal(result.data.roster[0].gamesPlayedProvenance, 'authoritative');
     assert.equal(result.queries.some((q) => q.table === 'player_season_stats' || q.table === 'goalie_season_stats'), false);
     assert.equal(result.queries.some((q) => q.table === 'game_checkins' || q.table === 'player_availability'), false);
   });
@@ -215,8 +221,8 @@ describe('Team public loader producer boundary', () => {
     ];
     const result = await loadFixture(data);
     assert.equal(result.error, null);
-    assert.equal(result.data.roster[0].goalieGamesPlayed, 1);
-    assert.equal(result.data.roster[0].goalsAgainstAverage, 3);
+    assert.equal(result.data.roster[0].goalieGamesPlayed, null, 'raw goalie rows cannot override the canonical per-field v2 projection');
+    assert.equal(result.data.roster[0].goalsAgainstAverage, null);
     for (const table of ['player_stats', 'goalie_stats']) {
       const matchingQueries: RecordedQuery[] = result.queries.filter((query: RecordedQuery) => query.table === table);
       assert.deepEqual(matchingQueries.flatMap((query) => query.ranges), [[0, 999], [1000, 1999]]);
@@ -260,7 +266,8 @@ describe('Team public loader producer boundary', () => {
       new URL('../../src/lib/supabase/teamPage.ts', import.meta.url),
       {
         './client': { supabase: database.supabase },
-        './team': { getTeamActiveSeason: async () => ({ season: activeSeason, error: null }) },
+        './team': { getMetricsOperationalSeason: async () => ({ season: activeSeason, error: null }) },
+        './publicStats': { getPublicSeasonStats: canonicalPublicStats },
       },
     );
 
@@ -268,8 +275,8 @@ describe('Team public loader producer boundary', () => {
     assert.equal(result.error, null);
     assert.equal(result.data.league.timezone, 'America/Toronto');
     assert.deepEqual(result.data.roster.map((player: Row) => player.playerId), ['player-a']);
-    assert.equal(result.data.roster[0].gamesPlayed, 3);
-    assert.equal(result.data.roster[0].gamesPlayedProvenance, 'estimated');
+    assert.equal(result.data.roster[0].gamesPlayed, 2);
+    assert.equal(result.data.roster[0].gamesPlayedProvenance, 'authoritative');
     assert.equal(result.data.roster[0].points, 3);
     assert.equal(result.data.rivals[0].rival.tendy.name, 'Connor Current');
     assert.equal(result.data.rivals[0].rival.tendy.gamesPlayed, 2);
@@ -297,7 +304,7 @@ describe('Team public loader producer boundary', () => {
     const database = createSupabase(fixture());
     const loader = compileCommonJs<{ loadTeamPageSnapshot: (teamId: string, leagueId: string, now: Date, expectedSeasonId: string) => Promise<TeamPageResult> }>(new URL('../../src/lib/supabase/teamPage.ts', import.meta.url), {
       './client': { supabase: database.supabase },
-      './team': { getTeamActiveSeason: async () => ({ season: { ...activeSeason, id: 'season-new' }, error: null }) },
+      './team': { getMetricsOperationalSeason: async () => ({ season: { ...activeSeason, id: 'season-new' }, error: null }) },
     });
     const result = await loader.loadTeamPageSnapshot('team-a', 'league-a', new Date('2026-09-12T12:00:00Z'), activeSeason.id);
     assert.equal(result.data, null);

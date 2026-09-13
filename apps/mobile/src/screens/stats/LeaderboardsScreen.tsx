@@ -15,9 +15,9 @@ import PillToggle from '../../components/PillToggle';
 import { useAuth } from '../../context/AuthContext';
 import { useLeague } from '../../context/LeagueContext';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
-import { supabase } from '../../lib/supabase/client';
-import { getStatsLeaders, type PlayerStatRow } from '../../lib/supabase/data';
-import { getPenaltyLeaders } from '../../lib/supabase/penaltyLeaders';
+import { getStatsLeadersFromPublicSeason, type PlayerStatRow } from '../../lib/supabase/data';
+import { formatPublicMetric, getPublicSeasonStats, type PublicSeasonStats } from '../../lib/supabase/publicStats';
+import { getMetricsOperationalSeason, type TeamActiveSeason } from '../../lib/supabase/team';
 import colors from '../../theme/colors';
 
 type StatCategory = 'Points' | 'Goals' | 'Assists' | 'PIM';
@@ -44,6 +44,8 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
   const requestSerial = React.useRef(0);
   const userId = user?.id ?? null;
   const leagueId = activeLeague?.id ?? null;
+  const leagueSlug = activeLeague?.slug ?? null;
+  const seasonPromise = React.useRef<{ leagueId: string; promise: Promise<{ season: TeamActiveSeason | null; error: string | null }> } | null>(null);
   const requestKey = `${leagueId ?? 'none'}:${category}:${userId ?? 'guest'}:${retryToken}`;
   const [loadState, setLoadState] = React.useState<LoadState>({
     key: requestKey, status: 'loading', leaders: [], error: null, userRank: null, unavailablePlayerCount: 0,
@@ -56,7 +58,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
       active = false;
       if (requestSerial.current === serial) requestSerial.current += 1;
     };
-    if (!leagueId) {
+    if (!leagueId || !leagueSlug) {
       setLoadState({ key: requestKey, status: 'empty', leaders: [], error: null, userRank: null, unavailablePlayerCount: 0 });
       return invalidate;
     }
@@ -67,32 +69,26 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
         let rows: Array<PlayerStatRow & { avatar_url: string | null }>;
         let status: Exclude<LoadStatus, 'loading' | 'error'>;
         let unavailablePlayerCount = 0;
-        if (category === 'PIM') {
-          const result = await getPenaltyLeaders(leagueId, 50);
-          rows = result.leaders;
-          status = result.status;
-          unavailablePlayerCount = result.unavailablePlayerCount;
+        if (seasonPromise.current?.leagueId !== leagueId) {
+          seasonPromise.current = { leagueId, promise: getMetricsOperationalSeason(leagueId) };
+        }
+        const { season, error: seasonError } = await seasonPromise.current.promise;
+        if (seasonError) throw new Error(`Unable to resolve the stats season: ${seasonError}`);
+        if (!season) {
+          rows = []; status = 'no-season';
         } else {
-          const stats = await getStatsLeaders(
-            leagueId, STAT_MAP[category], 50, null, undefined, { throwOnError: true },
-          );
-          const playerIds = stats.map((row) => row.player_id);
-          let avatarMap = new Map<string, string | null>();
-          if (playerIds.length > 0) {
-            const { data: profiles, error } = await supabase
-              .from('profiles')
-              .select('id, avatar_url')
-              .in('id', playerIds);
-            if (error) throw new Error(error.message);
-            avatarMap = new Map((profiles ?? []).map((profile) => [profile.id, profile.avatar_url]));
-          }
-          rows = stats.map((row) => ({ ...row, avatar_url: avatarMap.get(row.player_id) ?? null }));
-          status = rows.length > 0 ? 'ready' : 'empty';
+          const payload: PublicSeasonStats = await getPublicSeasonStats(leagueSlug, leagueId, season.id);
+          const stat = category === 'PIM' ? 'penalty_minutes' : STAT_MAP[category];
+          rows = getStatsLeadersFromPublicSeason(payload, stat, 50) as Array<PlayerStatRow & { avatar_url: string | null }>;
+          if (category === 'PIM') {
+            unavailablePlayerCount = payload.players.filter((player) => player.roles.includes('skater') && player.metrics.penaltyMinutes.value === null).length;
+            status = rows.length > 0 ? 'ready' : unavailablePlayerCount > 0 ? 'unavailable' : 'empty';
+          } else status = rows.length > 0 ? 'ready' : 'empty';
         }
 
         const sorted = [...rows];
-        if (category === 'Goals') sorted.sort((left, right) => right.goals - left.goals);
-        if (category === 'Assists') sorted.sort((left, right) => right.assists - left.assists);
+        if (category === 'Goals') sorted.sort((left, right) => (right.goals ?? -Infinity) - (left.goals ?? -Infinity));
+        if (category === 'Assists') sorted.sort((left, right) => (right.assists ?? -Infinity) - (left.assists ?? -Infinity));
         const ranked: LeaderRow[] = sorted.map((row, index) => ({ ...row, rank: index + 1 }));
         if (!active || requestSerial.current !== serial) return;
         const myIndex = userId ? ranked.findIndex((row) => row.player_id === userId) : -1;
@@ -110,20 +106,31 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
       }
     })();
     return invalidate;
-  }, [category, leagueId, requestKey, retryToken, userId]);
+  }, [category, leagueId, leagueSlug, requestKey, retryToken, userId]);
 
   const boundState = loadState.key === requestKey
     ? loadState
     : { key: requestKey, status: 'loading' as const, leaders: [], error: null, userRank: null, unavailablePlayerCount: 0 };
   const leaders = boundState.leaders;
 
-  const getStatValue = (row: LeaderRow): number => {
-    switch (category) {
-      case 'Goals': return row.goals;
-      case 'Assists': return row.assists;
-      case 'PIM': return row.penalty_minutes as number;
-      default: return row.points;
+  const getStatValue = (row: LeaderRow): string | number => {
+    if (row.metrics) {
+      const metric = category === 'PIM' ? row.metrics.penaltyMinutes
+        : category === 'Goals' ? row.metrics.goals
+          : category === 'Assists' ? row.metrics.assists : row.metrics.points;
+      return formatPublicMetric(metric).value;
     }
+    switch (category) {
+      case 'Goals': return row.goals ?? '—';
+      case 'Assists': return row.assists ?? '—';
+      case 'PIM': return row.penalty_minutes ?? '—';
+      default: return row.points ?? '—';
+    }
+  };
+
+  const retryLoad = () => {
+    seasonPromise.current = null;
+    setRetryToken((value) => value + 1);
   };
 
   if (!activeLeague) {
@@ -175,7 +182,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
           <Text style={styles.emptyText}>{boundState.error ?? 'Unable to load leaderboard'}</Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => setRetryToken((value) => value + 1)}
+            onPress={retryLoad}
             style={styles.retryButton}
             testID="pim-leaders-retry"
           >
@@ -236,7 +243,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
                   </Text>
                   <Text style={styles.teamName} numberOfLines={1}>
                     {item.team_short_name}
-                    {category !== 'PIM' ? ` | ${item.games_played} GP` : ''}
+                    {category !== 'PIM' ? ` | ${item.metrics ? formatPublicMetric(item.metrics.gamesPlayed).value : item.games_played ?? '—'} GP` : ''}
                   </Text>
                 </View>
                 <View style={styles.statCol}>
@@ -247,9 +254,9 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
                 </View>
                 {category !== 'PIM' && (
                   <View style={styles.secondaryStats}>
-                    {category !== 'Goals' && <Text style={styles.secondaryStat}>{item.goals}G</Text>}
-                    {category !== 'Assists' && <Text style={styles.secondaryStat}>{item.assists}A</Text>}
-                    {category !== 'Points' && <Text style={styles.secondaryStat}>{item.points}P</Text>}
+                    {category !== 'Goals' && <Text style={styles.secondaryStat}>{item.metrics ? formatPublicMetric(item.metrics.goals).value : item.goals ?? '—'}G</Text>}
+                    {category !== 'Assists' && <Text style={styles.secondaryStat}>{item.metrics ? formatPublicMetric(item.metrics.assists).value : item.assists ?? '—'}A</Text>}
+                    {category !== 'Points' && <Text style={styles.secondaryStat}>{item.metrics ? formatPublicMetric(item.metrics.points).value : item.points ?? '—'}P</Text>}
                   </View>
                 )}
               </Pressable>

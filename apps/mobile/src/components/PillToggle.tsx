@@ -18,6 +18,10 @@ export default function PillToggle<T extends string>({ options, selected, onChan
         return (
           <Pressable
             key={option}
+            accessibilityRole="button"
+            accessibilityLabel={option}
+            accessibilityState={{ selected: isSelected }}
+            aria-pressed={isSelected}
             onPress={() => onChange(option)}
             style={({ pressed }) => [
               styles.pill,
@@ -33,7 +37,7 @@ export default function PillToggle<T extends string>({ options, selected, onChan
                 style={StyleSheet.absoluteFill}
               />
             ) : null}
-            <Text style={[styles.label, isSelected ? styles.labelSelected : styles.labelUnselected]}>{option}</Text>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.label, isSelected ? styles.labelSelected : styles.labelUnselected]}>{option}</Text>
           </Pressable>
         );
       })}

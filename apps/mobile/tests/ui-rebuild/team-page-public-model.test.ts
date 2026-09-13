@@ -9,7 +9,7 @@ function loadModel() {
     new URL('../../src/lib/supabase/teamPage.ts', import.meta.url),
     {
       './client': { supabase: {} },
-      './team': { getTeamActiveSeason: async () => ({ season: null, error: null }) },
+      './team': { getMetricsOperationalSeason: async () => ({ season: null, error: null }) },
     },
   );
 }
@@ -370,5 +370,55 @@ describe('Team page public snapshot model', () => {
     assert.equal(snapshot.roster.find((row: any) => row.playerId === 'p3').penaltyMinutes, 0);
     assert.equal(snapshot.leaders.penaltyMinutes.some((row: any) => row.playerId === 'p2'), false);
     assert.equal(snapshot.leaders.penaltyMinutes.some((row: any) => row.playerId === 'p3'), true);
+  });
+
+  it('overlays the team-scoped v2 metrics without falling back to raw GP or PIM zero', () => {
+    const model = loadModel();
+    const m = (value: number | null, state: string, sources: string[]) => ({ value, state, sources });
+    const input = { ...baseInput, publicSeasonStats: { players: [{
+      playerId: 'p1', playerName: 'Matt Grossi', avatarUrl: 'current.jpg', roles: ['skater'], goalie: null,
+      metrics: { gamesPlayed: m(null, 'conflicted', ['attendance']), goals: m(15, 'recorded', ['skater_stats']),
+        assists: m(10, 'reported', ['imported']), points: m(25, 'recorded', ['skater_stats']), penaltyMinutes: m(null, 'unknown', []) },
+    }, {
+      playerId: 'p2', playerName: 'Ash Moore', avatarUrl: 'ash.jpg', roles: ['skater'], goalie: null,
+      metrics: { gamesPlayed: m(11, 'estimated', ['roster_window']), goals: m(0, 'recorded', ['skater_stats']),
+        assists: m(0, 'recorded', ['skater_stats']), points: m(0, 'recorded', ['skater_stats']), penaltyMinutes: m(0, 'verified', ['capture_confirmation']) },
+    }] } };
+    const snapshot = model.buildTeamPageSnapshot(input);
+    const matt = snapshot.roster.find((row: any) => row.playerId === 'p1');
+    const ash = snapshot.roster.find((row: any) => row.playerId === 'p2');
+    assert.deepEqual([matt.gamesPlayed, matt.goals, matt.assists, matt.points, matt.penaltyMinutes], [null, 15, 10, 25, null]);
+    assert.equal(matt.publicMetrics.gamesPlayed.state, 'conflicted');
+    assert.equal(snapshot.leaders.penaltyMinutes.some((row: any) => row.playerId === 'p1'), false);
+    assert.equal(ash.gamesPlayed, 11);
+    assert.equal(ash.publicMetrics.gamesPlayed.state, 'estimated');
+    assert.equal(snapshot.leaders.penaltyMinutes.find((row: any) => row.playerId === 'p2').value, 0);
+  });
+
+  it('ranks historic team contributors and dual-role skater production without changing the current roster', () => {
+    const model = loadModel();
+    const m = (value: number | null, state = 'recorded', sources = ['skater_stats']) => ({ value, state, sources });
+    const input = {
+      ...baseInput,
+      rosters: baseInput.rosters.map((row) => row.player_id === 'p2' ? { ...row, position: 'goalie', is_goalie: true } : row),
+      publicSeasonStats: { players: [
+        {
+          playerId: 'transfer', playerName: 'Transferred Taylor', avatarUrl: 'transfer.jpg',
+          displayTeam: { id: 'team-a', name: 'London Eco Metal' }, teams: [{ id: 'team-a', name: 'London Eco Metal' }], roles: ['skater'], goalie: null,
+          metrics: { gamesPlayed: m(10), goals: m(12), assists: m(13), points: m(25), penaltyMinutes: m(2, 'verified', ['capture_confirmation']) },
+        },
+        {
+          playerId: 'p2', playerName: 'Ash Moore', avatarUrl: 'ash.jpg',
+          displayTeam: { id: 'team-a', name: 'London Eco Metal' }, teams: [{ id: 'team-a', name: 'London Eco Metal' }], roles: ['skater', 'goalie'],
+          metrics: { gamesPlayed: m(8), goals: m(9), assists: m(8), points: m(17), penaltyMinutes: m(0, 'verified', ['capture_confirmation']) },
+          goalie: { gamesPlayed: m(3, 'recorded', ['goalie_assignment']), wins: m(2, 'recorded', ['goalie_stats']), losses: m(1, 'recorded', ['goalie_stats']), saves: m(30, 'recorded', ['goalie_stats']), goalsAgainst: m(5, 'recorded', ['goalie_stats']), savePercentage: m(.857, 'recorded', ['goalie_stats']), goalsAgainstAverage: m(1.67, 'recorded', ['goalie_stats']), shutouts: m(1, 'recorded', ['goalie_stats']) },
+        },
+      ] },
+    };
+    const snapshot = model.buildTeamPageSnapshot(input);
+
+    assert.equal(snapshot.roster.some((player: any) => player.playerId === 'transfer'), false, 'historic contributors must not reappear in the current roster');
+    assert.deepEqual(snapshot.leaders.points.map((leader: any) => leader.playerId), ['transfer', 'p2']);
+    assert.equal(snapshot.roster.find((player: any) => player.playerId === 'p2').publicGoalieMetrics.wins.value, 2);
   });
 });

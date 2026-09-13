@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,34 +18,31 @@ import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
 import { useAuth } from '../../context/AuthContext';
 import { useLeague } from '../../context/LeagueContext';
-import { discoverCareerLeagues, loadCanonicalCareer, type CareerSeason } from '../../lib/supabase/publicStats';
+import { discoverCareerLeagues, formatPublicMetric, loadCanonicalCareerV2, type CareerSeasonV2, type PublicCareerV2 } from '../../lib/supabase/publicStats';
 import colors from '../../theme/colors';
 
-type CareerTotals = {
-  gamesPlayed: number;
-  goals: number;
-  assists: number;
-  points: number;
-  penaltyMinutes: number | null;
-};
+type CareerTotals = PublicCareerV2['totals'];
 
 type LeagueGroup = {
   leagueId: string;
   leagueName: string;
   seasonCount: number;
-  seasons: CareerSeason[];
+  seasons: CareerSeasonV2[];
   expanded: boolean;
 };
 
 export default function CareerStatsScreen({ navigation }: { navigation: { goBack(): void } }) {
   const { user } = useAuth();
   const { availableLeagues } = useLeague();
+  const { width, fontScale } = useWindowDimensions();
+  const useTwoColumnGoalieTotals = width <= 360 || fontScale >= 1.3;
   const [totals, setTotals] = React.useState<CareerTotals>({
-    gamesPlayed: 0,
-    goals: 0,
-    assists: 0,
-    points: 0,
-    penaltyMinutes: null,
+    roles: ['skater'], goalie: null,
+    metrics: {
+      gamesPlayed: { value: null, state: 'unknown', sources: [] }, goals: { value: 0, state: 'recorded', sources: ['skater_stats'] },
+      assists: { value: 0, state: 'recorded', sources: ['skater_stats'] }, points: { value: 0, state: 'recorded', sources: ['skater_stats'] },
+      penaltyMinutes: { value: null, state: 'unknown', sources: [] },
+    },
   });
   const [leagueGroups, setLeagueGroups] = React.useState<LeagueGroup[]>([]);
   const [profile, setProfile] = React.useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
@@ -67,7 +65,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
     try {
       const seeds = availableLeagues.map(({ id, name, slug }) => ({ id, name, slug }));
       const leagues = await discoverCareerLeagues(user.id, seeds);
-      const career = await loadCanonicalCareer(user.id, leagues);
+      const career = await loadCanonicalCareerV2(user.id, leagues);
       if (generation !== requestGeneration.current) return false;
       setProfile(career.player ? { full_name: career.player.name, avatar_url: career.player.avatarUrl } : null);
       setTotals(career.totals);
@@ -169,7 +167,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
 
         {/* Career Totals Hero */}
         <SectionHeader title="Career Totals" />
-        <View style={styles.totalsCard}>
+        {totals.roles.includes('skater') ? <View style={styles.totalsCard}>
           <LinearGradient
             colors={['rgba(255,255,255,0.06)', 'rgba(79,216,255,0.08)', 'transparent']}
             start={{ x: 0, y: 0 }}
@@ -177,29 +175,51 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
             style={StyleSheet.absoluteFill}
           />
           <View style={styles.totalsRow}>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.gamesPlayed}</Text>
+            <View testID="career-hero-gp-cell" style={[styles.totalItem, totals.metrics.gamesPlayed.state === 'conflicted' && styles.statusTotalItem]}>
+              <Text testID="career-hero-gp-value" style={[styles.totalValue, totals.metrics.gamesPlayed.state === 'conflicted' && styles.statusTotalValue]}>{formatPublicMetric(totals.metrics.gamesPlayed).value}</Text>
               <Text style={styles.totalLabel}>GP</Text>
             </View>
             <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.goals}</Text>
+              <Text style={styles.totalValue}>{formatPublicMetric(totals.metrics.goals).value}</Text>
               <Text style={styles.totalLabel}>G</Text>
             </View>
             <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.assists}</Text>
+              <Text style={styles.totalValue}>{formatPublicMetric(totals.metrics.assists).value}</Text>
               <Text style={styles.totalLabel}>A</Text>
             </View>
             <View style={styles.totalItem}>
-              <Text style={[styles.totalValue, { color: colors.brandGold }]}>{totals.points}</Text>
+              <Text style={[styles.totalValue, { color: colors.brandGold }]}>{formatPublicMetric(totals.metrics.points).value}</Text>
               <Text style={styles.totalLabel}>PTS</Text>
             </View>
             <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.penaltyMinutes ?? '—'}</Text>
+              <Text style={styles.totalValue}>{formatPublicMetric(totals.metrics.penaltyMinutes).value}</Text>
               <Text style={styles.totalLabel}>PIM</Text>
             </View>
           </View>
-        </View>
-        {totals.penaltyMinutes === null ? <Text style={styles.pimNote}>PIM unavailable for some historical records.</Text> : null}
+        </View> : null}
+        {totals.goalie ? (
+          <View testID="career-goalie-totals" style={styles.totalsCard}>
+            <Text style={styles.goalieTotalsTitle}>Goalie Totals</Text>
+            <View style={[styles.totalsRow, styles.goalieTotalsRow]}>
+              {([
+                ['GP', 'gp', totals.goalie.gamesPlayed, undefined], ['W', 'w', totals.goalie.wins, undefined],
+                ['L', 'l', totals.goalie.losses, undefined], ['SV', 'sv', totals.goalie.saves, undefined],
+                ['GA', 'ga', totals.goalie.goalsAgainst, undefined], ['SV%', 'sv-pct', totals.goalie.savePercentage, 3],
+                ['GAA', 'gaa', totals.goalie.goalsAgainstAverage, 2], ['SO', 'so', totals.goalie.shutouts, undefined],
+              ] as const).map(([label, metricId, metric, precision]) => (
+                <View key={label} testID={`career-goalie-${metricId}-cell`} style={[styles.goalieTotalItem, useTwoColumnGoalieTotals && styles.goalieTotalItemCompact]}>
+                  <Text testID={`career-goalie-${metricId}-value`} style={styles.totalValue}>{formatPublicMetric(metric, precision).value}</Text>
+                  <Text style={styles.totalLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+        {totals.roles.includes('skater') && totals.metrics.gamesPlayed.state === 'conflicted' ? <Text style={styles.pimNote}>GP: {formatPublicMetric(totals.metrics.gamesPlayed).hint}</Text> : null}
+        {totals.roles.includes('skater') && totals.metrics.penaltyMinutes.value === null ? <Text style={styles.pimNote}>PIM unavailable: {formatPublicMetric(totals.metrics.penaltyMinutes).hint}</Text> : null}
+        {totals.roles.includes('skater') && totals.roles.includes('goalie')
+          ? <Text style={styles.scopeNote}>Career includes both skater and goalie records.</Text>
+          : totals.roles.includes('goalie') ? <Text style={styles.scopeNote}>Career includes goalie records.</Text> : null}
         <Text style={styles.scopeNote}>Published leagues only · Demo results excluded</Text>
 
         {/* By League Breakdown */}
@@ -225,24 +245,25 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
                 {group.expanded && (
                   <View style={styles.seasonsTable}>
                     <View style={styles.tableHeaderRow}>
-                      <Text style={[styles.tableHeaderCell, styles.tableTeamCol]}>Season</Text>
-                      <Text style={styles.tableHeaderCell}>GP</Text>
-                      <Text style={styles.tableHeaderCell}>G</Text>
-                      <Text style={styles.tableHeaderCell}>A</Text>
-                      <Text style={styles.tableHeaderCell}>PTS</Text>
-                      <Text style={styles.tableHeaderCell}>PIM</Text>
+                      <Text maxFontSizeMultiplier={1.3} style={[styles.tableHeaderCell, styles.tableTeamCol]}>Season</Text>
+                      <Text maxFontSizeMultiplier={1.3} style={styles.tableHeaderCell}>GP</Text>
+                      <Text maxFontSizeMultiplier={1.3} style={styles.tableHeaderCell}>G</Text>
+                      <Text maxFontSizeMultiplier={1.3} style={styles.tableHeaderCell}>A</Text>
+                      <Text maxFontSizeMultiplier={1.3} style={styles.tableHeaderCell}>PTS</Text>
+                      <Text maxFontSizeMultiplier={1.3} style={styles.tableHeaderCell}>PIM</Text>
                     </View>
                     {group.seasons.map((season, index) => (
                       <View key={`${season.seasonId}-${index}`} style={styles.tableRow}>
                         <View style={styles.tableTeamCol}>
                           <Text style={styles.seasonName} numberOfLines={1}>{season.seasonName}</Text>
-                          <Text style={styles.seasonTeam} numberOfLines={1}>{season.teamName ?? 'League aggregate'}{season.source === 'imported' ? ' · Imported' : ''}</Text>
+                          <Text style={styles.seasonTeam} numberOfLines={1}>{season.teams.map((team) => team.name).join(' · ') || 'League aggregate'}{Object.values(season.metrics).some((metric) => metric.sources.includes('imported')) ? ' · Imported' : ''}</Text>
                         </View>
-                        <Text style={styles.tableCell}>{season.gamesPlayed}</Text>
-                        <Text style={styles.tableCell}>{season.goals}</Text>
-                        <Text style={styles.tableCell}>{season.assists}</Text>
-                        <Text style={[styles.tableCell, styles.tableCellHighlight]}>{season.points}</Text>
-                        <Text style={styles.tableCell}>{season.penaltyMinutes ?? '—'}</Text>
+                        <Text style={styles.tableCell}>{formatPublicMetric(season.metrics.gamesPlayed).value}</Text>
+                        <Text style={styles.tableCell}>{formatPublicMetric(season.metrics.goals).value}</Text>
+                        <Text style={styles.tableCell}>{formatPublicMetric(season.metrics.assists).value}</Text>
+                        <Text style={[styles.tableCell, styles.tableCellHighlight]}>{formatPublicMetric(season.metrics.points).value}</Text>
+                        <Text style={styles.tableCell}>{formatPublicMetric(season.metrics.penaltyMinutes).value}</Text>
+                        {season.goalie ? <Text style={styles.roleDetail}>Goalie · {formatPublicMetric(season.goalie.gamesPlayed).value} GP · {formatPublicMetric(season.goalie.saves).value} SV · {formatPublicMetric(season.goalie.goalsAgainstAverage, 2).value} GAA</Text> : null}
                       </View>
                     ))}
                   </View>
@@ -253,7 +274,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
         )}
 
         {/* Empty State */}
-        {totals.gamesPlayed === 0 && (
+        {totals.metrics.gamesPlayed.value === 0 && totals.metrics.points.value === 0 && (totals.goalie?.gamesPlayed.value ?? 0) === 0 && (
           <View style={styles.emptyCard}>
             <Ionicons name="stats-chart-outline" size={32} color={colors.textSecondary} />
             <Text style={styles.emptyTitle}>No career stats yet</Text>
@@ -312,9 +333,13 @@ const styles = StyleSheet.create({
   },
   totalsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-around',
+    rowGap: 14,
   },
   totalItem: { alignItems: 'center', gap: 4 },
+  statusTotalItem: { width: '100%', paddingHorizontal: 8 },
+  statusTotalValue: { alignSelf: 'stretch', fontSize: 20, lineHeight: 26, textAlign: 'center' },
   totalValue: {
     fontSize: 28,
     fontWeight: '900',
@@ -369,6 +394,7 @@ const styles = StyleSheet.create({
   tableTeamCol: { flex: 2, paddingRight: 6 },
   tableRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -385,6 +411,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tableCellHighlight: { fontWeight: '900', color: colors.primary },
+  roleDetail: { flexBasis: '100%', marginTop: 8, color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
+  goalieTotalsTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900', marginBottom: 12, textAlign: 'center' },
+  goalieTotalsRow: { flexWrap: 'wrap', rowGap: 14 },
+  goalieTotalItem: { width: '25%', alignItems: 'center' },
+  goalieTotalItemCompact: { width: '50%' },
 
   emptyCard: {
     backgroundColor: colors.bgSurface,

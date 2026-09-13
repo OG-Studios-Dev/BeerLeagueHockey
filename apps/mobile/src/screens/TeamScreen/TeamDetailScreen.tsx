@@ -41,7 +41,7 @@ import {
   updatePlayerCheckinAsCaptain,
 } from '../../lib/supabase/captain';
 import { supabase } from '../../lib/supabase/client';
-import { getTeamActiveSeason } from '../../lib/supabase/team';
+import { getMetricsOperationalSeason, getTeamActiveSeason } from '../../lib/supabase/team';
 import { loadTeamPageSnapshot, type TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
 import { TeamStackParamList } from '../../navigation/types';
@@ -298,6 +298,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [team, setTeam] = React.useState<TeamInfo | null>(null);
   const [league, setLeague] = React.useState<LeagueInfo | null>(null);
   const [activeSeason, setActiveSeason] = React.useState<ActiveSeasonInfo | null>(null);
+  const [presentationSeason, setPresentationSeason] = React.useState<ActiveSeasonInfo | null>(null);
   const [_standing, setStanding] = React.useState<StandingInfo | null>(null);
   const [roster, setRoster] = React.useState<RosterPlayer[]>([]);
   const [upcomingGames, setUpcomingGames] = React.useState<UpcomingGame[]>([]);
@@ -390,7 +391,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   }
 
   React.useEffect(() => {
-    if (!activeSeason?.id) {
+    if (!presentationSeason?.id) {
       setPublicSnapshot(null);
       setPublicError(null);
       setPublicLoading(false);
@@ -402,7 +403,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     setPublicError(null);
     setPublicLoading(true);
 
-    void loadTeamPageSnapshot(teamId, leagueId, new Date(), activeSeason.id)
+    void loadTeamPageSnapshot(teamId, leagueId, new Date(), presentationSeason.id)
       .then((result) => {
         if (!isMounted || generation !== publicLoadGenerationRef.current) return;
         setPublicSnapshot(result.data);
@@ -420,7 +421,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       isMounted = false;
       if (publicLoadGenerationRef.current === generation) publicLoadGenerationRef.current += 1;
     };
-  }, [activeSeason?.id, leagueId, publicRetryToken, teamId]);
+  }, [leagueId, presentationSeason?.id, publicRetryToken, teamId]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -432,6 +433,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       setTeam(null);
       setLeague(null);
       setActiveSeason(null);
+      setPresentationSeason(null);
       setStanding(null);
       setRoster([]);
       setUpcomingGames([]);
@@ -459,18 +461,26 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       setGoalieNotes('');
       setGoalieSaving(false);
 
-      const activeSeasonRes = await getTeamActiveSeason(leagueId);
+      const [activeSeasonRes, presentationSeasonRes] = await Promise.all([
+        getTeamActiveSeason(leagueId),
+        getMetricsOperationalSeason(leagueId),
+      ]);
 
       if (!isMounted) return;
 
-      if (activeSeasonRes.error) {
+      if (activeSeasonRes.error || presentationSeasonRes.error) {
         setActiveSeason(null);
-        setLoadError('We could not determine the active season for this league.');
+        setPresentationSeason(null);
+        setLoadError(activeSeasonRes.error
+          ? 'We could not determine the active season for this league.'
+          : 'We could not determine the presentation season for this league.');
         setLoading(false);
         return;
       }
 
       const season = (activeSeasonRes.season as ActiveSeasonInfo | null) ?? null;
+      const presentation = (presentationSeasonRes.season as ActiveSeasonInfo | null) ?? null;
+      setPresentationSeason(presentation);
       const activeSeasonId = season?.id ?? null;
       if (!activeSeasonId) {
         setActiveSeason(null);
@@ -904,7 +914,11 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  if (!activeSeason) {
+  const matchingPublicSnapshot = publicSnapshot?.team.id === teamId && publicSnapshot.league.id === leagueId && publicSnapshot.season.id === presentationSeason?.id
+    ? publicSnapshot
+    : null;
+
+  if (!presentationSeason) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
@@ -916,14 +930,14 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         </View>
         <View testID="team-no-active-season-state" style={styles.centeredState}>
           <Ionicons name="calendar-outline" size={30} color={colors.primary} />
-          <Text style={styles.stateTitle}>No active season</Text>
-          <Text style={styles.stateBody}>Roster and schedule will appear when this league activates a season.</Text>
+          <Text style={styles.stateTitle}>No season available</Text>
+          <Text style={styles.stateBody}>Team stats will appear when this league has a presentation season.</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!team) {
+  if (activeSeason && !team) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
@@ -942,13 +956,9 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const matchingPublicSnapshot = publicSnapshot?.team.id === teamId && publicSnapshot.league.id === leagueId && publicSnapshot.season.id === activeSeason.id
-    ? publicSnapshot
-    : null;
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <BrandAtmosphere accentColor={primaryColor} secondaryColor={team.secondary_color ?? colors.brandArena} intensity="medium" />
+      <BrandAtmosphere accentColor={primaryColor} secondaryColor={team?.secondary_color ?? colors.brandArena} intensity="medium" />
       <View style={styles.header}>
         <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
@@ -962,7 +972,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {matchingPublicSnapshot ? (
           <TeamPublicPage
-            key={`${leagueId}:${teamId}`}
+            key={`${leagueId}:${teamId}:${presentationSeason.id}`}
             snapshot={matchingPublicSnapshot}
             reduceTransparency={reduceTransparency}
             onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId })}
@@ -983,6 +993,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
               setPublicError(null);
               setPublicLoading(true);
               setActiveSeason(null);
+              setPresentationSeason(null);
               setLoading(true);
               setPublicRetryToken((value) => value + 1);
             }} style={styles.publicRetryButton}>
@@ -991,7 +1002,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        <View testID="team-operations-wrapper" style={styles.operationsWrapper}>
+        {activeSeason ? <View testID="team-operations-wrapper" style={styles.operationsWrapper}>
         {(nextGame || league?.slug) && (
           <View testID="team-operations-card" style={[styles.opsCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Team Operations</Text>
@@ -1249,7 +1260,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        </View>
+        </View> : null}
       </ScrollView>
 
       <Modal visible={reminderModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setReminderModalVisible(false)}>

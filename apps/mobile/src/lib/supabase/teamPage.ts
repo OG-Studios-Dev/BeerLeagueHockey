@@ -1,5 +1,7 @@
 import { supabase } from './client';
-import { getTeamActiveSeason } from './team';
+import { getMetricsOperationalSeason } from './team';
+import { getPublicSeasonStats, type PublicGoalieMetrics, type PublicSeasonPlayer, type PublicSeasonStats } from './publicStats';
+import type { PublicStatMetric } from './publicStats';
 
 export type TeamLeaderMetric = 'points' | 'goals' | 'assists' | 'penaltyMinutes';
 export type TeamStatProvenance = 'authoritative' | 'estimated' | null;
@@ -25,6 +27,7 @@ export type TeamPageRosterPlayer = {
   playerType: string | null;
   gamesPlayed: number | null;
   gamesPlayedProvenance: TeamStatProvenance;
+  gamesPlayedMetric?: PublicStatMetric;
   goals: number | null;
   assists: number | null;
   points: number | null;
@@ -33,6 +36,8 @@ export type TeamPageRosterPlayer = {
   goalieGamesPlayedProvenance: TeamStatProvenance;
   goalsAgainstAverage: number | null;
   goalsAgainstAverageProvenance: TeamStatProvenance;
+  publicMetrics?: PublicSeasonPlayer['metrics'];
+  publicGoalieMetrics?: PublicGoalieMetrics | null;
 };
 
 export type TeamPageLeader = {
@@ -42,6 +47,7 @@ export type TeamPageLeader = {
   jerseyNumber: number | null;
   gamesPlayed: number | null;
   gamesPlayedProvenance: TeamStatProvenance;
+  gamesPlayedMetric?: PublicStatMetric;
   value: number;
 };
 
@@ -136,6 +142,7 @@ export type TeamPageSnapshotInput = {
   publishedLineup: unknown | null;
   acceptedSubstitutions?: Array<Record<string, unknown>>;
   sponsors: Array<Record<string, unknown>>;
+  publicSeasonStats?: PublicSeasonStats;
 };
 
 function stringValue(value: unknown): string | null {
@@ -361,10 +368,28 @@ export function toPodiumOrder(leaders: TeamPageLeader[]): TeamPageLeader[] {
   return [leaders[1], leaders[0], leaders[2]];
 }
 
-function buildLeaders(roster: TeamPageRosterPlayer[]): Record<TeamLeaderMetric, TeamPageLeader[]> {
+function buildLeaders(roster: TeamPageRosterPlayer[], publicPlayers?: PublicSeasonPlayer[]): Record<TeamLeaderMetric, TeamPageLeader[]> {
   const metrics: TeamLeaderMetric[] = ['points', 'goals', 'assists', 'penaltyMinutes'];
-  return Object.fromEntries(metrics.map((metric) => [metric, roster
-    .filter((player) => !player.isGoalie && player[metric] != null)
+  const candidates = publicPlayers
+    ? publicPlayers.filter((player) => player.roles.includes('skater')).map((player) => {
+      const current = roster.find((row) => row.playerId === player.playerId);
+      return {
+        playerId: player.playerId,
+        name: player.playerName,
+        photoUrl: player.avatarUrl ?? current?.photoUrl ?? null,
+        jerseyNumber: current?.jerseyNumber ?? null,
+        gamesPlayed: player.metrics.gamesPlayed.value,
+        gamesPlayedProvenance: player.metrics.gamesPlayed.state === 'estimated' ? 'estimated' as const : player.metrics.gamesPlayed.value !== null ? 'authoritative' as const : null,
+        gamesPlayedMetric: player.metrics.gamesPlayed,
+        goals: player.metrics.goals.value,
+        assists: player.metrics.assists.value,
+        points: player.metrics.points.value,
+        penaltyMinutes: player.metrics.penaltyMinutes.value,
+      };
+    })
+    : roster.filter((player) => !player.isGoalie);
+  return Object.fromEntries(metrics.map((metric) => [metric, candidates
+    .filter((player) => player[metric] != null)
     .map((player) => ({
       playerId: player.playerId,
       name: player.name,
@@ -372,13 +397,14 @@ function buildLeaders(roster: TeamPageRosterPlayer[]): Record<TeamLeaderMetric, 
       jerseyNumber: player.jerseyNumber,
       gamesPlayed: player.gamesPlayed,
       gamesPlayedProvenance: player.gamesPlayedProvenance,
+      gamesPlayedMetric: player.gamesPlayedMetric,
       value: player[metric] as number,
     }))
     .sort((left, right) => {
       const primary = right.value - left.value;
       if (primary !== 0) return primary;
-      const leftPlayer = roster.find((row) => row.playerId === left.playerId);
-      const rightPlayer = roster.find((row) => row.playerId === right.playerId);
+      const leftPlayer = candidates.find((row) => row.playerId === left.playerId);
+      const rightPlayer = candidates.find((row) => row.playerId === right.playerId);
       return (rightPlayer?.points ?? 0) - (leftPlayer?.points ?? 0) ||
         (rightPlayer?.goals ?? 0) - (leftPlayer?.goals ?? 0) ||
         left.name.localeCompare(right.name) || left.playerId.localeCompare(right.playerId);
@@ -615,6 +641,7 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
   const { candidates, rawByPlayer } = buildStatsByPlayer(input);
   const goalieByPlayer = buildGoalieStats(input);
   const appearancesByPlayer = buildEstimatedAppearanceGameIds(input);
+  const publicByPlayer = new Map((input.publicSeasonStats?.players ?? []).map((player) => [player.playerId, player]));
   const rosterRows = input.rosters
     .filter((row) => row.team_id === input.teamId && row.league_id === input.leagueId && row.season_id === input.season.id && row.status === 'active' && row.end_date === null)
     .sort((left, right) => (numberValue(left.jersey_number) ?? Number.MAX_SAFE_INTEGER) - (numberValue(right.jersey_number) ?? Number.MAX_SAFE_INTEGER) || String(left.id).localeCompare(String(right.id)));
@@ -632,21 +659,32 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
     const goalieGames = goalieTotals?.gameIds.size ?? null;
     const overrideGamesPlayed = numberValue(row.games_played_override);
     const estimatedGamesPlayed = appearancesByPlayer.get(playerId)?.size;
+    const canonical = publicByPlayer.get(playerId);
+    const canonicalMetrics = canonical?.metrics ?? (input.publicSeasonStats ? {
+      gamesPlayed: { value: null, state: 'unknown' as const, sources: [] }, goals: { value: null, state: 'unknown' as const, sources: [] },
+      assists: { value: null, state: 'unknown' as const, sources: [] }, points: { value: null, state: 'unknown' as const, sources: [] },
+      penaltyMinutes: { value: null, state: 'unknown' as const, sources: [] },
+    } : undefined);
+    const canonicalGoalie = canonical?.goalie ?? null;
+    const useCanonicalGoalie = Boolean(input.publicSeasonStats);
     return {
       rosterId: String(row.id), playerId,
       name: stringValue(profile?.full_name) ?? 'Unknown Player', photoUrl: resolvePhoto(profile),
       jerseyNumber: numberValue(row.jersey_number), position: stringValue(row.position),
       isGoalie: isGoalie(stringValue(row.position), booleanValue(row.is_goalie)),
       leadershipRole: stringValue(row.leadership_role), playerType: stringValue(row.player_type),
-      gamesPlayed: overrideGamesPlayed ?? estimatedGamesPlayed ?? null,
-      gamesPlayedProvenance: overrideGamesPlayed != null ? 'authoritative' : estimatedGamesPlayed != null ? 'estimated' : null,
-      goals, assists,
-      points: raw ? raw.goals + raw.assists : statsAvailable ? numberValue(stat?.points) ?? (goals != null && assists != null ? goals + assists : null) : null,
-      penaltyMinutes: raw ? raw.penaltyMinutes : null,
-      goalieGamesPlayed: goalieGames,
-      goalieGamesPlayedProvenance: goalieGames != null ? 'estimated' : null,
-      goalsAgainstAverage: goalieTotals?.explicitGaa ?? (goalieTotals && goalieGames && goalieGames > 0 ? goalieTotals.goalsAgainst / goalieGames : null),
-      goalsAgainstAverageProvenance: goalieTotals && (goalieTotals.explicitGaa != null || (goalieGames != null && goalieGames > 0)) ? 'estimated' : null,
+      gamesPlayed: canonicalMetrics ? canonicalMetrics.gamesPlayed.value : overrideGamesPlayed ?? estimatedGamesPlayed ?? null,
+      gamesPlayedProvenance: canonicalMetrics ? (canonicalMetrics.gamesPlayed.state === 'estimated' ? 'estimated' : canonicalMetrics.gamesPlayed.value !== null ? 'authoritative' : null) : overrideGamesPlayed != null ? 'authoritative' : estimatedGamesPlayed != null ? 'estimated' : null,
+      goals: canonicalMetrics ? canonicalMetrics.goals.value : goals,
+      assists: canonicalMetrics ? canonicalMetrics.assists.value : assists,
+      points: canonicalMetrics ? canonicalMetrics.points.value : raw ? raw.goals + raw.assists : statsAvailable ? numberValue(stat?.points) ?? (goals != null && assists != null ? goals + assists : null) : null,
+      penaltyMinutes: canonicalMetrics ? canonicalMetrics.penaltyMinutes.value : raw ? raw.penaltyMinutes : null,
+      goalieGamesPlayed: useCanonicalGoalie ? canonicalGoalie?.gamesPlayed.value ?? null : goalieGames,
+      goalieGamesPlayedProvenance: useCanonicalGoalie ? (canonicalGoalie?.gamesPlayed.state === 'estimated' ? 'estimated' : canonicalGoalie?.gamesPlayed.value != null ? 'authoritative' : null) : goalieGames != null ? 'estimated' : null,
+      goalsAgainstAverage: useCanonicalGoalie ? canonicalGoalie?.goalsAgainstAverage.value ?? null : goalieTotals?.explicitGaa ?? (goalieTotals && goalieGames && goalieGames > 0 ? goalieTotals.goalsAgainst / goalieGames : null),
+      goalsAgainstAverageProvenance: useCanonicalGoalie ? (canonicalGoalie?.goalsAgainstAverage.state === 'estimated' ? 'estimated' : canonicalGoalie?.goalsAgainstAverage.value != null ? 'authoritative' : null) : goalieTotals && (goalieTotals.explicitGaa != null || (goalieGames != null && goalieGames > 0)) ? 'estimated' : null,
+      publicMetrics: canonicalMetrics,
+      publicGoalieMetrics: canonicalGoalie,
     };
   });
 
@@ -664,7 +702,7 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
     team: identity(input.team),
     league: { id: String(input.league.id), name: stringValue(input.league.name) ?? 'League', slug: stringValue(input.league.slug), primaryColor: stringValue(input.league.primary_color), timezone: stringValue(input.league.timezone) ?? 'America/Toronto' },
     standing, standings, rank: rank < 0 ? null : rank + 1, record: recordLabel(standing), streak: computeStreak(games, input.teamId), hero: { winPercentage },
-    roster, leaders: buildLeaders(roster), games,
+    roster, leaders: buildLeaders(roster, input.publicSeasonStats?.players), games,
     collapsedSchedule: [...past.slice(0, 2).reverse(), ...upcoming.slice(0, 2)],
     nextGame,
     rivals: buildRivals(input, games, standings),
@@ -728,7 +766,7 @@ export async function loadTeamPageSnapshot(
   expectedSeasonId?: string,
 ): Promise<{ data: TeamPageSnapshot | null; error: string | null }> {
   try {
-    const active = await getTeamActiveSeason(leagueId);
+    const active = await getMetricsOperationalSeason(leagueId);
     if (active.error) return { data: null, error: active.error };
     if (!active.season) return { data: null, error: null };
     const season = active.season as unknown as Record<string, unknown>;
@@ -754,6 +792,10 @@ export async function loadTeamPageSnapshot(
     if (!teamResult.data) return { data: null, error: 'Team is not part of the selected league.' };
     if (leagueResult.error) throw new Error(`league: ${leagueResult.error.message}`);
     if (!leagueResult.data) return { data: null, error: 'League could not be loaded.' };
+
+    const leagueSlug = stringValue((leagueResult.data as Record<string, unknown>).slug);
+    if (!leagueSlug) return { data: null, error: 'League public stats slug is unavailable.' };
+    const publicSeasonStats = await getPublicSeasonStats(leagueSlug, leagueId, seasonId, null, teamId);
 
     const teamIds = teams.map((row) => String(row.id));
     const completedSeasonIds = seasons.filter((row) => row.status !== 'active' && stringValue(row.end_date) != null && new Date(String(row.end_date)).getTime() < now.getTime()).map((row) => String(row.id));
@@ -785,7 +827,7 @@ export async function loadTeamPageSnapshot(
       data: buildTeamPageSnapshot({
         teamId, leagueId, season,
         team: teamResult.data as Record<string, unknown>, league: leagueResult.data as Record<string, unknown>,
-        teams, standings, rosters, leagueRosters, profiles, seasonStats: [], playerStats, goalieStats, games, seasons, historicalStandings, publishedLineup, acceptedSubstitutions, sponsors,
+        teams, standings, rosters, leagueRosters, profiles, seasonStats: [], playerStats, goalieStats, games, seasons, historicalStandings, publishedLineup, acceptedSubstitutions, sponsors, publicSeasonStats,
       }, now),
       error: null,
     };

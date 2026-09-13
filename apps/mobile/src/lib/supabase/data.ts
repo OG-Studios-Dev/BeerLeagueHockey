@@ -1,7 +1,9 @@
 import { supabase } from './client';
+import type { PublicMetricState, PublicSeasonPlayer, PublicSeasonStats } from './publicStats';
+import { toPlayerStatRows } from './publicStats';
 
 // Deduplicate players by player_id (keep highest points row)
-function dedupByPlayerId<T extends { player_id: string; points?: number; games_played?: number }>(rows: T[]): T[] {
+function dedupByPlayerId<T extends { player_id: string; points?: number | null; games_played?: number | null }>(rows: T[]): T[] {
   const map = new Map<string, T>();
   for (const row of rows) {
     const existing = map.get(row.player_id);
@@ -58,12 +60,15 @@ export type PlayerStatRow = {
   position: string | null;
   is_goalie: boolean;
   jersey_number: number | null;
-  goals: number;
-  assists: number;
-  points: number;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
   plus_minus: number;
-  games_played: number;
-  penalty_minutes?: number;
+  games_played: number | null;
+  games_played_state?: PublicMetricState;
+  penalty_minutes?: number | null;
+  penalty_minutes_state?: PublicMetricState;
+  metrics?: PublicSeasonPlayer['metrics'];
 };
 
 export type GoalieStatRow = {
@@ -333,6 +338,15 @@ export async function getStatsLeaders(
     games_played: Number(s.games_played) || 0,
     penalty_minutes: 0,
   }))).slice(0, limit);
+}
+
+/** Maps the already aggregate-before-limit v2 response; no legacy RPC or team-row limit is involved. */
+export function getStatsLeadersFromPublicSeason(
+  payload: PublicSeasonStats,
+  statType: 'points' | 'goals' | 'assists' | 'penalty_minutes' = 'points',
+  limit = 20,
+): PlayerStatRow[] {
+  return toPlayerStatRows(payload, statType, limit) as PlayerStatRow[];
 }
 
 // ─────────────────────────────────────────

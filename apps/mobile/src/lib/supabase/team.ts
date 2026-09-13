@@ -65,6 +65,15 @@ type MembershipDbRow = Pick<TeamRosterDbRow, 'id' | 'team_id' | 'league_id' | 's
 };
 
 const TEAM_CURRENT_SEASON_STATUSES = ['active', 'playoffs'] as const;
+const METRICS_OPERATIONAL_SEASON_PRIORITY: Readonly<Record<string, number>> = {
+  active: 0,
+  playoffs: 1,
+  registration: 2,
+  upcoming: 2,
+  draft: 3,
+  completed: 4,
+  archived: 5,
+};
 
 function compareNewestNullable(left: string | null | undefined, right: string | null | undefined) {
   if (left == null && right == null) return 0;
@@ -133,6 +142,31 @@ export async function getTeamActiveSeason(
     leagueId,
   );
   return { season, error: null };
+}
+
+/** Deterministic presentation-season resolver shared by every new v2 metrics consumer. */
+export async function getMetricsOperationalSeason(
+  leagueId: string,
+): Promise<{ season: TeamActiveSeason | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('seasons')
+    .select('id, league_id, name, start_date, end_date, status, created_at')
+    .eq('league_id', leagueId);
+  if (error) return { season: null, error: 'We could not determine the operational season for this league.' };
+  const timestamp = (season: ActiveSeasonDbRow) => {
+    const value = season.start_date ?? season.end_date ?? season.created_at ?? null;
+    if (!value) return 0;
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  const rows = ((data as unknown as ActiveSeasonDbRow[] | null) ?? [])
+    .filter((season) => season.league_id === leagueId)
+    .sort((left, right) => {
+      const status = (METRICS_OPERATIONAL_SEASON_PRIORITY[left.status] ?? 99)
+        - (METRICS_OPERATIONAL_SEASON_PRIORITY[right.status] ?? 99);
+      return status || timestamp(right) - timestamp(left) || left.id.localeCompare(right.id);
+    });
+  return { season: rows[0] ?? null, error: null };
 }
 
 export async function getActiveSeasonTeamForUser(
