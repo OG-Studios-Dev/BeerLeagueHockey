@@ -213,6 +213,37 @@ describe('GET /api/public/season-stats v2', () => {
 });
 
 describe('bounded metric loader', () => {
+  it('loads league-scoped teams without assuming a nonexistent season_id column', async () => {
+    const client = {
+      from(table: string) {
+        return {
+          select(columns: string) {
+            let invalidTeamSeasonReference = table === 'teams' && columns.split(',').map((column) => column.trim()).includes('season_id');
+            const query = {
+              eq(column: string) {
+                if (table === 'teams' && column === 'season_id') invalidTeamSeasonReference = true;
+                return this;
+              },
+              in() { return this; },
+              order() { return this; },
+              async range() {
+                return invalidTeamSeasonReference
+                  ? { data: null, count: null, error: new Error('column teams.season_id does not exist') }
+                  : { data: [], count: 0, error: null };
+              },
+            };
+            return query;
+          },
+        };
+      },
+    };
+
+    await expect(loadPublicStatMetricRows(client as never, {
+      leagueId: LEAGUE_ID,
+      seasonId: SEASON_ID,
+    })).resolves.toEqual(expect.objectContaining({ teams: [] }));
+  });
+
   it('paginates exact-count source reads and distinguishes failure from empty', async () => {
     const page = (data: unknown[], count: number | null, error: unknown = null) => ({ data, count, error });
     const range = jest.fn()

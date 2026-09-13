@@ -512,7 +512,7 @@ export async function loadPublicStatMetricRows(
   const playerFilter = scope.playerId ? [['eq', 'player_id', scope.playerId] as ['eq', string, unknown]] : [];
   const tableConfig: Record<Exclude<SourceName, 'profiles'>, { table: string; columns: string; filters: Array<['eq' | 'in', string, unknown]>; orderColumns?: string[] }> = {
     games: { table: 'games', columns: 'id, league_id, season_id, status, home_team_id, away_team_id, home_score, away_score, scheduled_at, penalty_capture_status, goalie_capture_status, skater_capture_status', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ['eq', 'status', 'completed']] },
-    teams: { table: 'teams', columns: 'id, league_id, season_id, division_id, name', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ...(scope.divisionId ? [['eq', 'division_id', scope.divisionId] as ['eq', string, unknown]] : []), ...(scope.teamId ? [['eq', 'id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    teams: { table: 'teams', columns: 'id, league_id, division_id, name', filters: [['eq', 'league_id', scope.leagueId], ...(scope.divisionId ? [['eq', 'division_id', scope.divisionId] as ['eq', string, unknown]] : []), ...(scope.teamId ? [['eq', 'id', scope.teamId] as ['eq', string, unknown]] : [])] },
     rosters: { table: 'team_rosters', columns: 'id, player_id, team_id, league_id, season_id, start_date, end_date, is_goalie, position, status, player_type, games_played_override', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
     checkins: { table: 'game_checkins', columns: 'id, game_id, player_id, team_id, status, game:games!inner(id)', filters: [['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
     acceptedSubs: { table: 'sub_invitations', columns: 'id, game_id, invited_player_id, team_id, status, game:games!inner(id)', filters: [['eq', 'status', 'accepted'], ['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.playerId ? [['eq', 'invited_player_id', scope.playerId] as ['eq', string, unknown]] : []), ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
@@ -585,9 +585,9 @@ export async function readMetricSeason(leagueId: string, seasonId: string): Prom
   return result.data as PublicSeason | null;
 }
 
-export async function readMetricTeam(leagueId: string, seasonId: string, teamId: string): Promise<PublicTeam | null> {
+export async function readMetricTeam(leagueId: string, _seasonId: string, teamId: string): Promise<PublicTeam | null> {
   const client = await createClient();
-  const result = await client.from('teams').select('id, league_id, season_id, division_id, name').eq('league_id', leagueId).eq('season_id', seasonId).eq('id', teamId).maybeSingle();
+  const result = await client.from('teams').select('id, league_id, division_id, name').eq('league_id', leagueId).eq('id', teamId).maybeSingle();
   if (result.error) throw new PublicMetricDataError('team source read failed');
   return result.data as PublicTeam | null;
 }
