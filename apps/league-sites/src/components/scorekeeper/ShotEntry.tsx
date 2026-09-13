@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { PlayerData } from '@/lib/actions/scorekeeper';
 import { addShotEvent } from '@/lib/actions/scorekeeper';
 import { PlayerPicker } from './PlayerPicker';
+import { OFFLINE_ACTION_ERROR } from './ui-reliability';
 
 function isGoaliePosition(position: string | null | undefined): boolean {
   if (!position) return false;
@@ -24,6 +25,7 @@ interface ShotEntryProps {
   shootingTeamColor?: string | null;
   period: number | null;
   gameTimeSeconds: number | null;
+  isOnline: boolean;
   onComplete: () => void;
   onCancel: () => void;
 }
@@ -38,6 +40,7 @@ export function ShotEntry({
   shootingTeamColor,
   period,
   gameTimeSeconds,
+  isOnline,
   onComplete,
   onCancel,
 }: ShotEntryProps) {
@@ -62,6 +65,10 @@ export function ShotEntry({
 
   async function handleShooterSelect(shooter: PlayerData) {
     if (isPending) return;
+    if (!isOnline) {
+      setSubmitError(OFFLINE_ACTION_ERROR);
+      return;
+    }
     if (!goalie) {
       // No goalie registered on this team — dismiss without recording
       onCancel();
@@ -96,6 +103,10 @@ export function ShotEntry({
   async function handleQuickSave() {
     // Record save without specifying shooter
     if (isPending) return;
+    if (!isOnline) {
+      setSubmitError(OFFLINE_ACTION_ERROR);
+      return;
+    }
     if (!goalie) {
       // No goalie registered on this team — dismiss without recording
       onCancel();

@@ -13,6 +13,18 @@ import {
 import { isHistoricalCareerBaselineSeasonName } from '@/lib/all-time-stats';
 import { isImportedAggregateSeasonId } from '@/lib/imported-aggregate-season-overrides';
 import { pickOperationalSeason } from '@/lib/seasons/operational';
+import {
+  aggregatePublicSeasonStats,
+  assertRequiredPrivilegedMetricConfig,
+  readMetricSeason,
+  readPublicStatMetricRows,
+  type PublicGoalieMetricGroup,
+  type PublicMetricSource,
+  type PublicMetricState,
+  type PublicSeasonMetricPlayer,
+  type PublicStatMetric,
+  type PublicStatMetricRows,
+} from '@/lib/public-stat-metrics';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import type { UnifiedGoalieStatsRow } from '@/lib/types';
 
@@ -20,6 +32,9 @@ export const PUBLIC_NATIVE_STATS_SCHEMA_VERSION = 1 as const;
 export const MAX_CAREER_ROWS = 500;
 export const MAX_GOALIE_ROWS = 200;
 export const MAX_PUBLIC_STATS_RESPONSE_BYTES = 256 * 1024;
+export const MAX_CAREER_METRIC_SEASONS = 32;
+export const MAX_CAREER_METRIC_SOURCE_ROWS = 50_000;
+const MAX_CAREER_SCOPE_ROWS_PER_SOURCE = 8_000;
 
 const SUCCESS_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=300';
 const ERROR_CACHE_CONTROL = 'no-store';
@@ -81,6 +96,8 @@ type PublicCareerBaseline = {
   goals: number;
   assists: number;
   points: number;
+  wins?: number; ties?: number; saves?: number; goals_against?: number; shutouts?: number;
+  goals_against_average?: number; save_percentage?: number;
 };
 
 export type CareerPenaltyRow = {
@@ -94,6 +111,7 @@ export type CareerScope = {
   isEligible: boolean;
   isGoalie: boolean;
   seasonCatalog: Array<{ id: string; name: string }>;
+  canonicalSeasonIds?: string[];
   penaltyRows: CareerPenaltyRow[];
   canonicalSourceRowCount: number;
   historicalBaselineSourceRowCount?: number;
@@ -126,6 +144,10 @@ export interface PublicNativeStatsDependencies {
   ): Promise<UnifiedGoalieStatsRow[]>;
   readCareerScope(leagueId: string, playerId: string): Promise<CareerScope>;
   readGoalieStatsSourceCount(leagueId: string, seasonId: string, divisionId?: string): Promise<number>;
+  readMetricSeason?(leagueId: string, seasonId: string): Promise<PublicSeason | null>;
+  requirePrivilegedAccess(): void;
+  readCareerMetricSeasonIds(leagueId: string, playerId: string): Promise<string[]>;
+  loadMetricRows?(scope: { leagueId: string; seasonId: string; divisionId?: string | null; teamId?: string | null; playerId?: string }): Promise<PublicStatMetricRows>;
 }
 
 class PayloadLimitError extends Error {}
@@ -340,7 +362,7 @@ export async function readCareerScope(
       .eq('player_id', playerId),
     serviceSupabase
       .from('player_career_baselines')
-      .select('id, is_goalie, games_played, goals, assists, points', { count: 'exact' })
+      .select('id, is_goalie, games_played, goals, assists, points, wins, ties, saves, goals_against, shutouts, goals_against_average, save_percentage', { count: 'exact' })
       .eq('league_id', leagueId)
       .eq('player_id', playerId)
       .limit(2),
@@ -454,6 +476,34 @@ export async function readGoalieStatsSourceCount(
   return result.count;
 }
 
+export async function readCareerMetricSeasonIds(leagueId: string, playerId: string): Promise<string[]> {
+  assertRequiredPrivilegedMetricConfig();
+  const client = createServiceRoleClient();
+  const resultSets = await Promise.all([
+    client.from('team_rosters').select('season_id', { count: 'exact' }).eq('league_id', leagueId).eq('player_id', playerId).eq('status', 'active').eq('player_type', 'regular').order('season_id').limit(MAX_CAREER_SCOPE_ROWS_PER_SOURCE),
+    client.from('player_stats').select('season_id', { count: 'exact' }).eq('league_id', leagueId).eq('player_id', playerId).order('season_id').limit(MAX_CAREER_SCOPE_ROWS_PER_SOURCE),
+    client.from('goalie_stats').select('season_id', { count: 'exact' }).eq('league_id', leagueId).eq('player_id', playerId).order('season_id').limit(MAX_CAREER_SCOPE_ROWS_PER_SOURCE),
+    client.from('game_goalie_appearances').select('game:games!inner(season_id)', { count: 'exact' }).eq('player_id', playerId).eq('game.league_id', leagueId).limit(MAX_CAREER_SCOPE_ROWS_PER_SOURCE),
+    client.from('game_checkins').select('game:games!inner(season_id)', { count: 'exact' }).eq('player_id', playerId).eq('game.league_id', leagueId).eq('game.status', 'completed').limit(MAX_CAREER_SCOPE_ROWS_PER_SOURCE),
+    client.from('sub_invitations').select('game:games!inner(season_id)', { count: 'exact' }).eq('invited_player_id', playerId).eq('status', 'accepted').eq('game.league_id', leagueId).eq('game.status', 'completed').limit(MAX_CAREER_SCOPE_ROWS_PER_SOURCE),
+  ]);
+  let sourceRows = 0;
+  for (const result of resultSets) {
+    if (result.error || !Number.isSafeInteger(result.count) || (result.count ?? -1) < 0) {
+      throw new DataIntegrityError('career metric source scope read failed');
+    }
+    if ((result.count as number) > MAX_CAREER_SCOPE_ROWS_PER_SOURCE) throw new PayloadLimitError('career metric source scope per-source limit exceeded');
+    sourceRows += result.count as number;
+  }
+  if (sourceRows > MAX_CAREER_METRIC_SOURCE_ROWS) throw new PayloadLimitError('career metric source scope work limit exceeded');
+  const seasonIds = resultSets.flatMap((result, index) => ((result.data ?? []) as unknown[]).flatMap((row: unknown) => {
+    if (index < 3) return [(row as { season_id?: string }).season_id];
+    const game = (row as { game?: { season_id?: string } | Array<{ season_id?: string }> }).game;
+    return Array.isArray(game) ? game.map((value) => value.season_id) : [game?.season_id];
+  })).filter((seasonId): seasonId is string => typeof seasonId === 'string');
+  return [...new Set(seasonIds)];
+}
+
 const defaultDependencies: PublicNativeStatsDependencies = {
   getLeagueBySlug,
   hasPlatformSubscription,
@@ -466,6 +516,10 @@ const defaultDependencies: PublicNativeStatsDependencies = {
   getUnifiedGoalieStatsRows,
   readCareerScope,
   readGoalieStatsSourceCount,
+  readMetricSeason,
+  requirePrivilegedAccess: assertRequiredPrivilegedMetricConfig,
+  readCareerMetricSeasonIds,
+  loadMetricRows: readPublicStatMetricRows,
 };
 
 function careerError(error: unknown, leagueSlug: string) {
@@ -490,6 +544,226 @@ function goalieError(error: unknown, leagueSlug: string) {
   return jsonError(503, 'GOALIE_DATA_UNAVAILABLE', 'Goalie data is temporarily unavailable.');
 }
 
+function readContractVersion(request: NextRequest): 1 | 2 | NextResponse {
+  const value = request.nextUrl.searchParams.get('contractVersion');
+  if (value === null || value === '1') return 1;
+  if (value === '2') return 2;
+  return jsonError(400, 'UNSUPPORTED_CONTRACT_VERSION', 'contractVersion must be 1 or 2.');
+}
+
+function importedMetric(value: number): PublicStatMetric {
+  return { value: nonnegativeNumber(value), state: 'reported', sources: ['imported'] };
+}
+
+function unknownMetric(sources: PublicMetricSource[] = []): PublicStatMetric {
+  return { value: null, state: 'unknown', sources };
+}
+
+function timelineGoalieMetrics(row: PlayerCareerSeasonRow, imported: boolean): PublicGoalieMetricGroup {
+  const metric = imported ? importedMetric : (value: number) => ({
+    value: nonnegativeNumber(value), state: 'recorded' as const, sources: ['goalie_stats'] as PublicMetricSource[],
+  });
+  const saves = nonnegativeNumber(row.saves);
+  const goalsAgainst = nonnegativeNumber(row.goals_against);
+  const attempts = saves + goalsAgainst;
+  return {
+    gamesPlayed: metric(row.games_played),
+    wins: metric(row.wins),
+    losses: metric(row.losses),
+    saves: metric(saves),
+    goalsAgainst: metric(goalsAgainst),
+    savePercentage: attempts > 0 ? metric(saves / attempts) : unknownMetric(imported ? ['imported'] : ['goalie_stats']),
+    goalsAgainstAverage: row.games_played > 0 ? metric(goalsAgainst / row.games_played) : unknownMetric(imported ? ['imported'] : ['goalie_stats']),
+    shutouts: metric(row.shutouts),
+  };
+}
+
+function combinePublicMetrics(metrics: PublicStatMetric[]): PublicStatMetric {
+  if (metrics.length === 0) return unknownMetric();
+  const metricSources = [...new Set(metrics.flatMap((metric) => metric.sources))];
+  if (metrics.some((metric) => metric.state === 'conflicted')) return { value: null, state: 'conflicted', sources: metricSources };
+  if (metrics.some((metric) => metric.state === 'unknown' || metric.value === null)) return { value: null, state: 'unknown', sources: metricSources };
+  const certainty: PublicMetricState[] = ['verified', 'recorded', 'reported', 'estimated'];
+  const state = metrics.reduce((weakest, metric) =>
+    certainty.indexOf(metric.state) > certainty.indexOf(weakest) ? metric.state : weakest, 'verified' as PublicMetricState);
+  return { value: metrics.reduce((sum, metric) => sum + (metric.value ?? 0), 0), state, sources: metricSources };
+}
+
+function combineGoalieGroups(groups: PublicGoalieMetricGroup[]): PublicGoalieMetricGroup | null {
+  if (groups.length === 0) return null;
+  const gamesPlayed = combinePublicMetrics(groups.map((group) => group.gamesPlayed));
+  const wins = combinePublicMetrics(groups.map((group) => group.wins));
+  const losses = combinePublicMetrics(groups.map((group) => group.losses));
+  const saves = combinePublicMetrics(groups.map((group) => group.saves));
+  const goalsAgainst = combinePublicMetrics(groups.map((group) => group.goalsAgainst));
+  const shutouts = combinePublicMetrics(groups.map((group) => group.shutouts));
+  const rateSources = [...new Set([...saves.sources, ...goalsAgainst.sources, ...gamesPlayed.sources])];
+  const rateState = combinePublicMetrics([
+    { ...saves, value: saves.value === null ? null : 0 },
+    { ...goalsAgainst, value: goalsAgainst.value === null ? null : 0 },
+  ]).state;
+  const saveAttempts = saves.value === null || goalsAgainst.value === null ? null : saves.value + goalsAgainst.value;
+  return {
+    gamesPlayed, wins, losses, saves, goalsAgainst,
+    savePercentage: saveAttempts && saves.value !== null
+      ? { value: saves.value / saveAttempts, state: rateState, sources: rateSources }
+      : unknownMetric(rateSources),
+    goalsAgainstAverage: gamesPlayed.value && goalsAgainst.value !== null
+      ? { value: goalsAgainst.value / gamesPlayed.value, state: combinePublicMetrics([
+          { ...gamesPlayed, value: 0 }, { ...goalsAgainst, value: 0 },
+        ]).state, sources: rateSources }
+      : unknownMetric(rateSources),
+    shutouts,
+  };
+}
+
+async function buildCareerV2(
+  league: PublicLeague,
+  profileId: string,
+  profile: { full_name: string | null; avatar_url: string | null; photo_url?: string | null } | undefined,
+  scope: CareerScope,
+  deps: PublicNativeStatsDependencies,
+) {
+  if (!deps.loadMetricRows) throw new DataIntegrityError('v2 metric loader unavailable');
+  const timeline = deps.filterVisiblePlayerCareerTimelineRows(await deps.getPlayerCareerStatsTimeline(
+    league.id, profileId, scope.isGoalie, { includeHistoricalBaseline: true },
+  ), { includeHistoricalBaseline: true });
+  const seasonCatalog = new Map(scope.seasonCatalog.map((season) => [season.id, season]));
+  const exactRows = timeline.filter((row) => seasonCatalog.has(row.season_id));
+  const importedRowsBySeason = new Map<string, PlayerCareerSeasonRow[]>();
+  for (const row of exactRows) {
+    if (!isHistoricalCareerBaselineSeasonName(row.season_name) && !isImportedAggregateSeasonId(row.season_id)) continue;
+    importedRowsBySeason.set(row.season_id, [...(importedRowsBySeason.get(row.season_id) ?? []), row]);
+  }
+  const sourceSeasonIds = scope.canonicalSeasonIds ?? await deps.readCareerMetricSeasonIds(league.id, profileId);
+  const canonicalSeasonIds = [...new Set(sourceSeasonIds)]
+    .filter((seasonId) => !importedRowsBySeason.has(seasonId)
+      && !isImportedAggregateSeasonId(seasonId)
+      && !isHistoricalCareerBaselineSeasonName(seasonCatalog.get(seasonId)?.name ?? ''));
+  if (canonicalSeasonIds.length > MAX_CAREER_METRIC_SEASONS) throw new PayloadLimitError('career metric season work limit exceeded');
+  for (const seasonId of canonicalSeasonIds) {
+    if (!UUID_PATTERN.test(seasonId) || !seasonCatalog.has(seasonId)) throw new DataIntegrityError('canonical career season is outside league scope');
+  }
+  const seasons: Array<{
+    seasonId: string | null; sourceId: string | null; seasonName: string; sortDate: string | null;
+    teams: Array<{ id: string; name: string }>; roles: Array<'skater' | 'goalie'>;
+    metrics: PublicSeasonMetricPlayer['metrics']; goalie: PublicGoalieMetricGroup | null;
+  }> = [];
+
+  for (const [seasonId, seasonRows] of importedRowsBySeason) {
+    const first = seasonRows[0];
+    const aggregateFields = ['games_played', 'goals', 'assists', 'points', 'wins', 'losses', 'saves', 'goals_against', 'shutouts'] as const;
+    for (const field of aggregateFields) {
+      const values = new Set(seasonRows.map((row) => nonnegativeNumber(row[field])));
+      if (values.size !== 1) throw new DataIntegrityError(`inconsistent imported ${field}`);
+    }
+    const goals = nonnegativeNumber(first.goals);
+    const assists = nonnegativeNumber(first.assists);
+    if (nonnegativeNumber(first.points) !== goals + assists) throw new DataIntegrityError('inconsistent imported points');
+    const importedPimValues = new Set(seasonRows.map((row) => (row as PlayerCareerSeasonRow & { penalty_minutes?: number | null }).penalty_minutes)
+      .filter((value): value is number => value !== null && value !== undefined)
+      .map(nonnegativeNumber));
+    if (importedPimValues.size > 1) throw new DataIntegrityError('inconsistent imported penalty minutes');
+    const hasExplicitRole = seasonRows.some((row) => Boolean(row.position?.trim()));
+    const goalieRole = seasonRows.some((row) => ['g', 'goalie'].includes(row.position?.trim().toLowerCase() ?? ''))
+      || (!hasExplicitRole && scope.isGoalie);
+    const roles: Array<'skater' | 'goalie'> = [goalieRole ? 'goalie' : 'skater'];
+    const teams = [...new Map(seasonRows
+      .filter((row) => row.team_id)
+      .map((row) => [row.team_id as string, { id: row.team_id as string, name: row.team_name || 'Unknown team' }])).values()];
+    seasons.push({
+      seasonId,
+      sourceId: null,
+      seasonName: first.season_name,
+      sortDate: first.sort_date,
+      teams,
+      roles,
+      metrics: {
+        gamesPlayed: importedMetric(first.games_played),
+        goals: importedMetric(goals),
+        assists: importedMetric(assists),
+        points: importedMetric(goals + assists),
+        penaltyMinutes: importedPimValues.size === 1 ? importedMetric([...importedPimValues][0]) : unknownMetric(['imported']),
+      },
+      goalie: goalieRole ? timelineGoalieMetrics(first, true) : null,
+    });
+  }
+
+  let careerSourceRows = 0;
+  for (const seasonId of canonicalSeasonIds) {
+    const raw = await deps.loadMetricRows({ leagueId: league.id, seasonId, playerId: profileId });
+    careerSourceRows += Object.values(raw).reduce((sum, collection) => sum + collection.length, 0);
+    if (careerSourceRows > MAX_CAREER_METRIC_SOURCE_ROWS) throw new PayloadLimitError('career metric source work limit exceeded');
+    const canonical = aggregatePublicSeasonStats(raw, { leagueId: league.id, seasonId, playerId: profileId }).players
+      .find((player) => player.playerId === profileId);
+    if (!canonical) throw new DataIntegrityError('canonical career player season disappeared');
+    const metadata = exactRows.find((row) => row.season_id === seasonId);
+    seasons.push({
+      seasonId,
+      sourceId: null,
+      seasonName: seasonCatalog.get(seasonId)?.name ?? metadata?.season_name ?? 'Unknown season',
+      sortDate: metadata?.sort_date ?? null,
+      teams: canonical.teams,
+      roles: canonical.roles,
+      metrics: canonical.metrics,
+      goalie: canonical.goalie,
+    });
+  }
+
+  if (scope.canonicalSourceRowCount > 0 && seasons.length === 0 && !scope.careerBaseline) {
+    throw new DataIntegrityError('canonical source rows disappeared');
+  }
+
+  if (scope.careerBaseline && !seasons.some((season) => isHistoricalCareerBaselineSeasonName(season.seasonName))) {
+    const baselineSeason = scope.seasonCatalog.find((season) => isHistoricalCareerBaselineSeasonName(season.name));
+    const baseline = scope.careerBaseline;
+    if (nonnegativeNumber(baseline.points) !== nonnegativeNumber(baseline.goals) + nonnegativeNumber(baseline.assists)) {
+      throw new DataIntegrityError('inconsistent imported baseline points');
+    }
+    const roles: Array<'skater' | 'goalie'> = [baseline.is_goalie ? 'goalie' : 'skater'];
+    const metrics = {
+      gamesPlayed: importedMetric(baseline.games_played), goals: importedMetric(baseline.goals),
+      assists: importedMetric(baseline.assists), points: importedMetric(baseline.goals + baseline.assists),
+      penaltyMinutes: unknownMetric(['imported']),
+    };
+    const baselineGoalie = baseline.is_goalie ? (() => {
+      const wins = nonnegativeNumber(baseline.wins ?? 0);
+      const ties = nonnegativeNumber(baseline.ties ?? 0);
+      const losses = Math.max(0, nonnegativeNumber(baseline.games_played) - wins - ties);
+      const saves = nonnegativeNumber(baseline.saves ?? 0);
+      const goalsAgainst = nonnegativeNumber(baseline.goals_against ?? 0);
+      const attempts = saves + goalsAgainst;
+      return {
+        gamesPlayed: importedMetric(baseline.games_played), wins: importedMetric(wins), losses: importedMetric(losses),
+        saves: importedMetric(saves), goalsAgainst: importedMetric(goalsAgainst),
+        savePercentage: attempts > 0 ? importedMetric(saves / attempts) : unknownMetric(['imported']),
+        goalsAgainstAverage: baseline.games_played > 0 ? importedMetric(goalsAgainst / baseline.games_played) : unknownMetric(['imported']),
+        shutouts: importedMetric(baseline.shutouts ?? 0),
+      };
+    })() : null;
+    seasons.push({
+      seasonId: baselineSeason?.id ?? null,
+      sourceId: baselineSeason ? null : baseline.id,
+      seasonName: baselineSeason?.name ?? 'Imported career history', sortDate: null, teams: [], roles, metrics,
+      goalie: baselineGoalie,
+    });
+  }
+  if (seasons.length > MAX_CAREER_ROWS) throw new PayloadLimitError('career row limit exceeded');
+  seasons.sort((left, right) => (right.sortDate ?? '').localeCompare(left.sortDate ?? '') || left.seasonName.localeCompare(right.seasonName, 'en'));
+  const metricKeys = ['gamesPlayed', 'goals', 'assists', 'points', 'penaltyMinutes'] as const;
+  const totalsMetrics = Object.fromEntries(metricKeys.map((key) => [key, combinePublicMetrics(seasons.map((season) => season.metrics[key]))])) as PublicSeasonMetricPlayer['metrics'];
+  const totalRoles = [...new Set(seasons.flatMap((season) => season.roles))] as Array<'skater' | 'goalie'>;
+  if (totalRoles.length === 0) totalRoles.push(scope.isGoalie ? 'goalie' : 'skater');
+  return {
+    schemaVersion: 2 as const,
+    leagueId: league.id,
+    leagueSlug: league.slug,
+    player: { id: profileId, name: profile?.full_name || 'Unknown Player', avatarUrl: profile?.avatar_url ?? profile?.photo_url ?? null },
+    totals: { roles: totalRoles, metrics: totalsMetrics, goalie: combineGoalieGroups(seasons.flatMap((season) => season.goalie ? [season.goalie] : [])) },
+    seasons,
+  };
+}
+
 export async function handlePublicPlayerCareerRequest(
   request: NextRequest,
   deps: PublicNativeStatsDependencies = defaultDependencies,
@@ -499,8 +773,10 @@ export async function handlePublicPlayerCareerRequest(
     response.headers.set('Allow', 'GET');
     return response;
   }
-  const queryError = validateExactQueryKeys(request, new Set(['leagueSlug', 'playerId']));
+  const queryError = validateExactQueryKeys(request, new Set(['leagueSlug', 'playerId', 'contractVersion']));
   if (queryError) return queryError;
+  const contractVersion = readContractVersion(request);
+  if (contractVersion instanceof NextResponse) return contractVersion;
   const slug = validateSlug(request.nextUrl.searchParams.get('leagueSlug'));
   if (slug instanceof NextResponse) return slug;
   const playerId = request.nextUrl.searchParams.get('playerId');
@@ -510,6 +786,7 @@ export async function handlePublicPlayerCareerRequest(
   if (tenantHost instanceof NextResponse) return tenantHost;
 
   try {
+    if (contractVersion === 2) deps.requirePrivilegedAccess();
     const league = await requirePublicLeague(slug, tenantHost, deps);
     if (league instanceof NextResponse) return league;
     const player = await deps.getPlayerProfile(playerId);
@@ -518,11 +795,20 @@ export async function handlePublicPlayerCareerRequest(
     const profileId = player?.player_id ?? directProfile?.id;
     if (!profileId) throw new DataIntegrityError('canonical player identity missing');
     if (!UUID_PATTERN.test(profileId)) throw new DataIntegrityError('invalid canonical player id');
-    const scope = await deps.readCareerScope(league.id, profileId);
+    let scope = await deps.readCareerScope(league.id, profileId);
+    if (contractVersion === 2 && scope.canonicalSeasonIds === undefined) {
+      const canonicalSeasonIds = await deps.readCareerMetricSeasonIds(league.id, profileId);
+      scope = { ...scope, canonicalSeasonIds, isEligible: scope.isEligible || canonicalSeasonIds.length > 0 };
+    }
     if (!scope.isEligible) return jsonError(404, 'PLAYER_NOT_FOUND', 'Player not found.');
     const baselineCount = scope.historicalBaselineSourceRowCount ?? 0;
     if (baselineCount > 1) throw new DataIntegrityError('ambiguous career baseline records');
     const isGoalie = scope.isGoalie;
+
+    if (contractVersion === 2) {
+      const profile = player?.profile ?? directProfile ?? undefined;
+      return jsonSuccess(await buildCareerV2(league, profileId, profile, scope, deps));
+    }
 
     const timeline = await deps.getPlayerCareerStatsTimeline(
       league.id,
@@ -689,13 +975,18 @@ export async function handlePublicGoaliesRequest(
     response.headers.set('Allow', 'GET');
     return response;
   }
-  const queryError = validateExactQueryKeys(request, new Set(['leagueSlug', 'seasonId', 'divisionId']));
+  const queryError = validateExactQueryKeys(request, new Set(['leagueSlug', 'seasonId', 'divisionId', 'contractVersion']));
   if (queryError) return queryError;
+  const contractVersion = readContractVersion(request);
+  if (contractVersion instanceof NextResponse) return contractVersion;
   const slug = validateSlug(request.nextUrl.searchParams.get('leagueSlug'));
   if (slug instanceof NextResponse) return slug;
   const expectedSeasonId = request.nextUrl.searchParams.get('seasonId') ?? undefined;
   if (expectedSeasonId !== undefined && !UUID_PATTERN.test(expectedSeasonId)) {
     return jsonError(400, 'INVALID_SEASON_ID', 'seasonId must be a UUID.');
+  }
+  if (contractVersion === 2 && expectedSeasonId === undefined) {
+    return jsonError(400, 'INVALID_SEASON_ID', 'seasonId is required for contractVersion=2.');
   }
   const divisionId = request.nextUrl.searchParams.get('divisionId') ?? undefined;
   if (divisionId !== undefined && !UUID_PATTERN.test(divisionId)) {
@@ -705,10 +996,13 @@ export async function handlePublicGoaliesRequest(
   if (tenantHost instanceof NextResponse) return tenantHost;
 
   try {
+    if (contractVersion === 2) deps.requirePrivilegedAccess();
     const league = await requirePublicLeague(slug, tenantHost, deps);
     if (league instanceof NextResponse) return league;
     const [presentationSeason, divisions] = await Promise.all([
-      deps.readPresentationSeason(league.id),
+      contractVersion === 2 && expectedSeasonId
+        ? deps.readMetricSeason?.(league.id, expectedSeasonId) ?? Promise.reject(new DataIntegrityError('v2 season reader unavailable'))
+        : deps.readPresentationSeason(league.id),
       deps.getDivisions(league.id),
     ]);
     if (divisionId && !divisions.some((division) => division.id === divisionId && division.league_id === league.id)) {
@@ -717,6 +1011,42 @@ export async function handlePublicGoaliesRequest(
     if (expectedSeasonId && presentationSeason?.id !== expectedSeasonId) {
       return jsonError(409, 'SEASON_MISMATCH', 'The presentation season changed; refresh goalie data.', {
         presentationSeasonId: presentationSeason?.id ?? null,
+      });
+    }
+
+    if (contractVersion === 2) {
+      if (!presentationSeason || !deps.loadMetricRows) throw new DataIntegrityError('v2 metric scope unavailable');
+      if (presentationSeason.league_id !== league.id) throw new DataIntegrityError('cross-league current season');
+      const metricRows = await deps.loadMetricRows({ leagueId: league.id, seasonId: presentationSeason.id, divisionId });
+      const aggregate = aggregatePublicSeasonStats(metricRows, { leagueId: league.id, seasonId: presentationSeason.id, divisionId });
+      const goalies = aggregate.players
+        .filter((player) => player.goalie !== null)
+        .map((player) => ({
+          playerId: player.playerId,
+          playerName: player.playerName,
+          avatarUrl: player.avatarUrl,
+          displayTeam: player.displayTeam,
+          teams: player.teams,
+          metrics: player.goalie as PublicGoalieMetricGroup,
+        }))
+        .sort((left, right) =>
+          (right.metrics.wins.value ?? -1) - (left.metrics.wins.value ?? -1)
+          || left.playerName.localeCompare(right.playerName, 'en')
+          || left.playerId.localeCompare(right.playerId, 'en'));
+      if (goalies.length > MAX_GOALIE_ROWS) throw new PayloadLimitError('goalie row limit exceeded');
+      return jsonSuccess({
+        schemaVersion: 2,
+        leagueId: league.id,
+        leagueSlug: league.slug,
+        presentationSeason: {
+          id: presentationSeason.id,
+          name: presentationSeason.name,
+          league_id: presentationSeason.league_id,
+          status: presentationSeason.status ?? null,
+        },
+        divisionId: divisionId ?? null,
+        goalies,
+        coverage: { goalies: aggregate.coverage.goalies },
       });
     }
 

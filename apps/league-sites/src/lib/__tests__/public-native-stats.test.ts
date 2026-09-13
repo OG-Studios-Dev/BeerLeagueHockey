@@ -118,6 +118,8 @@ function dependencies(): jest.Mocked<PublicNativeStatsDependencies> {
       historicalBaselineSourceRowCount: 1,
     }),
     readGoalieStatsSourceCount: jest.fn().mockResolvedValue(1),
+    requirePrivilegedAccess: jest.fn(),
+    readCareerMetricSeasonIds: jest.fn().mockResolvedValue([]),
   } as unknown as jest.Mocked<PublicNativeStatsDependencies>;
 }
 
@@ -716,7 +718,7 @@ describe('strict support reads', () => {
       },
     });
     expect(baselineSelect).toHaveBeenCalledWith(
-      'id, is_goalie, games_played, goals, assists, points',
+      'id, is_goalie, games_played, goals, assists, points, wins, ties, saves, goals_against, shutouts, goals_against_average, save_percentage',
       { count: 'exact' },
     );
     expect(rosterOrderJoined).toHaveBeenCalledWith('joined_at', { ascending: false, nullsFirst: false });

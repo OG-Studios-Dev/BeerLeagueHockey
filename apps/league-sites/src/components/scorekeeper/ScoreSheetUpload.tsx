@@ -10,10 +10,12 @@ import {
   type OcrGoal,
   type OcrPenalty,
 } from '@/lib/scorekeeper/ocr';
+import { OFFLINE_ACTION_ERROR } from './ui-reliability';
 
 interface ScoreSheetUploadProps {
   gameId: string;
   game: GameData;
+  isOnline: boolean;
   onComplete: () => void;
   onClose: () => void;
 }
@@ -27,7 +29,7 @@ type UploadState = 'select' | 'preview' | 'analyzing' | 'review' | 'saving';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 8;
 
-export function ScoreSheetUpload({ gameId, game, onComplete, onClose }: ScoreSheetUploadProps) {
+export function ScoreSheetUpload({ gameId, game, isOnline, onComplete, onClose }: ScoreSheetUploadProps) {
   const [state, setState] = useState<UploadState>('select');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
@@ -85,6 +87,10 @@ export function ScoreSheetUpload({ gameId, game, onComplete, onClose }: ScoreShe
 
   async function handleAnalyze() {
     if (selectedFiles.length === 0) return;
+    if (!isOnline) {
+      setError(OFFLINE_ACTION_ERROR);
+      return;
+    }
 
     setState('analyzing');
     setError(null);
@@ -148,6 +154,10 @@ export function ScoreSheetUpload({ gameId, game, onComplete, onClose }: ScoreShe
 
   async function handleSaveAll() {
     if (extractedEvents.length === 0) return;
+    if (!isOnline) {
+      setError(OFFLINE_ACTION_ERROR);
+      return;
+    }
 
     setState('saving');
     setError(null);
@@ -311,6 +321,7 @@ export function ScoreSheetUpload({ gameId, game, onComplete, onClose }: ScoreShe
               </button>
               <button
                 onClick={handleAnalyze}
+                disabled={!isOnline}
                 className="flex-1 py-3 rounded-xl bg-[var(--league-primary,#d4af37)] text-[var(--color-accent-text,#000)] font-semibold transition-all hover:opacity-90 active:scale-95"
               >
                 Analyze Score Sheet{selectedFiles.length > 1 ? 's' : ''}
@@ -403,6 +414,7 @@ export function ScoreSheetUpload({ gameId, game, onComplete, onClose }: ScoreShe
                   </button>
                   <button
                     onClick={handleSaveAll}
+                    disabled={!isOnline}
                     className="flex-1 py-3 rounded-xl bg-[var(--league-primary,#d4af37)] text-[var(--color-accent-text,#000)] font-semibold transition-all hover:opacity-90 active:scale-95"
                   >
                     Save All ({extractedEvents.length} events)
