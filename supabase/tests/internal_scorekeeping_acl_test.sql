@@ -13,5 +13,19 @@ DO $$ BEGIN
  IF has_function_privilege('service_role','public.validate_game_event_attribution_private()','EXECUTE') THEN RAISE EXCEPTION 'Internal helper exposed to service role: validate_game_event_attribution_private()'; END IF;
  IF NOT has_function_privilege('service_role','public.finalize_game_stats_atomic(uuid,boolean)','EXECUTE') OR NOT has_function_privilege('service_role','public.start_scorekeeper_game_atomic(uuid,uuid)','EXECUTE') THEN RAISE EXCEPTION 'Trusted entry points lost'; END IF;
 END $$;
+SET LOCAL ROLE service_role;
+DO $$ BEGIN
+ BEGIN
+  PERFORM public.rebuild_game_player_stats_private(NULL::uuid);
+  RAISE EXCEPTION 'Direct private helper unexpectedly executed';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM public.rollup_game_stats(NULL::uuid);
+  RAISE EXCEPTION 'Missing-game public entry unexpectedly succeeded';
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN
+  IF SQLERRM <> 'Game not found' THEN RAISE; END IF;
+ END;
+END $$;
+RESET ROLE;
 SELECT 'internal helper ACL regression passed' AS result;
 ROLLBACK;
