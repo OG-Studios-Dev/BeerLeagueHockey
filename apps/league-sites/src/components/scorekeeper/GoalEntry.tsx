@@ -4,6 +4,11 @@ import { useState } from 'react';
 import type { PlayerData } from '@/lib/actions/scorekeeper';
 import { addGoalEvent } from '@/lib/actions/scorekeeper';
 import { PlayerPicker } from './PlayerPicker';
+import {
+  OFFLINE_ACTION_ERROR,
+  resolveGoalieInNetSelection,
+  type GoalieInNetSelection,
+} from './ui-reliability';
 
 function isGoaliePosition(position: string | null | undefined): boolean {
   if (!position) return false;
@@ -18,16 +23,19 @@ interface GoalEntryProps {
   teamName: string;
   teamColor?: string | null;
   roster: PlayerData[];
+  opposingTeamName: string;
+  opposingRoster: PlayerData[];
   period: number | null;
   gameTimeSeconds: number | null;
   isPowerPlay: boolean;
   isShortHanded: boolean;
   isEmptyNet: boolean;
+  isOnline: boolean;
   onComplete: () => void;
   onCancel: () => void;
 }
 
-type Step = 'scorer' | 'assist1' | 'assist2';
+type Step = 'goalie' | 'scorer' | 'assist1' | 'assist2';
 
 export function GoalEntry({
   gameId,
@@ -36,45 +44,81 @@ export function GoalEntry({
   teamName,
   teamColor,
   roster,
+  opposingTeamName,
+  opposingRoster,
   period,
   gameTimeSeconds,
   isPowerPlay,
   isShortHanded,
   isEmptyNet,
+  isOnline,
   onComplete,
   onCancel,
 }: GoalEntryProps) {
-  const [step, setStep] = useState<Step>('scorer');
+  const [step, setStep] = useState<Step>('goalie');
+  const [goalieSelection, setGoalieSelection] = useState<GoalieInNetSelection>({ kind: 'unselected' });
   const [scorer, setScorer] = useState<PlayerData | null>(null);
   const [assist1, setAssist1] = useState<PlayerData | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const skaters = roster.filter(p => !isGoaliePosition(p.position));
+  const opposingGoalies = opposingRoster.filter(p => isGoaliePosition(p.position));
 
   async function submitGoal(scorerPlayer: PlayerData, a1?: PlayerData | null, a2?: PlayerData | null) {
     if (isPending) return;
-    setIsPending(true);
-    setSubmitError(null);
-    const result = await addGoalEvent({
-      gameId,
-      teamId,
-      teamType,
-      scorerId: scorerPlayer.id,
-      assist1Id: a1?.id,
-      assist2Id: a2?.id,
-      period,
-      gameTimeSeconds,
-      isPowerPlay,
-      isShortHanded,
-      isEmptyNet,
-    });
-    if (!result.success) {
-      setIsPending(false);
-      setSubmitError(result.error ?? 'Failed to save goal. Please try again.');
+    if (!isOnline) {
+      setSubmitError(OFFLINE_ACTION_ERROR);
       return;
     }
-    onComplete();
+    const goalieResult = resolveGoalieInNetSelection(goalieSelection, opposingRoster);
+    if (!goalieResult.ok) {
+      setSubmitError(goalieResult.error);
+      return;
+    }
+    setIsPending(true);
+    setSubmitError(null);
+    try {
+      const result = await addGoalEvent({
+        gameId,
+        teamId,
+        teamType,
+        scorerId: scorerPlayer.id,
+        assist1Id: a1?.id,
+        assist2Id: a2?.id,
+        period,
+        gameTimeSeconds,
+        isPowerPlay,
+        isShortHanded,
+        isEmptyNet,
+        goalieInNetId: goalieResult.goalieInNetId ?? undefined,
+      });
+      if (!result.success) {
+        setSubmitError(result.error ?? 'Failed to save goal. Please try again.');
+        return;
+      }
+      onComplete();
+    } catch {
+      setSubmitError('Failed to save goal. Your selections are still here.');
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function handleGoalieSelect(player: PlayerData) {
+    const selection: GoalieInNetSelection = { kind: 'goalie', playerId: player.id };
+    const result = resolveGoalieInNetSelection(selection, opposingRoster);
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setGoalieSelection(selection);
+    setStep('scorer');
+  }
+
+  function acknowledgeGoalieNotRecorded() {
+    setGoalieSelection({ kind: 'not-recorded' });
+    setStep('scorer');
   }
 
   function handleScorerSelect(player: PlayerData) {
@@ -144,6 +188,22 @@ export function GoalEntry({
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (step === 'goalie') {
+    return (
+      <PlayerPicker
+        players={opposingGoalies}
+        teamName={opposingTeamName}
+        onSelect={handleGoalieSelect}
+        onClose={onCancel}
+        goaliesOnly
+        title="Goalie in net for goal against"
+        allowSkip
+        skipLabel="Goalie Not Recorded"
+        onSkip={acknowledgeGoalieNotRecorded}
+      />
     );
   }
 

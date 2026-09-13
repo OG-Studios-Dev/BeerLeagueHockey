@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { PlayerData } from '@/lib/actions/scorekeeper';
 import { addPenaltyEvent } from '@/lib/actions/scorekeeper';
 import { PlayerPicker } from './PlayerPicker';
+import { OFFLINE_ACTION_ERROR } from './ui-reliability';
 
 export interface PenaltyRule {
   type: string;
@@ -21,6 +22,7 @@ interface PenaltyEntryProps {
   gameTimeSeconds: number | null;
   /** Custom penalty rules from league settings (optional) */
   penaltyRules?: PenaltyRule[];
+  isOnline: boolean;
   onComplete: () => void;
   onCancel: () => void;
 }
@@ -79,6 +81,7 @@ export function PenaltyEntry({
   period,
   gameTimeSeconds,
   penaltyRules,
+  isOnline,
   onComplete,
   onCancel,
 }: PenaltyEntryProps) {
@@ -106,24 +109,33 @@ export function PenaltyEntry({
 
   async function handlePenaltySelect(type: string, minutes: number) {
     if (!player || isPending) return;
-    setIsPending(true);
-    setSubmitError(null);
-    const result = await addPenaltyEvent({
-      gameId,
-      teamId,
-      teamType,
-      playerId: player.id,
-      period,
-      gameTimeSeconds,
-      penaltyType: type,
-      penaltyMinutes: minutes,
-    });
-    if (!result.success) {
-      setIsPending(false);
-      setSubmitError(result.error ?? 'Failed to save penalty. Please try again.');
+    if (!isOnline) {
+      setSubmitError(OFFLINE_ACTION_ERROR);
       return;
     }
-    onComplete();
+    setIsPending(true);
+    setSubmitError(null);
+    try {
+      const result = await addPenaltyEvent({
+        gameId,
+        teamId,
+        teamType,
+        playerId: player.id,
+        period,
+        gameTimeSeconds,
+        penaltyType: type,
+        penaltyMinutes: minutes,
+      });
+      if (!result.success) {
+        setSubmitError(result.error ?? 'Failed to save penalty. Please try again.');
+        return;
+      }
+      onComplete();
+    } catch {
+      setSubmitError('Failed to save penalty. Your selections are still here.');
+    } finally {
+      setIsPending(false);
+    }
   }
 
   if (step === 'player') {

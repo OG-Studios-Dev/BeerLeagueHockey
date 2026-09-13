@@ -8,11 +8,16 @@ import { resolvePlayerPhotoUrl } from '@/lib/player-photo';
 
 // Session cookie name for scorekeeper tokens
 const SCOREKEEPER_SESSION_COOKIE = 'sk_session';
-const ASSUMED_GOALIE_SHOTS_AGAINST = 20;
 
 export type ScorekeeperSessionOrigin = 'assigned_scorekeeper' | 'captain_self_score';
 export type ScorekeeperTeamType = 'home' | 'away';
 export type CaptainVerificationMode = 'both_captains' | 'opponent_only';
+export type ScorekeeperCaptureStatus = 'complete' | 'not_recorded';
+export interface ScorekeeperGoalieAppearance {
+  playerId: string;
+  teamId: string;
+  teamType: ScorekeeperTeamType;
+}
 
 // =============================================================================
 // Rate limiting (in-memory, same approach as league-builder)
@@ -99,172 +104,6 @@ function recordFailure(token: string) {
 
 function clearFailures(token: string) {
   tokenFailureStore.delete(`token:${token.toUpperCase()}`);
-}
-
-function isGoalieRosterPosition(position: string | null | undefined, isGoalie?: boolean | null): boolean {
-  const normalized = position?.trim().toLowerCase();
-  return Boolean(isGoalie) || normalized === 'g' || normalized === 'goalie' || normalized === 'goaltender';
-}
-
-function buildAssumedGoalieStat({
-  game,
-  goalie,
-  teamId,
-  goalsFor,
-  goalsAgainst,
-}: {
-  game: {
-    id: string;
-    league_id: string;
-    season_id: string;
-  };
-  goalie: {
-    player_id: string;
-  };
-  teamId: string;
-  goalsFor: number;
-  goalsAgainst: number;
-}) {
-  const safeGoalsAgainst = Math.max(0, Math.trunc(Number(goalsAgainst) || 0));
-  return {
-    game_id: game.id,
-    league_id: game.league_id,
-    season_id: game.season_id,
-    team_id: teamId,
-    player_id: goalie.player_id,
-    goals_against: safeGoalsAgainst,
-    shots_against: ASSUMED_GOALIE_SHOTS_AGAINST,
-    saves: Math.max(0, ASSUMED_GOALIE_SHOTS_AGAINST - safeGoalsAgainst),
-    shutout: safeGoalsAgainst === 0,
-    game_result: goalsFor > goalsAgainst ? 'W' : goalsFor < goalsAgainst ? 'L' : 'T',
-  };
-}
-
-async function ensureAssumedGoalieStatsForGame(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  gameId: string,
-): Promise<void> {
-  const { data: game, error: gameError } = await supabase
-    .from('games')
-    .select('id, league_id, season_id, status, scheduled_at, home_team_id, away_team_id, home_score, away_score')
-    .eq('id', gameId)
-    .maybeSingle();
-
-  if (gameError || !game || game.status !== 'completed' || !game.league_id || !game.season_id) {
-    if (gameError) {
-      console.error('[scorekeeper] Failed to load game for goalie stat generation', gameError);
-    }
-    return;
-  }
-
-  if (!game.home_team_id || !game.away_team_id || game.home_score == null || game.away_score == null) {
-    return;
-  }
-
-  const { data: rosterRows, error: rosterError } = await supabase
-    .from('team_rosters')
-    .select('player_id, team_id, position, is_goalie, joined_at, end_date, status')
-    .eq('season_id', game.season_id)
-    .in('team_id', [game.home_team_id, game.away_team_id])
-    .eq('status', 'active');
-
-  if (rosterError || !rosterRows) {
-    if (rosterError) {
-      console.error('[scorekeeper] Failed to load goalies for goalie stat generation', rosterError);
-    }
-    return;
-  }
-
-  const scheduledAt = game.scheduled_at ? new Date(game.scheduled_at).getTime() : null;
-  const goaliesByTeam = new Map<string, Array<{ player_id: string }>>();
-
-  for (const row of rosterRows as Array<{
-    player_id: string | null;
-    team_id: string | null;
-    position: string | null;
-    is_goalie: boolean | null;
-    joined_at: string | null;
-    end_date: string | null;
-  }>) {
-    if (!row.player_id || !row.team_id || !isGoalieRosterPosition(row.position, row.is_goalie)) {
-      continue;
-    }
-
-    if (scheduledAt != null) {
-      if (row.joined_at && new Date(row.joined_at).getTime() > scheduledAt) {
-        continue;
-      }
-      if (row.end_date && new Date(row.end_date).getTime() < scheduledAt) {
-        continue;
-      }
-    }
-
-    const rowsForTeam = goaliesByTeam.get(row.team_id) || [];
-    rowsForTeam.push({ player_id: row.player_id });
-    goaliesByTeam.set(row.team_id, rowsForTeam);
-  }
-
-  const homeGoalies = goaliesByTeam.get(game.home_team_id) || [];
-  const awayGoalies = goaliesByTeam.get(game.away_team_id) || [];
-
-  if (homeGoalies.length !== 1 || awayGoalies.length !== 1) {
-    console.warn('[scorekeeper] Skipping assumed goalie stat generation because goalie assignment is ambiguous', {
-      gameId,
-      homeGoalies: homeGoalies.length,
-      awayGoalies: awayGoalies.length,
-    });
-    return;
-  }
-
-  const homeScore = Number(game.home_score);
-  const awayScore = Number(game.away_score);
-  const rows = [
-    buildAssumedGoalieStat({
-      game,
-      goalie: homeGoalies[0],
-      teamId: game.home_team_id,
-      goalsFor: homeScore,
-      goalsAgainst: awayScore,
-    }),
-    buildAssumedGoalieStat({
-      game,
-      goalie: awayGoalies[0],
-      teamId: game.away_team_id,
-      goalsFor: awayScore,
-      goalsAgainst: homeScore,
-    }),
-  ];
-
-  for (const row of rows) {
-    const { data: existing, error: existingError } = await supabase
-      .from('goalie_stats')
-      .select('id')
-      .eq('game_id', row.game_id)
-      .eq('player_id', row.player_id);
-
-    if (existingError) {
-      console.error('[scorekeeper] Failed to check existing goalie stat row', existingError);
-      continue;
-    }
-
-    if (existing && existing.length > 0) {
-      const { error: updateError } = await supabase
-        .from('goalie_stats')
-        .update(row)
-        .eq('game_id', row.game_id)
-        .eq('player_id', row.player_id);
-
-      if (updateError) {
-        console.error('[scorekeeper] Failed to update assumed goalie stat row', updateError);
-      }
-    } else {
-      const { error: insertError } = await supabase.from('goalie_stats').insert(row);
-
-      if (insertError) {
-        console.error('[scorekeeper] Failed to insert assumed goalie stat row', insertError);
-      }
-    }
-  }
 }
 
 // Cleanup every 5 minutes
@@ -384,6 +223,7 @@ export interface GameEventData {
   isPowerPlay: boolean;
   isShortHanded: boolean;
   isEmptyNet: boolean;
+  goalieInNetId: string | null;
   isGWG: boolean;
   createdAt: string;
   deletedAt: string | null;
@@ -633,6 +473,7 @@ function revalidateLeagueSiteGameResultPaths(
 async function finalizeCompletedGameStats(
   supabase: ReturnType<typeof createServiceRoleClient>,
   gameId: string,
+  options?: { allowUnverified?: boolean },
 ): Promise<void> {
   const { data: gameBeforeFinalize, error: gameLookupError } = await supabase
     .from('games')
@@ -651,27 +492,14 @@ async function finalizeCompletedGameStats(
   }
 
   const wasCompleted = gameBeforeFinalize.status === 'completed';
-  const { error: rollupError } = await supabase.rpc('rollup_game_stats', {
+  const { error: finalizeError } = await (supabase as any).rpc('finalize_game_stats_atomic', {
     p_game_id: gameId,
+    p_allow_unverified: options?.allowUnverified ?? false,
   });
 
-  if (rollupError) {
-    console.warn('Rollup RPC not found, updating game status only');
+  if (finalizeError) {
+    throw new Error(finalizeError.message || 'Atomic game finalization failed');
   }
-
-  const { error: statusUpdateError } = await supabase
-    .from('games')
-    .update({
-      status: 'completed',
-      stats_locked_at: new Date().toISOString(),
-    })
-    .eq('id', gameId);
-
-  if (statusUpdateError) {
-    throw new Error(statusUpdateError.message);
-  }
-
-  await recalculateGameDerivedState(supabase, gameId);
 
   if (!wasCompleted) {
     const leagueRelation = Array.isArray(gameBeforeFinalize.leagues)
@@ -690,29 +518,6 @@ async function finalizeCompletedGameStats(
     }
 
   }
-}
-
-async function finalizeIfBothCaptainsVerified(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  gameId: string,
-): Promise<boolean> {
-  const { data: verificationState, error: verificationStateError } = await supabase
-    .from('games')
-    .select('home_verified_at, away_verified_at')
-    .eq('id', gameId)
-    .single();
-
-  if (verificationStateError) {
-    console.error('Verify captain state reload error:', verificationStateError);
-    return false;
-  }
-
-  if (verificationState?.home_verified_at && verificationState?.away_verified_at) {
-    await finalizeCompletedGameStats(supabase, gameId);
-    return true;
-  }
-
-  return false;
 }
 
 /**
@@ -736,7 +541,6 @@ export async function autoFinalizeExpiredCaptainVerifications(options?: {
   const windowHours = options?.windowHours ?? 24;
   const limit = options?.limit ?? 100;
   const supabase = createServiceRoleClient();
-  const nowIso = new Date().toISOString();
   const cutoffIso = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
 
   const { data: games, error } = await supabase
@@ -765,29 +569,7 @@ export async function autoFinalizeExpiredCaptainVerifications(options?: {
     away_verified_at: string | null;
   }>) {
     try {
-      // Treat any side that never confirmed within the window as auto-verified,
-      // and clear the outstanding verification tokens. Already-verified sides
-      // keep their timestamp (COALESCE via explicit checks).
-      const { error: updateError } = await supabase
-        .from('games')
-        .update({
-          home_verified_at: game.home_verified_at ?? nowIso,
-          away_verified_at: game.away_verified_at ?? nowIso,
-          home_verification_token: null,
-          away_verification_token: null,
-          home_verification_token_expires_at: null,
-          away_verification_token_expires_at: null,
-        })
-        .eq('id', game.id)
-        .eq('status', 'pending_verification'); // guard against a race with a real verify
-
-      if (updateError) {
-        console.error('[scorekeeper] auto-finalize update failed', { gameId: game.id, error: updateError.message });
-        errors += 1;
-        continue;
-      }
-
-      await finalizeCompletedGameStats(supabase, game.id);
+      await finalizeCompletedGameStats(supabase, game.id, { allowUnverified: true });
       finalizedIds.push(game.id);
       console.log('[scorekeeper] auto-finalized stuck verification', { gameId: game.id, windowHours });
     } catch (finalizeError) {
@@ -845,27 +627,8 @@ export async function adminFinalizeGame(
     return { success: false, error: `Cannot finalize a ${game.status} game` };
   }
 
-  if (game.status === 'pending_verification') {
-    const nowIso = new Date().toISOString();
-    const { error: verifyError } = await supabase
-      .from('games')
-      .update({
-        home_verified_at: game.home_verified_at ?? nowIso,
-        away_verified_at: game.away_verified_at ?? nowIso,
-        home_verification_token: null,
-        away_verification_token: null,
-        home_verification_token_expires_at: null,
-        away_verification_token_expires_at: null,
-      })
-      .eq('id', gameId)
-      .eq('status', 'pending_verification');
-    if (verifyError) {
-      return { success: false, error: verifyError.message };
-    }
-  }
-
   try {
-    await finalizeCompletedGameStats(supabase, gameId);
+    await finalizeCompletedGameStats(supabase, gameId, { allowUnverified: true });
     return { success: true, status: 'completed' };
   } catch (error) {
     console.error('[scorekeeper] admin finalize failed', { gameId, error });
@@ -1059,16 +822,6 @@ async function maybeEmailCaptainVerificationLink(params: {
 }
 
 async function recalculateGameDerivedState(supabase: any, gameId: string): Promise<void> {
-  const { data: gameMeta, error: gameMetaError } = await supabase
-    .from('games')
-    .select('status, season_id, league_id')
-    .eq('id', gameId)
-    .maybeSingle();
-
-  if (gameMetaError) {
-    console.error('[scorekeeper] Failed to load game metadata for derived-state refresh', gameMetaError);
-  }
-
   const { data: goalCounts, error: goalCountError } = await supabase
     .from('game_events')
     .select('team_type')
@@ -1093,27 +846,9 @@ async function recalculateGameDerivedState(supabase: any, gameId: string): Promi
     console.error('[scorekeeper] Failed to persist live game score', scoreUpdateError);
   }
 
-  // The legacy database RPC still assumes old unique constraints on
-  // game_stats/team_standings in some environments. For live scorekeeping we
-  // only need fast, reliable score persistence; raw events remain the source of
-  // truth for penalties, assists, saves, and public live updates.
-  if (gameMeta?.status !== 'completed' || !gameMeta?.season_id || !gameMeta?.league_id) {
-    return;
-  }
-
-  const rollupCalls: Array<[string, Record<string, string>]> = [
-    ['rollup_player_season_stats', { p_season_id: gameMeta.season_id, p_league_id: gameMeta.league_id }],
-    ['rollup_goalie_season_stats', { p_season_id: gameMeta.season_id, p_league_id: gameMeta.league_id }],
-  ];
-
-  for (const [fnName, params] of rollupCalls) {
-    const { error } = await supabase.rpc(fnName, params);
-    if (error) {
-      console.error(`[scorekeeper] Failed to run ${fnName}`, error);
-    }
-  }
-
-  await ensureAssumedGoalieStatsForGame(supabase, gameId);
+  // Completed-game materialization is transactionally owned by
+  // finalize_game_stats_atomic/recalculate_game_stats_atomic. This helper only
+  // keeps the live score current while events are being entered.
 }
 
 // =============================================================================
@@ -1693,7 +1428,7 @@ export async function refreshGameEvents(gameId: string): Promise<{
         id, client_event_id, event_type, period, game_time_seconds,
         team_id, team_type, player_id,
         assist1_player_id, assist2_player_id,
-        penalty_type, penalty_minutes, is_gwg,
+        penalty_type, penalty_minutes, is_gwg, goalie_in_net_id,
         is_power_play, is_short_handed, is_empty_net,
         created_at, deleted_at,
         player:profiles!game_events_player_id_fkey(full_name),
@@ -1754,6 +1489,7 @@ export async function refreshGameEvents(gameId: string): Promise<{
       isPowerPlay: e.is_power_play || false,
       isShortHanded: e.is_short_handed || false,
       isEmptyNet: e.is_empty_net || false,
+      goalieInNetId: e.goalie_in_net_id ?? null,
       isGWG: e.is_gwg || false,
       createdAt: (e.created_at ?? new Date().toISOString()) as string,
       deletedAt: e.deleted_at,
@@ -1790,7 +1526,7 @@ export async function getGameEvents(gameId: string): Promise<{
         id, client_event_id, event_type, period, game_time_seconds,
         team_id, team_type, player_id,
         assist1_player_id, assist2_player_id,
-        penalty_type, penalty_minutes, is_gwg,
+        penalty_type, penalty_minutes, is_gwg, goalie_in_net_id,
         is_power_play, is_short_handed, is_empty_net,
         created_at, deleted_at,
         player:profiles!game_events_player_id_fkey(full_name),
@@ -1886,12 +1622,29 @@ export async function addGoalEvent(data: {
 
     const { data: game } = await supabase
       .from('games')
-      .select('league_id, status, leagues(settings, scorekeeper_tracks_time_periods)')
+      .select('league_id, status, home_team_id, away_team_id, leagues(settings, scorekeeper_tracks_time_periods)')
       .eq('id', data.gameId)
       .single();
 
     if (!game) return { success: false, error: 'Game not found' };
     if (game.status !== 'in_progress') return { success: false, error: 'Game is not in progress' };
+    if (data.isEmptyNet && data.goalieInNetId) {
+      return { success: false, error: 'An empty-net goal cannot charge a goalie' };
+    }
+    if (data.goalieInNetId) {
+      const expectedGoalieTeamId = data.teamType === 'home' ? game.away_team_id : game.home_team_id;
+      const { data: goalieCheckin } = await (supabase as any)
+        .from('game_checkins')
+        .select('player_id')
+        .eq('game_id', data.gameId)
+        .eq('team_id', expectedGoalieTeamId)
+        .eq('player_id', data.goalieInNetId)
+        .eq('status', 'confirmed')
+        .maybeSingle();
+      if (!goalieCheckin) {
+        return { success: false, error: 'Goalie must be confirmed for the defending team' };
+      }
+    }
 
     const leagueRelation = Array.isArray((game as any).leagues) ? (game as any).leagues[0] : (game as any).leagues;
     const tracksTimePeriods = leagueTracksScorekeeperTimePeriods(leagueRelation);
@@ -2148,6 +1901,7 @@ export async function updateGameEvent(data: {
   isPowerPlay?: boolean;
   isShortHanded?: boolean;
   isEmptyNet?: boolean;
+  goalieInNetId?: string | null;
   // Penalty fields
   playerId?: string;
   penaltyType?: string;
@@ -2161,7 +1915,7 @@ export async function updateGameEvent(data: {
       .select(
         'id, game_id, event_type, event_version, deleted_at, team_id, team_type, player_id, ' +
           'assist1_player_id, assist2_player_id, period, game_time_seconds, ' +
-          'is_power_play, is_short_handed, is_empty_net, penalty_type, penalty_minutes',
+          'is_power_play, is_short_handed, is_empty_net, goalie_in_net_id, penalty_type, penalty_minutes',
       )
       .eq('id', data.eventId)
       .single();
@@ -2237,6 +1991,11 @@ export async function updateGameEvent(data: {
         data.isShortHanded !== undefined ? data.isShortHanded : event.is_short_handed ?? false;
       updatePayload.is_empty_net =
         data.isEmptyNet !== undefined ? data.isEmptyNet : event.is_empty_net ?? false;
+      updatePayload.goalie_in_net_id =
+        data.goalieInNetId !== undefined ? data.goalieInNetId : event.goalie_in_net_id;
+      if (updatePayload.is_empty_net && updatePayload.goalie_in_net_id) {
+        return { success: false, error: 'An empty-net goal cannot charge a goalie' };
+      }
     } else {
       // penalty
       updatePayload.player_id = data.playerId ?? event.player_id;
@@ -2544,30 +2303,20 @@ export async function updateGameStatus(
   gameId: string,
   status: string
 ): Promise<{ success: boolean; error?: string }> {
+  // Scorekeeper sessions may start a game, but every completion/finalization
+  // transition must go through the captain-verification RPCs below.
+  if (status !== 'in_progress') {
+    return { success: false, error: 'Only the start-game transition is allowed' };
+  }
+
   try {
-    await verifyActiveSession(gameId);
+    const session = await requireActiveSession(gameId);
 
     const supabase = createServiceRoleClient();
-
-    const { data: existingGame } = await supabase
-      .from('games')
-      .select('current_period, period_length_minutes')
-      .eq('id', gameId)
-      .single();
-
-    const updatePayload: Record<string, unknown> = { status };
-
-    if (status === 'in_progress') {
-      const nextPeriod = existingGame?.current_period && existingGame.current_period > 0
-        ? existingGame.current_period
-        : 1;
-      updatePayload.current_period = nextPeriod;
-    }
-
-    const { error } = await supabase
-      .from('games')
-      .update(updatePayload)
-      .eq('id', gameId);
+    const { error } = await (supabase as any).rpc('start_scorekeeper_game_atomic', {
+      p_game_id: gameId,
+      p_session_id: session.sessionId,
+    });
 
     if (error) {
       return { success: false, error: 'Failed to update game status' };
@@ -3066,7 +2815,14 @@ export async function getGameSummary(gameId: string): Promise<{
 /**
  * Submit game for captain verification — generates crypto tokens for each team
  */
-export async function submitGameForVerification(gameId: string): Promise<{
+export async function submitGameForVerification(
+  gameId: string,
+  captureStatus?: {
+    penalties?: ScorekeeperCaptureStatus;
+    goalies?: ScorekeeperCaptureStatus;
+    goalieAppearances?: ScorekeeperGoalieAppearance[];
+  },
+): Promise<{
   success: boolean;
   verificationMode?: CaptainVerificationMode;
   autoVerifiedTeamType?: ScorekeeperTeamType;
@@ -3138,43 +2894,36 @@ export async function submitGameForVerification(gameId: string): Promise<{
         opposingTeamType === 'home' ? gameDetails.home_team_id : gameDetails.away_team_id;
       const opposingToken = generateVerificationToken();
 
-      const initiatingVerifiedAtField =
-        initiatingTeamType === 'home' ? 'home_verified_at' : 'away_verified_at';
-      const initiatingVerifiedField =
-        initiatingTeamType === 'home' ? 'home_captain_verified' : 'away_captain_verified';
-      const initiatingTokenField =
-        initiatingTeamType === 'home' ? 'home_verification_token' : 'away_verification_token';
-      const initiatingTokenExpiresField =
-        initiatingTeamType === 'home'
-          ? 'home_verification_token_expires_at'
-          : 'away_verification_token_expires_at';
-      const opposingTokenField =
-        opposingTeamType === 'home' ? 'home_verification_token' : 'away_verification_token';
-      const opposingTokenExpiresField =
-        opposingTeamType === 'home'
-          ? 'home_verification_token_expires_at'
-          : 'away_verification_token_expires_at';
-
-      const { error } = await supabase
-        .from('games')
-        .update({
-          status: 'pending_verification',
-          stats_submitted_at: submittedAt,
-          [initiatingVerifiedAtField]: submittedAt,
-          [initiatingVerifiedField]: true,
-          [initiatingTokenField]: null,
-          [initiatingTokenExpiresField]: null,
-          [opposingTokenField]: opposingToken,
-          [opposingTokenExpiresField]: expiresAtIso,
-        })
-        .eq('id', gameId);
+      const { data: submitResult, error } = await (supabase as any).rpc(
+        'submit_game_for_verification_atomic',
+        {
+          p_game_id: gameId,
+          p_session_id: session.sessionId,
+          p_mode: 'opponent_only',
+          p_initiating_team_type: initiatingTeamType,
+          p_home_token: opposingTeamType === 'home' ? opposingToken : null,
+          p_away_token: opposingTeamType === 'away' ? opposingToken : null,
+          p_expires_at: expiresAtIso,
+          p_submitted_at: submittedAt,
+          p_penalty_capture_status: captureStatus?.penalties ?? null,
+          p_goalie_capture_status: captureStatus?.goalies ?? null,
+          p_goalie_appearances: captureStatus?.goalieAppearances?.map((appearance) => ({
+            player_id: appearance.playerId,
+            team_id: appearance.teamId,
+            team_type: appearance.teamType,
+          })) ?? null,
+        },
+      );
 
       if (error) {
         console.error('Submit for verification error:', error);
         return { success: false, error: 'Failed to submit for verification' };
       }
 
-      const gameCompleted = await finalizeIfBothCaptainsVerified(supabase, gameId);
+      const gameCompleted = submitResult?.status === 'completed';
+      const effectiveOpposingToken = (opposingTeamType === 'home'
+        ? submitResult?.home_token
+        : submitResult?.away_token) || opposingToken;
       const leagueRelation = Array.isArray(gameDetails.leagues)
         ? gameDetails.leagues[0]
         : gameDetails.leagues;
@@ -3190,7 +2939,7 @@ export async function submitGameForVerification(gameId: string): Promise<{
             leagueName: leagueRelation.name as string,
             leagueSlug: leagueRelation.slug as string,
             opposingTeamId,
-            verificationToken: opposingToken,
+            verificationToken: effectiveOpposingToken,
             expiresAt: expiresAtIso,
           });
           emailSent = outcome === 'sent';
@@ -3208,8 +2957,8 @@ export async function submitGameForVerification(gameId: string): Promise<{
         success: true,
         verificationMode: 'opponent_only',
         autoVerifiedTeamType: initiatingTeamType,
-        homeToken: opposingTeamType === 'home' ? opposingToken : undefined,
-        awayToken: opposingTeamType === 'away' ? opposingToken : undefined,
+        homeToken: opposingTeamType === 'home' ? effectiveOpposingToken : undefined,
+        awayToken: opposingTeamType === 'away' ? effectiveOpposingToken : undefined,
         emailSent,
         emailSkipReason,
       };
@@ -3218,21 +2967,23 @@ export async function submitGameForVerification(gameId: string): Promise<{
     const homeToken = generateVerificationToken();
     const awayToken = generateVerificationToken();
 
-    const { error } = await supabase
-      .from('games')
-      .update({
-        status: 'pending_verification',
-        home_verification_token: homeToken,
-        away_verification_token: awayToken,
-        home_verification_token_expires_at: expiresAtIso,
-        away_verification_token_expires_at: expiresAtIso,
-        home_verified_at: null,
-        away_verified_at: null,
-        home_captain_verified: false,
-        away_captain_verified: false,
-        stats_submitted_at: submittedAt,
-      })
-      .eq('id', gameId);
+    const { data: submitResult, error } = await (supabase as any).rpc('submit_game_for_verification_atomic', {
+      p_game_id: gameId,
+      p_session_id: session.sessionId,
+      p_mode: 'both_captains',
+      p_initiating_team_type: null,
+      p_home_token: homeToken,
+      p_away_token: awayToken,
+      p_expires_at: expiresAtIso,
+      p_submitted_at: submittedAt,
+      p_penalty_capture_status: captureStatus?.penalties ?? null,
+      p_goalie_capture_status: captureStatus?.goalies ?? null,
+      p_goalie_appearances: captureStatus?.goalieAppearances?.map((appearance) => ({
+        player_id: appearance.playerId,
+        team_id: appearance.teamId,
+        team_type: appearance.teamType,
+      })) ?? null,
+    });
 
     if (error) {
       console.error('Submit for verification error:', error);
@@ -3242,8 +2993,8 @@ export async function submitGameForVerification(gameId: string): Promise<{
     return {
       success: true,
       verificationMode: 'both_captains',
-      homeToken,
-      awayToken,
+      homeToken: submitResult?.home_token || homeToken,
+      awayToken: submitResult?.away_token || awayToken,
     };
   } catch (error) {
     console.error('Submit for verification error:', error);
@@ -3308,60 +3059,34 @@ export async function verifyCaptainStats(token: string): Promise<{
     const supabase = createServiceRoleClient();
     const normalizedToken = normalizeVerificationToken(token);
 
-    const { data: validation, error: validationError } = await supabase.rpc(
-      'validate_captain_token',
+    const { data: verification, error: verificationError } = await (supabase as any).rpc(
+      'verify_and_finalize_game_stats_atomic',
       { p_token: normalizedToken },
     );
 
     if (
-      validationError ||
-      !validation ||
-      validation.length === 0 ||
-      !validation[0]?.is_valid ||
-      !validation[0]?.game_id ||
-      !validation[0]?.team_type
+      verificationError ||
+      !verification?.game_id ||
+      !verification?.team_type
     ) {
-      if (validationError) {
-        console.error('Validate captain token error:', validationError);
+      if (verificationError) {
+        console.error('Verify and finalize captain token error:', verificationError);
       }
-      return { success: false, error: 'Invalid verification token' };
+      const invalidToken = typeof verificationError?.message === 'string'
+        && verificationError.message.toLowerCase().includes('invalid verification token');
+      return {
+        success: false,
+        error: invalidToken
+          ? 'Invalid verification token'
+          : 'Verification was saved but finalization failed. Please retry with the same link.',
+      };
     }
 
-    const gameId = validation[0].game_id as string;
-    const teamType = validation[0].team_type as 'home' | 'away';
-    const verifiedAtField = teamType === 'home' ? 'home_verified_at' : 'away_verified_at';
-    const captainVerifiedField =
-      teamType === 'home' ? 'home_captain_verified' : 'away_captain_verified';
-
-    const { error: updateError } = await supabase
-      .from('games')
-      .update({
-        [verifiedAtField]: new Date().toISOString(),
-        [captainVerifiedField]: true,
-      })
-      .eq('id', gameId);
-
-    if (updateError) {
-      console.error('Verify captain error:', updateError);
-      return { success: false, error: 'Failed to verify' };
-    }
-
-    const { data: verificationState, error: verificationStateError } = await supabase
-      .from('games')
-      .select('home_verified_at, away_verified_at')
-      .eq('id', gameId)
-      .single();
-
-    if (verificationStateError) {
-      console.error('Verify captain state reload error:', verificationStateError);
-      return { success: true, gameId, teamType };
-    }
-
-    if (verificationState?.home_verified_at && verificationState?.away_verified_at) {
-      await finalizeCompletedGameStats(supabase, gameId);
-    }
-
-    return { success: true, gameId, teamType };
+    return {
+      success: true,
+      gameId: verification.game_id as string,
+      teamType: verification.team_type as 'home' | 'away',
+    };
   } catch (error) {
     console.error('Verify captain error:', error);
     return { success: false, error: 'Failed to verify' };
@@ -3663,7 +3388,7 @@ export async function finalizeGameStats(gameId: string): Promise<{
     await verifyActiveSession(gameId);
 
     const supabase = createServiceRoleClient();
-    await finalizeCompletedGameStats(supabase, gameId);
+    await finalizeCompletedGameStats(supabase, gameId, { allowUnverified: false });
 
     return { success: true };
   } catch (error) {
