@@ -49,6 +49,7 @@ function semanticDatabase(fixtures: Record<string, Row[]>, fail?: { table: strin
     in(key: string, value: unknown[]) { this.filters.push(['in', key, value]); return this; }
     is(key: string, value: unknown) { this.filters.push(['is', key, value]); return this; }
     lte(key: string, value: unknown) { this.filters.push(['lte', key, value]); return this; }
+    or(value: string) { this.filters.push(['or', '', value]); return this; }
     order() { return this; }
     limit(value: number) { this.rangeValue = [0, value - 1]; return this; }
     range(from: number, to: number) { this.rangeValue = [from, to]; return this; }
@@ -67,6 +68,11 @@ function semanticDatabase(fixtures: Record<string, Row[]>, fail?: { table: strin
         if (kind === 'in') rows = rows.filter((row) => (value as unknown[]).includes(row[key]));
         if (kind === 'lte') rows = rows.filter((row) => row[key] == null || String(row[key]) <= String(value));
         if (kind === 'is') rows = rows.filter((row) => row[key] === value);
+        if (kind === 'or') {
+          const match = /^start_time\.gte\.([^,]+),end_time\.gte\.(.+)$/.exec(String(value));
+          if (!match) throw new Error(`Unsupported synthetic OR filter: ${String(value)}`);
+          rows = rows.filter((row) => String(row.start_time) >= match[1] || (row.end_time != null && String(row.end_time) >= match[2]));
+        }
       }
       if (this.rangeValue) rows = rows.slice(this.rangeValue[0], this.rangeValue[1] + 1);
       rows = rows.map((row) => project(row, this.projection));
@@ -172,6 +178,244 @@ describe('default public content source news/gallery composition', () => {
       ['eq', 'league_id', LEAGUE.id], ['eq', 'is_published', true], ['eq', 'id', albumId],
     ]) });
     expect(logs.findIndex((entry) => entry.table === 'gallery_photos')).toBeGreaterThan(0);
+  });
+});
+
+describe('default public content source events/contact composition', () => {
+  it('serializes the published tenant event window and preserves qualifying unknown types in deterministic order', async () => {
+    const foreignLeague = '20000000-0000-4000-8000-000000000002';
+    const { client, logs } = semanticDatabase({
+      league_events: [
+        { id: uuidFor(7001), league_id: LEAGUE.id, title: 'Future clinic', description: null, event_type: 'skills-clinic', location: 'Synthetic Rink', start_time: '2026-09-20T10:00:00Z', end_time: null, is_published: true, private_notes: 'hidden' },
+        { id: uuidFor(7002), league_id: LEAGUE.id, title: 'Happening now', description: 'Synthetic ongoing event', event_type: 'general', location: null, start_time: '2026-09-01T10:00:00Z', end_time: '2026-09-13T13:00:00Z', is_published: true },
+        { id: uuidFor(7003), league_id: LEAGUE.id, title: 'Recent event', description: null, event_type: 'social', location: null, start_time: '2026-09-07T12:00:00Z', end_time: '2026-09-07T13:00:00Z', is_published: true },
+        { id: uuidFor(7004), league_id: LEAGUE.id, title: 'Expired old event', event_type: 'meeting', start_time: '2026-09-01T12:00:00Z', end_time: '2026-09-01T13:00:00Z', is_published: true },
+        { id: uuidFor(7005), league_id: LEAGUE.id, title: 'Draft event', event_type: 'general', start_time: '2026-09-20T12:00:00Z', end_time: null, is_published: false },
+        { id: uuidFor(7006), league_id: foreignLeague, title: 'Foreign event', event_type: 'general', start_time: '2026-09-20T12:00:00Z', end_time: null, is_published: true },
+      ],
+    });
+    const source = createPublicLeagueContentSource(
+      client,
+      { ...LEAGUE, timezone: 'America/Toronto' },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+
+    const result = await source.loadEvents!();
+
+    expect(result.timeZone).toBe('America/Toronto');
+    expect(result.windowStart).toBe('2026-09-06T12:00:00.000Z');
+    expect(result.events.map((event) => [event.title, event.eventType])).toEqual([
+      ['Happening now', 'general'],
+      ['Recent event', 'social'],
+      ['Future clinic', 'skills-clinic'],
+    ]);
+    expect(result.events[2]).toEqual({
+      id: uuidFor(7001), title: 'Future clinic', description: null, eventType: 'skills-clinic',
+      location: 'Synthetic Rink', startTime: '2026-09-20T10:00:00.000Z', endTime: null,
+    });
+    expect(result.events.every((event) => !('private_notes' in event))).toBe(true);
+    expect(logs[0]).toMatchObject({
+      table: 'league_events',
+      projection: 'id, league_id, title, description, event_type, location, start_time, end_time, is_published',
+      filters: [
+        ['eq', 'league_id', LEAGUE.id],
+        ['eq', 'is_published', true],
+        ['or', '', 'start_time.gte.2026-09-06T12:00:00.000Z,end_time.gte.2026-09-13T12:00:00.000Z'],
+      ],
+      range: [0, SOURCE_PAGE_SIZE - 1],
+    });
+  });
+
+  it('maps public contact fields and suppresses values that cannot form safe native actions', async () => {
+    const source = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      {
+        ...LEAGUE,
+        contact_email: 'league@example.test',
+        contact_phone: '+1 (416) 555-0100',
+        website_url: 'javascript:alert(1)',
+        address: '1 Synthetic Way',
+        city: 'Toronto',
+        state_province: 'ON',
+        postal_code: 'A1A 1A1',
+      },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+
+    await expect(source.loadContact!()).resolves.toEqual({
+      email: 'league@example.test',
+      phone: '+1 (416) 555-0100',
+      websiteUrl: null,
+      address: '1 Synthetic Way',
+      city: 'Toronto',
+      state: 'ON',
+      zipCode: 'A1A 1A1',
+    });
+  });
+
+  it('freezes the Contact address boundary at 1000 and fails the HTTP producer explicitly at 1001', async () => {
+    const exactAddress = 'A'.repeat(1000);
+    const exactSource = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, address: exactAddress },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(exactSource.loadContact()).resolves.toMatchObject({ address: exactAddress });
+
+    const oversizedLeague = { ...LEAGUE, status: 'active', address: 'A'.repeat(1001) };
+    const oversizedSource = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      oversizedLeague,
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await handlePublicLeagueContentRequest(
+        new NextRequest('https://hockey-life.beerleaguehockey.ca/api/public/league-content?leagueSlug=hockey-life&view=contact', { headers: { host: 'hockey-life.beerleaguehockey.ca' } }),
+        {
+          now: () => new Date('2026-09-13T12:00:00.000Z'),
+          getLeagueBySlug: async () => oversizedLeague,
+          hasPlatformSubscription: async () => true,
+          createSource: () => oversizedSource,
+        },
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual({ error: { code: 'CONTENT_DATA_UNAVAILABLE', message: 'Public content is temporarily unavailable.' } });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('preserves LF, CRLF, and blank lines in display-only addresses while rejecting invalid controls', async () => {
+    const address = '123 Test Street\nSuite 4\r\n\r\nToronto';
+    const source = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, address },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(source.loadContact()).resolves.toMatchObject({ address });
+
+    const blank = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, address: ' \r\n ' },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(blank.loadContact()).resolves.toMatchObject({ address: null });
+
+    const invalid = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, address: '123 Test Street\u0000Suite 4', contact_email: 'league@example.test\r\nBcc:other@example.test' },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(invalid.loadContact()).resolves.toMatchObject({ address: null, email: null });
+  });
+
+  it('bounds Contact website URLs after canonicalization without changing shared media behavior', async () => {
+    const rootRelative = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, website_url: '/contact' },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(rootRelative.loadContact()).resolves.toMatchObject({
+      websiteUrl: 'https://hockey-life.beerleaguehockey.ca/contact',
+    });
+
+    const oversizedRelative = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, website_url: `/${'a'.repeat(4079)}` },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(oversizedRelative.loadContact()).resolves.toMatchObject({ websiteUrl: null });
+
+    const expandingUnicode = createPublicLeagueContentSource(
+      semanticDatabase({}).client,
+      { ...LEAGUE, website_url: `https://example.test/${'é'.repeat(700)}` },
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+    await expect(expandingUnicode.loadContact()).resolves.toMatchObject({ websiteUrl: null });
+  });
+
+  it('treats blank nullable event fields as missing without fabricating content', async () => {
+    const { client } = semanticDatabase({ league_events: [{
+      id: uuidFor(7010), league_id: LEAGUE.id, title: 'Synthetic blank optionals',
+      description: '   ', event_type: 'general', location: '\t',
+      start_time: '2026-09-14T12:00:00Z', end_time: null, is_published: true,
+    }] });
+    const source = createPublicLeagueContentSource(client, LEAGUE, new Date('2026-09-13T12:00:00Z'));
+
+    await expect(source.loadEvents!()).resolves.toMatchObject({
+      events: [{ description: null, location: null }],
+    });
+  });
+
+  it('reads every event page and turns a later provider failure into an explicit HTTP error', async () => {
+    const rows = Array.from({ length: SOURCE_PAGE_SIZE + 1 }, (_, index) => ({
+      id: uuidFor(7100 + index), league_id: LEAGUE.id, title: `Synthetic event ${index}`,
+      description: null, event_type: 'general', location: null,
+      start_time: '2026-09-20T12:00:00Z', end_time: null, is_published: true,
+    }));
+    const complete = semanticDatabase({ league_events: rows });
+    const completeSource = createPublicLeagueContentSource(complete.client, LEAGUE, new Date('2026-09-13T12:00:00Z'));
+    await expect(completeSource.loadEvents!()).resolves.toMatchObject({ events: expect.arrayContaining([
+      expect.objectContaining({ id: uuidFor(7100 + SOURCE_PAGE_SIZE) }),
+    ]) });
+    expect(complete.logs.filter((entry) => entry.table === 'league_events').map((entry) => entry.range?.[0])).toEqual([0, SOURCE_PAGE_SIZE]);
+
+    const failed = semanticDatabase({ league_events: rows }, { table: 'league_events', offset: SOURCE_PAGE_SIZE });
+    const failedSource = createPublicLeagueContentSource(failed.client, LEAGUE, new Date('2026-09-13T12:00:00Z'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await handlePublicLeagueContentRequest(
+        new NextRequest('https://hockey-life.beerleaguehockey.ca/api/public/league-content?leagueSlug=hockey-life&view=events', { headers: { host: 'hockey-life.beerleaguehockey.ca' } }),
+        {
+          now: () => new Date('2026-09-13T12:00:00Z'),
+          getLeagueBySlug: async () => ({ ...LEAGUE, status: 'active' }),
+          hasPlatformSubscription: async () => true,
+          createSource: () => failedSource,
+        },
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual({ error: { code: 'CONTENT_DATA_UNAVAILABLE', message: 'Public content is temporarily unavailable.' } });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('rejects invalid event timestamps and ranges, and explicitly falls back to UTC for an invalid timezone', async () => {
+    const invalidDate = semanticDatabase({ league_events: [{
+      id: uuidFor(7301), league_id: LEAGUE.id, title: 'Invalid date', event_type: 'general',
+      start_time: 'not-a-date', end_time: null, is_published: true,
+    }] });
+    await expect(createPublicLeagueContentSource(invalidDate.client, LEAGUE, new Date('2026-09-13T12:00:00Z')).loadEvents!())
+      .rejects.toThrow('Invalid published event start time');
+
+    const invalidRange = semanticDatabase({ league_events: [{
+      id: uuidFor(7302), league_id: LEAGUE.id, title: 'Invalid range', event_type: 'general',
+      start_time: '2026-09-20T12:00:00Z', end_time: '2026-09-19T12:00:00Z', is_published: true,
+    }] });
+    await expect(createPublicLeagueContentSource(invalidRange.client, LEAGUE, new Date('2026-09-13T12:00:00Z')).loadEvents!())
+      .rejects.toThrow('Invalid published event time range');
+
+    const empty = createPublicLeagueContentSource(semanticDatabase({}).client, { ...LEAGUE, timezone: 'Mars/Olympus_Mons' }, new Date('2026-09-13T12:00:00Z'));
+    await expect(empty.loadEvents!()).resolves.toMatchObject({ timeZone: 'UTC', events: [] });
+  });
+
+  it('returns explicit null contact fields without querying a private table', async () => {
+    const database = semanticDatabase({});
+    const source = createPublicLeagueContentSource(database.client, {
+      ...LEAGUE,
+      contact_email: 'bad\r\n@example.test',
+      contact_phone: 'call-me-maybe',
+      website_url: 'data:text/html,bad',
+    }, new Date('2026-09-13T12:00:00Z'));
+
+    await expect(source.loadContact!()).resolves.toEqual({
+      email: null, phone: null, websiteUrl: null, address: null,
+      city: null, state: null, zipCode: null,
+    });
+    expect(database.logs).toEqual([]);
   });
 });
 
