@@ -20,6 +20,7 @@ import RevealView from '../components/RevealView';
 import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { PlayerCardParams } from '../navigation/types';
+import { navigateToTeamDetail } from '../navigation/teamDetail';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
@@ -466,10 +467,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
   };
 
   const handleOpenTeam = (team: ActiveTeamCard) => {
-    navigation.navigate('Team', {
-      screen: 'TeamDetail',
-      params: { teamId: team.teamId, leagueId: team.leagueId },
-    });
+    navigateToTeamDetail(navigation, { teamId: team.teamId, leagueId: team.leagueId });
   };
 
   const handleOpenLeagueSite = (team: ActiveTeamCard) => {

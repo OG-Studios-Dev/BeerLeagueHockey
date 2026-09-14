@@ -17,7 +17,7 @@ type DockState = {
   retry: () => void;
 };
 
-const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Discover', 'Stats', 'Team', 'Captain', 'Profile'];
+const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Discover', 'Stats', 'Team', 'Captain', 'Profile', 'LeaguePages'];
 
 function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean } = {}) {
   const harness = createHookHarness();
@@ -225,7 +225,9 @@ describe('MobileWebDock component integration', () => {
     reduced.mount();
     reduced.openMore();
     findNode(reduced.harness.output, (node) => node.props.accessibilityLabel === 'Teams')!.props.onPress();
-    assert.deepEqual(reduced.openedUrls, ['https://league-a.beerleaguehockey.ca/teams']);
+    assert.deepEqual(reduced.navigationCalls, [['LeaguePages', {
+      screen: 'TeamsDirectory', params: { leagueId: 'league-a', leagueSlug: 'league-a' },
+    }]]);
 
     const regular = createDockFixture({}, { reduceMotion: false, deferAnimations: true });
     regular.mount();
@@ -235,7 +237,9 @@ describe('MobileWebDock component integration', () => {
     assert.equal(findNode(regular.harness.output, (node) => node.type === 'Modal')?.props.visible, true);
     assert.deepEqual(regular.openedUrls, []);
     regular.finishNextAnimation();
-    assert.deepEqual(regular.openedUrls, ['https://league-a.beerleaguehockey.ca/teams']);
+    assert.deepEqual(regular.navigationCalls, [['LeaguePages', {
+      screen: 'TeamsDirectory', params: { leagueId: 'league-a', leagueSlug: 'league-a' },
+    }]]);
   });
 
   it('emits preventable tabPress events with route keys and preserves nested stack reselects', () => {
@@ -327,7 +331,7 @@ describe('MobileWebDock component integration', () => {
     fixture.openMore();
     assert.match(nodeText(fixture.harness.output), /Teams/);
     assert.match(nodeText(fixture.harness.output), /News/);
-    assert.equal(findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Teams')?.props.accessibilityRole, 'link');
+    assert.equal(findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Teams')?.props.accessibilityRole, 'button');
 
     fixture.setData({ visiblePages: { news: false }, customNavItems: [{ label: 'Rules', isCustomPage: true, pageSlug: 'rules' }] });
     assert.doesNotMatch(nodeText(fixture.harness.output), /News/);

@@ -44,3 +44,15 @@ export type CaptainStackParamList = {
   LineupNotes: { gameId: string; teamId: string; opponentName?: string };
   TeamChat: { teamId: string; leagueId: string; teamName: string };
 };
+
+export type LeaguePageScopeParams = { leagueId: string; leagueSlug: string };
+
+export type LeaguePagesStackParamList = {
+  TeamsDirectory: LeaguePageScopeParams;
+  PlayersDirectory: LeaguePageScopeParams;
+  PlayoffsDirectory: LeaguePageScopeParams;
+  LeagueTeamDetail: { teamId: string; leagueId: string };
+  LeaguePlayerCard: PlayerCardParams;
+  LeagueGamePreview: { gameId: string };
+  TeamChat: { teamId: string; leagueId: string; teamName: string };
+};

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { buildMoreMenu } from '../../src/navigation/dockMenu.ts';
 
 const base = {
+  leagueId: '11111111-1111-4111-8111-111111111111',
   leagueSlug: 'hockey-life',
   isPlayoffs: false,
   registrationOpen: false,
@@ -18,23 +19,20 @@ describe('mobile More catalog', () => {
     const byLabel = new Map(items.map((item) => [item.label, item.destination]));
 
     assert.deepEqual(byLabel.get('Home'), { kind: 'native', tab: 'Home' });
-    assert.deepEqual(byLabel.get('Teams'), { kind: 'external', url: 'https://hockey-life.beerleaguehockey.ca/teams' });
-    assert.deepEqual(byLabel.get('Players'), { kind: 'external', url: 'https://hockey-life.beerleaguehockey.ca/players' });
+    assert.deepEqual(byLabel.get('Teams'), { kind: 'native', tab: 'LeaguePages', screen: 'TeamsDirectory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.deepEqual(byLabel.get('Players'), { kind: 'native', tab: 'LeaguePages', screen: 'PlayersDirectory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
     assert.deepEqual(byLabel.get('News'), { kind: 'external', url: 'https://hockey-life.beerleaguehockey.ca/news' });
     assert.deepEqual(byLabel.get('Discover Leagues'), { kind: 'native', tab: 'Discover', screen: 'DiscoverMain' });
     assert.deepEqual(byLabel.get('Account'), { kind: 'native', tab: 'Profile', screen: 'ProfileMain' });
   });
 
-  it('keeps the selected-tenant Teams directory external for guests and members', () => {
+  it('keeps the selected-tenant Teams directory native for guests and members', () => {
     for (const membership of [
       { userId: null, isMember: false },
       { userId: 'player-1', isMember: true },
     ]) {
       const teams = buildMoreMenu({ ...base, ...membership }).find((item) => item.key === 'league-teams');
-      assert.deepEqual(teams?.destination, {
-        kind: 'external',
-        url: 'https://hockey-life.beerleaguehockey.ca/teams',
-      });
+      assert.deepEqual(teams?.destination, { kind: 'native', tab: 'LeaguePages', screen: 'TeamsDirectory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
     }
   });
 

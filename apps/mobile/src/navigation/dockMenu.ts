@@ -21,6 +21,7 @@ export type WebsiteNavItem = {
 };
 
 export type MoreMenuInput = {
+  leagueId?: string;
   leagueSlug: string;
   visiblePages?: Record<string, boolean>;
   customNavItems?: WebsiteNavItem[];
@@ -95,12 +96,20 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
   const leagueItems: MoreMenuItem[] = hasTenant ? PUBLIC_MORE_ITEMS.flatMap(([pageKey, label, path]) => {
     if (input.visiblePages?.[pageKey] === false) return [];
     if (pageKey === 'playoffs' && !input.isPlayoffs) return [];
+    const nativeScreen = pageKey === 'teams' ? 'TeamsDirectory'
+      : pageKey === 'players' ? 'PlayersDirectory'
+      : pageKey === 'playoffs' ? 'PlayoffsDirectory' : null;
     return [{
       key: `league-${pageKey}`,
       label,
       category: 'League',
       icon: PUBLIC_ICONS[pageKey],
-      destination: { kind: 'external', url: tenantPage(input.leagueSlug, path) },
+      destination: nativeScreen && input.leagueId
+        ? {
+            kind: 'native', tab: 'LeaguePages', screen: nativeScreen,
+            params: { leagueId: input.leagueId, leagueSlug: input.leagueSlug },
+          }
+        : { kind: 'external', url: tenantPage(input.leagueSlug, path) },
     }];
   }) : [];
 

@@ -44,6 +44,7 @@ import { supabase } from '../../lib/supabase/client';
 import { getMetricsOperationalSeason, getTeamActiveSeason } from '../../lib/supabase/team';
 import { loadTeamPageSnapshot, type TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
+import { navigateToGamePreview } from '../../navigation/gamePreview';
 import { TeamStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
 import { ui } from '../../theme/ui';
@@ -383,11 +384,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   );
 
   function navigateToGame(gameId: string) {
-    const rootNavigation = navigation as unknown as { navigate: (routeName: string, params: unknown) => void };
-    rootNavigation.navigate('Schedule', {
-      screen: 'GamePreview',
-      params: { gameId },
-    });
+    navigateToGamePreview(navigation, { gameId });
   }
 
   React.useEffect(() => {

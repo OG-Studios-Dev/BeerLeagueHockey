@@ -1,5 +1,6 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +17,7 @@ import {
   DiscoverStackParamList,
   StatsStackParamList,
   CaptainStackParamList,
+  LeaguePagesStackParamList,
 } from './types';
 import GamePreviewScreen from '../screens/GamePreviewScreen';
 import GameRecapScreen from '../screens/games/GameRecapScreen';
@@ -42,6 +44,9 @@ import GameAvailabilityScreen from '../screens/captain/GameAvailabilityScreen';
 import InvitePlayersScreen from '../screens/captain/InvitePlayersScreen';
 import LineupNotesScreen from '../screens/captain/LineupNotesScreen';
 import TeamChatScreen from '../screens/team/TeamChatScreen';
+import TeamsDirectoryScreen from '../screens/league-pages/TeamsDirectoryScreen';
+import PlayersDirectoryScreen from '../screens/league-pages/PlayersDirectoryScreen';
+import PlayoffsDirectoryScreen from '../screens/league-pages/PlayoffsDirectoryScreen';
 
 import colors from '../theme/colors';
 import { getSurfacePalette } from '../theme/ui';
@@ -55,6 +60,12 @@ const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const DiscoverStack = createNativeStackNavigator<DiscoverStackParamList>();
 const StatsStack = createNativeStackNavigator<StatsStackParamList>();
 const CaptainStack = createNativeStackNavigator<CaptainStackParamList>();
+const LeaguePagesStack = createNativeStackNavigator<LeaguePagesStackParamList>();
+
+const LeagueTeamDetailComponent = TeamDetailScreen as unknown as React.ComponentType<NativeStackScreenProps<LeaguePagesStackParamList, 'LeagueTeamDetail'>>;
+const LeaguePlayerCardComponent = PlayerCardScreen as unknown as React.ComponentType<NativeStackScreenProps<LeaguePagesStackParamList, 'LeaguePlayerCard'>>;
+const LeagueGamePreviewComponent = GamePreviewScreen as unknown as React.ComponentType<NativeStackScreenProps<LeaguePagesStackParamList, 'LeagueGamePreview'>>;
+const LeagueTeamChatComponent = TeamChatScreen as unknown as React.ComponentType<NativeStackScreenProps<LeaguePagesStackParamList, 'TeamChat'>>;
 
 export const VISIBLE_DOCK_CONTROLS = ['Standings', 'Schedule', 'Team', 'Stats', 'More'] as const;
 
@@ -175,6 +186,20 @@ function CaptainNavigator() {
   );
 }
 
+function LeaguePagesNavigator() {
+  return (
+    <LeaguePagesStack.Navigator screenOptions={{ headerShown: false }}>
+      <LeaguePagesStack.Screen name="TeamsDirectory" component={TeamsDirectoryScreen} />
+      <LeaguePagesStack.Screen name="PlayersDirectory" component={PlayersDirectoryScreen} />
+      <LeaguePagesStack.Screen name="PlayoffsDirectory" component={PlayoffsDirectoryScreen} />
+      <LeaguePagesStack.Screen name="LeagueTeamDetail" component={LeagueTeamDetailComponent} />
+      <LeaguePagesStack.Screen name="LeaguePlayerCard" component={LeaguePlayerCardComponent} />
+      <LeaguePagesStack.Screen name="LeagueGamePreview" component={LeagueGamePreviewComponent} />
+      <LeaguePagesStack.Screen name="TeamChat" component={LeagueTeamChatComponent} />
+    </LeaguePagesStack.Navigator>
+  );
+}
+
 export default function RootNavigation() {
   const { activeTheme } = useLeague();
   const { isGuest } = useAuth();
@@ -208,6 +233,7 @@ export default function RootNavigation() {
       <Tab.Screen name="Team" component={TeamNavigator} />
       <Tab.Screen name="Captain" component={CaptainNavigator} />
       <Tab.Screen name="Profile" component={ProfileNavigator} />
+      <Tab.Screen name="LeaguePages" component={LeaguePagesNavigator} options={{ tabBarButton: () => null }} />
     </Tab.Navigator>
     </View>
   );

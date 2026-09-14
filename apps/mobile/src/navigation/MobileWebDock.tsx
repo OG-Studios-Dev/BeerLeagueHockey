@@ -126,6 +126,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const isMember = Boolean(user && activeLeague && !isGuest && !isGuestLeague);
   const isCaptain = isMember && ['captain', 'alternate_captain'].includes(data.team?.leadership_role ?? '');
   const items = React.useMemo(() => buildMoreMenu({
+    leagueId: data.websiteStatus === 'ready' ? activeLeague?.id : undefined,
     leagueSlug: data.websiteStatus === 'ready' ? activeLeague?.slug ?? '' : '',
     visiblePages: data.visiblePages,
     customNavItems: data.customNavItems,
@@ -134,7 +135,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
     userId: user?.id,
     isMember,
     isCaptain,
-  }), [activeLeague?.slug, data.customNavItems, data.isPlayoffs, data.registrationOpen, data.visiblePages, data.websiteStatus, isCaptain, isMember, user?.id]);
+  }), [activeLeague?.id, activeLeague?.slug, data.customNavItems, data.isPlayoffs, data.registrationOpen, data.visiblePages, data.websiteStatus, isCaptain, isMember, user?.id]);
 
   const navigate = React.useCallback((destination: DockDestination) => {
     if (destination.kind === 'external') {
@@ -191,7 +192,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   }, [activeLeague, data.team, lifecycle, pressRegisteredTab]);
 
   const routeName = currentRouteName(state);
-  const hiddenRouteIsActive = ['Home', 'Discover', 'Profile', 'Captain'].includes(routeName);
+  const hiddenRouteIsActive = ['Home', 'Discover', 'Profile', 'Captain', 'LeaguePages'].includes(routeName);
   const palette = getSurfacePalette(reduceTransparency);
   const primary = activeTheme.primaryColor || colors.primary;
   const secondary = activeTheme.secondaryColor || colors.brandArena;
