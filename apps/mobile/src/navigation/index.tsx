@@ -52,6 +52,8 @@ import NewsArticleScreen from '../screens/league-pages/NewsArticleScreen';
 import LeagueHistoryScreen from '../screens/league-pages/LeagueHistoryScreen';
 import GalleryAlbumsScreen from '../screens/league-pages/GalleryAlbumsScreen';
 import GalleryAlbumScreen from '../screens/league-pages/GalleryAlbumScreen';
+import EventsScreen from '../screens/league-pages/EventsScreen';
+import ContactScreen from '../screens/league-pages/ContactScreen';
 
 import colors from '../theme/colors';
 import { getSurfacePalette } from '../theme/ui';
@@ -84,8 +86,6 @@ export const PUBLIC_MORE_PAGE_LABELS = [
   'History',
   'Gallery',
   'Events',
-  'Venues',
-  'About',
   'Contact',
 ] as const;
 
@@ -201,6 +201,8 @@ function LeaguePagesNavigator() {
       <LeaguePagesStack.Screen name="LeagueHistory" component={LeagueHistoryScreen} />
       <LeaguePagesStack.Screen name="GalleryAlbums" component={GalleryAlbumsScreen} />
       <LeaguePagesStack.Screen name="GalleryAlbum" component={GalleryAlbumScreen} />
+      <LeaguePagesStack.Screen name="Events" component={EventsScreen} />
+      <LeaguePagesStack.Screen name="Contact" component={ContactScreen} />
       <LeaguePagesStack.Screen name="LeagueTeamDetail" component={LeagueTeamDetailComponent} />
       <LeaguePagesStack.Screen name="LeaguePlayerCard" component={LeaguePlayerCardComponent} />
       <LeaguePagesStack.Screen name="LeagueGamePreview" component={LeagueGamePreviewComponent} />

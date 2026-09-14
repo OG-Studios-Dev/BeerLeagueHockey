@@ -6,8 +6,6 @@ export const PUBLIC_MORE_ITEMS = [
   ['history', 'History', '/history'],
   ['gallery', 'Gallery', '/gallery'],
   ['events', 'Events', '/events'],
-  ['venues', 'Venues', '/venues'],
-  ['about', 'About', '/about'],
   ['contact', 'Contact', '/contact'],
 ] as const;
 
@@ -51,8 +49,6 @@ const PUBLIC_ICONS: Record<(typeof PUBLIC_MORE_ITEMS)[number][0], string> = {
   history: 'ribbon-outline',
   gallery: 'images-outline',
   events: 'calendar-outline',
-  venues: 'location-outline',
-  about: 'information-circle-outline',
   contact: 'mail-outline',
 };
 
@@ -89,6 +85,31 @@ function safeInternalPath(item: WebsiteNavItem): string | null {
   return path.split('/').some((segment) => segment === '..') ? null : path;
 }
 
+function canonicalTenantPage(item: WebsiteNavItem, leagueSlug: string): 'events' | 'contact' | 'remove' | null {
+  if (item.isCustomPage === true) return null;
+  const href = typeof item.href === 'string' ? item.href.trim() : '';
+  if (!href) return null;
+  let pathname: string;
+  if (item.isExternal === true) {
+    const safe = safeExternalUrl(href);
+    if (!safe) return null;
+    const parsed = new URL(safe);
+    const tenant = new URL(tenantOrigin(leagueSlug));
+    if (parsed.hostname !== tenant.hostname || parsed.port) return null;
+    pathname = parsed.pathname;
+  } else {
+    const safe = safeInternalPath(item);
+    if (!safe) return null;
+    pathname = new URL(safe, tenantOrigin(leagueSlug)).pathname;
+  }
+  const segments = pathname.split('/').filter(Boolean);
+  if (segments[0] === leagueSlug) segments.shift();
+  if (segments.length !== 1) return null;
+  if (segments[0] === 'events' || segments[0] === 'contact') return segments[0];
+  if (segments[0] === 'venues' || segments[0] === 'about') return 'remove';
+  return null;
+}
+
 export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
   const hasTenant = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.leagueSlug);
   const leagueItems: MoreMenuItem[] = hasTenant ? PUBLIC_MORE_ITEMS.flatMap(([pageKey, label, path]) => {
@@ -99,7 +120,9 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
       : pageKey === 'playoffs' ? 'PlayoffsDirectory'
       : pageKey === 'news' ? 'NewsFeed'
       : pageKey === 'history' ? 'LeagueHistory'
-      : pageKey === 'gallery' ? 'GalleryAlbums' : null;
+      : pageKey === 'gallery' ? 'GalleryAlbums'
+      : pageKey === 'events' ? 'Events'
+      : pageKey === 'contact' ? 'Contact' : null;
     return [{
       key: `league-${pageKey}`,
       label,
@@ -144,7 +167,7 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
     { key: 'captain-goalies', label: 'Goalies', category: 'Captain', icon: 'hand-left-outline', destination: { kind: 'external', url: tenantPage(input.leagueSlug, '/captain/goalies') } },
   ] : [];
 
-  const customItems: MoreMenuItem[] = (hasTenant ? input.customNavItems ?? [] : []).flatMap((item, index) => {
+  const customItems: MoreMenuItem[] = (hasTenant ? input.customNavItems ?? [] : []).flatMap((item, index): MoreMenuItem[] => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
     if (item.label !== undefined && typeof item.label !== 'string') return [];
     if (item.href !== undefined && typeof item.href !== 'string') return [];
@@ -153,6 +176,18 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
     if (item.isCustomPage !== undefined && typeof item.isCustomPage !== 'boolean') return [];
     const label = typeof item.label === 'string' ? item.label.trim() : '';
     if (!label) return [];
+    const canonical = canonicalTenantPage(item, input.leagueSlug);
+    if (canonical === 'remove') return [];
+    if ((canonical === 'events' || canonical === 'contact') && input.visiblePages?.[canonical] === false) return [];
+    if ((canonical === 'events' || canonical === 'contact') && input.leagueId) {
+      return [{
+        key: `custom-${index}-${label}`,
+        label,
+        category: 'Custom',
+        icon: PUBLIC_ICONS[canonical],
+        destination: { kind: 'native', tab: 'LeaguePages', screen: canonical === 'events' ? 'Events' : 'Contact', params: { leagueId: input.leagueId, leagueSlug: input.leagueSlug } },
+      }];
+    }
     const url = item.isExternal === true
       ? safeExternalUrl(item.href)
       : (() => {

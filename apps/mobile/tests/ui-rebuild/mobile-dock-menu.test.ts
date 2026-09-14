@@ -24,6 +24,10 @@ describe('mobile More catalog', () => {
     assert.deepEqual(byLabel.get('News'), { kind: 'native', tab: 'LeaguePages', screen: 'NewsFeed', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
     assert.deepEqual(byLabel.get('History'), { kind: 'native', tab: 'LeaguePages', screen: 'LeagueHistory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
     assert.deepEqual(byLabel.get('Gallery'), { kind: 'native', tab: 'LeaguePages', screen: 'GalleryAlbums', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.deepEqual(byLabel.get('Events'), { kind: 'native', tab: 'LeaguePages', screen: 'Events', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.deepEqual(byLabel.get('Contact'), { kind: 'native', tab: 'LeaguePages', screen: 'Contact', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.equal(byLabel.has('Venues'), false);
+    assert.equal(byLabel.has('About'), false);
     assert.equal(byLabel.has('Suspensions'), false);
     assert.deepEqual(byLabel.get('Discover Leagues'), { kind: 'native', tab: 'Discover', screen: 'DiscoverMain' });
     assert.deepEqual(byLabel.get('Account'), { kind: 'native', tab: 'Profile', screen: 'ProfileMain' });
@@ -79,6 +83,62 @@ describe('mobile More catalog', () => {
       ['Rules', { kind: 'external', url: 'https://hockey-life.beerleaguehockey.ca/p/rules-and-policies' }],
       ['Shop', { kind: 'external', url: 'https://shop.example.test/hl' }],
     ]);
+  });
+
+  it('maps canonical Events and Contact aliases native, removes tenant Venues/About aliases, and preserves real custom content', () => {
+    const items = buildMoreMenu({ ...base, customNavItems: [
+      { label: 'Events alias', href: '/hockey-life/events' },
+      { label: 'Contact alias', href: 'https://hockey-life.beerleaguehockey.ca/contact?from=menu', isExternal: true },
+      { label: 'Venue alias', href: '/venues' },
+      { label: 'About alias', href: 'https://hockey-life.beerleaguehockey.ca/hockey-life/about', isExternal: true },
+      { label: 'About article', isCustomPage: true, pageSlug: 'about' },
+      { label: 'Other site About', href: 'https://example.test/about', isExternal: true },
+    ] });
+    assert.equal(items.filter((item) => item.destination.kind === 'native' && item.destination.screen === 'Events').length, 1);
+    assert.equal(items.filter((item) => item.destination.kind === 'native' && item.destination.screen === 'Contact').length, 1);
+    assert.equal(items.some((item) => item.label === 'Venue alias' || item.label === 'About alias'), false);
+    assert.ok(items.some((item) => item.label === 'About article' && item.destination.kind === 'external' && item.destination.url.endsWith('/p/about')));
+    assert.ok(items.some((item) => item.label === 'Other site About'));
+  });
+
+  it('keeps hidden canonical Events and Contact aliases hidden for every role', () => {
+    for (const role of [
+      { userId: null, isMember: false, isCaptain: false },
+      { userId: 'member', isMember: true, isCaptain: false },
+      { userId: 'captain', isMember: true, isCaptain: true },
+    ]) {
+      const items = buildMoreMenu({
+        ...base,
+        ...role,
+        visiblePages: { events: false, contact: false },
+        customNavItems: [
+          { label: 'Hidden Events', href: '/hockey-life/events' },
+          { label: 'Hidden Contact', href: 'https://hockey-life.beerleaguehockey.ca/contact', isExternal: true },
+        ],
+      });
+      assert.equal(items.some((item) => item.destination.kind === 'native' && ['Events', 'Contact'].includes(item.destination.screen ?? '')), false);
+    }
+  });
+
+  it('normalizes only allowed HTTP(S) same-tenant aliases', () => {
+    const items = buildMoreMenu({ ...base, customNavItems: [
+      { label: 'HTTP events', href: 'http://hockey-life.beerleaguehockey.ca/events', isExternal: true },
+      { label: 'HTTP about', href: 'http://hockey-life.beerleaguehockey.ca/about', isExternal: true },
+      { label: 'HTTPS contact', href: 'https://hockey-life.beerleaguehockey.ca/hockey-life/contact', isExternal: true },
+      { label: 'Other host', href: 'http://example.test/events', isExternal: true },
+      { label: 'Credentials', href: 'https://user:pass@hockey-life.beerleaguehockey.ca/contact', isExternal: true },
+      { label: 'Port', href: 'https://hockey-life.beerleaguehockey.ca:8443/events', isExternal: true },
+      { label: 'FTP', href: 'ftp://hockey-life.beerleaguehockey.ca/events', isExternal: true },
+      { label: 'Custom About', isCustomPage: true, pageSlug: 'about' },
+    ] });
+    assert.equal(items.filter((item) => item.destination.kind === 'native' && item.destination.screen === 'Events').length, 1);
+    assert.equal(items.filter((item) => item.destination.kind === 'native' && item.destination.screen === 'Contact').length, 1);
+    assert.equal(items.some((item) => item.label === 'HTTP about'), false);
+    assert.ok(items.some((item) => item.label === 'Other host' && item.destination.kind === 'external'));
+    assert.equal(items.some((item) => ['Credentials', 'Port', 'FTP'].includes(item.label) && item.destination.kind === 'native'), false);
+    assert.equal(items.some((item) => ['Credentials', 'FTP'].includes(item.label)), false);
+    assert.ok(items.some((item) => item.label === 'Port' && item.destination.kind === 'external'));
+    assert.ok(items.some((item) => item.label === 'Custom About' && item.destination.kind === 'external' && item.destination.url.endsWith('/p/about')));
   });
 
   it('defends direct menu construction from malformed JSON-shaped nav entries', () => {

@@ -11,6 +11,50 @@ const league = {
 };
 
 describe('public league-content client', () => {
+  it('decodes the frozen Events and Contact wire responses without inventing missing facts', async () => {
+    // SYNTHETIC FIXTURES: frozen-contract shapes only; not production league data.
+    const events = {
+      schemaVersion: 1, view: 'events', league, timeZone: 'America/Toronto',
+      generatedAt: '2026-09-14T12:00:00.000Z', windowStart: '2026-09-07T12:00:00.000Z',
+      events: [{
+        id: '22222222-2222-4222-8222-222222222222', title: 'Synthetic skate', description: null,
+        eventType: 'community', location: null, startTime: '2026-09-15T01:00:00.000Z', endTime: null,
+      }], total: 1,
+    } as const;
+    const eventResult = await getLeagueContent('hockey-life', { view: 'events' }, async (url) => {
+      assert.match(url, /view=events/);
+      return { ok: true, status: 200, text: async () => JSON.stringify(events) };
+    });
+    assert.equal(eventResult.view, 'events');
+    assert.equal(eventResult.events[0]?.eventType, 'community');
+    assert.equal(eventResult.events[0]?.location, null);
+
+    const contact = {
+      schemaVersion: 1, view: 'contact', league,
+      contact: { email: null, phone: null, websiteUrl: 'https://example.test/contact', address: null, city: null, state: null, zipCode: null },
+    } as const;
+    const contactResult = await getLeagueContent('hockey-life', { view: 'contact' }, async (url) => {
+      assert.match(url, /view=contact/);
+      return { ok: true, status: 200, text: async () => JSON.stringify(contact) };
+    });
+    assert.equal(contactResult.view, 'contact');
+    assert.equal(contactResult.contact.email, null);
+    assert.equal(contactResult.contact.websiteUrl, 'https://example.test/contact');
+  });
+
+  it('rejects incomplete, misordered, duplicate, and invalid-range event facts', async () => {
+    const first = { id: '22222222-2222-4222-8222-222222222222', title: 'First', description: null, eventType: 'other', location: null, startTime: '2026-09-15T12:00:00Z', endTime: null };
+    const second = { ...first, id: '33333333-3333-4333-8333-333333333333', startTime: '2026-09-14T12:00:00Z' };
+    const base = { schemaVersion: 1, view: 'events', league, timeZone: 'UTC', generatedAt: '2026-09-14T12:00:00Z', windowStart: '2026-09-07T12:00:00Z', events: [first], total: 1 };
+    const request = (payload: unknown) => getLeagueContent('hockey-life', { view: 'events' }, async () => ({ ok: true, status: 200, text: async () => JSON.stringify(payload) }));
+    await assert.rejects(request({ ...base, total: 2 }), /Incomplete events response/);
+    await assert.rejects(request({ ...base, events: [first, second], total: 2 }), /deterministically ordered/);
+    await assert.rejects(request({ ...base, events: [first, first], total: 2 }), /Duplicate event/);
+    await assert.rejects(request({ ...base, events: [{ ...first, endTime: '2026-09-14T12:00:00Z' }] }), /date range/);
+    await assert.rejects(request({ ...base, windowStart: '2026-09-16T12:00:00Z' }), /window range/);
+    await assert.rejects(request({ ...base, generatedAt: '2026-09-14' }), /generated date/);
+  });
+
   it('times out a pending request, then permits a successful retry', async () => {
     let attempts = 0;
     const empty = { schemaVersion: 1, view: 'news', league, articles: [], total: 0 } as const;

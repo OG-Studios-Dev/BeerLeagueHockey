@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 import { buildMoreMenu } from '../../src/navigation/dockMenu.ts';
 
 describe('native league page navigation', () => {
-  it('keeps all six content pages native and omits Suspensions for every role', () => {
+  it('keeps all eight content pages native and omits removed pages for every role', () => {
     const items = buildMoreMenu({
       leagueId: '11111111-1111-4111-8111-111111111111',
       leagueSlug: 'hockey-life',
@@ -24,7 +24,11 @@ describe('native league page navigation', () => {
     assert.deepEqual(byLabel.get('News'), { kind: 'native', tab: 'LeaguePages', screen: 'NewsFeed', params: scope });
     assert.deepEqual(byLabel.get('History'), { kind: 'native', tab: 'LeaguePages', screen: 'LeagueHistory', params: scope });
     assert.deepEqual(byLabel.get('Gallery'), { kind: 'native', tab: 'LeaguePages', screen: 'GalleryAlbums', params: scope });
+    assert.deepEqual(byLabel.get('Events'), { kind: 'native', tab: 'LeaguePages', screen: 'Events', params: scope });
+    assert.deepEqual(byLabel.get('Contact'), { kind: 'native', tab: 'LeaguePages', screen: 'Contact', params: scope });
     assert.equal(byLabel.has('Suspensions'), false);
+    assert.equal(byLabel.has('Venues'), false);
+    assert.equal(byLabel.has('About'), false);
 
     for (const role of [{ isMember: false, isCaptain: false }, { isMember: true, isCaptain: false }, { isMember: true, isCaptain: true }]) {
       const roleItems = buildMoreMenu({ leagueId: scope.leagueId, leagueSlug: scope.leagueSlug, visiblePages: { suspensions: true }, isPlayoffs: true, registrationOpen: false, userId: 'user-1', ...role });
@@ -40,7 +44,7 @@ describe('native league page navigation', () => {
 
   it('registers a hidden league-pages stack with native team, player and game drilldowns', () => {
     const navigation = readFileSync(fileURLToPath(new URL('../../src/navigation/index.tsx', import.meta.url).toString()), 'utf8');
-    for (const route of ['TeamsDirectory', 'PlayersDirectory', 'PlayoffsDirectory', 'NewsFeed', 'NewsArticle', 'LeagueHistory', 'GalleryAlbums', 'GalleryAlbum', 'LeagueTeamDetail', 'LeaguePlayerCard', 'LeagueGamePreview']) {
+    for (const route of ['TeamsDirectory', 'PlayersDirectory', 'PlayoffsDirectory', 'NewsFeed', 'NewsArticle', 'LeagueHistory', 'GalleryAlbums', 'GalleryAlbum', 'Events', 'Contact', 'LeagueTeamDetail', 'LeaguePlayerCard', 'LeagueGamePreview']) {
       assert.match(navigation, new RegExp(`name=["']${route}["']`));
     }
     assert.match(navigation, /name="LeaguePages"/);

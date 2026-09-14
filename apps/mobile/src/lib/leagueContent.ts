@@ -2,7 +2,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_BYTES = 512 * 1024;
 
-export type ContentView = 'news' | 'article' | 'history' | 'gallery' | 'album';
+export type ContentView = 'news' | 'article' | 'history' | 'gallery' | 'album' | 'events' | 'contact';
 export interface ContentLeague { id: string; slug: string; name: string; logoUrl: string | null }
 export interface ArticleSummary { id: string; slug: string; title: string; excerpt: string | null; imageUrl: string | null; type: 'news' | 'game_recap' | 'weekly_wrap'; publishedAt: string; authorName: string | null; authorId: string | null }
 export interface Mention { text: string; kind: 'player' | 'team' | 'game'; id: string }
@@ -21,8 +21,12 @@ export interface GalleryAlbum { id: string; title: string; description: string |
 export interface GalleryPhoto { id: string; albumId: string; imageUrl: string; thumbnailUrl: string | null; caption: string | null; sortOrder: number }
 export interface GalleryResponse { schemaVersion: 1; view: 'gallery'; league: ContentLeague; seasons: ContentSeason[]; albums: GalleryAlbum[]; total: number }
 export interface AlbumResponse { schemaVersion: 1; view: 'album'; league: ContentLeague; album: GalleryAlbum; photos: GalleryPhoto[]; total: number }
-export type ContentResponse = NewsResponse | ArticleResponse | HistoryResponse | GalleryResponse | AlbumResponse;
-export type ContentRequest = { view: 'news' } | { view: 'history' } | { view: 'gallery' } | { view: 'article'; articleSlug: string } | { view: 'album'; albumId: string };
+export interface LeagueEvent { id: string; title: string; description: string | null; eventType: string; location: string | null; startTime: string; endTime: string | null }
+export interface EventsResponse { schemaVersion: 1; view: 'events'; league: ContentLeague; timeZone: string; generatedAt: string; windowStart: string; events: LeagueEvent[]; total: number }
+export interface LeagueContact { email: string | null; phone: string | null; websiteUrl: string | null; address: string | null; city: string | null; state: string | null; zipCode: string | null }
+export interface ContactResponse { schemaVersion: 1; view: 'contact'; league: ContentLeague; contact: LeagueContact }
+export type ContentResponse = NewsResponse | ArticleResponse | HistoryResponse | GalleryResponse | AlbumResponse | EventsResponse | ContactResponse;
+export type ContentRequest = { view: 'news' } | { view: 'history' } | { view: 'gallery' } | { view: 'events' } | { view: 'contact' } | { view: 'article'; articleSlug: string } | { view: 'album'; albumId: string };
 
 type FetchLike = (input: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 type R = Record<string, unknown>;
@@ -38,6 +42,7 @@ const nonnegative = (v: unknown, label: string): number => { const x = num(v, la
 const nullableNum = (v: unknown, label: string): number | null => v === null ? null : num(v, label);
 const arr = (v: unknown, label: string, max: number): unknown[] => { if (!Array.isArray(v) || v.length > max) throw new TypeError(`Invalid ${label}`); return v; };
 const date = (v: unknown, label: string): string => { const x = str(v, label, 64); if (!Number.isFinite(Date.parse(x))) throw new TypeError(`Invalid ${label}`); return x; };
+const isoDate = (v: unknown, label: string): string => { const x = date(v, label); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(x)) throw new TypeError(`Invalid ${label}`); return x; };
 const nullableDate = (v: unknown, label: string): string | null => v === null ? null : date(v, label);
 const unique = (xs: string[], label: string) => { if (new Set(xs).size !== xs.length) throw new TypeError(`Duplicate ${label}`); };
 
@@ -84,6 +89,50 @@ function decode(rawValue: unknown, expected: ContentView, expectedSlug: string):
     const selected = album(raw.album, 'album'); const photos = arr(raw.photos, 'photos', 10000).map((v, i) => { const p = rec(v, `photo ${i}`); const albumId = id(p.albumId, 'photo album id'); if (albumId !== selected.id) throw new TypeError('Photo album identity mismatch'); return { id: id(p.id, 'photo id'), albumId, imageUrl: httpUrl(p.imageUrl, 'photo image URL'), thumbnailUrl: nullableHttpUrl(p.thumbnailUrl, 'photo thumbnail URL'), caption: nullableStr(p.caption, 'photo caption', 4000), sortOrder: nonnegative(p.sortOrder, 'photo sort order') }; });
     unique(photos.map(x => x.id), 'photo'); const total = nonnegative(raw.total, 'album total'); if (total !== photos.length || selected.photoCount !== total) throw new TypeError('Incomplete album response');
     return { ...base, view: 'album', album: selected, photos, total };
+  }
+  if (expected === 'events') {
+    const generatedAt = isoDate(raw.generatedAt, 'events generated date');
+    const windowStart = isoDate(raw.windowStart, 'events window start');
+    if (Date.parse(windowStart) > Date.parse(generatedAt)) throw new TypeError('Invalid events window range');
+    const events = arr(raw.events, 'events', 10000).map((value, index): LeagueEvent => {
+      const x = rec(value, `event ${index}`);
+      const startTime = isoDate(x.startTime, `event ${index} start`);
+      const endTime = x.endTime === null ? null : isoDate(x.endTime, `event ${index} end`);
+      if (endTime && Date.parse(endTime) < Date.parse(startTime)) throw new TypeError(`Invalid event ${index} date range`);
+      return {
+        id: id(x.id, `event ${index} id`),
+        title: str(x.title, `event ${index} title`, 500),
+        description: nullableStr(x.description, `event ${index} description`, 12000),
+        eventType: str(x.eventType, `event ${index} type`, 100),
+        location: nullableStr(x.location, `event ${index} location`, 1000),
+        startTime,
+        endTime,
+      };
+    });
+    unique(events.map(event => event.id), 'event');
+    for (let index = 1; index < events.length; index += 1) {
+      const previous = events[index - 1]!;
+      const current = events[index]!;
+      const previousTime = Date.parse(previous.startTime); const currentTime = Date.parse(current.startTime);
+      if (previousTime > currentTime || (previousTime === currentTime && previous.id > current.id)) {
+        throw new TypeError('Events response is not deterministically ordered');
+      }
+    }
+    const total = nonnegative(raw.total, 'events total');
+    if (total !== events.length) throw new TypeError('Incomplete events response');
+    return { ...base, view: 'events', timeZone: str(raw.timeZone, 'events time zone', 100), generatedAt, windowStart, events, total };
+  }
+  if (expected === 'contact') {
+    const x = rec(raw.contact, 'contact');
+    return { ...base, view: 'contact', contact: {
+      email: nullableStr(x.email, 'contact email', 320),
+      phone: nullableStr(x.phone, 'contact phone', 100),
+      websiteUrl: nullableStr(x.websiteUrl, 'contact website', 4096),
+      address: nullableStr(x.address, 'contact address', 1000),
+      city: nullableStr(x.city, 'contact city', 300),
+      state: nullableStr(x.state, 'contact state', 300),
+      zipCode: nullableStr(x.zipCode, 'contact postal code', 40),
+    } };
   }
   const seasons = arr(raw.seasons, 'seasons', 500).map((x, i) => season(x, `season ${i}`)); const seasonIds = new Set(seasons.map(x => x.id));
   const champions = arr(raw.champions, 'champions', 1000).map((v, i): ChampionEntry => { const x = rec(v, `champion ${i}`); if (!['official', 'standings_leader', 'legacy'].includes(String(x.source))) throw new TypeError('Invalid champion source'); const roster = arr(x.roster, 'champion roster', 500).map(v => { const p = rec(v, 'champion player'); return { id: id(p.id, 'champion player id'), name: str(p.name, 'champion player name'), jerseyNumber: p.jerseyNumber === null ? null : nonnegative(p.jerseyNumber, 'jersey number'), position: nullableStr(p.position, 'position', 80), leadershipRole: nullableStr(p.leadershipRole, 'leadership role', 80) }; }); const record = x.record === null ? null : (() => { const r = rec(x.record, 'champion record'); return { wins: nonnegative(r.wins, 'wins'), losses: nonnegative(r.losses, 'losses'), ties: nonnegative(r.ties, 'ties') }; })(); return { id: str(x.id, 'champion id', 128), source: x.source as ChampionEntry['source'], year: str(x.year, 'champion year', 40), seasonId: nullableId(x.seasonId, 'champion season id'), seasonName: str(x.seasonName, 'champion season name'), teamId: nullableId(x.teamId, 'champion team id'), teamName: str(x.teamName, 'champion team name'), teamLogoUrl: nullableStr(x.teamLogoUrl, 'champion logo'), photoUrl: nullableStr(x.photoUrl, 'champion photo'), record, roster, finalGame: game(x.finalGame, 'championship final'), summary: nullableStr(x.summary, 'champion summary', 12000), caption: nullableStr(x.caption, 'champion caption', 2000) }; });

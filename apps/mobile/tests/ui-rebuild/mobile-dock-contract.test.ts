@@ -35,7 +35,7 @@ describe('native web-style dock contract', () => {
     assert.match(navigationSource, /tabBar=\{\(props\) => <MobileWebDock \{\.\.\.props\} \/>\}/);
   });
 
-  it('carries the complete public web More catalog in the integrated navigation module', () => {
+  it('carries the retained native More catalog without removed Venues or About entries', () => {
     assert.deepEqual(readStringArray('PUBLIC_MORE_PAGE_LABELS'), [
       'Teams',
       'Players',
@@ -44,8 +44,6 @@ describe('native web-style dock contract', () => {
       'History',
       'Gallery',
       'Events',
-      'Venues',
-      'About',
       'Contact',
     ]);
   });
