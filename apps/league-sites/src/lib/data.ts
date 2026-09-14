@@ -102,6 +102,20 @@ const IMPORTED_CAREER_BASELINE_TABLE_CANDIDATES = [
   'imported_career_stat_baselines',
 ];
 
+export type CanonicalReadOptions = { strict?: boolean };
+
+function throwCanonicalReadError(error: unknown, context: string): never {
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const code = typeof record?.code === 'string' && record.code.trim() ? record.code.trim() : null;
+  const message = typeof record?.message === 'string' && record.message.trim()
+    ? record.message.trim()
+    : error instanceof Error && error.message.trim()
+      ? error.message.trim()
+      : 'unknown provider error';
+  const cause = error instanceof Error ? error : new Error(code ? `${code}: ${message}` : message);
+  throw new Error(`Canonical read failed: ${context}`, { cause });
+}
+
 type LegacyPlayerRow = {
   id: string;
   first_name: string;
@@ -239,7 +253,7 @@ function compareLegacyGoalies(
   return left.player_name.localeCompare(right.player_name);
 }
 
-async function getLegacyAllTimePlayers(): Promise<LegacyPlayerRow[]> {
+async function getLegacyAllTimePlayers(options: CanonicalReadOptions = {}): Promise<LegacyPlayerRow[]> {
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
     .from('legacy_players')
@@ -249,6 +263,7 @@ async function getLegacyAllTimePlayers(): Promise<LegacyPlayerRow[]> {
     .order('full_name', { ascending: true });
 
   if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'legacy_players');
     return [];
   }
 
@@ -256,19 +271,78 @@ async function getLegacyAllTimePlayers(): Promise<LegacyPlayerRow[]> {
 }
 
 function isMissingRelationError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || '');
-  const normalized = message.toLowerCase();
-  return normalized.includes('does not exist') || normalized.includes('could not find the table') || normalized.includes('pgrst205');
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const code = typeof record?.code === 'string' ? record.code.toUpperCase() : null;
+  if (code) return code === '42P01' || code === 'PGRST205';
+  const message = typeof record?.message === 'string' ? record.message : error instanceof Error ? error.message : '';
+  return /^Could not find the table '[^']+' in the schema cache\.?$/i.test(message.trim());
+}
+
+function isMissingOptionalCapabilityError(error: unknown) {
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const code = typeof record?.code === 'string' ? record.code.toUpperCase() : null;
+  if (code) return code === '42P01' || code === 'PGRST205' || code === '42883' || code === 'PGRST202';
+  const message = typeof record?.message === 'string' ? record.message : error instanceof Error ? error.message : '';
+  return isMissingRelationError(error)
+    || /^Could not find the function '[^']+' in the schema cache\.?$/i.test(message.trim());
+}
+
+const CANONICAL_ID_BATCH_SIZE = 100;
+const CANONICAL_PAGE_SIZE = 1000;
+const CANONICAL_BATCH_CONCURRENCY = 4;
+type CanonicalBatchQuery = {
+  range(from: number, to: number): PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+function chunkCanonicalValues<T>(values: T[], size = CANONICAL_ID_BATCH_SIZE): T[][] {
+  const chunks: T[][] = [];
+  for (let offset = 0; offset < values.length; offset += size) chunks.push(values.slice(offset, offset + size));
+  return chunks;
+}
+
+async function readCanonicalBatchedRows<T>(
+  values: string[],
+  context: string,
+  buildQuery: (batch: string[]) => CanonicalBatchQuery,
+  options: CanonicalReadOptions = {},
+): Promise<T[] | null> {
+  const batches = chunkCanonicalValues(values);
+  const results: Array<T[] | null> = new Array(batches.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      const index = next++;
+      const rows: T[] = [];
+      for (let offset = 0; ; offset += CANONICAL_PAGE_SIZE) {
+        const { data, error } = await buildQuery(batches[index]).range(offset, offset + CANONICAL_PAGE_SIZE - 1);
+        if (error) {
+          if (options.strict) throwCanonicalReadError(error, `${context} batch ${index + 1} page ${offset}`);
+          results[index] = null;
+          break;
+        }
+        const page = (data || []) as T[];
+        rows.push(...page);
+        if (page.length < CANONICAL_PAGE_SIZE) {
+          results[index] = rows;
+          break;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CANONICAL_BATCH_CONCURRENCY, batches.length) }, worker));
+  return results.some((result) => result === null) ? null : results.flatMap((result) => result || []);
 }
 
 function isLikelyUuid(value: string | null | undefined) {
   return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 }
 
-async function hydrateBaselineAvatarUrls(rows: ImportedCareerBaselineRow[]): Promise<ImportedCareerBaselineRow[]> {
+async function hydrateBaselineAvatarUrls(rows: ImportedCareerBaselineRow[], options: CanonicalReadOptions = {}): Promise<ImportedCareerBaselineRow[]> {
   const profileIds = [...new Set(
     rows
-      .map((row) => row.profile_id ?? (isLikelyUuid(row.player_id) ? row.player_id : null))
+      .map((row) => options.strict
+        ? row.profile_id_league_verified ? row.profile_id : null
+        : row.profile_id ?? (isLikelyUuid(row.player_id) ? row.player_id : null))
       .filter((profileId): profileId is string => Boolean(profileId)),
   )];
 
@@ -277,13 +351,15 @@ async function hydrateBaselineAvatarUrls(rows: ImportedCareerBaselineRow[]): Pro
   }
 
   const supabase = createServiceRoleClient();
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, avatar_url, photo_url')
-    .in('id', profileIds);
+  const profiles = await readCanonicalBatchedRows<{ id: string; avatar_url: string | null; photo_url?: string | null }>(
+    profileIds,
+    'baseline profiles',
+    (batch) => supabase.from('profiles').select('id, avatar_url, photo_url').in('id', batch),
+    options,
+  );
 
   const avatarMap = new Map<string, string | null>(
-    (profiles || []).map((profile: { id: string; avatar_url: string | null; photo_url?: string | null }) => [profile.id, resolvePlayerPhotoUrl(profile)]),
+    (profiles || []).map((profile) => [profile.id, resolvePlayerPhotoUrl(profile)]),
   );
 
   return rows.map((row) => ({
@@ -292,26 +368,57 @@ async function hydrateBaselineAvatarUrls(rows: ImportedCareerBaselineRow[]): Pro
   }));
 }
 
+async function verifyBaselineProfileIdentities(
+  rows: ImportedCareerBaselineRow[],
+  leagueId: string,
+  options: CanonicalReadOptions = {},
+): Promise<ImportedCareerBaselineRow[]> {
+  if (!options.strict) return rows;
+  const candidateIds = [...new Set(rows
+    .filter((row) => !row.profile_id_league_verified && isLikelyUuid(row.profile_id))
+    .map((row) => row.profile_id!))];
+  if (candidateIds.length === 0) return rows;
+  const supabase = createServiceRoleClient();
+  const proofs = await readCanonicalBatchedRows<{ player_id: string }>(
+    candidateIds,
+    'baseline profile league proofs',
+    (batch) => supabase.from('team_rosters').select('player_id').eq('league_id', leagueId).in('player_id', batch),
+    options,
+  );
+  const provenIds = new Set((proofs || []).map((row) => row.player_id));
+  return rows.map((row) => ({
+    ...row,
+    profile_id_league_verified: Boolean(row.profile_id_league_verified || row.profile_id && provenIds.has(row.profile_id)),
+  }));
+}
+
 async function fetchImportedCareerBaselineRowsFromCandidates(
   leagueId: string,
   leagueSlug?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<ImportedCareerBaselineRow[]> {
   const supabase = createServiceRoleClient();
 
   for (const tableName of IMPORTED_CAREER_BASELINE_TABLE_CANDIDATES) {
-    const { data, error } = await (supabase as any)
-      .from(tableName)
-      .select('*')
-      .limit(5000);
+    const data: Record<string, unknown>[] = [];
+    let error: unknown = null;
+    for (let offset = 0; ; offset += CANONICAL_PAGE_SIZE) {
+      const page = await (supabase as any).from(tableName).select('*').range(offset, offset + CANONICAL_PAGE_SIZE - 1);
+      if (page.error) { error = page.error; break; }
+      const pageRows = (page.data || []) as Record<string, unknown>[];
+      data.push(...pageRows);
+      if (pageRows.length < CANONICAL_PAGE_SIZE) break;
+    }
 
     if (error) {
       if (isMissingRelationError(error)) {
         continue;
       }
+      if (options.strict) throwCanonicalReadError(error, tableName);
       continue;
     }
 
-    const normalized = normalizeImportedCareerBaselineRows((data || []) as Record<string, unknown>[], {
+    const normalized = normalizeImportedCareerBaselineRows(data, {
       sourceTable: tableName,
       leagueId,
       leagueSlug,
@@ -319,7 +426,7 @@ async function fetchImportedCareerBaselineRowsFromCandidates(
     });
 
     if (normalized.length > 0) {
-      return hydrateBaselineAvatarUrls(normalized);
+      return hydrateBaselineAvatarUrls(await verifyBaselineProfileIdentities(normalized, leagueId, options), options);
     }
   }
 
@@ -329,8 +436,9 @@ async function fetchImportedCareerBaselineRowsFromCandidates(
 async function getImportedCareerBaselineRows(
   leagueId: string,
   leagueSlug?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<ImportedCareerBaselineRow[]> {
-  const baselineRows = await fetchImportedCareerBaselineRowsFromCandidates(leagueId, leagueSlug);
+  const baselineRows = await fetchImportedCareerBaselineRowsFromCandidates(leagueId, leagueSlug, options);
   if (baselineRows.length > 0) {
     return baselineRows;
   }
@@ -339,13 +447,13 @@ async function getImportedCareerBaselineRows(
     return [];
   }
 
-  const legacyRows = await getLegacyAllTimePlayers();
+  const legacyRows = await getLegacyAllTimePlayers(options);
   const normalized = normalizeImportedCareerBaselineRows(legacyRows as unknown as Record<string, unknown>[], {
     sourceTable: 'legacy_players',
     defaultTeamName: IMPORTED_ALL_TIME_TEAM_LABEL,
   });
 
-  return hydrateBaselineAvatarUrls(normalized);
+  return hydrateBaselineAvatarUrls(await verifyBaselineProfileIdentities(normalized, leagueId, options), options);
 }
 
 function getThemePreset(league: League): ThemePreset {
@@ -534,7 +642,7 @@ export function getLeagueTheme(league: League): LeagueTheme {
  * older completed seasons so public league-sites stay aligned with the next
  * live season setup.
  */
-export async function getCurrentSeason(leagueId: string): Promise<Season | null> {
+export async function getCurrentSeason(leagueId: string, options: CanonicalReadOptions = {}): Promise<Season | null> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -545,6 +653,7 @@ export async function getCurrentSeason(leagueId: string): Promise<Season | null>
     .order('created_at', { ascending: false });
 
   if (error || !data || data.length === 0) {
+    if (error && options.strict) throwCanonicalReadError(error, 'current season');
     return null;
   }
 
@@ -594,6 +703,7 @@ async function getHistoricalCareerBaselineSeasonIdsForLeague(
   supabase: any,
   leagueId: string,
   seasonIds: Array<string | null | undefined>,
+  options: CanonicalReadOptions = {},
 ): Promise<Set<string>> {
   const normalizedSeasonIds = [...new Set(seasonIds.filter((seasonId): seasonId is string => Boolean(seasonId)))];
 
@@ -608,6 +718,7 @@ async function getHistoricalCareerBaselineSeasonIdsForLeague(
     .in('id', normalizedSeasonIds);
 
   if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'historical baseline seasons');
     return new Set();
   }
 
@@ -1496,7 +1607,8 @@ export async function getTeamRivals(teamId: string, limit = 3, seasonId?: string
  */
 export async function getStandings(
   leagueId: string,
-  seasonId?: string
+  seasonId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<TeamStanding[]> {
   const supabase = await createClient();
 
@@ -1508,12 +1620,14 @@ export async function getStandings(
     .eq('league_id', leagueId);
 
   if (seasonId) {
-    const { data: rosterTeams } = await supabase
+    const { data: rosterTeams, error: rosterTeamsError } = await supabase
       .from('team_rosters')
       .select('team_id')
       .eq('league_id', leagueId)
       .eq('season_id', seasonId)
       .eq('status', 'active');
+
+    if (rosterTeamsError && options.strict) throwCanonicalReadError(rosterTeamsError, 'standings team_rosters');
 
     if (rosterTeams && rosterTeams.length > 0) {
       const teamIds = [...new Set(rosterTeams.map(r => r.team_id))];
@@ -1521,7 +1635,8 @@ export async function getStandings(
     }
   }
 
-  const { data: teams } = await teamsQuery;
+  const { data: teams, error: teamsError } = await teamsQuery;
+  if (teamsError && options.strict) throwCanonicalReadError(teamsError, 'standings teams');
 
   const teamInfoMap = new Map(
     teams?.map((t) => {
@@ -1557,6 +1672,7 @@ export async function getStandings(
       .eq('status', 'completed');
 
     if (completedGamesError || !completedGames) {
+      if (completedGamesError && options.strict) throwCanonicalReadError(completedGamesError, 'standings completed games');
       return null;
     }
 
@@ -1650,6 +1766,10 @@ export async function getStandings(
     }
   );
 
+  if (rpcError && options.strict && !isMissingOptionalCapabilityError(rpcError)) {
+    throwCanonicalReadError(rpcError, 'get_team_standings');
+  }
+
   if (!rpcError && rpcData && Array.isArray(rpcData)) {
     // Enrich RPC data with team names and logos, filtering out teams with 0 games
     const enrichedStandings = rpcData.filter((s: any) => Number(s.games_played) > 0).map((s: any) => {
@@ -1691,6 +1811,7 @@ export async function getStandings(
   const { data: standings, error } = await standingsQuery;
 
   if (error || !standings) {
+    if (error && options.strict && !isMissingRelationError(error)) throwCanonicalReadError(error, 'team_standings');
     return [];
   }
 
@@ -3084,6 +3205,7 @@ function enrichUnifiedStatsRowsWithCurrentDisplayTeam<T extends UnifiedStatsRowB
 async function appendCurrentDisplayTeamMetadata<T extends UnifiedStatsRowBase>(
   leagueId: string,
   rows: T[],
+  options: CanonicalReadOptions = {},
 ): Promise<T[]> {
   if (rows.length === 0) {
     return rows;
@@ -3097,14 +3219,15 @@ async function appendCurrentDisplayTeamMetadata<T extends UnifiedStatsRowBase>(
   const supabase = await createClient();
 
   // Fetch the league logo to use as fallback for non-rostered players
-  const { data: leagueRow } = await supabase
+  const { data: leagueRow, error: leagueError } = await supabase
     .from('leagues')
     .select('logo_url')
     .eq('id', leagueId)
     .single();
+  if (leagueError && options.strict) throwCanonicalReadError(leagueError, 'display league');
   const fallbackLogoUrl = leagueRow?.logo_url || FREE_AGENT_DISPLAY_TEAM_LOGO_URL;
 
-  const currentSeason = await getCurrentSeason(leagueId);
+  const currentSeason = await getCurrentSeason(leagueId, options);
   if (!currentSeason) {
     return enrichUnifiedStatsRowsWithCurrentDisplayTeam(rows, [], fallbackLogoUrl);
   }
@@ -3125,6 +3248,7 @@ async function appendCurrentDisplayTeamMetadata<T extends UnifiedStatsRowBase>(
     .is('end_date', null);
 
   if (error || !currentSeasonRosters) {
+    if (error && options.strict) throwCanonicalReadError(error, 'current display rosters');
     return enrichUnifiedStatsRowsWithCurrentDisplayTeam(rows, [], fallbackLogoUrl);
   }
 
@@ -3145,18 +3269,20 @@ function normalizeImportedAggregateKey(value?: string | null) {
   return value?.trim().toLowerCase() ?? '';
 }
 
-async function getImportedAggregateProfileMap(seasonId: string, playerNames: string[]) {
+async function getImportedAggregateProfileMap(leagueId: string, seasonId: string, playerNames: string[], options: CanonicalReadOptions = {}) {
   const supabase = createServiceRoleClient() as any;
   const profileMap = new Map<string, ImportedAggregateProfileMetadata>();
 
-  const { data: rosterRows } = await supabase
+  const { data: rosterRows, error: rosterError } = await supabase
     .from('team_rosters')
     .select(`
       player_id,
       position,
       profile:profiles(id, full_name, avatar_url, photo_url, position)
     `)
+    .eq('league_id', leagueId)
     .eq('season_id', seasonId);
+  if (rosterError && options.strict) throwCanonicalReadError(rosterError, 'imported aggregate rosters');
 
   for (const row of rosterRows || []) {
     const profile = unwrapJoinedRecord(row.profile) as {
@@ -3183,34 +3309,45 @@ async function getImportedAggregateProfileMap(seasonId: string, playerNames: str
   )];
 
   if (missingNames.length > 0) {
-    const { data: profiles } = await supabase
+    const profiles = await readCanonicalBatchedRows<{
+      id: string; full_name: string | null; avatar_url: string | null; photo_url?: string | null; position?: string | null;
+    }>(missingNames, 'imported aggregate profiles', (batch) => supabase
       .from('profiles')
       .select('id, full_name, avatar_url, photo_url, position')
-      .in('full_name', missingNames);
-
+      .in('full_name', batch), options);
+    const candidateIds = [...new Set((profiles || []).map((profile) => profile.id).filter(Boolean))];
+    const [historicalRosters, baselineProofs] = await Promise.all([
+      readCanonicalBatchedRows<{ player_id: string }>(candidateIds, 'imported aggregate historical rosters', (batch) => supabase
+        .from('team_rosters').select('player_id').eq('league_id', leagueId).in('player_id', batch), options),
+      readCanonicalBatchedRows<{ player_id: string }>(candidateIds, 'imported aggregate baseline identities', (batch) => supabase
+        .from('player_career_baselines').select('player_id').eq('league_id', leagueId).in('player_id', batch), options),
+    ]);
+    const provenIds = new Set([...(historicalRosters || []), ...(baselineProofs || [])].map((row) => row.player_id));
+    const candidatesByName = new Map<string, NonNullable<typeof profiles>>();
     for (const profile of profiles || []) {
       const key = normalizeImportedAggregateKey(profile.full_name);
-      if (!key || !profile.id || profileMap.has(key)) {
-        continue;
-      }
-
-      profileMap.set(key, {
-        playerId: profile.id,
-        avatarUrl: resolvePlayerPhotoUrl(profile),
-        position: profile.position || null,
-      });
+      if (!key || !profile.id || !provenIds.has(profile.id)) continue;
+      const candidates = candidatesByName.get(key) || [];
+      candidates.push(profile);
+      candidatesByName.set(key, candidates);
+    }
+    for (const [key, candidates] of candidatesByName) {
+      if (profileMap.has(key) || candidates.length !== 1) continue;
+      const profile = candidates[0];
+      profileMap.set(key, { playerId: profile.id, avatarUrl: resolvePlayerPhotoUrl(profile), position: profile.position || null });
     }
   }
 
   return profileMap;
 }
 
-async function getImportedAggregateTeamMap(leagueId: string) {
+async function getImportedAggregateTeamMap(leagueId: string, options: CanonicalReadOptions = {}) {
   const supabase = createServiceRoleClient() as any;
-  const { data: teams } = await supabase
+  const { data: teams, error } = await supabase
     .from('teams')
     .select('id, name, division_id, divisions(name)')
     .eq('league_id', leagueId);
+  if (error && options.strict) throwCanonicalReadError(error, 'imported aggregate teams');
 
   const teamMap = new Map<string, ImportedAggregateTeamMetadata>();
   for (const team of teams || []) {
@@ -3233,6 +3370,7 @@ async function buildImportedAggregateSkaterRows(
   leagueId: string,
   seasonId: string,
   divisionId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedSkaterStatsRow[]> {
   const seeds = getImportedAggregateSkaterSeeds(seasonId);
   if (seeds.length === 0) {
@@ -3240,8 +3378,8 @@ async function buildImportedAggregateSkaterRows(
   }
 
   const [profileMap, teamMap] = await Promise.all([
-    getImportedAggregateProfileMap(seasonId, seeds.map((seed) => seed.playerName)),
-    getImportedAggregateTeamMap(leagueId),
+    getImportedAggregateProfileMap(leagueId, seasonId, seeds.map((seed) => seed.playerName), options),
+    getImportedAggregateTeamMap(leagueId, options),
   ]);
 
   const rows: UnifiedSkaterStatsRow[] = [];
@@ -3259,6 +3397,8 @@ async function buildImportedAggregateSkaterRows(
     const points = seed.goals + seed.assists;
     rows.push({
       player_id: profile.playerId,
+      profile_id: profile.playerId,
+      profile_id_league_verified: true,
       player_name: seed.playerName,
       avatar_url: profile.avatarUrl,
       team_id: team?.teamId ?? '',
@@ -3294,6 +3434,7 @@ async function buildImportedAggregateGoalieRows(
   leagueId: string,
   seasonId: string,
   divisionId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedGoalieStatsRow[]> {
   const seeds = getImportedAggregateGoalieSeeds(seasonId);
   if (seeds.length === 0) {
@@ -3301,8 +3442,8 @@ async function buildImportedAggregateGoalieRows(
   }
 
   const [profileMap, teamMap] = await Promise.all([
-    getImportedAggregateProfileMap(seasonId, seeds.map((seed) => seed.playerName)),
-    getImportedAggregateTeamMap(leagueId),
+    getImportedAggregateProfileMap(leagueId, seasonId, seeds.map((seed) => seed.playerName), options),
+    getImportedAggregateTeamMap(leagueId, options),
   ]);
 
   const rows: UnifiedGoalieStatsRow[] = [];
@@ -3320,6 +3461,8 @@ async function buildImportedAggregateGoalieRows(
     const totalShotsAgainst = seed.saves + seed.goalsAgainst;
     rows.push({
       player_id: profile.playerId,
+      profile_id: profile.playerId,
+      profile_id_league_verified: true,
       player_name: seed.playerName,
       avatar_url: profile.avatarUrl,
       team_id: team?.teamId ?? '',
@@ -3341,17 +3484,18 @@ async function buildImportedAggregateGoalieRows(
   return rows;
 }
 
-async function getFilteredTeamIds(leagueId: string, divisionId?: string) {
+async function getFilteredTeamIds(leagueId: string, divisionId?: string, options: CanonicalReadOptions = {}) {
   if (!divisionId) {
     return null;
   }
 
   const supabase = await createClient();
-  const { data: teams } = await supabase
+  const { data: teams, error } = await supabase
     .from('teams')
     .select('id')
     .eq('league_id', leagueId)
     .eq('division_id', divisionId);
+  if (error && options.strict) throwCanonicalReadError(error, 'division teams');
 
   return (teams || []).map((team) => team.id);
 }
@@ -3360,6 +3504,7 @@ async function appendNativeChampionshipCounts<T extends { player_id: string; cha
   leagueId: string,
   rows: T[],
   seasonId?: string | null,
+  options: CanonicalReadOptions = {},
 ): Promise<T[]> {
   if (rows.length === 0) {
     return rows;
@@ -3371,24 +3516,27 @@ async function appendNativeChampionshipCounts<T extends { player_id: string; cha
   }
 
   const supabase = await createClient();
-  let query = supabase
-    .from('player_badges')
-    .select('player_id')
-    .eq('league_id', leagueId)
-    .eq('badge_type', 'championship')
-    .in('player_id', playerIds);
-
-  if (seasonId) {
-    query = query.eq('season_id', seasonId);
-  }
-
-  const { data, error } = await query;
-  if (error || !data) {
+  const data = await readCanonicalBatchedRows<{ player_id: string | null }>(
+    playerIds,
+    'player championship badges',
+    (batch) => {
+      let query = supabase
+        .from('player_badges')
+        .select('player_id')
+        .eq('league_id', leagueId)
+        .eq('badge_type', 'championship')
+        .in('player_id', batch);
+      if (seasonId) query = query.eq('season_id', seasonId);
+      return query;
+    },
+    options,
+  );
+  if (!data) {
     return rows;
   }
 
   const counts = new Map<string, number>();
-  for (const badge of data as Array<{ player_id: string | null }>) {
+  for (const badge of data) {
     if (!badge.player_id) {
       continue;
     }
@@ -3416,10 +3564,11 @@ const IMPORTED_AGGREGATE_ALL_TIME_SEASON_IDS = [HLHL_WINTER_2026_SEASON_ID] as c
 async function getImportedAggregateAllTimeSkaterRows(
   leagueId: string,
   divisionId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedSkaterStatsRow[]> {
   const rows = await Promise.all(
     IMPORTED_AGGREGATE_ALL_TIME_SEASON_IDS.map((seasonId) =>
-      buildImportedAggregateSkaterRows(leagueId, seasonId, divisionId),
+      buildImportedAggregateSkaterRows(leagueId, seasonId, divisionId, options),
     ),
   );
 
@@ -3429,10 +3578,11 @@ async function getImportedAggregateAllTimeSkaterRows(
 async function getImportedAggregateAllTimeGoalieRows(
   leagueId: string,
   divisionId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedGoalieStatsRow[]> {
   const rows = await Promise.all(
     IMPORTED_AGGREGATE_ALL_TIME_SEASON_IDS.map((seasonId) =>
-      buildImportedAggregateGoalieRows(leagueId, seasonId, divisionId),
+      buildImportedAggregateGoalieRows(leagueId, seasonId, divisionId, options),
     ),
   );
 
@@ -3457,6 +3607,7 @@ function alignBaselineRowsToImportedAggregateProfiles(
       ...row,
       player_id: importedProfileId,
       profile_id: importedProfileId,
+      profile_id_league_verified: true,
     };
   });
 }
@@ -3465,8 +3616,9 @@ async function getNativeUnifiedSkaterStatsRows(
   leagueId: string,
   seasonId?: string | null,
   divisionId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedSkaterStatsRow[]> {
-  const filteredTeamIds = await getFilteredTeamIds(leagueId, divisionId);
+  const filteredTeamIds = await getFilteredTeamIds(leagueId, divisionId, options);
   if (divisionId && filteredTeamIds && filteredTeamIds.length === 0) {
     return [];
   }
@@ -3519,6 +3671,7 @@ async function getNativeUnifiedSkaterStatsRows(
   for (let offset = 0; ; offset += pageSize) {
     const { data: pageData, error: pageError } = await buildStatsQuery().range(offset, offset + pageSize - 1);
     if (pageError) {
+      if (options.strict) throwCanonicalReadError(pageError, `player_stats page ${offset}`);
       error = pageError;
       break;
     }
@@ -3539,7 +3692,7 @@ async function getNativeUnifiedSkaterStatsRows(
     const rows = data as unknown as RawSkaterStatsRow[];
     const hiddenSeasonIds =
       seasonId == null
-        ? await getHistoricalCareerBaselineSeasonIdsForLeague(supabase, leagueId, rows.map((row) => row.season_id))
+        ? await getHistoricalCareerBaselineSeasonIdsForLeague(supabase, leagueId, rows.map((row) => row.season_id), options)
         : new Set<string>();
     visibleRows = hiddenSeasonIds.size > 0
       ? rows.filter((row) => !hiddenSeasonIds.has(row.season_id ?? ''))
@@ -3556,17 +3709,20 @@ async function getNativeUnifiedSkaterStatsRows(
     const teamIds = [...new Set(visibleRows.map((row) => row.team_id).filter(Boolean))];
     const seasonIds = [...new Set(visibleRows.map((row) => row.season_id).filter(Boolean))];
 
-    let rosterQuery = supabase
-      .from('team_rosters')
-      .select('player_id, team_id, season_id, position, is_goalie, jersey_number')
-      .in('player_id', playerIds)
-      .in('team_id', teamIds);
-
-    if (seasonIds.length > 0) {
-      rosterQuery = rosterQuery.in('season_id', seasonIds);
-    }
-
-    const { data: rosterRows } = await rosterQuery;
+    const rosterRows = await readCanonicalBatchedRows<RosterDisplayRow>(
+      playerIds,
+      'player_stats rosters',
+      (batch) => {
+        let query = supabase
+          .from('team_rosters')
+          .select('player_id, team_id, season_id, position, is_goalie, jersey_number')
+          .in('player_id', batch)
+          .in('team_id', teamIds);
+        if (seasonIds.length > 0) query = query.in('season_id', seasonIds);
+        return query;
+      },
+      options,
+    );
     for (const row of (rosterRows || []) as unknown as RosterDisplayRow[]) {
       rosterMap.set(`${row.player_id}:${row.team_id}:${row.season_id ?? 'any'}`, row);
     }
@@ -3780,21 +3936,32 @@ async function buildAllTimeSkaterRows(
   leagueId: string,
   divisionId?: string,
   leagueSlug?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<AllTimeSkaterRowsResult> {
   const [baselineRows, nativeRows, importedAggregateRows] = await Promise.all([
-    getImportedCareerBaselineRows(leagueId, leagueSlug),
-    getNativeUnifiedSkaterStatsRows(leagueId, undefined, divisionId),
-    getImportedAggregateAllTimeSkaterRows(leagueId, divisionId),
+    getImportedCareerBaselineRows(leagueId, leagueSlug, options),
+    getNativeUnifiedSkaterStatsRows(leagueId, undefined, divisionId, options),
+    getImportedAggregateAllTimeSkaterRows(leagueId, divisionId, options),
   ]);
   const alignedBaselineRows = alignBaselineRowsToImportedAggregateProfiles(baselineRows, importedAggregateRows);
 
   const profileIdsByPlayerId = new Map<string, string | null>();
+  const verifiedProfilePlayerIds = new Set<string>([...nativeRows, ...importedAggregateRows]
+    .filter((row) => row.profile_id_league_verified !== false)
+    .map((row) => row.player_id));
   for (const row of alignedBaselineRows) {
     profileIdsByPlayerId.set(row.player_id, row.profile_id);
+    if (row.profile_id_league_verified) verifiedProfilePlayerIds.add(row.player_id);
   }
 
   return {
-    rows: mergeAllTimeSkaterRows(alignedBaselineRows, [...nativeRows, ...importedAggregateRows]),
+    rows: mergeAllTimeSkaterRows(alignedBaselineRows, [...nativeRows, ...importedAggregateRows]).map((row) => ({
+      ...row,
+      profile_id: profileIdsByPlayerId.has(row.player_id)
+        ? profileIdsByPlayerId.get(row.player_id) ?? null
+        : row.player_id,
+      profile_id_league_verified: verifiedProfilePlayerIds.has(row.player_id),
+    })),
     profileIdsByPlayerId,
   };
 }
@@ -3805,44 +3972,48 @@ export async function getUnifiedSkaterStatsRows(
   divisionId?: string,
   leagueSlug?: string,
   seasonName?: string | null,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedSkaterStatsRow[]> {
   let rows: UnifiedSkaterStatsRow[];
 
   if (seasonId === null) {
-    const allTimeRows = await buildAllTimeSkaterRows(leagueId, divisionId, leagueSlug);
-    rows = await appendNativeChampionshipCounts(leagueId, allTimeRows.rows, null);
-    return appendCurrentDisplayTeamMetadata(leagueId, rows);
+    const allTimeRows = await buildAllTimeSkaterRows(leagueId, divisionId, leagueSlug, options);
+    rows = await appendNativeChampionshipCounts(leagueId, allTimeRows.rows, null, options);
+    return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
   }
 
   if (seasonId && isImportedAggregateSeasonId(seasonId)) {
     rows = await appendNativeChampionshipCounts(
       leagueId,
-      await buildImportedAggregateSkaterRows(leagueId, seasonId, divisionId),
+      await buildImportedAggregateSkaterRows(leagueId, seasonId, divisionId, options),
       seasonId,
+      options,
     );
-    return appendCurrentDisplayTeamMetadata(leagueId, rows);
+    return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
   }
 
   if (isHistoricalCareerBaselineSeasonName(seasonName)) {
-    const baselineRows = await getImportedCareerBaselineRows(leagueId, leagueSlug);
+    const baselineRows = await getImportedCareerBaselineRows(leagueId, leagueSlug, options);
     rows = buildHistoricalBaselineSkaterRows(baselineRows);
-    return appendCurrentDisplayTeamMetadata(leagueId, rows);
+    return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
   }
 
   rows = await appendNativeChampionshipCounts(
     leagueId,
-    await getNativeUnifiedSkaterStatsRows(leagueId, seasonId, divisionId),
+    await getNativeUnifiedSkaterStatsRows(leagueId, seasonId, divisionId, options),
     seasonId,
+    options,
   );
-  return appendCurrentDisplayTeamMetadata(leagueId, rows);
+  return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
 }
 
 async function getNativeUnifiedGoalieStatsRows(
   leagueId: string,
   seasonId?: string | null,
   divisionId?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedGoalieStatsRow[]> {
-  const filteredTeamIds = await getFilteredTeamIds(leagueId, divisionId);
+  const filteredTeamIds = await getFilteredTeamIds(leagueId, divisionId, options);
   if (divisionId && filteredTeamIds && filteredTeamIds.length === 0) {
     return [];
   }
@@ -3885,6 +4056,7 @@ async function getNativeUnifiedGoalieStatsRows(
   for (let offset = 0; ; offset += pageSize) {
     const { data: pageData, error: pageError } = await buildStatsQuery().range(offset, offset + pageSize - 1);
     if (pageError) {
+      if (options.strict) throwCanonicalReadError(pageError, `goalie_stats page ${offset}`);
       error = pageError;
       break;
     }
@@ -3911,7 +4083,7 @@ async function getNativeUnifiedGoalieStatsRows(
   const rows = data as unknown as RawGoalieStatsRow[];
   const hiddenSeasonIds =
     seasonId == null
-      ? await getHistoricalCareerBaselineSeasonIdsForLeague(supabase, leagueId, rows.map((row) => row.season_id))
+      ? await getHistoricalCareerBaselineSeasonIdsForLeague(supabase, leagueId, rows.map((row) => row.season_id), options)
       : new Set<string>();
   const visibleRows = hiddenSeasonIds.size > 0
     ? rows.filter((row) => !hiddenSeasonIds.has(row.season_id ?? ''))
@@ -3927,21 +4099,24 @@ async function getNativeUnifiedGoalieStatsRows(
   const teamIds = [...new Set(visibleRows.map((row) => row.team_id).filter(Boolean))];
   const seasonIds = [...new Set(visibleRows.map((row) => row.season_id).filter(Boolean))];
 
-  let rosterQuery = supabase
-    .from('team_rosters')
-    .select('player_id, team_id, season_id, jersey_number')
-    .in('player_id', playerIds)
-    .in('team_id', teamIds);
-
-  if (seasonIds.length > 0) {
-    rosterQuery = rosterQuery.in('season_id', seasonIds);
-  }
-
-  const { data: rosterRows } = await rosterQuery;
+  const rosterRows = await readCanonicalBatchedRows<Pick<RosterDisplayRow, 'player_id' | 'team_id' | 'season_id' | 'jersey_number'>>(
+    playerIds,
+    'goalie_stats rosters',
+    (batch) => {
+      let query = supabase
+        .from('team_rosters')
+        .select('player_id, team_id, season_id, jersey_number')
+        .in('player_id', batch)
+        .in('team_id', teamIds);
+      if (seasonIds.length > 0) query = query.in('season_id', seasonIds);
+      return query;
+    },
+    options,
+  );
 
   const aggregated = aggregateNativeGoalieStatsRows(
     visibleRows,
-    (rosterRows || []) as Array<Pick<RosterDisplayRow, 'player_id' | 'team_id' | 'season_id' | 'jersey_number'>>,
+    rosterRows || [],
     seasonId,
   );
 
@@ -4009,21 +4184,32 @@ async function buildAllTimeGoalieRows(
   leagueId: string,
   divisionId?: string,
   leagueSlug?: string,
+  options: CanonicalReadOptions = {},
 ): Promise<AllTimeGoalieRowsResult> {
   const [baselineRows, nativeRows, importedAggregateRows] = await Promise.all([
-    getImportedCareerBaselineRows(leagueId, leagueSlug),
-    getNativeUnifiedGoalieStatsRows(leagueId, undefined, divisionId),
-    getImportedAggregateAllTimeGoalieRows(leagueId, divisionId),
+    getImportedCareerBaselineRows(leagueId, leagueSlug, options),
+    getNativeUnifiedGoalieStatsRows(leagueId, undefined, divisionId, options),
+    getImportedAggregateAllTimeGoalieRows(leagueId, divisionId, options),
   ]);
   const alignedBaselineRows = alignBaselineRowsToImportedAggregateProfiles(baselineRows, importedAggregateRows);
 
   const profileIdsByPlayerId = new Map<string, string | null>();
+  const verifiedProfilePlayerIds = new Set<string>([...nativeRows, ...importedAggregateRows]
+    .filter((row) => row.profile_id_league_verified !== false)
+    .map((row) => row.player_id));
   for (const row of alignedBaselineRows) {
     profileIdsByPlayerId.set(row.player_id, row.profile_id);
+    if (row.profile_id_league_verified) verifiedProfilePlayerIds.add(row.player_id);
   }
 
   return {
-    rows: mergeAllTimeGoalieRows(alignedBaselineRows, [...nativeRows, ...importedAggregateRows]).map(({ shots_against: _shotsAgainst, ...row }) => row),
+    rows: mergeAllTimeGoalieRows(alignedBaselineRows, [...nativeRows, ...importedAggregateRows]).map(({ shots_against: _shotsAgainst, ...row }) => ({
+      ...row,
+      profile_id: profileIdsByPlayerId.has(row.player_id)
+        ? profileIdsByPlayerId.get(row.player_id) ?? null
+        : row.player_id,
+      profile_id_league_verified: verifiedProfilePlayerIds.has(row.player_id),
+    })),
     profileIdsByPlayerId,
   };
 }
@@ -4034,36 +4220,39 @@ export async function getUnifiedGoalieStatsRows(
   divisionId?: string,
   leagueSlug?: string,
   seasonName?: string | null,
+  options: CanonicalReadOptions = {},
 ): Promise<UnifiedGoalieStatsRow[]> {
   let rows: UnifiedGoalieStatsRow[];
 
   if (seasonId === null) {
-    const allTimeRows = await buildAllTimeGoalieRows(leagueId, divisionId, leagueSlug);
-    rows = await appendNativeChampionshipCounts(leagueId, allTimeRows.rows, null);
-    return appendCurrentDisplayTeamMetadata(leagueId, rows);
+    const allTimeRows = await buildAllTimeGoalieRows(leagueId, divisionId, leagueSlug, options);
+    rows = await appendNativeChampionshipCounts(leagueId, allTimeRows.rows, null, options);
+    return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
   }
 
   if (seasonId && isImportedAggregateSeasonId(seasonId)) {
     rows = await appendNativeChampionshipCounts(
       leagueId,
-      await buildImportedAggregateGoalieRows(leagueId, seasonId, divisionId),
+      await buildImportedAggregateGoalieRows(leagueId, seasonId, divisionId, options),
       seasonId,
+      options,
     );
-    return appendCurrentDisplayTeamMetadata(leagueId, rows);
+    return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
   }
 
   if (isHistoricalCareerBaselineSeasonName(seasonName)) {
-    const baselineRows = await getImportedCareerBaselineRows(leagueId, leagueSlug);
+    const baselineRows = await getImportedCareerBaselineRows(leagueId, leagueSlug, options);
     rows = buildHistoricalBaselineGoalieRows(baselineRows);
-    return appendCurrentDisplayTeamMetadata(leagueId, rows);
+    return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
   }
 
   rows = await appendNativeChampionshipCounts(
     leagueId,
-    await getNativeUnifiedGoalieStatsRows(leagueId, seasonId, divisionId),
+    await getNativeUnifiedGoalieStatsRows(leagueId, seasonId, divisionId, options),
     seasonId,
+    options,
   );
-  return appendCurrentDisplayTeamMetadata(leagueId, rows);
+  return appendCurrentDisplayTeamMetadata(leagueId, rows, options);
 }
 
 /**
