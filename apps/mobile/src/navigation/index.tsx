@@ -47,6 +47,11 @@ import TeamChatScreen from '../screens/team/TeamChatScreen';
 import TeamsDirectoryScreen from '../screens/league-pages/TeamsDirectoryScreen';
 import PlayersDirectoryScreen from '../screens/league-pages/PlayersDirectoryScreen';
 import PlayoffsDirectoryScreen from '../screens/league-pages/PlayoffsDirectoryScreen';
+import NewsFeedScreen from '../screens/league-pages/NewsFeedScreen';
+import NewsArticleScreen from '../screens/league-pages/NewsArticleScreen';
+import LeagueHistoryScreen from '../screens/league-pages/LeagueHistoryScreen';
+import GalleryAlbumsScreen from '../screens/league-pages/GalleryAlbumsScreen';
+import GalleryAlbumScreen from '../screens/league-pages/GalleryAlbumScreen';
 
 import colors from '../theme/colors';
 import { getSurfacePalette } from '../theme/ui';
@@ -76,7 +81,6 @@ export const PUBLIC_MORE_PAGE_LABELS = [
   'Players',
   'Playoffs',
   'News',
-  'Suspensions',
   'History',
   'Gallery',
   'Events',
@@ -192,6 +196,11 @@ function LeaguePagesNavigator() {
       <LeaguePagesStack.Screen name="TeamsDirectory" component={TeamsDirectoryScreen} />
       <LeaguePagesStack.Screen name="PlayersDirectory" component={PlayersDirectoryScreen} />
       <LeaguePagesStack.Screen name="PlayoffsDirectory" component={PlayoffsDirectoryScreen} />
+      <LeaguePagesStack.Screen name="NewsFeed" component={NewsFeedScreen} />
+      <LeaguePagesStack.Screen name="NewsArticle" component={NewsArticleScreen} />
+      <LeaguePagesStack.Screen name="LeagueHistory" component={LeagueHistoryScreen} />
+      <LeaguePagesStack.Screen name="GalleryAlbums" component={GalleryAlbumsScreen} />
+      <LeaguePagesStack.Screen name="GalleryAlbum" component={GalleryAlbumScreen} />
       <LeaguePagesStack.Screen name="LeagueTeamDetail" component={LeagueTeamDetailComponent} />
       <LeaguePagesStack.Screen name="LeaguePlayerCard" component={LeaguePlayerCardComponent} />
       <LeaguePagesStack.Screen name="LeagueGamePreview" component={LeagueGamePreviewComponent} />

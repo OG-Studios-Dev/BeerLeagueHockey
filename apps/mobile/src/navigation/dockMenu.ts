@@ -3,7 +3,6 @@ export const PUBLIC_MORE_ITEMS = [
   ['players', 'Players', '/players'],
   ['playoffs', 'Playoffs', '/playoffs'],
   ['news', 'News', '/news'],
-  ['suspensions', 'Suspensions', '/suspensions'],
   ['history', 'History', '/history'],
   ['gallery', 'Gallery', '/gallery'],
   ['events', 'Events', '/events'],
@@ -49,7 +48,6 @@ const PUBLIC_ICONS: Record<(typeof PUBLIC_MORE_ITEMS)[number][0], string> = {
   players: 'people-circle-outline',
   playoffs: 'trophy-outline',
   news: 'newspaper-outline',
-  suspensions: 'shield-outline',
   history: 'ribbon-outline',
   gallery: 'images-outline',
   events: 'calendar-outline',
@@ -98,7 +96,10 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
     if (pageKey === 'playoffs' && !input.isPlayoffs) return [];
     const nativeScreen = pageKey === 'teams' ? 'TeamsDirectory'
       : pageKey === 'players' ? 'PlayersDirectory'
-      : pageKey === 'playoffs' ? 'PlayoffsDirectory' : null;
+      : pageKey === 'playoffs' ? 'PlayoffsDirectory'
+      : pageKey === 'news' ? 'NewsFeed'
+      : pageKey === 'history' ? 'LeagueHistory'
+      : pageKey === 'gallery' ? 'GalleryAlbums' : null;
     return [{
       key: `league-${pageKey}`,
       label,

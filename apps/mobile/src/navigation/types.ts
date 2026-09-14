@@ -51,6 +51,11 @@ export type LeaguePagesStackParamList = {
   TeamsDirectory: LeaguePageScopeParams;
   PlayersDirectory: LeaguePageScopeParams;
   PlayoffsDirectory: LeaguePageScopeParams;
+  NewsFeed: LeaguePageScopeParams;
+  NewsArticle: LeaguePageScopeParams & { articleSlug: string };
+  LeagueHistory: LeaguePageScopeParams;
+  GalleryAlbums: LeaguePageScopeParams;
+  GalleryAlbum: LeaguePageScopeParams & { albumId: string };
   LeagueTeamDetail: { teamId: string; leagueId: string };
   LeaguePlayerCard: PlayerCardParams;
   LeagueGamePreview: { gameId: string };

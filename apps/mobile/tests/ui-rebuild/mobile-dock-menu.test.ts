@@ -21,7 +21,10 @@ describe('mobile More catalog', () => {
     assert.deepEqual(byLabel.get('Home'), { kind: 'native', tab: 'Home' });
     assert.deepEqual(byLabel.get('Teams'), { kind: 'native', tab: 'LeaguePages', screen: 'TeamsDirectory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
     assert.deepEqual(byLabel.get('Players'), { kind: 'native', tab: 'LeaguePages', screen: 'PlayersDirectory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
-    assert.deepEqual(byLabel.get('News'), { kind: 'external', url: 'https://hockey-life.beerleaguehockey.ca/news' });
+    assert.deepEqual(byLabel.get('News'), { kind: 'native', tab: 'LeaguePages', screen: 'NewsFeed', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.deepEqual(byLabel.get('History'), { kind: 'native', tab: 'LeaguePages', screen: 'LeagueHistory', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.deepEqual(byLabel.get('Gallery'), { kind: 'native', tab: 'LeaguePages', screen: 'GalleryAlbums', params: { leagueId: base.leagueId, leagueSlug: base.leagueSlug } });
+    assert.equal(byLabel.has('Suspensions'), false);
     assert.deepEqual(byLabel.get('Discover Leagues'), { kind: 'native', tab: 'Discover', screen: 'DiscoverMain' });
     assert.deepEqual(byLabel.get('Account'), { kind: 'native', tab: 'Profile', screen: 'ProfileMain' });
   });

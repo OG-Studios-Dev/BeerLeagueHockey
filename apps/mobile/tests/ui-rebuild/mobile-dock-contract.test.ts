@@ -41,7 +41,6 @@ describe('native web-style dock contract', () => {
       'Players',
       'Playoffs',
       'News',
-      'Suspensions',
       'History',
       'Gallery',
       'Events',
