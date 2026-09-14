@@ -23,15 +23,14 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
     else if (target.kind === 'game') navigation.navigate('LeagueGamePreview', { gameId: target.id });
     else if (target.kind === 'article') navigation.push('NewsArticle', { ...scope, articleSlug: target.slug });
   };
-  if (!page.data) return <LeaguePageFrame><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
+  if (!page.data) return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
   const article = page.data.article;
   const openMention = (kind: 'player' | 'team' | 'game', id: string) => {
     if (kind === 'player') navigation.navigate('LeaguePlayerCard', { playerId: id, leagueId: scope.leagueId });
     else if (kind === 'team') navigation.navigate('LeagueTeamDetail', { teamId: id, leagueId: scope.leagueId });
     else navigation.navigate('LeagueGamePreview', { gameId: id });
   };
-  return <LeaguePageFrame>
-    <Pressable accessibilityRole="button" onPress={() => navigation.goBack()} style={styles.back}><Text style={styles.link}>← Back to News</Text></Pressable>
+  return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}>
     {article.imageUrl ? <Image source={{ uri: article.imageUrl }} resizeMode="cover" style={styles.hero} accessibilityLabel={article.title} alt={article.title} /> : null}
     <Text accessibilityRole="header" style={styles.title}>{article.title}</Text>
     <Text style={styles.meta}>{new Date(article.publishedAt).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}{article.authorName ? ` · ${article.authorName}` : ''}</Text>
@@ -42,4 +41,4 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
   </LeaguePageFrame>;
 }
 
-const styles = StyleSheet.create({ back: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }, hero: { width: '100%', aspectRatio: 16 / 9, borderRadius: 22, backgroundColor: colors.bgElevated }, title: { color: colors.textPrimary, fontSize: 30, lineHeight: 37, fontWeight: '900', marginTop: 18 }, meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6 }, body: { marginTop: 22 }, bodyHeading: { color: colors.textPrimary, fontSize: 21, lineHeight: 27, fontWeight: '900', marginTop: 9, marginBottom: 10 }, paragraph: { color: colors.textPrimary, fontSize: 17, lineHeight: 27, marginBottom: 17 }, bullet: { color: colors.textPrimary, fontSize: 16, lineHeight: 25, marginBottom: 7, paddingLeft: 8 }, strong: { fontWeight: '900' }, link: { color: colors.textInteractive, fontWeight: '800' }, mentions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, mention: { minHeight: 48, maxWidth: '100%', justifyContent: 'center', borderRadius: 24, backgroundColor: colors.bgInteractive, borderColor: colors.glassStroke, borderWidth: 1, paddingHorizontal: 15 }, person: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 9 }, grow: { flex: 1, minWidth: 0 }, personName: { color: colors.textPrimary, fontSize: 16, fontWeight: '900' }, game: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }, gameName: { flex: 1, color: colors.textPrimary, fontWeight: '800' } });
+const styles = StyleSheet.create({ hero: { width: '100%', aspectRatio: 16 / 9, borderRadius: 22, backgroundColor: colors.bgElevated }, title: { color: colors.textPrimary, fontSize: 30, lineHeight: 37, fontWeight: '900', marginTop: 18 }, meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6 }, body: { marginTop: 22 }, bodyHeading: { color: colors.textPrimary, fontSize: 21, lineHeight: 27, fontWeight: '900', marginTop: 9, marginBottom: 10 }, paragraph: { color: colors.textPrimary, fontSize: 17, lineHeight: 27, marginBottom: 17 }, bullet: { color: colors.textPrimary, fontSize: 16, lineHeight: 25, marginBottom: 7, paddingLeft: 8 }, strong: { fontWeight: '900' }, link: { color: colors.textInteractive, fontWeight: '800' }, mentions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, mention: { minHeight: 48, maxWidth: '100%', justifyContent: 'center', borderRadius: 24, backgroundColor: colors.bgInteractive, borderColor: colors.glassStroke, borderWidth: 1, paddingHorizontal: 15 }, person: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 9 }, grow: { flex: 1, minWidth: 0 }, personName: { color: colors.textPrimary, fontSize: 16, fontWeight: '900' }, game: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }, gameName: { flex: 1, color: colors.textPrimary, fontWeight: '800' } });

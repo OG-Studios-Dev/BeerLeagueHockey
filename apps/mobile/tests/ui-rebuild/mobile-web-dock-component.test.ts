@@ -69,6 +69,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
         useWindowDimensions: () => ({ width: 390, height: 844 }),
       },
       'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }) },
+      '../components/LeagueLogo': (props: Record<string, unknown>) => createElement('LeagueLogo', props),
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: options.reduceMotion ?? true, reduceTransparency: false }) },
       '../context/AuthContext': { useAuth: () => ({ user: options.member ? { id: 'user-a' } : null, isGuest: !options.member }) },
@@ -166,7 +167,7 @@ describe('MobileWebDock component integration', () => {
     for (let index = 1; index < groupLabels.length; index += 1) {
       assert.ok(panelText.indexOf(groupLabels[index - 1]) < panelText.indexOf(groupLabels[index]));
     }
-    assert.match(panelText, /^MoreLeague ALeague/);
+    assert.match(panelText, /^MoreLeague AHomeSwitch leagueLeague/);
     assert.doesNotMatch(panelText, /LEAGUE NAVIGATION|Every page, one smooth move away/);
 
     const teams = findNode(sheet, (node) => node.props.testID === 'more-item-league-teams');
@@ -181,6 +182,42 @@ describe('MobileWebDock component integration', () => {
     assert.equal(teamsLabel?.props.numberOfLines, undefined);
   });
 
+  it('offers the active league identity as a guarded Home target and league selection separately', () => {
+    const fixture = createDockFixture({}, { reduceMotion: true });
+    fixture.mount();
+    fixture.openMore();
+
+    const leagueHome = findNode(fixture.harness.output, (node) => node.props.testID === 'more-league-home');
+    const logo = findNode(leagueHome, (node) => node.type === 'LeagueLogo');
+    assert.equal(leagueHome?.props.accessibilityLabel, 'League A home');
+    assert.equal(logo?.props.logoUrl, null);
+    assert.equal(logo?.props.leagueName, 'League A');
+    assert.match(nodeText(leagueHome), /League AHome/);
+
+    leagueHome!.props.onPress();
+    assert.deepEqual(fixture.navigationCalls, [['Home']]);
+
+    fixture.openMore();
+    const switchLeague = findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Switch league');
+    assert.ok(switchLeague);
+    switchLeague.props.onPress();
+    assert.deepEqual(fixture.navigationCalls.at(-1), ['LeagueSelect']);
+  });
+
+  it('keeps the outer host and inset transparent while the real capsule remains colored', () => {
+    const fixture = createDockFixture();
+    fixture.mount();
+    const outer = findNode(fixture.harness.output, (node) => node.props.testID === 'mobile-web-dock');
+    const surface = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-surface');
+    const outerStyle = flattenStyle(outer?.props.style);
+    const surfaceStyle = flattenStyle(surface?.props.style);
+
+    assert.equal(outerStyle.position, undefined, 'the custom tab host keeps its measured layout so scroll extents do not change');
+    assert.equal(outerStyle.backgroundColor, 'transparent');
+    assert.equal(surfaceStyle.backgroundColor, '#080F1C');
+    assert.ok(findNode(surface, (node) => node.type === 'LinearGradient'));
+  });
+
   it('renders every eligible action once and reserves the outbound icon for external destinations', () => {
     const fixture = createDockFixture({
       isPlayoffs: true,
@@ -193,7 +230,7 @@ describe('MobileWebDock component integration', () => {
     fixture.openMore();
     const sheet = findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet');
 
-    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Register', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Home', 'Discover Leagues', 'Long custom league handbook link that must wrap in full'];
+    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Register', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Discover Leagues', 'Long custom league handbook link that must wrap in full'];
     for (const label of expected) {
       const matches: unknown[] = [];
       const visit = (root: unknown) => {
@@ -206,6 +243,8 @@ describe('MobileWebDock component integration', () => {
       visit(sheet);
       assert.equal(matches.length, 1, `${label} should render exactly once`);
     }
+    assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-app-home'), undefined, 'the league identity row replaces the duplicate catalog Home row');
+    assert.ok(findNode(sheet, (node) => node.props.testID === 'more-league-home'));
     assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-league-teams-external'), undefined);
     assert.ok(findNode(sheet, (node) => node.props.testID === 'more-item-league-register-external'));
     assert.ok(findNode(sheet, (node) => node.props.testID?.startsWith('more-item-custom-') && node.props.testID.endsWith('-external')));

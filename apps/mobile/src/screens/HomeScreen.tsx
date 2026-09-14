@@ -374,7 +374,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   React.useEffect(() => { setStoryIndex(0); }, [activeLeague?.id, publicHome?.presentationSeason?.id, storyIds]);
 
   if (!activeLeague) {
-    return <LeagueMarketplace navigation={navigation} title="BLH Overview" subtitle="Nearby leagues, fit, and difficulty across Beer League Hockey." showJoinedLeagues includeTopInset={false} />;
+    return <LeagueMarketplace navigation={navigation} title="BLH Overview" subtitle="Nearby leagues, fit, and difficulty across Beer League Hockey." showJoinedLeagues includeTopInset />;
   }
 
   const canCheckIn = Boolean(user && !isGuest && !isGuestLeague && personal.team && personal.game);
@@ -434,13 +434,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const sectionCard = [styles.card, { backgroundColor: visuals.surface, borderColor: visuals.stroke }];
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['top', 'left', 'right']}>
       <HomeArenaBackdrop accentColor={accent} showAtmosphericGlow={visuals.showAtmosphericGlow} />
       <GuestBanner />
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />} showsVerticalScrollIndicator={false}>
         <RevealView delay={20} duration={visuals.revealDuration}>
-          <View testID="home-editorial-header" style={styles.headerRow}>
-            <View style={styles.brandWrap}><View style={[styles.logoFrame, { borderColor: visuals.stroke }]}><Image source={hockeyLifeLogo} style={styles.smallLogo} alt="" /></View><View style={styles.brandCopy}><Text style={[styles.homeEyebrow, { color: accent }]}>LEAGUE HOME</Text><Text style={[styles.logo, compact && styles.logoCompact]}>{activeLeague.name}</Text></View></View>
+          <View style={styles.contentActions}>
             <Pressable accessibilityRole="button" accessibilityLabel="Updates" style={[styles.iconButton, { backgroundColor: visuals.surface, borderColor: visuals.stroke }]} onPress={() => navigation?.navigate?.('Profile', { screen: 'NotificationsFeed' })}><Ionicons name="notifications-outline" size={20} color={homeTokens.text} /></Pressable>
           </View>
         </RevealView>
@@ -527,14 +526,7 @@ const styles = StyleSheet.create({
   arenaCenterLine: { position: 'absolute', top: '50%', right: 0, left: 0, height: 1, backgroundColor: homeTokens.rinkLine },
   arenaCenterCircle: { position: 'absolute', top: 191, left: 81, width: 86, height: 86, borderWidth: 1, borderColor: homeTokens.rinkLine, borderRadius: 43 },
   content: { paddingHorizontal: homeTokens.contentPadding, paddingTop: 6, paddingBottom: 34, gap: 20 },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingVertical: 12 },
-  brandWrap: { flex: 1, flexDirection: 'row', gap: 10, marginRight: 10 },
-  brandCopy: { flex: 1, minWidth: 0 },
-  logoFrame: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, backgroundColor: homeTokens.control, alignItems: 'center', justifyContent: 'center' },
-  smallLogo: { width: 30, height: 30, resizeMode: 'contain' },
-  homeEyebrow: { fontSize: 10, lineHeight: 13, fontWeight: '900', letterSpacing: 1.8 },
-  logo: { color: homeTokens.text, fontSize: 24, lineHeight: 28, fontWeight: '900', letterSpacing: -0.5 },
-  logoCompact: { fontSize: 19, lineHeight: 23 },
+  contentActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   iconButton: { width: 44, height: 44, minHeight: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   sectionHeading: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 9 },
   sectionHeadingCopy: { flex: 1 },

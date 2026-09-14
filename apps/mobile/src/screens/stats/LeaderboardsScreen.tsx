@@ -135,14 +135,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Leaderboards</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <Text style={styles.emptyText}>Select a league to view leaderboards</Text>
         </View>
@@ -151,15 +144,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Leaderboards</Text>
-        <View style={styles.backBtn} />
-      </View>
-
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <View style={styles.filterWrap}>
         <PillToggle options={categories} selected={category} onChange={setCategory} />
       </View>
@@ -271,17 +256,6 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
   retryButton: { marginTop: 14, paddingHorizontal: 18, paddingVertical: 10 },

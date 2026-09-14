@@ -118,7 +118,7 @@ describe('native Standings dock destination', () => {
     screen.harness.mount(() => screen.StandingsScreen({ navigation: { navigate: () => {} } }));
     await settle(screen.harness);
 
-    assert.match(nodeText(screen.harness.output), /Standings/);
+    assert.doesNotMatch(nodeText(screen.harness.output), /^Standings/);
     assert.match(nodeText(screen.harness.output), /Ice Owls/);
     assert.match(nodeText(screen.harness.output), /Ice Owls4316/);
     assert.ok(screen.counts().standingsReads > 0);

@@ -8,7 +8,6 @@ import DivisionFilter from '../components/DivisionFilter';
 import GuestBanner from '../components/GuestBanner';
 import PillToggle from '../components/PillToggle';
 import PlayerRow from '../components/PlayerRow';
-import SectionHeader from '../components/SectionHeader';
 import StatsLeadersCard, { type StatsLeaderMetric, type StatsLeaderStatus } from '../components/StatsLeadersCard';
 import { useLeague } from '../context/LeagueContext';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
@@ -183,8 +182,7 @@ export default function StatsScreen() {
 
   if (!activeLeague && availableLeagues.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.headerWrap}><SectionHeader title="League Leaders" /></View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.emptyWrap}><Text style={styles.emptyTitle}>Join a league to see leaderboards</Text></View>
       </SafeAreaView>
     );
@@ -192,10 +190,9 @@ export default function StatsScreen() {
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
         <GuestBanner />
         <View style={styles.headerWrap}>
-          <SectionHeader title="League Leaders" />
           <Text style={styles.globalIntro}>
             Top {selectedTab === 'Skaters' ? 'skaters' : 'goalies'} across the leagues you play in.
           </Text>
@@ -255,18 +252,7 @@ export default function StatsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerTitleWrap}><SectionHeader title="Stats" /></View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => navigation.navigate('Leaderboards')}
-          style={styles.leaderboardsAction}
-          testID="stats-leaderboards-action"
-        >
-          <Text style={styles.leaderboardsActionText}>Leaderboards</Text>
-        </Pressable>
-      </View>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
       <FlatList
         testID="stats-page-list"
         data={(selectedTab === 'Skaters' ? seasonView.status === 'loading' : goalieView.status === 'loading') ? [] : list}
@@ -274,6 +260,16 @@ export default function StatsScreen() {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
+            <View style={styles.statsActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => navigation.navigate('Leaderboards')}
+                style={styles.leaderboardsAction}
+                testID="stats-leaderboards-action"
+              >
+                <Text style={styles.leaderboardsActionText}>Leaderboards</Text>
+              </Pressable>
+            </View>
             <StatsLeadersCard leagueName={activeLeague.name} divisionName={activeDivision?.name} metric={leaderMetric} leaders={leaderCard.rows} status={leaderCard.status} reduceTransparency={reduceTransparency} onMetricChange={setLeaderMetric} onRetry={() => setLeaderRetry((value) => value + 1)} onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id })} />
             <View style={styles.tableControls}>
               <Text accessibilityRole="header" style={styles.tableTitle}>Player stats</Text>
@@ -305,9 +301,8 @@ export default function StatsScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 },
+  statsActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 },
   headerWrap: { paddingHorizontal: 16, paddingBottom: 8 },
-  headerTitleWrap: { flex: 1 },
   leaderboardsAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 },
   leaderboardsActionText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   listContent: { paddingHorizontal: 16, paddingBottom: 40 },

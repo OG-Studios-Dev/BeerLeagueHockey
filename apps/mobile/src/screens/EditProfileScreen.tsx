@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React from 'react';
 import {
@@ -137,29 +136,14 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Edit Profile</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}><ActivityIndicator color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <View style={styles.backBtn} />
-      </View>
-
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <ScrollView contentContainerStyle={styles.content}>
         {/* Avatar */}
         <View style={styles.avatarSection}>
@@ -242,12 +226,17 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           <Text style={styles.fieldHint}>Jersey number is managed by your team admin.</Text>
         </View>
 
-        <Pressable style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-          {saving
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.saveBtnText}>Save Changes</Text>
-          }
-        </Pressable>
+        <View style={styles.formActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel profile editing" style={styles.cancelBtn} onPress={() => navigation.goBack()} disabled={saving}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Save profile changes" style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+            {saving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.saveBtnText}>Save Changes</Text>
+            }
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -255,17 +244,6 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 16, gap: 14, paddingBottom: 40 },
   avatarSection: { alignItems: 'center', paddingVertical: 16, gap: 12 },
@@ -315,12 +293,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   skillBtnText: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  formActions: { flexDirection: 'row', alignItems: 'stretch', gap: 10, marginTop: 8 },
+  cancelBtn: { minHeight: 52, minWidth: 92, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1, borderColor: colors.borderCard },
+  cancelBtnText: { color: colors.textPrimary, fontWeight: '800', fontSize: 16 },
   saveBtn: {
+    minHeight: 52,
+    flex: 1,
     backgroundColor: colors.primary,
     borderRadius: 14,
-    paddingVertical: 16,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
   },
   saveBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

@@ -129,14 +129,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>League Details</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -146,14 +139,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
 
   if (!league) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>League Details</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <Text style={styles.emptyText}>League not found</Text>
         </View>
@@ -164,16 +150,8 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
   const accentColor = league.primary_color ?? colors.primary;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={accentColor} intensity="low" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>League Details</Text>
-        <View style={styles.backBtn} />
-      </View>
-
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* League Header */}
         <View style={styles.heroCard}>
@@ -299,17 +277,6 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: 16 },
   content: { padding: 16, paddingBottom: 40, gap: 8 },

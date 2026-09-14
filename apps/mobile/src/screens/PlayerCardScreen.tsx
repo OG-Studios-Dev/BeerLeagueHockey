@@ -476,26 +476,19 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={colors.brandArena} intensity="medium" />
-      <RevealView delay={20}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle} numberOfLines={1}>Player Card</Text>
-          <Pressable onPress={() => void handleShare()} style={styles.headerButton}>
-            <Ionicons name="share-outline" size={20} color={colors.textPrimary} />
-          </Pressable>
-        </View>
-      </RevealView>
-
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.contentActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Share player card" onPress={() => void handleShare()} style={styles.headerButton}>
+              <Ionicons name="share-outline" size={20} color={colors.textPrimary} />
+            </Pressable>
+          </View>
           <RevealView delay={80}>
             <View style={[styles.heroCard, { borderLeftColor: primaryColor }]}>
               <LinearGradient
@@ -747,15 +740,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStroke,
-  },
+  contentActions: { minHeight: 44, flexDirection: 'row', justifyContent: 'flex-end' },
   headerButton: {
     width: 38,
     height: 38,
@@ -766,7 +751,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.glassStroke,
   },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '800', color: colors.textPrimary },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: 16, paddingBottom: 32, gap: 0 },
 

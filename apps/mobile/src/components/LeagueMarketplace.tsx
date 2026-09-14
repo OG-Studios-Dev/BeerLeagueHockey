@@ -191,7 +191,6 @@ type LeagueMarketplaceProps = {
 // --- Main component ---
 export default function LeagueMarketplace({
   navigation,
-  title = 'Find Your League',
   subtitle = 'Leagues near you, ranked by fit',
   showJoinedLeagues = false,
   includeTopInset = true,
@@ -207,7 +206,6 @@ export default function LeagueMarketplace({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { width, height } = useWindowDimensions();
   const isCompact = width < 390;
-  const canGoBack = typeof navigation?.canGoBack === 'function' ? navigation.canGoBack() : false;
 
   const [leagues, setLeagues] = React.useState<LeagueMatch[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -363,6 +361,17 @@ export default function LeagueMarketplace({
   const membershipFailure = !isGuest && session && (membershipStatus === 'error' || membershipStatus === 'incomplete');
   const listHeader = (
     <>
+      <View style={styles.marketplaceContext}>
+        <Text accessibilityRole="header" style={styles.subtitle}>{subtitle}</Text>
+        {userRating !== null ? (
+          <View style={styles.userRatingRow}>
+            <Text style={styles.userRatingLabel}>Your Rating:</Text>
+            <View style={[styles.userRatingChip, { backgroundColor: colors.primary + '33', borderColor: colors.primary }]}>
+              <Text style={[styles.userRatingText, { color: colors.primary }]}>{userRating}</Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
       {membershipFailure ? (
         <View style={styles.membershipNotice} accessibilityRole="alert">
           <Text style={styles.membershipNoticeTitle}>
@@ -392,26 +401,8 @@ export default function LeagueMarketplace({
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={includeTopInset ? ['top'] : ['left', 'right']}>
-      {/* Header */}
-      <View style={[styles.header, isCompact && styles.headerCompact]}>
-        {canGoBack ? (
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.75}>
-            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-          </TouchableOpacity>
-        ) : null}
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-          {userRating !== null && (
-            <View style={styles.userRatingRow}>
-              <Text style={styles.userRatingLabel}>Your Rating:</Text>
-              <View style={[styles.userRatingChip, { backgroundColor: colors.primary + '33', borderColor: colors.primary }]}>
-                <Text style={[styles.userRatingText, { color: colors.primary }]}>{userRating}</Text>
-              </View>
-            </View>
-          )}
-        </View>
+    <SafeAreaView style={styles.container} edges={includeTopInset ? ['top', 'left', 'right'] : ['left', 'right']} onAccessibilityEscape={() => navigation?.goBack?.()}>
+      <View style={[styles.sortRow, isCompact && styles.sortRowCompact]}>
         <TouchableOpacity
           style={[styles.locationPill, isCompact && styles.locationPillCompact]}
           onPress={locationGranted ? undefined : handleEnableLocation}
@@ -423,10 +414,6 @@ export default function LeagueMarketplace({
               : '📍 Enable Location'}
           </Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Sort toggle */}
-      <View style={[styles.sortRow, isCompact && styles.sortRowCompact]}>
         {(['nearest', 'fit'] as SortMode[]).map((mode) => (
           <TouchableOpacity
             key={mode}
@@ -675,31 +662,9 @@ export default function LeagueMarketplace({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgBase },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
-    gap: 8,
-  },
-  headerCompact: {
-    flexDirection: 'column',
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bgInteractive,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-  },
-  title: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, letterSpacing: 0.2 },
-  subtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  marketplaceContext: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 },
+  subtitle: { fontSize: 13, lineHeight: 19, color: colors.textSecondary },
   locationPill: {
-    marginTop: 4,
     backgroundColor: colors.bgInteractive,
     borderRadius: 20,
     paddingHorizontal: 10,

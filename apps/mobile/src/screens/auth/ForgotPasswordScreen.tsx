@@ -61,10 +61,6 @@ export default function ForgotPasswordScreen() {
       title="Reset your password"
       subtitle="Enter your email and we’ll send a secure reset link."
     >
-        <Pressable accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-
         {isSuccess ? (
           <View style={styles.successContainer}>
             <Ionicons name="checkmark-circle" size={48} color={colors.accentGreen} />
@@ -73,7 +69,7 @@ export default function ForgotPasswordScreen() {
               We&apos;ve sent a password reset link to {email.trim()}. Check your inbox and follow the
               instructions.
             </Text>
-            <Pressable style={styles.backToLoginButton} onPress={() => navigation.goBack()}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backToLoginButton} onPress={() => navigation.goBack()}>
               <Text style={styles.backToLoginText}>Back to Sign In</Text>
             </Pressable>
           </View>
@@ -104,6 +100,9 @@ export default function ForgotPasswordScreen() {
                 <Text style={styles.submitButtonText}>Send Reset Link</Text>
               )}
             </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Cancel password reset" style={styles.cancelButton} onPress={() => navigation.goBack()}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
           </>
         )}
     </AuthShell>
@@ -111,12 +110,6 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
   input: {
     minHeight: 52,
     borderRadius: 14,
@@ -150,6 +143,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 16,
   },
+  cancelButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  cancelButtonText: { color: colors.textInteractive, fontSize: 15, fontWeight: '700' },
   successContainer: {
     alignItems: 'center',
     paddingTop: 24,

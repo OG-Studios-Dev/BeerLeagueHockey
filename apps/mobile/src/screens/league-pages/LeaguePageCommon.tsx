@@ -62,9 +62,9 @@ export function useLeaguePage<P extends LeaguePageKind>(scope: Scope, page: P) {
   };
 }
 
-export function LeaguePageFrame({ children, scrollable = true }: { children: React.ReactNode; scrollable?: boolean }) {
+export function LeaguePageFrame({ children, scrollable = true, onAccessibilityEscape }: { children: React.ReactNode; scrollable?: boolean; onAccessibilityEscape?: () => void }) {
   return (
-    <SafeAreaView edges={['left', 'right']} style={styles.safe}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe} onAccessibilityEscape={onAccessibilityEscape}>
       {scrollable ? (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {children}

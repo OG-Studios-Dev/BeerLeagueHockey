@@ -18,6 +18,7 @@ import colors from '../../theme/colors';
 
 type LeagueSelectScreenProps = {
   onComplete?: () => void;
+  navigation?: { goBack: () => void };
 };
 
 function InitialsCircle({ name, color, size = 36 }: { name: string; color: string; size?: number }) {
@@ -45,10 +46,14 @@ function InitialsCircle({ name, color, size = 36 }: { name: string; color: strin
   );
 }
 
-export default function LeagueSelectScreen({ onComplete }: LeagueSelectScreenProps) {
+export default function LeagueSelectScreen({ onComplete, navigation }: LeagueSelectScreenProps) {
   const { availableLeagues, activeLeague, isLoading, setActiveLeague } = useLeague();
   const [publicLeagues, setPublicLeagues] = React.useState<LeagueRow[]>([]);
   const [publicLoading, setPublicLoading] = React.useState(true);
+  const dismiss = () => {
+    if (onComplete) onComplete();
+    else navigation?.goBack();
+  };
 
   React.useEffect(() => {
     getPublicLeagues()
@@ -61,7 +66,13 @@ export default function LeagueSelectScreen({ onComplete }: LeagueSelectScreenPro
 
   function LeagueRow({ item, isActive, onPress }: { item: any; isActive: boolean; onPress: () => void }) {
     return (
-      <Pressable style={styles.leagueRow} onPress={onPress}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Select ${item.name}`}
+        accessibilityState={{ selected: isActive }}
+        style={styles.leagueRow}
+        onPress={onPress}
+      >
         {item.logoUrl ? (
           <TeamLogo
             logoUrl={item.logoUrl}
@@ -115,70 +126,91 @@ export default function LeagueSelectScreen({ onComplete }: LeagueSelectScreenPro
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={dismiss}>
       <View style={styles.header}>
         <Text style={styles.heading}>Choose Your League</Text>
+        {navigation ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Close league selection" onPress={dismiss} style={styles.closeButton}>
+            <Ionicons name="close" size={22} color={colors.textPrimary} />
+          </Pressable>
+        ) : null}
       </View>
 
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={availableLeagues}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.divider} />}
-          ListEmptyComponent={
+      <FlatList
+        data={availableLeagues}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => <View style={styles.divider} />}
+        ListHeaderComponent={
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="BLH Global View, All leagues"
+              accessibilityState={{ selected: activeLeague === null }}
+              style={styles.leagueRow}
+              onPress={() => {
+                setActiveLeague(null);
+                dismiss();
+              }}
+            >
+              <InitialsCircle name="BLH Global View" color={colors.primary} />
+              <View style={styles.leagueRowMid}>
+                <Text style={styles.leagueRowName}>BLH Global View</Text>
+                <Text style={styles.leagueRowCity}>All leagues</Text>
+              </View>
+              {activeLeague === null ? (
+                <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+              ) : (
+                <Text style={styles.leagueRowEnter}>Enter</Text>
+              )}
+            </Pressable>
+            <View style={styles.divider} />
+            {isLoading ? (
+              <View style={styles.membershipLoading} accessibilityLiveRegion="polite">
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.emptySubtext}>Refreshing your leagues…</Text>
+              </View>
+            ) : null}
+          </>
+        }
+        ListEmptyComponent={
+          isLoading ? null : (
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyText}>You&apos;re not in any leagues yet</Text>
               <Text style={styles.emptySubtext}>Browse below to get started.</Text>
             </View>
-          }
-          renderItem={({ item }) => (
-            <LeagueRow
-              item={item}
-              isActive={activeLeague?.id === item.id}
-              onPress={() => {
-                setActiveLeague(item);
-                onComplete?.();
-              }}
-            />
-          )}
-          ListFooterComponent={
+          )
+        }
+        renderItem={({ item }) => (
+          <LeagueRow
+            item={item}
+            isActive={activeLeague?.id === item.id}
+            onPress={() => {
+              setActiveLeague(item);
+              dismiss();
+            }}
+          />
+        )}
+        ListFooterComponent={
+          publicLoading || publicLeagues.length > 0 ? (
             <View>
-              {publicLeagues.length > 0 ? (
-                <>
-                  <Text style={styles.sectionTitle}>Browse All Leagues</Text>
-                  <View style={styles.browseContainer}>
-                    {publicLoading ? (
-                      <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 12 }} />
-                    ) : (
-                      publicLeagues.map((league, idx) => (
-                        <View key={league.id}>
-                          {idx > 0 ? <View style={styles.divider} /> : null}
-                          <BrowseRow league={league} />
-                        </View>
-                      ))
-                    )}
-                  </View>
-                </>
-              ) : null}
-
-              <Pressable
-                style={styles.skipButton}
-                onPress={() => {
-                  setActiveLeague(null);
-                  onComplete?.();
-                }}
-              >
-                <Text style={styles.skipText}>Skip for now</Text>
-              </Pressable>
+              <Text style={styles.sectionTitle}>Browse All Leagues</Text>
+              <View style={styles.browseContainer}>
+                {publicLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 12 }} />
+                ) : (
+                  publicLeagues.map((league, idx) => (
+                    <View key={league.id}>
+                      {idx > 0 ? <View style={styles.divider} /> : null}
+                      <BrowseRow league={league} />
+                    </View>
+                  ))
+                )}
+              </View>
             </View>
-          }
-        />
-      )}
+          ) : null
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -188,12 +220,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgBase,
   },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   header: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 10,
@@ -205,6 +236,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
+  closeButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   listContent: {
     paddingBottom: 28,
   },
@@ -223,6 +255,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
   },
+  membershipLoading: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   leagueRow: {
     height: 56,
     flexDirection: 'row',
@@ -287,15 +320,5 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderCard,
     marginTop: 8,
-  },
-  skipButton: {
-    marginTop: 16,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  skipText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

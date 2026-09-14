@@ -2,7 +2,6 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import SectionHeader from '../components/SectionHeader';
 import { useLeague } from '../context/LeagueContext';
 import colors from '../theme/colors';
 import ScheduleScreen from './ScheduleScreen';
@@ -12,9 +11,8 @@ export default function StandingsScreen(props: { navigation: { navigate: (screen
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
-          <SectionHeader title="Standings" />
           <Text style={styles.instructions}>Choose a league for standings</Text>
         </View>
         <View style={styles.leagueChoices}>

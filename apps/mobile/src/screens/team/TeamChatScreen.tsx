@@ -13,7 +13,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../../components/Avatar';
-import { useAuth } from '../../context/AuthContext';
 import {
   getRecentTeamMessages,
   postTeamMessage,
@@ -23,8 +22,7 @@ import {
 import colors from '../../theme/colors';
 
 export default function TeamChatScreen({ route, navigation }: any) {
-  const { teamId, leagueId, teamName } = route.params;
-  const { user } = useAuth();
+  const { teamId, teamName } = route.params;
   const [messages, setMessages] = React.useState<TeamMessageRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [isCaptain, setIsCaptain] = React.useState(false);
@@ -81,18 +79,7 @@ export default function TeamChatScreen({ route, navigation }: any) {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{teamName ?? 'Team'}</Text>
-          <Text style={styles.headerSubtitle}>Announcements</Text>
-        </View>
-        <View style={styles.backBtn} />
-      </View>
-
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
@@ -102,6 +89,7 @@ export default function TeamChatScreen({ route, navigation }: any) {
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={<Text accessibilityRole="header" style={styles.chatContext}>{teamName ?? 'Team'} announcements</Text>}
           ListEmptyComponent={
             <View style={styles.emptyCard}>
               <Ionicons name="megaphone-outline" size={32} color={colors.textSecondary} />
@@ -171,21 +159,9 @@ export default function TeamChatScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
-  headerSubtitle: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginTop: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { padding: 16, paddingBottom: 100, gap: 10 },
+  chatContext: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, fontWeight: '700', marginBottom: 2 },
 
   emptyCard: {
     backgroundColor: colors.bgSurface,

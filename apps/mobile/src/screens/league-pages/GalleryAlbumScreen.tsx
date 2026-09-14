@@ -46,7 +46,7 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
   const photo = selected === null ? null : page.data?.photos[selected] ?? null;
   React.useEffect(() => setFullStatus('loading'), [photo?.id, photo?.imageUrl]);
 
-  if (!page.data) return <LeaguePageFrame><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
+  if (!page.data) return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
 
   const data = page.data;
   const itemWidth = Math.max(0, (width - 40) / 2);
@@ -57,7 +57,6 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
   const close = () => setSelected(null);
   const header = (
     <View style={styles.header}>
-      <Pressable accessibilityRole="button" onPress={() => navigation.goBack()} style={styles.back}><Text style={styles.link}>← Back to Gallery</Text></Pressable>
       <Text accessibilityRole="header" style={styles.title}>{data.album.title}</Text>
       {data.album.description ? <Text style={styles.description}>{data.album.description}</Text> : null}
       <Text style={styles.meta}>{data.total} photo{data.total === 1 ? '' : 's'}</Text>
@@ -65,7 +64,7 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
   );
 
   return <>
-    <LeaguePageFrame scrollable={false}>
+    <LeaguePageFrame scrollable={false} onAccessibilityEscape={() => navigation.goBack()}>
       <FlatList
         testID="gallery-grid"
         data={data.photos}
@@ -123,8 +122,6 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 16, paddingBottom: 136 },
   row: { gap: 8 },
   header: { marginBottom: 22 },
-  back: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' },
-  link: { color: colors.textInteractive, fontWeight: '900' },
   title: { color: colors.textPrimary, fontSize: 30, lineHeight: 37, fontWeight: '900', marginTop: 9 },
   description: { color: colors.textSecondary, fontSize: 15, lineHeight: 22, marginTop: 6 },
   meta: { color: colors.textSecondary, fontSize: 13, marginTop: 8 },

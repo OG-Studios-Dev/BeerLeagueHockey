@@ -3,13 +3,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import AuthGuestBanner from '../components/AuthGuestBanner';
-import LeagueSwitcher from '../components/LeagueSwitcher';
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
-import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import {
   ScheduleStackParamList,
   TeamStackParamList,
@@ -56,7 +53,6 @@ import EventsScreen from '../screens/league-pages/EventsScreen';
 import ContactScreen from '../screens/league-pages/ContactScreen';
 
 import colors from '../theme/colors';
-import { getSurfacePalette } from '../theme/ui';
 import MobileWebDock from './MobileWebDock';
 
 const Tab = createBottomTabNavigator();
@@ -88,31 +84,6 @@ export const PUBLIC_MORE_PAGE_LABELS = [
   'Events',
   'Contact',
 ] as const;
-
-function AppHeaderBackground() {
-  const { reduceTransparency } = useAccessibilityPreferences();
-  const palette = getSurfacePalette(reduceTransparency);
-
-  return (
-    <View style={StyleSheet.absoluteFill}>
-      <LinearGradient
-        colors={reduceTransparency
-          ? [palette.elevated, palette.elevated]
-          : ['rgba(8, 14, 27, 0.96)', 'rgba(10, 18, 33, 0.92)', 'rgba(6, 10, 20, 0.98)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={[`${colors.brandRink}20`, 'transparent']}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={styles.headerGlow}
-      />
-      <View style={styles.headerHairline} />
-    </View>
-  );
-}
 
 function ScheduleNavigator() {
   return (
@@ -222,14 +193,7 @@ export default function RootNavigation() {
       initialRouteName="Home"
       tabBar={(props) => <MobileWebDock {...props} />}
       screenOptions={() => ({
-        headerShown: true,
-        headerTitleAlign: 'center',
-        headerStyle: {
-          backgroundColor: 'transparent',
-        },
-        headerShadowVisible: false,
-        headerBackground: () => <AppHeaderBackground />,
-        headerTitle: () => <LeagueSwitcher />,
+        headerShown: false,
         sceneStyle: {
           backgroundColor: activeTheme.backgroundColor,
         },
@@ -254,21 +218,5 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bgBase,
-  },
-  headerGlow: {
-    ...StyleSheet.absoluteFillObject,
-    top: -32,
-    left: -28,
-    right: '36%',
-    bottom: '10%',
-    borderRadius: 999,
-  },
-  headerHairline: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.glassStroke,
   },
 });

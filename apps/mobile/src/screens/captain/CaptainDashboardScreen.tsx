@@ -151,14 +151,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Captain Dashboard</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -168,14 +161,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 
   if (captainTeams.length === 0) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Captain Dashboard</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <MaterialCommunityIcons name="shield-crown-outline" size={40} color={colors.textSecondary} />
           <Text style={styles.emptyTitle}>No captain duties</Text>
@@ -186,16 +172,8 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={colors.brandGold} intensity="low" />
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Captain Dashboard</Text>
-        <View style={styles.backBtn} />
-      </View>
-
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
@@ -305,17 +283,6 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
   emptySub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },

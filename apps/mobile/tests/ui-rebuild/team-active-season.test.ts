@@ -770,9 +770,11 @@ describe('Team active-season data boundary', () => {
     const output = await settle(runtime);
     const gameCard = findNode(output, (node) => node.props.testID === 'team-schedule-game-game-current');
     const goBack = findNode(output, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Go back');
+    const safeArea = findNode(output, (node) => node.type === 'SafeAreaView');
 
     assert.match(gameCard?.props.accessibilityLabel, /Current Opponent.*Oct.*1.*Current Season Arena/);
-    assert.equal(goBack?.props.accessibilityRole, 'button');
+    assert.equal(goBack, undefined);
+    assert.equal(typeof safeArea?.props.onAccessibilityEscape, 'function');
 
     gameCard?.props.onPress();
     assert.deepEqual(runtime.navigationCalls, [[

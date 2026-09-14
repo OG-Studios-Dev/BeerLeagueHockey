@@ -884,7 +884,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -894,14 +894,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   if (loadError) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Unable to load team</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View testID="team-error-state" style={styles.centeredState}>
           <Ionicons name="alert-circle-outline" size={30} color={colors.accentRed} />
           <Text style={styles.stateTitle}>Unable to load team</Text>
@@ -917,14 +910,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   if (!presentationSeason) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Team</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View testID="team-no-active-season-state" style={styles.centeredState}>
           <Ionicons name="calendar-outline" size={30} color={colors.primary} />
           <Text style={styles.stateTitle}>No season available</Text>
@@ -936,14 +922,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   if (activeSeason && !team) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Team</Text>
-          <View style={styles.backBtn} />
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
         <View testID="team-missing-state" style={styles.centeredState}>
           <Ionicons name="shield-outline" size={30} color={colors.textSecondary} />
           <Text style={styles.stateTitle}>Team not found</Text>
@@ -954,16 +933,8 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={team?.secondary_color ?? colors.brandArena} intensity="medium" />
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>TEAM</Text>
-        <View style={styles.backBtn} />
-      </View>
-
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -1438,30 +1409,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.bgBase,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: {
-    width: ui.minTouchTarget,
-    minHeight: ui.minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 'auto',
-    fontSize: 17,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    textAlign: 'center',
   },
   colorStrip: {
     height: 6,

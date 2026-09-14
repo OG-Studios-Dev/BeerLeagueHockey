@@ -72,10 +72,6 @@ export default function SignUpScreen() {
 
   return (
     <AuthShell title="Join the league" subtitle="Create your player account and get game-ready.">
-          <Pressable accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-
           {isSuccess ? (
             <View style={styles.successContainer}>
               <Ionicons name="checkmark-circle" size={48} color={colors.accentGreen} />
@@ -84,7 +80,7 @@ export default function SignUpScreen() {
                 We&apos;ve sent a verification link to {email.trim()}. Please verify your email to
                 complete registration.
               </Text>
-              <Pressable style={styles.backToLoginButton} onPress={() => navigation.goBack()}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backToLoginButton} onPress={() => navigation.goBack()}>
                 <Text style={styles.backToLoginText}>Back to Sign In</Text>
               </Pressable>
             </View>
@@ -151,7 +147,7 @@ export default function SignUpScreen() {
                 )}
               </Pressable>
 
-              <Pressable style={styles.signInLink} onPress={() => navigation.goBack()}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Sign in instead" style={styles.signInLink} onPress={() => navigation.goBack()}>
                 <Text style={styles.signInLinkText}>
                   Already have an account? <Text style={styles.signInLinkBold}>Sign In</Text>
                 </Text>
@@ -163,12 +159,6 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
   input: {
     minHeight: 52,
     borderRadius: 14,

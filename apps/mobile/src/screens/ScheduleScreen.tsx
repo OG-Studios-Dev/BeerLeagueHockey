@@ -364,10 +364,7 @@ export default function ScheduleScreen({
 
   if (!activeLeague && availableLeagues.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.screenPadding}>
-          <SectionHeader title={standalone ? initialTab : 'Schedule'} />
-        </View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Select a league to see the schedule</Text>
         </View>
@@ -377,9 +374,8 @@ export default function ScheduleScreen({
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
         <View style={styles.screenPadding}>
-          <SectionHeader title={standalone ? initialTab : 'Schedule'} />
           <Text style={styles.globalScheduleIntro}>
             Upcoming games across every BLH league you play in. Switch into a league when you want standings or league-only views.
           </Text>
@@ -446,12 +442,8 @@ export default function ScheduleScreen({
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
       <GuestBanner />
-      <View style={styles.screenPadding}>
-        <SectionHeader title={standalone ? initialTab : 'Schedule'} />
-      </View>
-
       <DivisionFilter
         divisions={divisions}
         activeDivision={activeDivision}

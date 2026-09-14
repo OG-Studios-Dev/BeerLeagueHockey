@@ -14,6 +14,31 @@ function findNodes(root: unknown, predicate: (node: TestNode) => boolean): TestN
 const colors = { __esModule: true, default: { primary: '#0ff', bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', bgElevated: '#112', textPrimary: '#fff', textSecondary: '#aaa', textOnPrimary: '#001', textInteractive: '#6ef', glassStroke: '#333' } };
 
 describe('virtualized native gallery album', () => {
+  it('keeps accessibility escape wired during loading and ready-empty states', () => {
+    for (const page of [
+      { loading: true, error: null, retry() {}, data: null },
+      { loading: false, error: null, retry() {}, data: { album: { title: 'Synthetic empty album', description: null }, photos: [], total: 0 } },
+    ]) {
+      const harness = createHookHarness();
+      const Screen = compileCommonJs<any>(new URL('../../src/screens/league-pages/GalleryAlbumScreen.tsx', import.meta.url), {
+        react: harness.react,
+        'react-native': { ActivityIndicator: 'ActivityIndicator', FlatList: (props: any) => createElement('FlatList', props, props.ListHeaderComponent, props.ListEmptyComponent), Image: 'Image', Modal: (props: any) => createElement('Modal', props, props.children), Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: { absoluteFill: {}, create: (value: any) => value }, Text: 'Text', View: 'View', useWindowDimensions: () => ({ width: 390, height: 844 }) },
+        'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }) },
+        '@expo/vector-icons': { Ionicons: 'Icon' },
+        '../../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: true, reduceTransparency: true }) },
+        '../../theme/colors': colors,
+        './LeaguePageCommon': { useLeaguePageScope: (scope: unknown) => scope, LeaguePageFrame: (props: any) => createElement('LeaguePageFrame', props, props.children), PageLoadState: (props: any) => createElement('PageLoadState', props) },
+        './ContentPageCommon': { useLeagueContent: () => page },
+      }).default;
+      let backs = 0;
+      harness.mount(() => Screen({ route: { params: { leagueId: 'synthetic-league', albumId: 'synthetic-album' } }, navigation: { goBack: () => { backs += 1; } } }));
+      const frame = findNode(harness.output, (node) => node.type === 'LeaguePageFrame');
+      assert.equal(typeof frame?.props.onAccessibilityEscape, 'function');
+      frame?.props.onAccessibilityEscape();
+      assert.equal(backs, 1);
+    }
+  });
+
   it('bounds initial rendering, keeps the tail reachable, and handles viewer image lifecycle', () => {
     const harness = createHookHarness();
     let preferences = { reduceMotion: false, reduceTransparency: false };

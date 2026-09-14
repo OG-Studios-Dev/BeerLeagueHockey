@@ -166,11 +166,8 @@ describe('Home editorial native render', () => {
     assert.ok(safeArea);
     assert.equal(flattenStyle(safeArea.props.style).backgroundColor, '#07111F');
 
-    const header = findNode(output, (node) => node.props.testID === 'home-editorial-header');
-    assert.ok(header);
-    assert.equal(findNode(header, (node) => node.type === 'Image')?.props.source, 'hockey-life-logo.png');
-    assert.match(nodeText(header), /LEAGUE HOME/);
-    assert.match(nodeText(header), /Harbour City Thursday Night Hockey League/);
+    assert.equal(findNode(output, (node) => node.props.testID === 'home-editorial-header'), undefined);
+    assert.doesNotMatch(nodeText(output), /LEAGUE HOME/);
 
     const sectionOrder = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-loading', 'home-sponsors-section']
       .map((testID) => nodes.findIndex((node) => node.props.testID === testID));
@@ -207,7 +204,7 @@ describe('Home editorial native render', () => {
         title: 'BLH Overview',
         subtitle: 'Nearby leagues, fit, and difficulty across Beer League Hockey.',
         showJoinedLeagues: true,
-        includeTopInset: false,
+        includeTopInset: true,
       },
     );
   });

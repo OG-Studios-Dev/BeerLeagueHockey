@@ -7,7 +7,6 @@ import Avatar from '../components/Avatar';
 import BrandAtmosphere from '../components/BrandAtmosphere';
 import GuestBanner from '../components/GuestBanner';
 import TeamLogo from '../components/TeamLogo';
-import SectionHeader from '../components/SectionHeader';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
 import {
@@ -158,10 +157,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (!activeLeague && availableLeagues.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.listContent}>
-          <SectionHeader title="My Team" />
-        </View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Select a league to see your team</Text>
         </View>
@@ -171,11 +167,10 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
         <BrandAtmosphere intensity="low" />
         <GuestBanner />
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          <SectionHeader title="My Teams" />
           <Text style={styles.globalIntro}>
             Every BLH team you play on, across every league, in one place.
           </Text>
@@ -254,10 +249,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.listContent}>
-          <SectionHeader title="My Team" />
-        </View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={activeTheme.primaryColor} />
         </View>
@@ -267,8 +259,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loadState === 'error') {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.listContent}><SectionHeader title="My Team" /></View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View testID="team-list-active-error-state" style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Unable to load team</Text>
           <Text style={styles.emptyBody}>{loadError}</Text>
@@ -279,8 +270,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loadState === 'no-active-season') {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.listContent}><SectionHeader title="My Team" /></View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View testID="team-list-no-active-season-state" style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>No active season</Text>
           <Text style={styles.emptyBody}>Your team roster will appear when this league activates a season.</Text>
@@ -291,9 +281,8 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loadState === 'no-team') {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <GuestBanner />
-        <View style={styles.listContent}><SectionHeader title="My Team" /></View>
         <View testID="team-list-no-assignment-state" style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>No active team assignment</Text>
           <Text style={styles.emptyBody}>{seasonName ? `You are not on a roster for ${seasonName}.` : 'You are not on this active-season roster.'}</Text>
@@ -304,10 +293,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (roster.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['left', 'right']}>
-        <View style={styles.listContent}>
-          <SectionHeader title={teamName} />
-        </View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>No roster found for this league</Text>
         </View>
@@ -318,7 +304,7 @@ export default function TeamScreen({ navigation }: Props) {
   const primaryColor = teamColor ?? activeTheme.primaryColor;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="low" />
       <GuestBanner />
       <FlatList
@@ -328,7 +314,7 @@ export default function TeamScreen({ navigation }: Props) {
         ListHeaderComponent={
           <View>
             <Pressable
-              testID="team-list-open-detail-action"
+              testID="team-list-identity-card"
               accessibilityRole="button"
               accessibilityLabel={`Open ${teamName} team details`}
               onPress={() => {
@@ -337,11 +323,8 @@ export default function TeamScreen({ navigation }: Props) {
                 }
               }}
               disabled={!userTeamId || isGuestLeague}
-              style={styles.headerAction}
+              style={[styles.teamHeaderCard, publicSurface]}
             >
-              <SectionHeader title={teamName} />
-            </Pressable>
-            <View testID="team-list-identity-card" style={[styles.teamHeaderCard, publicSurface]}>
               <TeamLogo
                 teamId={userTeamId}
                 logoUrl={teamLogoUrl}
@@ -354,7 +337,7 @@ export default function TeamScreen({ navigation }: Props) {
                 <Text style={styles.teamHeaderSub}>{activeLeague.name} · {seasonName}</Text>
                 <Text style={styles.teamHeaderSub}>{roster.length} active {roster.length === 1 ? 'player' : 'players'}</Text>
               </View>
-            </View>
+            </Pressable>
             <View style={styles.cardHeader}>
               <Text style={styles.cardHeaderText}>Roster</Text>
             </View>
@@ -447,7 +430,6 @@ const styles = StyleSheet.create({
   teamHeaderInfo: { minWidth: 0, flexGrow: 1, flexShrink: 1, flexBasis: 'auto' },
   teamHeaderName: { fontSize: 26, lineHeight: 31, fontWeight: '900', color: colors.textPrimary },
   teamHeaderSub: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', marginTop: 4 },
-  headerAction: { minHeight: 44, justifyContent: 'center' },
   cardHeader: { marginTop: 4, marginBottom: 8 },
   cardHeaderText: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
   playerRow: {

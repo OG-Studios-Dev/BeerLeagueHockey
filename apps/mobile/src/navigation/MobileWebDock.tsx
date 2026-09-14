@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TeamLogo from '../components/TeamLogo';
+import LeagueLogo from '../components/LeagueLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
@@ -162,6 +163,14 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
     lifecycle.close(() => navigate(item.destination));
   }, [lifecycle, navigate]);
 
+  const openLeagueHome = React.useCallback(() => {
+    lifecycle.close(() => navigation.navigate('Home'));
+  }, [lifecycle, navigation]);
+
+  const openLeagueSelection = React.useCallback(() => {
+    lifecycle.close(() => navigation.navigate('LeagueSelect'));
+  }, [lifecycle, navigation]);
+
   const pressRegisteredTab = React.useCallback((tab: 'Standings' | 'Schedule' | 'Team' | 'Stats', destination?: DockDestination) => {
     const routeIndex = state.routes.findIndex((route) => route.name === tab);
     const route = state.routes[routeIndex];
@@ -207,7 +216,10 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const secondary = activeTheme.secondaryColor || colors.brandArena;
   const categories = React.useMemo(() => {
     const grouped = new Map<MoreMenuItem['category'], MoreMenuItem[]>();
-    for (const item of items) grouped.set(item.category, [...(grouped.get(item.category) ?? []), item]);
+    for (const item of items) {
+      if (item.key === 'app-home') continue;
+      grouped.set(item.category, [...(grouped.get(item.category) ?? []), item]);
+    }
     return MORE_CATEGORY_ORDER.flatMap((category) => {
       const categoryItems = grouped.get(category);
       return categoryItems?.length ? [[category, categoryItems] as const] : [];
@@ -331,7 +343,6 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeaderCopy}>
                 <Text style={styles.sheetTitle}>More</Text>
-                <Text style={styles.sheetSubtitle}>{activeLeague?.name ?? 'Explore leagues'}</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -347,6 +358,41 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
               showsVerticalScrollIndicator={false}
               contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
             >
+              <View style={styles.leagueIdentityRow}>
+                <Pressable
+                  testID="more-league-home"
+                  accessibilityRole="button"
+                  accessibilityLabel={`${activeLeague?.name ?? 'Beer League Hockey'} home`}
+                  onPress={openLeagueHome}
+                  style={({ pressed }) => [styles.leagueHome, pressed && styles.menuRowPressed]}
+                >
+                  {activeLeague ? (
+                    <LeagueLogo
+                      logoUrl={activeLeague.logoUrl}
+                      leagueName={activeLeague.name}
+                      primaryColor={primary}
+                      size={44}
+                    />
+                  ) : (
+                    <View style={[styles.leagueLogoFallback, { borderColor: `${primary}66` }]}>
+                      <Ionicons name="home-outline" size={23} color={primary} />
+                    </View>
+                  )}
+                  <View style={styles.leagueHomeCopy}>
+                    <Text numberOfLines={1} style={styles.leagueName}>{activeLeague?.name ?? 'Beer League Hockey'}</Text>
+                    <Text style={styles.leagueHomeLabel}>Home</Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Switch league"
+                  onPress={openLeagueSelection}
+                  style={({ pressed }) => [styles.switchLeague, { borderColor: `${primary}66` }, pressed && styles.menuRowPressed]}
+                >
+                  <Ionicons name="swap-horizontal-outline" size={18} color={primary} />
+                  <Text style={[styles.switchLeagueLabel, { color: primary }]}>Switch league</Text>
+                </Pressable>
+              </View>
               {activeLeague && data.websiteStatus === 'loading' ? (
                 <View style={styles.metadataStatus} accessibilityLiveRegion="polite">
                   <ActivityIndicator color={primary} />
@@ -402,7 +448,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
 }
 
 const styles = StyleSheet.create({
-  dockOuter: { backgroundColor: colors.bgBase },
+  dockOuter: { backgroundColor: 'transparent' },
   dockShadow: {
     flex: 1, minHeight: 70, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth, overflow: 'visible',
     backgroundColor: '#080F1C', shadowColor: '#000', shadowOffset: { width: 0, height: 9 },
@@ -432,10 +478,17 @@ const styles = StyleSheet.create({
   sheetHeader: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 20, paddingRight: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#26384D', backgroundColor: '#0B192B' },
   sheetHeaderCopy: { flex: 1 },
   sheetTitle: { color: colors.textPrimary, fontSize: 23, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4 },
-  sheetSubtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 1 },
   closeButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#14263A' },
   closeButtonPressed: { opacity: 0.7, backgroundColor: '#183149' },
   sheetScroll: { paddingTop: 8 },
+  leagueIdentityRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8 },
+  leagueHome: { minWidth: 0, minHeight: 56, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 14, paddingHorizontal: 4 },
+  leagueLogoFallback: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1, backgroundColor: '#07101D' },
+  leagueHomeCopy: { minWidth: 0, flex: 1 },
+  leagueName: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '800' },
+  leagueHomeLabel: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 1 },
+  switchLeague: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, paddingHorizontal: 10 },
+  switchLeagueLabel: { fontSize: 12, lineHeight: 16, fontWeight: '900' },
   metadataStatus: { alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 14 },
   metadataStatusTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', textAlign: 'center' },
   metadataStatusCopy: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, textAlign: 'center' },

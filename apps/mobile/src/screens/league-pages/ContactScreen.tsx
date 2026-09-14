@@ -89,12 +89,10 @@ export default function ContactScreen({ route, navigation }: Props) {
     }
   };
 
-  const back = <Pressable accessibilityRole="button" onPress={() => navigation.goBack()} style={styles.back}><Ionicons name="chevron-back" size={20} color={colors.textInteractive} /><Text style={styles.backText}>Back</Text></Pressable>;
-  if (!page.data) return <LeaguePageFrame>{back}<PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
+  if (!page.data) return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
   const contact = page.data.contact;
   const address = [contact.address, contact.city, contact.state, contact.zipCode].filter(Boolean).join(', ') || null;
-  return <LeaguePageFrame>
-    {back}
+  return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}>
     <PageHeader eyebrow="Get in touch" title="Contact" detail={`Public contact information for ${page.data.league.name}`} />
     <View style={commonStyles.section}><Text style={commonStyles.sectionTitle}>League details</Text><View style={commonStyles.card}>
       <Detail label="Email" value={contact.email} kind="email" onOpen={(url, kind) => { void openAction(url, kind); }} /><Detail label="Phone" value={contact.phone} kind="phone" onOpen={(url, kind) => { void openAction(url, kind); }} /><Detail label="Website" value={contact.websiteUrl} kind="website" onOpen={(url, kind) => { void openAction(url, kind); }} /><Detail label="Address" value={address} />
@@ -110,7 +108,6 @@ export default function ContactScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  back: { minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }, backText: { color: colors.textInteractive, fontWeight: '900' },
   detailRow: { minHeight: 58, justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.glassStroke }, detailLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' }, detailValue: { color: colors.textPrimary, fontSize: 14, lineHeight: 20, marginTop: 4 }, detailAction: { minHeight: 44, justifyContent: 'center' }, link: { color: colors.textInteractive, fontSize: 14, fontWeight: '800' },
   field: { marginBottom: 14 }, label: { color: colors.textPrimary, fontSize: 13, fontWeight: '800', marginBottom: 6 }, input: { minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgInteractive, color: colors.textPrimary, paddingHorizontal: 12, paddingVertical: 10 }, message: { minHeight: 120, textAlignVertical: 'top' }, inputError: { borderColor: colors.accentRed }, fieldError: { color: colors.accentRed, fontSize: 12, marginTop: 5 }, disabled: { opacity: 0.55 }, success: { marginBottom: 16, padding: 13, borderRadius: 12, backgroundColor: 'rgba(34, 197, 94, 0.14)' }, successText: { color: colors.textPrimary, fontWeight: '900', marginTop: 6 }, error: { marginBottom: 16, padding: 13, borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.14)' }, errorText: { color: colors.accentRed, fontWeight: '900' }, meta: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 4 },
 });

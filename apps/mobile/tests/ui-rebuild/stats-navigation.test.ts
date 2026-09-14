@@ -40,13 +40,12 @@ describe('Stats navigation', () => {
     assert.deepEqual(navigationCalls, [['Leaderboards']]);
     assert.equal(capturedStyles.headerWrap.flex, undefined, 'standalone global Stats header must not consume the list viewport');
     assert.equal(capturedStyles.headerWrap.paddingHorizontal, 16);
-    assert.ok(findNode(h.output, node => node.type === 'View' && node.props.style === capturedStyles.headerTitleWrap && nodeText(node) === 'Stats'), 'active header consumes its own flex style');
+    assert.equal(capturedStyles.headerTitleWrap, undefined, 'active page-title row is removed');
     activeLeague = null; h.render();
-    assert.ok(findNode(h.output, node => node.type === 'View' && node.props.style === capturedStyles.headerWrap && nodeText(node).includes('League Leaders')), 'empty global branch retains non-flex header');
-    assert.equal(findNode(h.output, node => node.props.style === capturedStyles.headerTitleWrap), undefined);
+    assert.equal(findNode(h.output, node => node.props.style === capturedStyles.headerWrap), undefined, 'empty global branch has no title row');
     league.availableLeagues.push({ id: 'league-a', name: 'League A', slug: 'league-a' }); h.render();
-    assert.ok(findNode(h.output, node => node.type === 'View' && node.props.style === capturedStyles.headerWrap && nodeText(node).includes('League Leaders')), 'populated global branch retains non-flex header');
-    assert.equal(findNode(h.output, node => node.props.style === capturedStyles.headerTitleWrap), undefined);
+    assert.ok(findNode(h.output, node => node.type === 'View' && node.props.style === capturedStyles.headerWrap && nodeText(node).includes('Top skaters')), 'populated global branch retains content controls without a title');
+    assert.equal(capturedStyles.headerTitleWrap, undefined);
     h.unmount();
   });
 });

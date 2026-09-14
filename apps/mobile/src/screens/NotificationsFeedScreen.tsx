@@ -131,6 +131,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
   const [refreshing, setRefreshing] = React.useState(false);
   const [savingGameId, setSavingGameId] = React.useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState<string | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setScope(activeLeague ? 'active' : 'all');
@@ -138,6 +139,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
 
   const loadFeed = React.useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
 
     try {
       const {
@@ -291,6 +293,8 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
       setTeamStandings(Array.from(dedupedStandings.values()).sort((a, b) => b.points - a.points));
       setCheckins(myCheckins);
       setLastUpdatedAt(new Date().toISOString());
+    } catch {
+      setLoadError('Unable to load updates. Try again.');
     } finally {
       setLoading(false);
     }
@@ -413,29 +417,29 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere intensity="medium" />
-      <RevealView delay={20}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Updates</Text>
-            <Text style={styles.headerSubtitle}>League changes, game-day actions, and team pulse</Text>
-          </View>
-          <Pressable
-            onPress={() => navigation.navigate('NotificationSettings')}
-            style={[styles.headerButton, styles.headerSettingsButton]}
-          >
-            <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
-          </Pressable>
-        </View>
-      </RevealView>
-
+      <View style={styles.updatesActions}>
+        <Text accessibilityRole="header" style={styles.updatesContext}>League changes, game-day actions, and team pulse</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Notification settings"
+          onPress={() => navigation.navigate('NotificationSettings')}
+          style={[styles.headerButton, styles.headerSettingsButton]}
+        >
+          <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
+        </Pressable>
+      </View>
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : loadError ? (
+        <View testID="notifications-feed-error" style={styles.centered}>
+          <Text style={styles.emptyTitle}>{loadError}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Retry updates" onPress={() => void loadFeed()} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </Pressable>
         </View>
       ) : (
         <ScrollView
@@ -734,16 +738,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStroke,
-    gap: 10,
-  },
   headerButton: {
     width: 40,
     height: 40,
@@ -757,9 +751,8 @@ const styles = StyleSheet.create({
   headerSettingsButton: {
     backgroundColor: colors.bgElevated,
   },
-  headerTitleWrap: { flex: 1 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: colors.textPrimary },
-  headerSubtitle: { marginTop: 2, fontSize: 12, color: colors.textSecondary, flexShrink: 1 },
+  updatesActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  updatesContext: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.textSecondary },
   summaryCard: {
     marginTop: 16,
     borderRadius: 20,
@@ -905,6 +898,8 @@ const styles = StyleSheet.create({
   emptyTextWrap: { flex: 1 },
   emptyTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
   emptySubtitle: { marginTop: 4, fontSize: 13, lineHeight: 18, color: colors.textSecondary },
+  retryButton: { minHeight: 44, marginTop: 12, justifyContent: 'center', borderRadius: 12, backgroundColor: colors.primary, paddingHorizontal: 18 },
+  retryButtonText: { color: colors.textOnPrimary, fontSize: 14, fontWeight: '800' },
   upcomingCard: {
     borderRadius: 18,
     borderWidth: 1,

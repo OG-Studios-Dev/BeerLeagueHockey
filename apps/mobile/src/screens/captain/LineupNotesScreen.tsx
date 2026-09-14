@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import SectionHeader from '../../components/SectionHeader';
 import colors from '../../theme/colors';
 
 const NOTES_KEY_PREFIX = 'blh_lineup_notes_';
@@ -58,23 +57,23 @@ export default function LineupNotesScreen({ route, navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Lineup Notes</Text>
-        <Pressable
-          style={[styles.saveBtn, saved && styles.saveBtnSaved]}
-          onPress={handleSave}
-        >
-          <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
-            {saved ? 'Saved!' : 'Save'}
-          </Text>
-        </Pressable>
-      </View>
-
+    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.contentActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel lineup notes" style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Save lineup notes"
+            style={[styles.saveBtn, saved && styles.saveBtnSaved]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
+              {saved ? 'Saved!' : 'Save'}
+            </Text>
+          </Pressable>
+        </View>
         {/* Game context */}
         <View style={styles.gameContext}>
           <Text style={styles.gameContextLabel}>GAME NOTES</Text>
@@ -141,18 +140,12 @@ Notes:
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+  contentActions: { minHeight: 44, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
+  cancelBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 999 },
+  cancelBtnText: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
   saveBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 999,

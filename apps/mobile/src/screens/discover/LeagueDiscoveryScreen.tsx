@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import SectionHeader from '../../components/SectionHeader';
 import TeamLogo from '../../components/TeamLogo';
 import { useLeague } from '../../context/LeagueContext';
 import { supabase } from '../../lib/supabase/client';
@@ -166,7 +165,7 @@ export default function LeagueDiscoveryScreen({ navigation }: { navigation: any 
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.searchWrap}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={18} color={colors.textSecondary} />
@@ -206,7 +205,6 @@ export default function LeagueDiscoveryScreen({ navigation }: { navigation: any 
           renderItem={renderLeagueCard}
           ListHeaderComponent={
             <View style={styles.listHeader}>
-              <SectionHeader title="Discover Leagues" />
               <Text style={styles.listSubtitle}>
                 {filteredLeagues.length} league{filteredLeagues.length !== 1 ? 's' : ''} available
               </Text>

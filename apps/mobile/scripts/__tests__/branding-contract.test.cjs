@@ -10,6 +10,17 @@ const mobileRoot = join(__dirname, '..', '..');
 const assetPath = (name) => join(mobileRoot, 'assets', name);
 const readJson = (name) => JSON.parse(readFileSync(join(mobileRoot, name), 'utf8'));
 
+function assertCanonicalPositiveDecimalCounter(counter) {
+  assert.equal(typeof counter, 'string');
+  assert.match(counter, /^[1-9][0-9]*$/);
+  assert.equal(counter, counter.trim());
+}
+
+function assertPositiveIntegerCounter(counter) {
+  assert.equal(Number.isSafeInteger(counter), true);
+  assert.ok(counter > 0);
+}
+
 const OLD_ASSET_HASHES = new Set([
   '99c58be8d6caa318205965b4562ad1a3f318cbc91f6c8fa46ef7f2b42fa80777',
   'b4a6ad3387acbcf021b473a3e18b9a4722692d928f3caa4a8c2100c0d7c536ec',
@@ -115,18 +126,29 @@ function markBounds(image, background = [17, 23, 23], threshold = 24) {
   return { left, top, right, bottom, width: right - left + 1, height: bottom - top + 1 };
 }
 
-test('uses Hockey Life for the display identity while freezing technical identity and counters', () => {
+test('uses Hockey Life for the display identity while freezing technical identity and validating counters', () => {
   const { expo } = readJson('app.json');
   assert.equal(expo.name, 'Hockey Life');
   assert.equal(expo.slug, 'beer-league-hockey');
   assert.equal(expo.scheme, 'blh');
   assert.equal(expo.version, '1.0.0');
-  assert.equal(expo.ios.buildNumber, '25');
+  assertCanonicalPositiveDecimalCounter(expo.ios.buildNumber);
   assert.equal(expo.ios.bundleIdentifier, 'ca.beerleaguehockey.app');
   assert.equal(expo.android.package, 'ca.beerleaguehockey.app');
-  assert.equal(expo.android.versionCode, 1);
+  assertPositiveIntegerCounter(expo.android.versionCode);
   assert.equal(expo.owner, 'nickgrossi');
   assert.equal(expo.extra.eas.projectId, 'ed35ed7d-c5a3-415c-a7d1-ee0366a77dc3');
+});
+
+test('accepts release-independent canonical counters and rejects malformed values', () => {
+  for (const value of ['1', '26', '407']) assert.doesNotThrow(() => assertCanonicalPositiveDecimalCounter(value));
+  for (const value of ['', '0', '-1', '01', '1.0', '1e2', ' 2', '2 ', 2, null, undefined]) {
+    assert.throws(() => assertCanonicalPositiveDecimalCounter(value), { code: 'ERR_ASSERTION' });
+  }
+  for (const value of [1, 26, 407]) assert.doesNotThrow(() => assertPositiveIntegerCounter(value));
+  for (const value of [0, -1, 1.5, '26', null, undefined, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => assertPositiveIntegerCounter(value), { code: 'ERR_ASSERTION' });
+  }
 });
 
 test('uses Hockey Life in app-owned iOS permission explanations', () => {
