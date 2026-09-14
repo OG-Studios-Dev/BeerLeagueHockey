@@ -179,3 +179,4 @@ apps/remotion/build/
 # Approved upload-only exclusions for local agent runtime output and settings.
 /.claude/orchestration.log
 /.claude/settings.local.json
+/.claude/work-logs
