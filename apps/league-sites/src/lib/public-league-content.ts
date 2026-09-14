@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getLeagueBySlug, hasPlatformSubscription } from '@/lib/data';
 import { createDefaultPublicLeagueContentSource } from '@/lib/public-league-content-source';
 
-export type ContentView = 'news' | 'article' | 'history' | 'gallery' | 'album';
+export type ContentView = 'news' | 'article' | 'history' | 'gallery' | 'album' | 'events' | 'contact';
 export interface ContentLeague { id: string; slug: string; name: string; logoUrl: string | null }
 export interface ContentBase { schemaVersion: 1; view: ContentView; league: ContentLeague }
 export interface ArticleSummary { id: string; slug: string; title: string; excerpt: string | null; imageUrl: string | null; type: 'news' | 'game_recap' | 'weekly_wrap'; publishedAt: string; authorName: string | null; authorId: string | null }
@@ -23,7 +23,11 @@ export interface GalleryAlbum { id: string; title: string; description: string |
 export interface GalleryPhoto { id: string; albumId: string; imageUrl: string; thumbnailUrl: string | null; caption: string | null; sortOrder: number }
 export interface GalleryResponse extends ContentBase { view: 'gallery'; seasons: ContentSeason[]; albums: GalleryAlbum[]; total: number }
 export interface AlbumResponse extends ContentBase { view: 'album'; album: GalleryAlbum; photos: GalleryPhoto[]; total: number }
-export type ContentResponse = NewsResponse | ArticleResponse | HistoryResponse | GalleryResponse | AlbumResponse;
+export interface PublicLeagueEvent { id: string; title: string; description: string | null; eventType: string; location: string | null; startTime: string; endTime: string | null }
+export interface EventsResponse extends ContentBase { view: 'events'; timeZone: string; generatedAt: string; windowStart: string; events: PublicLeagueEvent[]; total: number }
+export interface ContactDetails { email: string | null; phone: string | null; websiteUrl: string | null; address: string | null; city: string | null; state: string | null; zipCode: string | null }
+export interface ContactResponse extends ContentBase { view: 'contact'; contact: ContactDetails }
+export type ContentResponse = NewsResponse | ArticleResponse | HistoryResponse | GalleryResponse | AlbumResponse | EventsResponse | ContactResponse;
 
 export type ContentHistory = Omit<HistoryResponse, keyof ContentBase | 'view'>;
 export interface PublicLeagueContentSource {
@@ -32,11 +36,16 @@ export interface PublicLeagueContentSource {
   loadHistory(): Promise<ContentHistory>;
   loadGallery(): Promise<{ seasons: ContentSeason[]; albums: GalleryAlbum[] }>;
   loadAlbum(albumId: string): Promise<{ album: GalleryAlbum; photos: GalleryPhoto[] } | null>;
+  loadEvents(): Promise<Pick<EventsResponse, 'timeZone' | 'windowStart' | 'events'>>;
+  loadContact(): Promise<ContactDetails>;
 }
 
 type LeagueSource = {
   id: string; slug: string; name: string; logo_url?: string | null; status?: string | null;
   created_at?: string | null; custom_domain?: string | null; custom_domain_verified?: boolean | null;
+  timezone?: string | null; contact_email?: string | null; contact_phone?: string | null;
+  website_url?: string | null; address?: string | null; city?: string | null;
+  state?: string | null; state_province?: string | null; zip_code?: string | null; postal_code?: string | null;
 };
 
 export interface PublicLeagueContentDependencies {
@@ -55,7 +64,7 @@ const defaultDependencies: PublicLeagueContentDependencies = {
 
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const ALLOWED = new Set(['leagueSlug', 'view', 'articleSlug', 'albumId']);
-const VIEWS = new Set<ContentView>(['news', 'article', 'history', 'gallery', 'album']);
+const VIEWS = new Set<ContentView>(['news', 'article', 'history', 'gallery', 'album', 'events', 'contact']);
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ARTICLE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -142,7 +151,8 @@ export async function handlePublicLeagueContentRequest(
     if (!UUID.test(league.id) || league.slug !== query.leagueSlug || !league.name.trim() || league.name.length > 500) {
       throw new Error('Invalid public league identity');
     }
-    const source = dependencies.createSource(league, dependencies.now());
+    const now = dependencies.now();
+    const source = dependencies.createSource(league, now);
     const base: ContentBase = { schemaVersion: 1, view: query.view, league: { id: league.id, slug: league.slug, name: league.name, logoUrl: publicMediaUrl(league.logo_url, league.slug) } };
     let payload: ContentResponse | null;
     if (query.view === 'news') {
@@ -156,9 +166,14 @@ export async function handlePublicLeagueContentRequest(
     } else if (query.view === 'gallery') {
       const gallery = await source.loadGallery();
       payload = { ...base, view: 'gallery', ...gallery, total: gallery.albums.length };
-    } else {
+    } else if (query.view === 'album') {
       const album = await source.loadAlbum(query.albumId!);
       payload = album ? { ...base, view: 'album', ...album, total: album.photos.length } : null;
+    } else if (query.view === 'events') {
+      const eventData = await source.loadEvents();
+      payload = { ...base, view: 'events', ...eventData, generatedAt: now.toISOString(), total: eventData.events.length };
+    } else {
+      payload = { ...base, view: 'contact', contact: await source.loadContact() };
     }
     if (!payload) return jsonError(404, 'CONTENT_NOT_FOUND', 'Published content not found.');
     if (new TextEncoder().encode(JSON.stringify(payload)).byteLength > MAX_RESPONSE_BYTES) throw new PayloadLimitError();

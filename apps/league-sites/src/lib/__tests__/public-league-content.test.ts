@@ -39,6 +39,13 @@ function syntheticDependencies(): PublicLeagueContentDependencies {
       }),
       loadGallery: async () => ({ seasons: [], albums: [] }),
       loadAlbum: async () => null,
+      loadEvents: async () => ({
+        timeZone: 'UTC', windowStart: '2026-09-06T12:00:00.000Z', events: [],
+      }),
+      loadContact: async () => ({
+        email: null, phone: null, websiteUrl: null, address: null,
+        city: null, state: null, zipCode: null,
+      }),
     }),
   };
 }
@@ -64,6 +71,79 @@ describe('GET /api/public/league-content query and tenant boundary', () => {
       league: { id: SYNTHETIC_LEAGUE_ID, slug: 'hockey-life', name: 'Synthetic Hockey League', logoUrl: null },
       articles: [],
       total: 0,
+    });
+  });
+
+  it('returns the frozen version-1 events DTO from the injected source', async () => {
+    const deps = syntheticDependencies();
+    const source = deps.createSource(
+      { id: SYNTHETIC_LEAGUE_ID, slug: 'hockey-life', name: 'Synthetic Hockey League' },
+      deps.now(),
+    );
+    const response = await handlePublicLeagueContentRequest(
+      request('leagueSlug=hockey-life&view=events'),
+      {
+        ...deps,
+        createSource: () => ({
+          ...source,
+          loadEvents: async () => ({
+            timeZone: 'America/Toronto',
+            windowStart: '2026-09-06T12:00:00.000Z',
+            events: [{
+              id: '20000000-0000-4000-8000-000000000002',
+              title: 'Synthetic unknown-type event',
+              description: null,
+              eventType: 'skills-clinic',
+              location: null,
+              startTime: '2026-09-14T00:00:00.000Z',
+              endTime: null,
+            }],
+          }),
+        } as ReturnType<typeof deps.createSource>),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      schemaVersion: 1,
+      view: 'events',
+      league: { id: SYNTHETIC_LEAGUE_ID, slug: 'hockey-life', name: 'Synthetic Hockey League', logoUrl: null },
+      timeZone: 'America/Toronto',
+      generatedAt: '2026-09-13T12:00:00.000Z',
+      windowStart: '2026-09-06T12:00:00.000Z',
+      events: [{
+        id: '20000000-0000-4000-8000-000000000002',
+        title: 'Synthetic unknown-type event',
+        description: null,
+        eventType: 'skills-clinic',
+        location: null,
+        startTime: '2026-09-14T00:00:00.000Z',
+        endTime: null,
+      }],
+      total: 1,
+    });
+  });
+
+  it('returns the frozen version-1 contact DTO with explicit missing fields', async () => {
+    const response = await handlePublicLeagueContentRequest(
+      request('leagueSlug=hockey-life&view=contact'),
+      syntheticDependencies(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      schemaVersion: 1,
+      view: 'contact',
+      league: { id: SYNTHETIC_LEAGUE_ID, slug: 'hockey-life', name: 'Synthetic Hockey League', logoUrl: null },
+      contact: {
+        email: null,
+        phone: null,
+        websiteUrl: null,
+        address: null,
+        city: null,
+        state: null,
+        zipCode: null,
+      },
     });
   });
 

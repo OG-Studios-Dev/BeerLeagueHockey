@@ -17,6 +17,7 @@ import type {
   HistoryBoard,
   HistoryStanding,
   Mention,
+  PublicLeagueEvent,
   PublicLeagueContentSource,
   RelatedGame,
   TaggedPlayer,
@@ -26,6 +27,7 @@ export const SOURCE_PAGE_SIZE = 100;
 const MAX_ARTICLES = 500;
 const MAX_ALBUMS = 500;
 const MAX_PHOTOS = 5000;
+const MAX_EVENTS = 5000;
 
 type DataRow = Record<string, unknown>;
 type QueryResult = { data: DataRow[] | DataRow | null; error: unknown; count?: number | null };
@@ -34,6 +36,7 @@ type QueryBuilder = {
   eq(key: string, value: unknown): QueryBuilder;
   in(key: string, values: unknown[]): QueryBuilder;
   lte(key: string, value: unknown): QueryBuilder;
+  or(filters: string): QueryBuilder;
   order(key: string, options?: unknown): QueryBuilder;
   limit(value: number): QueryBuilder;
   range(from: number, to: number): QueryBuilder;
@@ -46,7 +49,12 @@ type QueryBuilder = {
 };
 export interface PublicContentDatabase { from(table: string): QueryBuilder }
 
-type LeagueInput = { id: string; slug: string; name: string; created_at?: string | null };
+type LeagueInput = {
+  id: string; slug: string; name: string; created_at?: string | null; timezone?: string | null;
+  contact_email?: string | null; contact_phone?: string | null; website_url?: string | null;
+  address?: string | null; city?: string | null; state?: string | null; state_province?: string | null;
+  zip_code?: string | null; postal_code?: string | null;
+};
 type CanonicalSkaterRow = {
   player_id: string; profile_id?: string | null; profile_id_league_verified?: boolean; player_name: string; team_id?: string | null; team_name?: string | null;
   points?: number | null; goals?: number | null; assists?: number | null;
@@ -174,6 +182,80 @@ function requiredDate(value: unknown, label: string): string {
   const result = optionalDate(value, label);
   integrity(result, label);
   return result;
+}
+
+function canonicalDate(value: unknown, label: string): string {
+  return new Date(requiredDate(value, label)).toISOString();
+}
+
+function nullableText(value: unknown, label: string, maximum = 4096): string | null {
+  if (value == null || value === '' || (typeof value === 'string' && !value.trim())) return null;
+  integrity(typeof value === 'string' && value.length <= maximum, label);
+  return value;
+}
+
+function validTimeZone(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 100) return 'UTC';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format(0);
+    return value;
+  } catch {
+    return 'UTC';
+  }
+}
+
+function contactText(value: unknown, maximum: number): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const normalized = value.trim();
+  return normalized.length <= maximum && !/[\u0000-\u001f\u007f]/.test(normalized) ? normalized : null;
+}
+
+function contactAddress(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const normalized = value.trim();
+  integrity(normalized.length <= 1000, 'contact address');
+  return /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/.test(normalized) ? null : normalized;
+}
+
+function contactWebsiteUrl(value: unknown, leagueSlug: string): string | null {
+  const candidate = safeUrl(value, leagueSlug);
+  if (!candidate) return null;
+  try {
+    const normalized = new URL(candidate).toString();
+    return normalized.length <= 4096 ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeEmail(value: unknown): string | null {
+  const email = contactText(value, 320);
+  return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+function safePhone(value: unknown): string | null {
+  const phone = contactText(value, 64);
+  return phone && /\d/.test(phone) && /^[+0-9().\-\s#*xXeEtT]+$/.test(phone) ? phone : null;
+}
+
+function mapEvent(row: DataRow, leagueId: string, windowStart: number, now: number): PublicLeagueEvent {
+  integrity(row.league_id === leagueId, 'event league');
+  integrity(row.is_published === true, 'event publication');
+  const startTime = canonicalDate(row.start_time, 'event start time');
+  const endTime = row.end_time == null ? null : canonicalDate(row.end_time, 'event end time');
+  const start = Date.parse(startTime);
+  const end = endTime == null ? null : Date.parse(endTime);
+  integrity(end == null || end >= start, 'event time range');
+  integrity(start >= windowStart || (end != null && end >= now), 'event window');
+  return {
+    id: uuid(row.id, 'event id'),
+    title: text(row.title, 'event title', 500),
+    description: nullableText(row.description, 'event description', 12000),
+    eventType: text(row.event_type, 'event type', 100),
+    location: nullableText(row.location, 'event location', 1000),
+    startTime,
+    endTime,
+  };
 }
 
 function articleDate(row: DataRow): string | null {
@@ -325,8 +407,38 @@ export function createPublicLeagueContentSource(
   };
   const loadSeasons = async () => (await loadSeasonRows()).map(mapSeason);
 
+  const loadEvents = async () => {
+    const nowTime = now.getTime();
+    integrity(Number.isFinite(nowTime), 'event generation time');
+    const generatedAt = now.toISOString();
+    const windowStart = new Date(nowTime - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = await paginate('league_events', MAX_EVENTS, () => database.from('league_events')
+      .select('id, league_id, title, description, event_type, location, start_time, end_time, is_published')
+      .eq('league_id', league.id)
+      .eq('is_published', true)
+      .or(`start_time.gte.${windowStart},end_time.gte.${generatedAt}`)
+      .order('start_time', { ascending: true })
+      .order('id', { ascending: true }));
+    assertUniqueIds(rows, 'event');
+    const events = rows.map((row) => mapEvent(row, league.id, Date.parse(windowStart), nowTime))
+      .sort((left, right) => Date.parse(left.startTime) - Date.parse(right.startTime) || left.id.localeCompare(right.id));
+    return { timeZone: validTimeZone(league.timezone), windowStart, events };
+  };
+
+  const loadContact = async () => ({
+    email: safeEmail(league.contact_email),
+    phone: safePhone(league.contact_phone),
+    websiteUrl: contactWebsiteUrl(league.website_url, league.slug),
+    address: contactAddress(league.address),
+    city: contactText(league.city, 200),
+    state: contactText(league.state ?? league.state_province, 200),
+    zipCode: contactText(league.zip_code ?? league.postal_code, 40),
+  });
+
   return {
     loadNews,
+    loadEvents,
+    loadContact,
     async loadArticle(slug): Promise<ArticleResponse['article'] | null> {
       const rows = await loadNewsRows();
       const row = rows.find((candidate) => candidate.slug === slug || candidate.id === slug);
