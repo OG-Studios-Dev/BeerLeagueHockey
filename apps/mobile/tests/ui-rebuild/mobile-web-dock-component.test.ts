@@ -19,7 +19,7 @@ type DockState = {
 
 const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Discover', 'Stats', 'Team', 'Captain', 'Profile', 'LeaguePages'];
 
-function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean } = {}) {
+function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean; member?: boolean } = {}) {
   const harness = createHookHarness();
   let retryCount = 0;
   let activeLeague: any = { id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null };
@@ -71,12 +71,12 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
       'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }) },
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: options.reduceMotion ?? true, reduceTransparency: false }) },
-      '../context/AuthContext': { useAuth: () => ({ user: null, isGuest: true }) },
+      '../context/AuthContext': { useAuth: () => ({ user: options.member ? { id: 'user-a' } : null, isGuest: !options.member }) },
       '../context/LeagueContext': {
         useLeague: () => ({
           activeLeague,
           activeTheme: { primaryColor: '#00ffff', secondaryColor: '#ff00ff' },
-          isGuestLeague: true,
+          isGuestLeague: !options.member,
         }),
       },
       '../theme/colors': { default: { primary: '#0ff', brandArena: '#f0f', textSecondary: '#aaa', tabInactive: '#999', textPrimary: '#fff' } },
@@ -140,6 +140,77 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
 }
 
 describe('MobileWebDock component integration', () => {
+  it('renders the expanded More panel as a league-first, bottom-attached row directory', () => {
+    const fixture = createDockFixture({
+      isPlayoffs: true,
+      registrationOpen: true,
+      visiblePages: { register: true },
+      customNavItems: [{ label: 'Tournament rules and player eligibility', href: 'https://example.com/rules', isExternal: true }],
+      team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456', leadership_role: 'captain' },
+    }, { member: true });
+    fixture.mount();
+    fixture.openMore();
+
+    const sheet = findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet');
+    const sheetStyle = flattenStyle(sheet?.props.style);
+    assert.equal(sheetStyle.width, '100%');
+    assert.equal(sheetStyle.marginBottom, 0);
+    assert.equal(sheetStyle.borderTopLeftRadius, 24);
+    assert.equal(sheetStyle.borderBottomLeftRadius, 0);
+    assert.equal(sheetStyle.backgroundColor, '#0B192B');
+    assert.deepEqual(sheetStyle.transform, []);
+
+    const panelText = nodeText(sheet);
+    const groupLabels = ['League', 'Your account', 'Team tools', 'App', 'Links'];
+    assert.ok(groupLabels.every((label) => panelText.includes(label)));
+    for (let index = 1; index < groupLabels.length; index += 1) {
+      assert.ok(panelText.indexOf(groupLabels[index - 1]) < panelText.indexOf(groupLabels[index]));
+    }
+    assert.match(panelText, /^MoreLeague ALeague/);
+    assert.doesNotMatch(panelText, /LEAGUE NAVIGATION|Every page, one smooth move away/);
+
+    const teams = findNode(sheet, (node) => node.props.testID === 'more-item-league-teams');
+    const teamsStyle = flattenStyle(teams?.props.style({ pressed: false }));
+    assert.equal(teamsStyle.minHeight, 56);
+    assert.equal(teamsStyle.width, '100%');
+    assert.equal(teamsStyle.flexDirection, 'row');
+    const teamsLabel = findNode(teams, (node) => node.type === 'Text' && nodeText(node) === 'Teams');
+    const labelStyle = flattenStyle(teamsLabel?.props.style);
+    assert.equal(labelStyle.fontSize, 16);
+    assert.ok(['600', '700'].includes(String(labelStyle.fontWeight)));
+    assert.equal(teamsLabel?.props.numberOfLines, undefined);
+  });
+
+  it('renders every eligible action once and reserves the outbound icon for external destinations', () => {
+    const fixture = createDockFixture({
+      isPlayoffs: true,
+      registrationOpen: true,
+      visiblePages: { register: true },
+      customNavItems: [{ label: 'Long custom league handbook link that must wrap in full', href: 'https://example.com/handbook', isExternal: true }],
+      team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456', leadership_role: 'alternate_captain' },
+    }, { member: true });
+    fixture.mount();
+    fixture.openMore();
+    const sheet = findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet');
+
+    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Register', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Home', 'Discover Leagues', 'Long custom league handbook link that must wrap in full'];
+    for (const label of expected) {
+      const matches: unknown[] = [];
+      const visit = (root: unknown) => {
+        if (Array.isArray(root)) return root.forEach(visit);
+        if (!root || typeof root !== 'object' || !('props' in root)) return;
+        const node = root as { props: Record<string, unknown> };
+        if (node.props.accessibilityLabel === label) matches.push(node);
+        visit(node.props.children);
+      };
+      visit(sheet);
+      assert.equal(matches.length, 1, `${label} should render exactly once`);
+    }
+    assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-league-teams-external'), undefined);
+    assert.ok(findNode(sheet, (node) => node.props.testID === 'more-item-league-register-external'));
+    assert.ok(findNode(sheet, (node) => node.props.testID?.startsWith('more-item-custom-') && node.props.testID.endsWith('-external')));
+  });
+
   it('renders the enlarged crest in a dedicated center column without visible Team text', () => {
     const fixture = createDockFixture({
       team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456' },

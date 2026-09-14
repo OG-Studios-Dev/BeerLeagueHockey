@@ -37,6 +37,15 @@ const CONTROLS = [
   { key: 'More', label: 'More', icon: 'ellipsis-horizontal' },
 ] as const;
 
+const MORE_CATEGORY_ORDER: ReadonlyArray<MoreMenuItem['category']> = ['League', 'Account', 'Captain', 'App', 'Custom'];
+const MORE_CATEGORY_LABELS: Record<MoreMenuItem['category'], string> = {
+  League: 'League',
+  Account: 'Your account',
+  Captain: 'Team tools',
+  App: 'App',
+  Custom: 'Links',
+};
+
 function currentRouteName(state: BottomTabBarProps['state']) {
   return state.routes[state.index]?.name ?? 'Home';
 }
@@ -199,11 +208,13 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const categories = React.useMemo(() => {
     const grouped = new Map<MoreMenuItem['category'], MoreMenuItem[]>();
     for (const item of items) grouped.set(item.category, [...(grouped.get(item.category) ?? []), item]);
-    return [...grouped.entries()];
+    return MORE_CATEGORY_ORDER.flatMap((category) => {
+      const categoryItems = grouped.get(category);
+      return categoryItems?.length ? [[category, categoryItems] as const] : [];
+    });
   }, [items]);
   const layout = getMobileDockLayout(width, insets.bottom, height, insets.top);
   const accessibleVisuals = getDockAccessibilityVisuals(reduceMotion, reduceTransparency);
-  const tileWidth = `${100 / layout.tileColumns}%` as const;
 
   if (keyboardVisible) return null;
 
@@ -308,44 +319,25 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
               styles.sheet,
               {
                 maxHeight: layout.sheetMaxHeight,
-                marginBottom: Math.max(insets.bottom, 12),
-                borderColor: `${primary}55`,
-                backgroundColor: reduceTransparency ? palette.elevated : 'rgba(8, 15, 29, 0.96)',
+                marginBottom: 0,
+                backgroundColor: '#0B192B',
                 opacity: accessibleVisuals.fadeSheet ? progress : 1,
                 transform: accessibleVisuals.animate ? [
-                  { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [42, 0] }) },
-                  { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
+                  { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [32, 0] }) },
                 ] : [],
               },
             ]}
           >
-            {accessibleVisuals.glassGradient ? (
-              <LinearGradient
-                colors={[`${primary}35`, 'rgba(12, 20, 36, 0.95)', `${secondary}20`]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : null}
-            <View style={styles.sheetSheen} pointerEvents="none" />
             <View style={styles.sheetHeader}>
-              <View style={[styles.leagueMark, { borderColor: `${primary}55` }]}>
-                {activeLeague?.logoUrl ? (
-                  <Animated.Image source={{ uri: activeLeague.logoUrl }} style={styles.leagueLogo} accessibilityLabel={activeLeague.name} alt={activeLeague.name} />
-                ) : (
-                  <Ionicons name="trophy-outline" size={26} color={primary} />
-                )}
-              </View>
               <View style={styles.sheetHeaderCopy}>
-                <Text style={styles.sheetEyebrow}>LEAGUE NAVIGATION</Text>
-                <Text style={styles.sheetTitle}>{activeLeague?.name ?? 'Explore leagues'}</Text>
-                <Text style={styles.sheetSubtitle}>Every page, one smooth move away</Text>
+                <Text style={styles.sheetTitle}>More</Text>
+                <Text style={styles.sheetSubtitle}>{activeLeague?.name ?? 'Explore leagues'}</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Close more menu"
                 onPress={() => lifecycle.close()}
-                style={({ pressed }) => [styles.closeButton, pressed && styles.controlPressed]}
+                style={({ pressed }) => [styles.closeButton, pressed && styles.closeButtonPressed]}
               >
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </Pressable>
@@ -353,7 +345,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
             <ScrollView
               bounces={false}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(18, insets.bottom) }]}
+              contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
             >
               {activeLeague && data.websiteStatus === 'loading' ? (
                 <View style={styles.metadataStatus} accessibilityLiveRegion="polite">
@@ -377,24 +369,25 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                 </View>
               ) : null}
               {categories.map(([category, categoryItems]) => (
-                <View key={category} style={styles.category}>
-                  <Text style={[styles.categoryLabel, { color: primary }]}>{category}</Text>
-                  <View style={styles.tileGrid}>
-                    {categoryItems.map((item) => (
+                <View key={category} testID={`more-category-${category.toLowerCase()}`} style={styles.category}>
+                  <Text style={styles.categoryLabel}>{MORE_CATEGORY_LABELS[category]}</Text>
+                  <View style={styles.rowList}>
+                    {categoryItems.map((item, index) => (
                       <Pressable
                         key={item.key}
+                        testID={`more-item-${item.key}`}
                         accessibilityRole={item.destination.kind === 'external' ? 'link' : 'button'}
                         accessibilityLabel={item.label}
                         onPress={() => selectMoreItem(item)}
-                        style={({ pressed }) => [styles.tile, { width: tileWidth }, layout.compact && styles.tileCompact, pressed && styles.tilePressed]}
+                        style={({ pressed }) => [styles.menuRow, index === categoryItems.length - 1 && styles.menuRowLast, pressed && styles.menuRowPressed]}
                       >
-                        <View style={[styles.tileIcon, { backgroundColor: `${primary}18` }]}>
-                          <Ionicons name={item.icon as never} size={22} color={primary} />
-                        </View>
-                        <Text style={styles.tileLabel}>{item.label}</Text>
+                        <Ionicons name={item.icon as never} size={22} color={colors.primary} style={styles.leadingIcon} />
+                        <Text style={styles.menuRowLabel}>{item.label}</Text>
                         {item.destination.kind === 'external' ? (
-                          <Ionicons name="open-outline" size={12} color={colors.textSecondary} style={styles.externalIcon} />
-                        ) : null}
+                          <Ionicons testID={`more-item-${item.key}-external`} name="open-outline" size={18} color={colors.textSecondary} />
+                        ) : (
+                          <Ionicons name="chevron-forward-outline" size={18} color={colors.textSecondary} />
+                        )}
                       </Pressable>
                     ))}
                   </View>
@@ -428,34 +421,32 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: '#07101D',
     shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.44, shadowRadius: 14, elevation: 16,
   },
-  modalRoot: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 12 },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(1, 5, 12, 0.78)' },
   sheet: {
-    overflow: 'hidden', borderRadius: 30, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.55, shadowRadius: 28, elevation: 30,
+    width: '100%', maxWidth: 720, alignSelf: 'center', overflow: 'hidden',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24, borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
+    borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#26384D', shadowColor: '#000', shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.4, shadowRadius: 20, elevation: 30,
   },
-  sheetSheen: { position: 'absolute', top: 1, right: 26, left: 26, height: 1, backgroundColor: 'rgba(255,255,255,0.3)' },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 15, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  leagueMark: { width: 54, height: 54, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)' },
-  leagueLogo: { width: 48, height: 48, borderRadius: 15, resizeMode: 'contain' },
+  sheetHeader: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 20, paddingRight: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#26384D', backgroundColor: '#0B192B' },
   sheetHeaderCopy: { flex: 1 },
-  sheetEyebrow: { color: colors.textSecondary, fontSize: 9, fontWeight: '900', letterSpacing: 1.8 },
-  sheetTitle: { color: colors.textPrimary, fontSize: 20, lineHeight: 24, fontWeight: '900', marginTop: 1 },
-  sheetSubtitle: { color: colors.textSecondary, fontSize: 11, lineHeight: 15, marginTop: 2 },
-  closeButton: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },
-  sheetScroll: { paddingHorizontal: 12, paddingTop: 10 },
+  sheetTitle: { color: colors.textPrimary, fontSize: 23, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4 },
+  sheetSubtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 1 },
+  closeButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#14263A' },
+  closeButtonPressed: { opacity: 0.7, backgroundColor: '#183149' },
+  sheetScroll: { paddingTop: 8 },
   metadataStatus: { alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 14 },
   metadataStatusTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', textAlign: 'center' },
   metadataStatusCopy: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, textAlign: 'center' },
   retryButton: { minWidth: 88, minHeight: 44, marginTop: 3, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   retryLabel: { fontSize: 13, fontWeight: '900' },
-  category: { marginTop: 9 },
-  categoryLabel: { paddingHorizontal: 6, marginBottom: 7, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
-  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -3 },
-  tile: { minHeight: 88, padding: 3, alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 18 },
-  tileCompact: { minHeight: 82 },
-  tilePressed: { backgroundColor: 'rgba(255,255,255,0.08)', transform: [{ scale: 0.96 }] },
-  tileIcon: { width: 43, height: 43, borderRadius: 15, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
-  tileLabel: { color: colors.textPrimary, fontSize: 11, lineHeight: 14, fontWeight: '700', textAlign: 'center', paddingHorizontal: 2 },
-  externalIcon: { position: 'absolute', top: 11, right: 14 },
+  category: { paddingTop: 9 },
+  categoryLabel: { paddingHorizontal: 20, paddingVertical: 8, color: colors.textSecondary, fontSize: 11, lineHeight: 15, fontWeight: '800', letterSpacing: 1.25, textTransform: 'uppercase' },
+  rowList: { borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#26384D' },
+  menuRow: { width: '100%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingLeft: 20, paddingRight: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#26384D' },
+  menuRowLast: { borderBottomWidth: 0 },
+  menuRowPressed: { backgroundColor: '#183149' },
+  leadingIcon: { width: 28, textAlign: 'center' },
+  menuRowLabel: { flex: 1, color: colors.textPrimary, fontSize: 16, lineHeight: 22, fontWeight: '600' },
 });
