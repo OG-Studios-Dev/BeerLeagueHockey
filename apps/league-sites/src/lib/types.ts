@@ -530,6 +530,10 @@ export interface StatsTableColumn<TKey extends string> {
 
 export interface UnifiedStatsRowBase {
   player_id: string;
+  /** Public profile identity when the canonical row is backed by a navigable profile. */
+  profile_id?: string | null;
+  /** True only when the profile identity is proven to belong to this league's historical dataset. */
+  profile_id_league_verified?: boolean;
   player_name: string;
   avatar_url: string | null;
   jersey_number?: string | null;
@@ -572,6 +576,8 @@ export interface UnifiedGoalieStatsRow extends UnifiedStatsRowBase {
   goals_against: number;
   save_percentage: number | null;
   goals_against_average: number | null;
+  save_percentage_provenance?: 'measured' | 'estimated' | 'unmeasured';
+  goals_against_average_provenance?: 'measured' | 'estimated' | 'unmeasured';
   shutouts: number;
 }
 

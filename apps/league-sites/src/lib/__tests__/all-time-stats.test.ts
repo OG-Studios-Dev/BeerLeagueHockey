@@ -202,6 +202,79 @@ describe('all-time stats helpers', () => {
     });
   });
 
+  it('tracks imported save percentage and GAA knowledge independently through mixed all-time rows', () => {
+    const [unknownSaves] = normalizeImportedCareerBaselineRows([{
+      id: 'legacy-unknown-saves', full_name: 'Unknown Saves', is_goalie: true,
+      games_played: 5, saves: 0, goals_against: 20, save_percentage: 0, goals_against_average: 4,
+    }], { sourceTable: 'legacy_players' });
+    const [knownSaves] = normalizeImportedCareerBaselineRows([{
+      id: 'legacy-known-saves', full_name: 'Known Saves', is_goalie: true,
+      saves: 90, goals_against: 10, save_percentage: 90,
+    }], { sourceTable: 'legacy_players' });
+
+    expect(buildHistoricalBaselineGoalieRows([unknownSaves])[0]).toMatchObject({
+      save_percentage: null,
+      goals_against_average: 4,
+      save_percentage_provenance: 'unmeasured',
+      goals_against_average_provenance: 'measured',
+    });
+    expect(buildHistoricalBaselineGoalieRows([knownSaves])[0]).toMatchObject({
+      save_percentage: 90,
+      goals_against_average: null,
+      save_percentage_provenance: 'measured',
+      goals_against_average_provenance: 'unmeasured',
+    });
+
+    const [mixed] = mergeAllTimeGoalieRows([unknownSaves], [{
+      player_id: unknownSaves.player_id, player_name: 'Unknown Saves', avatar_url: null,
+      team_id: 'team-1', team_name: 'Native Team', division_name: null, position: 'Goalie',
+      championships: 0, games_played: 5, wins: 2, losses: 3, saves: 90, goals_against: 10,
+      save_percentage: 90, goals_against_average: 2, shutouts: 0,
+      save_percentage_provenance: 'measured', goals_against_average_provenance: 'measured',
+    }]);
+    expect(mixed).toMatchObject({
+      save_percentage: null,
+      goals_against_average: 3,
+      save_percentage_provenance: 'unmeasured',
+      goals_against_average_provenance: 'measured',
+    });
+  });
+
+  it('treats schema-default legacy all-zero goalie rates as unknown while preserving evidenced zeroes', () => {
+    const [legacyDefault] = normalizeImportedCareerBaselineRows([{
+      id: 'legacy-default-zero', full_name: 'Legacy Default', is_goalie: true,
+      games_played: 0, saves: 0, goals_against: 0, save_percentage: 0, goals_against_average: 0,
+    }], { sourceTable: 'legacy_players' });
+    const [nativeZeroSaves] = normalizeImportedCareerBaselineRows([{
+      id: 'native-zero-saves', full_name: 'Native Zero Saves', is_goalie: true,
+      games_played: 1, saves: 0, goals_against: 10, shots_against: 10,
+      save_percentage: 0, goals_against_average: 10,
+    }], { sourceTable: 'measurement-aware-source' });
+    const [nativeShutout] = normalizeImportedCareerBaselineRows([{
+      id: 'native-shutout', full_name: 'Native Shutout', is_goalie: true,
+      games_played: 1, saves: 20, goals_against: 0, shots_against: 20,
+      save_percentage: 100, goals_against_average: 0,
+    }], { sourceTable: 'measurement-aware-source' });
+
+    expect(buildHistoricalBaselineGoalieRows([legacyDefault])[0]).toMatchObject({
+      save_percentage: null,
+      save_percentage_provenance: 'unmeasured',
+      goals_against_average: null,
+      goals_against_average_provenance: 'unmeasured',
+    });
+    expect(buildHistoricalBaselineGoalieRows([nativeZeroSaves])[0]).toMatchObject({
+      save_percentage: 0,
+      save_percentage_provenance: 'measured',
+      goals_against_average: 10,
+      goals_against_average_provenance: 'measured',
+    });
+    expect(buildHistoricalBaselineGoalieRows([nativeShutout])[0]).toMatchObject({
+      save_percentage: 100,
+      goals_against_average: 0,
+      goals_against_average_provenance: 'measured',
+    });
+  });
+
   it('merges imported and native skater totals while preferring native team metadata', () => {
     const baselineRows: ImportedCareerBaselineRow[] = [
       {
