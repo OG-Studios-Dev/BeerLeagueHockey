@@ -1,7 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
-import blhLogo from '../../../assets/blh-logo.png';
+import hockeyLifeLogo from '../../../assets/hockey-life-logo.png';
 import BrandAtmosphere from '../../components/BrandAtmosphere';
 import colors from '../../theme/colors';
 
@@ -17,10 +17,8 @@ export default function SplashScreen({ navigation }: { navigation: any }) {
   return (
     <View style={styles.container}>
       <BrandAtmosphere intensity="high" />
-      <Text style={styles.eyebrow}>BEER LEAGUE HOCKEY</Text>
-      <Image source={blhLogo} style={styles.logo} accessibilityIgnoresInvertColors />
-      <Text style={styles.title}>BLH</Text>
-      <Text style={styles.subtitle}>Beer League Hockey</Text>
+      <Image source={hockeyLifeLogo} style={styles.logo} alt="Hockey Life logo" accessibilityIgnoresInvertColors />
+      <Text style={styles.title}>Hockey Life</Text>
       <Text style={styles.kicker}>Built for the bench.</Text>
     </View>
   );
@@ -38,24 +36,11 @@ const styles = StyleSheet.create({
     height: 120,
     marginBottom: 12,
   },
-  eyebrow: {
-    color: colors.textInteractive,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 2.2,
-    marginBottom: 18,
-  },
   title: {
-    fontSize: 44,
+    fontSize: 38,
     fontWeight: '900',
     color: colors.primary,
-    letterSpacing: 1,
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    letterSpacing: -0.8,
   },
   kicker: {
     marginTop: 10,

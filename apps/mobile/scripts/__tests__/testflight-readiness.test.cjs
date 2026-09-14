@@ -34,7 +34,7 @@ test('keeps the existing Expo, Apple, and package identity exact', () => {
   assert.equal(packageJson.dependencies.expo, '^54.0.33');
   assert.equal(packageJson.dependencies['react-native'], '0.81.5');
 
-  assert.equal(expo.name, 'Beer League Hockey');
+  assert.equal(expo.name, 'Hockey Life');
   assert.equal(expo.slug, 'beer-league-hockey');
   assert.equal(expo.owner, 'nickgrossi');
   assert.equal(expo.scheme, 'blh');

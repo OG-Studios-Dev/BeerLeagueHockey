@@ -205,6 +205,7 @@ function renderHome({
     'expo-haptics': { ImpactFeedbackStyle: { Medium: 'medium' }, impactAsync: () => {} },
     'expo-linking': { openURL: failNetwork },
     '../../assets/blh-logo.png': 'logo.png',
+    '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
     '../context/LeagueContext': {
       useLeague: () => ({
         activeLeague: league, isGuestLeague: guest,

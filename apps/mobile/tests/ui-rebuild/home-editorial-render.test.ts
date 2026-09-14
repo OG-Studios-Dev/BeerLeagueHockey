@@ -80,6 +80,7 @@ function makeScreen({
       'expo-haptics': { ImpactFeedbackStyle: { Medium: 'medium' }, impactAsync: () => {} },
       'expo-linking': { openURL: async () => {} },
       '../../assets/blh-logo.png': 'blh-logo.png',
+      '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
       '../components/BrandAtmosphere': (props: Record<string, unknown>) => createElement('BrandAtmosphere', props),
       '../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
       '../components/GuestBanner': () => createElement('GuestBanner', null),
@@ -167,6 +168,7 @@ describe('Home editorial native render', () => {
 
     const header = findNode(output, (node) => node.props.testID === 'home-editorial-header');
     assert.ok(header);
+    assert.equal(findNode(header, (node) => node.type === 'Image')?.props.source, 'hockey-life-logo.png');
     assert.match(nodeText(header), /LEAGUE HOME/);
     assert.match(nodeText(header), /Harbour City Thursday Night Hockey League/);
 

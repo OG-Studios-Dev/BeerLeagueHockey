@@ -2,7 +2,7 @@ import React from 'react';
 import { Image, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import blhLogo from '../../assets/blh-logo.png';
+import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import colors from '../theme/colors';
 import { ui } from '../theme/ui';
 import BrandAtmosphere from './BrandAtmosphere';
@@ -20,7 +20,7 @@ export default function AuthShell({
   children,
   title,
   subtitle,
-  eyebrow = 'BEER LEAGUE HOCKEY',
+  eyebrow = 'HOCKEY LIFE',
   contentStyle,
 }: AuthShellProps) {
   return (
@@ -34,7 +34,7 @@ export default function AuthShell({
       >
         <View style={[styles.content, contentStyle]}>
           <View style={styles.brandRow}>
-            <Image source={blhLogo} style={styles.logo} alt="Beer League Hockey" accessibilityIgnoresInvertColors />
+            <Image source={hockeyLifeLogo} style={styles.logo} alt="Hockey Life logo" accessibilityIgnoresInvertColors />
             <View style={styles.brandCopy}>
               <Text style={styles.eyebrow}>{eyebrow}</Text>
               <Text style={styles.kicker}>Built for the bench.</Text>

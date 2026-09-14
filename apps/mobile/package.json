@@ -14,6 +14,7 @@
     "rebuild:checklist": "node scripts/generate-rebuild-checklist.cjs",
     "test:rebuild": "node --test scripts/__tests__/verify-rebuild-manifest.test.cjs",
     "test:testflight-readiness": "node --test scripts/__tests__/testflight-readiness.test.cjs",
+    "test:branding": "node --test scripts/__tests__/branding-contract.test.cjs && node --import tsx --test tests/ui-rebuild/branding-components.test.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
     "build:dev": "eas build --profile development --platform all",

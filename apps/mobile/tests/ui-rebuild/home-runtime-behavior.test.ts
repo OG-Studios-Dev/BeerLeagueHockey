@@ -81,6 +81,7 @@ function createRuntime({
     'expo-haptics': { ImpactFeedbackStyle: { Medium: 'medium' }, impactAsync: () => undefined },
     'expo-linking': { openURL: async (url: string) => { linkCalls.push(url); } },
     '../../assets/blh-logo.png': 'blh-logo.png',
+    '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
     '../components/GuestBanner': () => createElement('GuestBanner', null),
     '../components/LeagueMarketplace': (props: Record<string, unknown>) => createElement('LeagueMarketplace', props),
     '../components/RevealView': ({ children, ...props }: Record<string, unknown>) => createElement('RevealView', props, children),

@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import blhLogo from '../../assets/blh-logo.png';
+import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import GuestBanner from '../components/GuestBanner';
 import LeagueMarketplace from '../components/LeagueMarketplace';
 import RevealView from '../components/RevealView';
@@ -439,7 +440,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />} showsVerticalScrollIndicator={false}>
         <RevealView delay={20} duration={visuals.revealDuration}>
           <View testID="home-editorial-header" style={styles.headerRow}>
-            <View style={styles.brandWrap}><View style={[styles.logoFrame, { borderColor: visuals.stroke }]}><Image source={blhLogo} style={styles.smallLogo} alt="" /></View><View style={styles.brandCopy}><Text style={[styles.homeEyebrow, { color: accent }]}>LEAGUE HOME</Text><Text style={[styles.logo, compact && styles.logoCompact]}>{activeLeague.name}</Text></View></View>
+            <View style={styles.brandWrap}><View style={[styles.logoFrame, { borderColor: visuals.stroke }]}><Image source={hockeyLifeLogo} style={styles.smallLogo} alt="" /></View><View style={styles.brandCopy}><Text style={[styles.homeEyebrow, { color: accent }]}>LEAGUE HOME</Text><Text style={[styles.logo, compact && styles.logoCompact]}>{activeLeague.name}</Text></View></View>
             <Pressable accessibilityRole="button" accessibilityLabel="Updates" style={[styles.iconButton, { backgroundColor: visuals.surface, borderColor: visuals.stroke }]} onPress={() => navigation?.navigate?.('Profile', { screen: 'NotificationsFeed' })}><Ionicons name="notifications-outline" size={20} color={homeTokens.text} /></Pressable>
           </View>
         </RevealView>
@@ -448,7 +449,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <SectionHeading eyebrow="LATEST" title="News" />
           {!publicHome ? <SectionState loading onRetry={retry} /> : publicHome.articles.status === 'error' && !article ? <SectionState message={publicHome.articles.message} onRetry={retry} /> : (
             <Pressable testID="home-story-detail" accessibilityRole="link" accessibilityLabel={article ? `Read ${article.title}` : heroAlbum ? `Open ${heroAlbum.title} gallery` : `Open ${activeLeague.name} schedule`} style={[sectionCard, styles.hero]} onPress={() => openExternal(article ? `${origin}/news/${article.slug || article.id}` : heroAlbum ? `${origin}/gallery/${heroAlbum.id}` : `${origin}/schedule`)}>
-              {(article?.image_url || heroAlbum?.cover_photo_url) ? <Image source={{ uri: (article?.image_url || heroAlbum?.cover_photo_url)! }} style={styles.heroImage} alt={article?.title ?? heroAlbum?.title ?? ''} /> : <View style={styles.heroMark}><Image source={blhLogo} style={styles.heroLogo} alt="" /></View>}
+              {(article?.image_url || heroAlbum?.cover_photo_url) ? <Image source={{ uri: (article?.image_url || heroAlbum?.cover_photo_url)! }} style={styles.heroImage} alt={article?.title ?? heroAlbum?.title ?? ''} /> : <View style={styles.heroMark}><Image source={hockeyLifeLogo} style={styles.heroLogo} alt="" /></View>}
               <LinearGradient colors={['transparent', 'rgba(3,8,16,0.96)']} style={styles.heroShade} />
               <View style={styles.heroCopy}><Text style={[styles.heroEyebrow, { color: accent }]}>{article ? articleLabel(article.type) : heroAlbum ? 'FROM THE GALLERY' : 'LEAGUE CENTRAL'}</Text><Text style={styles.heroTitle}>{article?.title ?? heroAlbum?.title ?? activeLeague.name}</Text>{article && articleExcerpt(article) ? <Text style={styles.heroExcerpt}>{articleExcerpt(article)}</Text> : <Text style={styles.heroExcerpt}>{heroAlbum ? 'Open the latest league album.' : 'Scores, stories, and the full league schedule.'}</Text>}</View>
             </Pressable>
