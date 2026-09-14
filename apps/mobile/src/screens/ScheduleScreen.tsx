@@ -1,7 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusFlatList, FocusScrollView } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
 import GuestBanner from '../components/GuestBanner';
 import GameCard from '../components/GameCard';
@@ -390,7 +391,9 @@ export default function ScheduleScreen({
             <Text style={styles.emptyTitle}>No upcoming games across your leagues</Text>
           </View>
                 ) : (
-                  <FlatList
+                  <FocusFlatList
+            focusItems={false}
+            focusScopeKey="schedule:global"
             data={globalGames}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
@@ -404,7 +407,7 @@ export default function ScheduleScreen({
               ) : null
             }
             renderItem={({ item }) => (
-              <View>
+              <FocusCard focusId={`schedule:global-game:${item.id}`}>
                 <View style={styles.globalLeagueRow}>
                   <Text style={styles.globalLeagueLabel}>{item.leagueName}</Text>
                   <Text style={styles.globalLeagueMeta}>{item.myTeamName}</Text>
@@ -433,7 +436,7 @@ export default function ScheduleScreen({
                     />
                   </View>
                 ) : null}
-              </View>
+              </FocusCard>
             )}
           />
         )}
@@ -467,7 +470,9 @@ export default function ScheduleScreen({
             <Text style={styles.emptyTitle}>No upcoming games yet</Text>
           </View>
         ) : (
-          <FlatList
+          <FocusFlatList
+            focusItems={false}
+            focusScopeKey={`schedule:${activeLeague.id}:upcoming`}
             data={upcomingRows}
             keyExtractor={(item) => item.id}
             stickyHeaderIndices={stickyHeaderIndices}
@@ -486,7 +491,7 @@ export default function ScheduleScreen({
               const myCheckin = isUserGame ? (checkins[game.id] ?? null) : null;
 
               return (
-                <View>
+                <FocusCard focusId={`schedule:game:${game.id}`}>
                   <GameCard
                     gameId={game.id}
                     homeTeam={game.home_team?.name ?? game.home_team_id}
@@ -511,7 +516,7 @@ export default function ScheduleScreen({
                       />
                     </View>
                   )}
-                </View>
+                </FocusCard>
               );
             }}
           />
@@ -528,7 +533,9 @@ export default function ScheduleScreen({
             <Text style={styles.emptyTitle}>No scores yet</Text>
           </View>
         ) : (
-          <FlatList
+          <FocusFlatList
+            focusItems={false}
+            focusScopeKey={`schedule:${activeLeague.id}:scores`}
             data={finalGames}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
@@ -560,8 +567,8 @@ export default function ScheduleScreen({
             <Text style={styles.emptyTitle}>No standings yet</Text>
           </View>
         ) : (
-          <View style={styles.listContent}>
-            <View style={[styles.standingsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+          <FocusScrollView focusScopeKey={`schedule:${activeLeague.id}:standings`} contentContainerStyle={styles.listContent}>
+            <FocusCard focusId={`standings:table:${activeLeague.id}`} style={[styles.standingsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.headerText, styles.teamHeaderText]}>Team</Text>
                 <Text style={styles.headerText}>GP</Text>
@@ -600,8 +607,8 @@ export default function ScheduleScreen({
                   </Pressable>
                 );
               })}
-            </View>
-          </View>
+            </FocusCard>
+          </FocusScrollView>
         )
       ) : null}
     </SafeAreaView>

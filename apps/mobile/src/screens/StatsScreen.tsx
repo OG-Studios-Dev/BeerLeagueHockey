@@ -1,9 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusFlatList } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
 import GuestBanner from '../components/GuestBanner';
 import PillToggle from '../components/PillToggle';
@@ -206,7 +207,8 @@ export default function StatsScreen() {
         ) : globalView.leaders.length === 0 ? (
           <View style={styles.emptyWrap}><Text style={styles.emptyTitle}>No league leaders available yet</Text></View>
         ) : (
-          <FlatList
+          <FocusFlatList
+            focusScopeKey={`stats:global:${globalScope}`}
             data={globalView.leaders}
             keyExtractor={(item) => item.leagueId}
             contentContainerStyle={styles.listContent}
@@ -253,7 +255,8 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
-      <FlatList
+      <FocusFlatList
+        focusScopeKey={`stats:${seasonScope}:${selectedTab}`}
         testID="stats-page-list"
         data={(selectedTab === 'Skaters' ? seasonView.status === 'loading' : goalieView.status === 'loading') ? [] : list}
         keyExtractor={(item, index) => `${item.player_id}-${index}`}

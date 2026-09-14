@@ -1,16 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import SectionHeader from '../../components/SectionHeader';
 import colors from '../../theme/colors';
@@ -45,10 +45,10 @@ export default function InvitePlayersScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <SectionHeader title="Share Join Link" />
 
-        <View style={styles.linkCard}>
+        <FocusCard focusId={`invite:${teamId}:link`} style={styles.linkCard}>
           <Text style={styles.linkCardTitle}>Team Join Link</Text>
           <Text style={styles.linkCardSub}>
             Share this link with players you want to invite to {teamName}.
@@ -69,10 +69,10 @@ export default function InvitePlayersScreen({ route, navigation }: any) {
               <Text style={styles.copyBtnText}>Copy</Text>
             </Pressable>
           </View>
-        </View>
+        </FocusCard>
 
         {/* QR Code placeholder */}
-        <View style={styles.qrCard}>
+        <FocusCard focusId={`invite:${teamId}:qr`} style={styles.qrCard}>
           <Ionicons name="qr-code-outline" size={64} color={colors.textSecondary} />
           <Text style={styles.qrTitle}>QR Code</Text>
           <Text style={styles.qrSub}>
@@ -82,10 +82,10 @@ export default function InvitePlayersScreen({ route, navigation }: any) {
             <Ionicons name="qr-code" size={120} color={colors.glassStroke} />
             <Text style={styles.qrPlaceholderText}>QR scanning requires a native camera module</Text>
           </View>
-        </View>
+        </FocusCard>
 
         {/* Tips */}
-        <View style={styles.tipsCard}>
+        <FocusCard focusId={`invite:${teamId}:tips`} style={styles.tipsCard}>
           <Text style={styles.tipsTitle}>Tips</Text>
           <View style={styles.tipRow}>
             <Ionicons name="checkmark-circle" size={16} color={colors.accentGreen} />
@@ -99,8 +99,8 @@ export default function InvitePlayersScreen({ route, navigation }: any) {
             <Ionicons name="checkmark-circle" size={16} color={colors.accentGreen} />
             <Text style={styles.tipText}>You can approve join requests from the captain dashboard</Text>
           </View>
-        </View>
-      </ScrollView>
+        </FocusCard>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

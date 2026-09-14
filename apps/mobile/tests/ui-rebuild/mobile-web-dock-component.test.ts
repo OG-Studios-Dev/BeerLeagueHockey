@@ -32,6 +32,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
   const keyboardListeners = new Map<string, Set<() => void>>();
   const animationCompletions: Array<(result: { finished: boolean }) => void> = [];
   let animationStops = 0;
+  const focusPauseStates: boolean[] = [];
   class AnimatedValue {
     value: number;
     constructor(value: number) { this.value = value; }
@@ -80,6 +81,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
           isGuestLeague: !options.member,
         }),
       },
+      '../context/FocusPauseContext': { useFocusPauseLease: (active: boolean) => { focusPauseStates.push(active); } },
       '../theme/colors': { default: { primary: '#0ff', brandArena: '#f0f', textSecondary: '#aaa', tabInactive: '#999', textPrimary: '#fff' } },
       './useMobileDockData': { useMobileDockData: () => data },
     },
@@ -119,7 +121,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
     harness.render();
   };
   return {
-    harness, mount, openMore, navigationCalls, emittedEvents, openedUrls,
+    harness, mount, openMore, navigationCalls, emittedEvents, openedUrls, focusPauseStates,
     retryCount: () => retryCount,
     emitKeyboard: (event: string) => {
       keyboardListeners.get(event)?.forEach((listener) => listener());
@@ -141,6 +143,22 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
 }
 
 describe('MobileWebDock component integration', () => {
+  it('holds the global focus pause for the full mounted More lifecycle, including reopen and route reset', () => {
+    const fixture = createDockFixture({}, { reduceMotion: false, deferAnimations: true });
+    fixture.mount();
+    assert.equal(fixture.focusPauseStates.at(-1), false);
+    fixture.openMore();
+    assert.equal(fixture.focusPauseStates.at(-1), true);
+    fixture.finishNextAnimation();
+    findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Close more menu')!.props.onPress();
+    assert.equal(fixture.focusPauseStates.at(-1), true, 'close animation retains the lease');
+    fixture.openMore();
+    fixture.finishNextAnimation();
+    assert.equal(fixture.focusPauseStates.at(-1), true, 'stale close completion does not unpause reopened More');
+    fixture.setFocusedRoute('Stats');
+    assert.equal(fixture.focusPauseStates.at(-1), false, 'route reset releases the overlay pause');
+  });
+
   it('renders the expanded More panel as a league-first, bottom-attached row directory', () => {
     const fixture = createDockFixture({
       isPlayoffs: true,

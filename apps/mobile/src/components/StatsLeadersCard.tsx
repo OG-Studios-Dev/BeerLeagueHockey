@@ -7,6 +7,7 @@ import Avatar from './Avatar';
 import type { PlayerStatRow } from '../lib/supabase/data';
 import { formatPublicMetric } from '../lib/supabase/publicStats';
 import { ui } from '../theme/ui';
+import { FocusCard } from './CardFocus';
 
 export type StatsLeaderMetric = 'goals' | 'assists' | 'points';
 export type StatsCardLeader = PlayerStatRow & { avatar_url: string | null };
@@ -48,7 +49,7 @@ export default function StatsLeadersCard({ leagueName, divisionName, metric, lea
   const displayValue = (row: StatsCardLeader) => row.metrics ? formatPublicMetric(row.metrics[metric]).value : row[metric] ?? '—';
   const maximum = Math.max(1, ...rows.map(numericValue));
   return (
-    <View testID="stats-leaders-card" style={styles.card}>
+    <FocusCard focusId={`stats-leaders:${leagueName}:${divisionName ?? 'all'}`} testID="stats-leaders-card" style={styles.card}>
       <LinearGradient colors={reduceTransparency ? ['#0C1925', '#0C1925'] : ['#112B35', '#0B1723', '#090F19']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={styles.surface}>
         <View style={styles.heading}>
           <View style={styles.headingCopy}>
@@ -102,7 +103,7 @@ export default function StatsLeadersCard({ leagueName, divisionName, metric, lea
           </View>
         )}
       </LinearGradient>
-    </View>
+    </FocusCard>
   );
 }
 

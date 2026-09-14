@@ -4,7 +4,6 @@ import React from 'react';
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 import colors from '../../theme/colors';
 
 const NOTES_KEY_PREFIX = 'blh_lineup_notes_';
@@ -58,7 +58,7 @@ export default function LineupNotesScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.contentActions}>
           <Pressable accessibilityRole="button" accessibilityLabel="Cancel lineup notes" style={styles.cancelBtn} onPress={() => navigation.goBack()}>
             <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -75,7 +75,7 @@ export default function LineupNotesScreen({ route, navigation }: any) {
           </Pressable>
         </View>
         {/* Game context */}
-        <View style={styles.gameContext}>
+        <FocusCard focusId={`lineup:${gameId}:context`} style={styles.gameContext}>
           <Text style={styles.gameContextLabel}>GAME NOTES</Text>
           <Text style={styles.gameContextOpponent}>
             vs {opponentName ?? 'Opponent'}
@@ -90,10 +90,10 @@ export default function LineupNotesScreen({ route, navigation }: any) {
               })}
             </Text>
           )}
-        </View>
+        </FocusCard>
 
         {/* Notes Input */}
-        <View style={styles.notesCard}>
+        <FocusCard focusId={`lineup:${gameId}:notes`} style={styles.notesCard}>
           <TextInput
             style={styles.notesInput}
             value={notes}
@@ -119,10 +119,10 @@ Notes:
             textAlignVertical="top"
             autoCapitalize="sentences"
           />
-        </View>
+        </FocusCard>
 
         {/* Tips */}
-        <View style={styles.tipsCard}>
+        <FocusCard focusId={`lineup:${gameId}:tips`} style={styles.tipsCard}>
           <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
           <View style={styles.tipsContent}>
             <Text style={styles.tipsTitle}>About Lineup Notes</Text>
@@ -132,8 +132,8 @@ Notes:
               these notes from the game detail screen.
             </Text>
           </View>
-        </View>
-      </ScrollView>
+        </FocusCard>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

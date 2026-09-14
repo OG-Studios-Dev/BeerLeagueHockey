@@ -3,7 +3,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../../components/Avatar';
+import { FocusFlatList } from '../../components/CardFocus';
 import {
   getRecentTeamMessages,
   postTeamMessage,
@@ -85,7 +85,7 @@ export default function TeamChatScreen({ route, navigation }: any) {
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
-        <FlatList
+        <FocusFlatList
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}

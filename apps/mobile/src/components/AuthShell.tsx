@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
@@ -7,6 +7,7 @@ import colors from '../theme/colors';
 import { ui } from '../theme/ui';
 import BrandAtmosphere from './BrandAtmosphere';
 import GlassSurface from './GlassSurface';
+import { FocusCard, FocusScrollView } from './CardFocus';
 
 type AuthShellProps = {
   children: React.ReactNode;
@@ -26,7 +27,7 @@ export default function AuthShell({
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <BrandAtmosphere intensity="medium" />
-      <ScrollView
+      <FocusScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -40,13 +41,15 @@ export default function AuthShell({
               <Text style={styles.kicker}>Built for the bench.</Text>
             </View>
           </View>
-          <GlassSurface style={styles.panel} elevated>
-            <Text accessibilityRole="header" style={styles.title}>{title}</Text>
-            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-            {children}
-          </GlassSurface>
+          <FocusCard focusId={`auth:${title}`}>
+            <GlassSurface style={styles.panel} elevated>
+              <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+              {children}
+            </GlassSurface>
+          </FocusCard>
         </View>
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

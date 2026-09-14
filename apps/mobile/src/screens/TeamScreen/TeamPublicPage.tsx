@@ -4,6 +4,7 @@ import React from 'react';
 import { Image, ImageBackground, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import Avatar from '../../components/Avatar';
+import { FocusCard } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
 import type { TeamLeaderMetric, TeamPageGame, TeamPageLeader, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { formatPublicMetric } from '../../lib/supabase/publicStats';
@@ -130,7 +131,7 @@ function Hero({ snapshot, compact }: { snapshot: TeamPageSnapshot; compact: bool
     ['DIFF', standing?.goalDifferential == null ? '—' : nullableDisplay(standing.goalDifferential, standing.goalDifferential > 0 ? '+' : '')],
   ];
   return (
-    <View testID="team-public-hero" style={styles.hero}>
+    <FocusCard focusId={`team-public:${team.id}:hero`} testID="team-public-hero" accentColor={team.primaryColor ?? accent} style={styles.hero}>
       <View style={styles.heroLogoWrap}>
         <TeamLogo transparentBacking teamId={team.id} logoUrl={team.logoUrl} teamName={team.name} primaryColor={team.primaryColor ?? accent} size={160} />
         {snapshot.championships.count > 0 ? (
@@ -152,7 +153,7 @@ function Hero({ snapshot, compact }: { snapshot: TeamPageSnapshot; compact: bool
       {snapshot.championships.latestTitleSeasonName ? (
         <Text style={styles.championshipLine}>Latest championship: {snapshot.championships.latestTitleSeasonName}{snapshot.championships.latestTitleLabel ? ` (${snapshot.championships.latestTitleLabel})` : ''}.</Text>
       ) : null}
-    </View>
+    </FocusCard>
   );
 }
 
@@ -171,8 +172,9 @@ function NextGame({ game, accent, compact, timeZone, onOpenGame }: { game: TeamP
     <View testID="team-next-game-section">
       <SectionHeading icon="calendar-outline" title="Next Game" accent={accent} />
       {game ? (
-        <Pressable testID="team-next-game-card" accessibilityRole="button" accessibilityLabel={gameLabel(game, timeZone)} onPress={() => onOpenGame(game.id)} style={styles.matchupCard}>
-          <ImageBackground source={weeklyGamesBackground} resizeMode="cover" imageStyle={styles.matchupImage} style={[styles.matchupBackground, compact && styles.matchupBackgroundCompact]}>
+        <FocusCard focusId={`team-public:game:${game.id}`} accentColor={accent}>
+          <Pressable testID="team-next-game-card" accessibilityRole="button" accessibilityLabel={gameLabel(game, timeZone)} onPress={() => onOpenGame(game.id)} style={styles.matchupCard}>
+            <ImageBackground source={weeklyGamesBackground} resizeMode="cover" imageStyle={styles.matchupImage} style={[styles.matchupBackground, compact && styles.matchupBackgroundCompact]}>
             <LinearGradient colors={['rgba(3,7,13,.02)', 'rgba(3,7,13,.32)', '#03070D']} locations={[0, .58, 1]} style={StyleSheet.absoluteFillObject} />
             <View style={styles.matchupTeams}>
               <MatchupTeam team={game.awayTeam} side="AWAY" compact={compact} />
@@ -184,8 +186,9 @@ function NextGame({ game, accent, compact, timeZone, onOpenGame }: { game: TeamP
               <Text style={styles.gameMetaText}>{formatTime(game.scheduledAt, timeZone)}</Text>
               {game.location ? <><View style={styles.metaDivider} /><Text numberOfLines={1} style={styles.gameMetaText}>{game.location}</Text></> : null}
             </View>
-          </ImageBackground>
-        </Pressable>
+            </ImageBackground>
+          </Pressable>
+        </FocusCard>
       ) : <View style={styles.emptyPanel}><Text style={styles.emptyTitle}>No upcoming games scheduled</Text><Text style={styles.emptyBody}>This team does not have another game on the current slate yet.</Text></View>}
     </View>
   );
@@ -215,7 +218,7 @@ function Leaders({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapsho
   return (
     <View testID="team-leaders-section">
       <SectionHeading icon="bar-chart-outline" title="Team Leaders" accent={accent} />
-      <View style={styles.readingPanel}>
+      <FocusCard focusId={`team-public:${snapshot.team.id}:leaders`} accentColor={accent} style={styles.readingPanel}>
         <Text testID="team-gp-estimate-explanation" style={styles.estimateNote}>~GP is estimated. — means not recorded. Conflicting GP displays “Needs review”.</Text>
         <View style={styles.leaderControls}>
           <View style={styles.segmented}>
@@ -236,7 +239,7 @@ function Leaders({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapsho
         ) : leaders.length ? (
           <View testID="team-leader-podium" style={styles.podium}>{podium.map((leader) => <LeaderCard key={leader.playerId} leader={leader} metric={metric} place={leaders.findIndex((row) => row.playerId === leader.playerId) + 1} accent={accent} onOpenPlayer={onOpenPlayer} />)}</View>
         ) : <View style={styles.emptyPanel}><Text style={styles.emptyTitle}>No team leaders yet</Text><Text style={styles.emptyBody}>Leader cards will populate once current-season player stats are recorded.</Text></View>}
-      </View>
+      </FocusCard>
     </View>
   );
 }
@@ -247,7 +250,7 @@ function Schedule({ snapshot, accent, onOpenGame }: { snapshot: TeamPageSnapshot
   return (
     <View testID="team-schedule-section">
       <SectionHeading icon="calendar-clear-outline" title="Schedule" accent={accent} />
-      <View style={styles.readingPanel}>
+      <FocusCard focusId={`team-public:${snapshot.team.id}:schedule`} accentColor={accent} style={styles.readingPanel}>
         {games.length ? games.map((game) => {
           const viewedHome = game.homeTeam.id === snapshot.team.id;
           const opponent = viewedHome ? game.awayTeam : game.homeTeam;
@@ -259,7 +262,7 @@ function Schedule({ snapshot, accent, onOpenGame }: { snapshot: TeamPageSnapshot
           return <Pressable key={game.id} testID={`team-schedule-game-${game.id}`} accessibilityRole="button" accessibilityLabel={gameLabel(game, snapshot.league.timezone)} onPress={() => onOpenGame(game.id)} style={styles.scheduleRow}><View style={styles.scheduleDate}><Text style={styles.scheduleDay}>{month}</Text><Text style={styles.scheduleNumber}>{day}</Text></View><TeamLogo transparentBacking teamId={opponent.id} logoUrl={opponent.logoUrl} teamName={opponent.name} primaryColor={opponent.primaryColor ?? accent} size={30} /><View style={styles.scheduleCopy}><Text numberOfLines={1} style={styles.scheduleOpponent}>{viewedHome ? 'vs' : '@'} {opponent.name}</Text><Text numberOfLines={1} style={styles.scheduleMeta}>{game.location ?? 'Venue TBD'} • {formatTime(game.scheduledAt, snapshot.league.timezone)}</Text></View><View style={styles.scheduleResult}><Text style={styles.scheduleStatus}>{gameStatus(game.status).toUpperCase()}</Text><Text style={styles.scheduleScore}>{showScore ? `${nullableDisplay(mine)}–${nullableDisplay(theirs)}` : formatDate(game.scheduledAt, snapshot.league.timezone)}</Text></View></Pressable>;
         }) : <Text style={styles.emptyBody}>No current-season games are posted.</Text>}
         {snapshot.games.length > snapshot.collapsedSchedule.length ? <Pressable testID="team-schedule-toggle" accessibilityRole="button" onPress={() => setExpanded((value) => !value)} style={styles.showAll}><Text style={[styles.showAllText, { color: accent }]}>{expanded ? 'SHOW LESS' : 'SHOW FULL SCHEDULE'}</Text><Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={accent} /></Pressable> : null}
-      </View>
+      </FocusCard>
     </View>
   );
 }
@@ -333,13 +336,13 @@ function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPag
       <Text style={styles.estimateNote}>~ indicates an estimate. — means not recorded. “Needs review” marks conflicting records.</Text>
       {snapshot.acceptedSubstitutions.length > 0 ? <View testID="team-substitution-notes" style={styles.substitutionNotes}>{snapshot.acceptedSubstitutions.map((substitution) => <Text key={substitution.id} style={styles.substitutionNote}>🥖 {substitution.subPlayerName} subbing in{substitution.replacedPlayerName ? ` for ${substitution.replacedPlayerName}` : ''}</Text>)}</View> : null}
       {listView ? (
-        <View testID="team-roster-list" style={styles.readingPanel}>{snapshot.roster.map((player) => <RosterStatRow key={player.playerId} player={player} onOpenPlayer={onOpenPlayer} />)}</View>
+        <FocusCard focusId={`team-public:${snapshot.team.id}:roster-list`} testID="team-roster-list" accentColor={accent} style={styles.readingPanel}>{snapshot.roster.map((player) => <RosterStatRow key={player.playerId} player={player} onOpenPlayer={onOpenPlayer} />)}</FocusCard>
       ) : (
-        <View testID="team-roster-jerseys" style={styles.lineup}>
+        <FocusCard focusId={`team-public:${snapshot.team.id}:roster-jerseys`} testID="team-roster-jerseys" accentColor={accent} style={styles.lineup}>
           <Text style={styles.groupLabel}>FORWARDS</Text><View style={styles.forwardGrid}>{groups.forwards.map((player) => <Jersey key={player.playerId} player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View>
           <View style={styles.lowerLineup}><View style={styles.defenceGroup}><Text style={styles.groupLabel}>DEFENCE</Text><View style={styles.defenceGrid}>{groups.defence.map((player) => <Jersey key={player.playerId} player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View><View style={styles.goalieGroup}><Text style={styles.groupLabel}>GOALIE</Text>{groups.goalies.map((player) => <Jersey key={player.playerId} player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View>
           {display.players.length === 0 ? <Text style={styles.emptyBody}>No active players are listed for this season.</Text> : null}
-        </View>
+        </FocusCard>
       )}
     </View>
   );
@@ -360,7 +363,7 @@ function Rivals({ snapshot, accent }: { snapshot: TeamPageSnapshot; accent: stri
   return (
     <View testID="team-rivals-section">
       <SectionHeading icon="flash-outline" title="Rivals" accent={accent} />
-      {entry ? <View style={styles.rivalPanel}>
+      {entry ? <FocusCard focusId={`team-public:${snapshot.team.id}:rival:${entry.rival.id}`} accentColor={accent} style={styles.rivalPanel}>
         <Text style={styles.rivalEyebrow}>SEASON MATCHUP • {entry.gamesPlayed} {entry.gamesPlayed === 1 ? 'MEETING' : 'MEETINGS'}</Text>
         <View style={styles.rivalTeams}><RivalSide side={entry.team} align="left" /><Text style={styles.rivalVs}>VS</Text><RivalSide side={entry.rival} align="right" /></View>
         <View style={styles.h2hRow}><Text style={styles.rivalMetricValue}>{entry.team.overallRecord}</Text><Text style={styles.rivalMetricLabel}>RECORD</Text><Text style={styles.rivalMetricValue}>{entry.rival.overallRecord}</Text></View>
@@ -374,13 +377,13 @@ function Rivals({ snapshot, accent }: { snapshot: TeamPageSnapshot; accent: stri
         <Text style={styles.estimateNote}>~Goalie GP/GAA is derived from public game and stat rows and may be incomplete.</Text>
         {(['strength', 'weakness'] as const).map((trait) => <View key={trait} style={styles.badgesRow}>{[entry.team, entry.rival].map((side, sideIndex) => <View key={side.id} accessible accessibilityLabel={`${side.name} ${trait}: ${side[trait]}`} style={{ flex: 1, minWidth: 0, alignItems: sideIndex ? 'flex-end' : 'flex-start' }}><Text style={styles.rivalMetricLabel}>{trait.toUpperCase()}</Text><View style={styles.badge}><Text style={styles.badgeText}>{side[trait].toUpperCase()}</Text></View></View>)}</View>)}
         {snapshot.rivals.length > 1 ? <View style={styles.carouselControls}><Pressable testID="team-rival-previous" accessibilityRole="button" accessibilityLabel="Previous rival" onPress={() => setIndex((value) => (value - 1 + snapshot.rivals.length) % snapshot.rivals.length)} style={styles.carouselButton}><Ionicons name="chevron-back" size={18} color={colors.textPrimary} /></Pressable><Text testID="team-rival-dots" style={styles.carouselDots}>{snapshot.rivals.map((_, dot) => dot === index ? '●' : '○').join('')}</Text><Pressable testID="team-rival-next" accessibilityRole="button" accessibilityLabel="Next rival" onPress={() => setIndex((value) => (value + 1) % snapshot.rivals.length)} style={styles.carouselButton}><Ionicons name="chevron-forward" size={18} color={colors.textPrimary} /></Pressable></View> : null}
-      </View> : <View style={styles.emptyPanel}><Text style={styles.emptyTitle}>No rivalry sample yet</Text><Text style={styles.emptyBody}>Rival matchups will appear after completed games.</Text></View>}
+      </FocusCard> : <View style={styles.emptyPanel}><Text style={styles.emptyTitle}>No rivalry sample yet</Text><Text style={styles.emptyBody}>Rival matchups will appear after completed games.</Text></View>}
     </View>
   );
 }
 
 function CaptainContact({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapshot; accent: string; onOpenPlayer: (id: string) => void }) {
-  return <View testID="team-captain-contact"><SectionHeading icon="shield-checkmark-outline" title="Captain Contact" accent={accent} /><View style={styles.readingPanel}>{snapshot.captain ? <Pressable accessibilityRole="button" accessibilityLabel={`Open ${snapshot.captain.name}'s player card`} onPress={() => onOpenPlayer(snapshot.captain!.playerId)} style={styles.captainContact}><Avatar uri={snapshot.captain.photoUrl} name={snapshot.captain.name} size={50} /><View><Text style={styles.captainName}>{snapshot.captain.name}</Text><Text style={styles.captainMeta}>Captain{snapshot.captain.jerseyNumber == null ? '' : ` • #${snapshot.captain.jerseyNumber}`}</Text></View></Pressable> : <Text style={styles.emptyBody}>Captain information is not listed yet.</Text>}</View></View>;
+  return <View testID="team-captain-contact"><SectionHeading icon="shield-checkmark-outline" title="Captain Contact" accent={accent} /><FocusCard focusId={`team-public:${snapshot.team.id}:captain`} accentColor={accent} style={styles.readingPanel}>{snapshot.captain ? <Pressable accessibilityRole="button" accessibilityLabel={`Open ${snapshot.captain.name}'s player card`} onPress={() => onOpenPlayer(snapshot.captain!.playerId)} style={styles.captainContact}><Avatar uri={snapshot.captain.photoUrl} name={snapshot.captain.name} size={50} /><View><Text style={styles.captainName}>{snapshot.captain.name}</Text><Text style={styles.captainMeta}>Captain{snapshot.captain.jerseyNumber == null ? '' : ` • #${snapshot.captain.jerseyNumber}`}</Text></View></Pressable> : <Text style={styles.emptyBody}>Captain information is not listed yet.</Text>}</FocusCard></View>;
 }
 
 export default function TeamPublicPage({ snapshot, reduceTransparency, onOpenPlayer, onOpenGame }: { snapshot: TeamPageSnapshot; reduceTransparency: boolean; onOpenPlayer: (playerId: string) => void; onOpenGame: (gameId: string) => void }) {

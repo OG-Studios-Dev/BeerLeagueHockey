@@ -3,12 +3,13 @@ import React from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import Avatar from '../../components/Avatar';
 import { useAuth } from '../../context/AuthContext';
@@ -119,14 +120,14 @@ export default function GameAvailabilityScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView
+      <FocusScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
         {/* Game Info */}
         {gameInfo && (
-          <View style={styles.gameInfoCard}>
+          <FocusCard focusId={`availability:${gameId}:game`} style={styles.gameInfoCard}>
             <Text style={styles.gameInfoOpponent}>vs {gameInfo.opponent}</Text>
             <Text style={styles.gameInfoDate}>{gameInfo.date}</Text>
             {gameInfo.location && (
@@ -135,7 +136,7 @@ export default function GameAvailabilityScreen({ route, navigation }: any) {
                 <Text style={styles.locationText}>{gameInfo.location}</Text>
               </View>
             )}
-          </View>
+          </FocusCard>
         )}
 
         {/* Summary Counts */}
@@ -153,7 +154,7 @@ export default function GameAvailabilityScreen({ route, navigation }: any) {
         {groups.map((group) => {
           if (group.players.length === 0) return null;
           return (
-            <View key={group.key} style={styles.statusSection}>
+            <FocusCard key={group.key} focusId={`availability:${gameId}:${group.key}`} accentColor={group.color} style={styles.statusSection}>
               <View style={styles.statusHeader}>
                 <Ionicons name={group.icon as any} size={16} color={group.color} />
                 <Text style={[styles.statusTitle, { color: group.color }]}>
@@ -172,7 +173,7 @@ export default function GameAvailabilityScreen({ route, navigation }: any) {
                   <View style={[styles.statusDot, { backgroundColor: group.color }]} />
                 </View>
               ))}
-            </View>
+            </FocusCard>
           );
         })}
 
@@ -183,7 +184,7 @@ export default function GameAvailabilityScreen({ route, navigation }: any) {
             <Text style={styles.emptyTitle}>No roster data available</Text>
           </View>
         )}
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

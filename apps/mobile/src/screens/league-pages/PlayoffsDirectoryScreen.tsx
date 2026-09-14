@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { FocusCard } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
 import {
   buildPlayoffsDirectoryView,
@@ -38,7 +39,7 @@ function OfficialSeriesCard({ series, leagueId, navigation }: { series: PageSeri
   const highLabel = emptySeedLabel(series, 'high');
   const lowLabel = emptySeedLabel(series, 'low');
   return (
-    <View style={styles.seriesCard}>
+    <FocusCard focusId={`playoff-series:${series.id}`} style={styles.seriesCard}>
       <TeamRow team={series.highSeed} label={highLabel} wins={series.highSeedWins} winner={series.winnerId === series.highSeed?.id} onPress={series.highSeed ? () => navigation.navigate('LeagueTeamDetail', { teamId: series.highSeed!.id, leagueId }) : undefined} />
       <View style={styles.separator} />
       <TeamRow team={series.lowSeed} label={lowLabel} wins={series.lowSeedWins} winner={series.winnerId === series.lowSeed?.id} onPress={series.lowSeed ? () => navigation.navigate('LeagueTeamDetail', { teamId: series.lowSeed!.id, leagueId }) : undefined} />
@@ -49,7 +50,7 @@ function OfficialSeriesCard({ series, leagueId, navigation }: { series: PageSeri
           <Text style={styles.nextLocation}>{series.nextGame.location ?? 'Location to be announced'} ›</Text>
         </Pressable>
       ) : null}
-    </View>
+    </FocusCard>
   );
 }
 
@@ -131,7 +132,7 @@ export default function PlayoffsDirectoryScreen({ route, navigation }: Props) {
       <SeasonPicker seasons={data.seasons} selected={data.selectedSeason.id} onSelect={page.selectSeason} />
       <DivisionPicker divisions={data.divisions} selected={officialDivisionId} onSelect={setOfficialDivisionId} />
 
-      <View style={[commonStyles.section, commonStyles.card, styles.previewPanel]}>
+      <FocusCard focusId={`playoffs:${data.league.id}:preview`} style={[commonStyles.section, commonStyles.card, styles.previewPanel]}>
         <View style={styles.previewHeader}><View style={styles.previewTitleWrap}><Text style={styles.previewOnly}>Preview Only</Text><Text style={commonStyles.sectionTitle}>Projected Playoff Seeding</Text></View></View>
         <Text style={commonStyles.sectionDetail}>This local projection shows what the playoff field looks like right now for {data.selectedSeason.name}. It never changes the official bracket.</Text>
         {view.previewContext.requiresDivisionSelection ? (
@@ -140,7 +141,7 @@ export default function PlayoffsDirectoryScreen({ route, navigation }: Props) {
         <Pressable accessibilityRole="button" onPress={generatePreview} style={[commonStyles.primaryButton, styles.generate]}><Text style={commonStyles.primaryButtonText}>{generateLabel}</Text></Pressable>
         {preview?.error ? <Text accessibilityRole="alert" style={styles.previewError}>{preview.error}</Text> : null}
         {preview?.data ? <PreviewBracket preview={preview.data} /> : <Text style={styles.previewPrompt}>{view.previewContext.requiresDivisionSelection ? 'Select a division, then generate its projection.' : 'Generate a projection from the current standings.'}</Text>}
-      </View>
+      </FocusCard>
 
       <View style={commonStyles.section}>
         <Text style={commonStyles.sectionTitle}>Official Bracket</Text>

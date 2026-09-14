@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
+
 import Avatar from '../components/Avatar';
 import BrandAtmosphere from '../components/BrandAtmosphere';
 import MembershipDiagnosticsCard from '../components/MembershipDiagnosticsCard';
@@ -723,9 +725,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
           <ActivityIndicator color={activeTheme.primaryColor} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <FocusScrollView focusScopeKey={`profile:${activeLeague?.id ?? 'global'}`} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <RevealView delay={40}>
-            <View
+            <FocusCard
+              focusId="profile:identity"
+              accentColor={primaryColor}
               style={[
                 styles.headerCard,
                 isCompact && styles.headerCardCompact,
@@ -779,12 +783,12 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                   <Text style={styles.teamName}>BLH player account</Text>
                 )}
               </View>
-            </View>
+            </FocusCard>
           </RevealView>
 
           <SectionHeader title="Player Passport" />
           <RevealView delay={90}>
-            <View style={[styles.passportCard, { backgroundColor: colors.bgSurface, borderColor: colors.glassStrokeStrong }]}>
+            <FocusCard focusId="profile:passport" accentColor={primaryColor} style={[styles.passportCard, { backgroundColor: colors.bgSurface, borderColor: colors.glassStrokeStrong }]}>
               <LinearGradient
                 colors={['rgba(255,255,255,0.08)', 'rgba(79,216,255,0.05)', 'transparent']}
                 start={{ x: 0, y: 0 }}
@@ -831,10 +835,10 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                   <Text style={styles.passportActionButtonText}>Share Player Card</Text>
                 </Pressable>
               </View>
-            </View>
+            </FocusCard>
           </RevealView>
 
-          <View style={[styles.statsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+          <FocusCard focusId="profile:stats" accentColor={primaryColor} style={[styles.statsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
             <Text style={styles.statsLabel}>{statsSectionTitle.toUpperCase()}</Text>
             <View style={[styles.statsRow, isCompact && styles.statsRowCompact]}>
               {(
@@ -851,12 +855,12 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                 </View>
               ))}
             </View>
-          </View>
+          </FocusCard>
 
           {scopedStandings.length > 0 || recentFormGames.length > 0 ? (
             <>
               <SectionHeader title="Season Radar" />
-              <View style={[styles.seasonRadarCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+              <FocusCard focusId="profile:season-radar" accentColor={primaryColor} style={[styles.seasonRadarCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
                 {recentFormGames.length > 0 ? (
                   <View style={styles.formSummaryCard}>
                     <View style={[styles.formSummaryHeader, isCompact && styles.formSummaryHeaderCompact]}>
@@ -937,7 +941,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                     })}
                   </View>
                 ) : null}
-              </View>
+              </FocusCard>
             </>
           ) : null}
 
@@ -950,8 +954,10 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                   const isSelectedLeague = activeLeague?.id === team.leagueId;
 
                   return (
-                    <View
+                    <FocusCard
                       key={`${team.leagueId}-${team.teamId}`}
+                      focusId={`profile:team:${team.leagueId}:${team.teamId}`}
+                      accentColor={accentColor}
                       style={[
                         styles.currentTeamCard,
                         {
@@ -1010,7 +1016,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                           <Text style={styles.currentTeamSecondaryButtonText}>League Site</Text>
                         </Pressable>
                       </View>
-                    </View>
+                    </FocusCard>
                   );
                 })}
               </View>
@@ -1020,7 +1026,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
           {!activeLeague && leagueBreakdown.length > 0 ? (
             <>
               <SectionHeader title="By League" />
-              <View style={[styles.leagueBreakdownCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+              <FocusCard focusId="profile:league-breakdown" accentColor={primaryColor} style={[styles.leagueBreakdownCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
                 {leagueBreakdown.map((row, index) => {
                   const leagueColor = row.league.primary_color ?? colors.primary;
 
@@ -1059,7 +1065,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                     </View>
                   );
                 })}
-              </View>
+              </FocusCard>
             </>
           ) : null}
 
@@ -1096,7 +1102,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
           {activeLeague != null && recentGames.length > 0 ? (
             <>
               <SectionHeader title="Recent Scores" />
-              <View style={[styles.gamesCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+              <FocusCard focusId="profile:recent-games" accentColor={primaryColor} style={[styles.gamesCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
                 {recentGames.map((game, index) => {
                   const awayTeam = Array.isArray(game.away_team) ? game.away_team[0] : game.away_team;
                   const homeTeam = Array.isArray(game.home_team) ? game.home_team[0] : game.home_team;
@@ -1149,12 +1155,12 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                     </View>
                   );
                 })}
-              </View>
+              </FocusCard>
             </>
           ) : null}
 
           <SectionHeader title="Explore BLH" />
-          <View style={[styles.exploreCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+          <FocusCard focusId="profile:explore" accentColor={primaryColor} style={[styles.exploreCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
             <View style={styles.exploreCopy}>
               <Text style={styles.exploreTitle}>Find your next league</Text>
               <Text style={styles.exploreSubtitle}>
@@ -1164,10 +1170,10 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             <Pressable style={styles.exploreButton} onPress={() => navigation.navigate('LeagueMarketplace')}>
               <Text style={styles.exploreButtonText}>Open League Directory</Text>
             </Pressable>
-          </View>
+          </FocusCard>
 
           <SectionHeader title="Settings" />
-          <View style={[styles.settingsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
+          <FocusCard focusId="profile:settings" accentColor={primaryColor} style={[styles.settingsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
             <Pressable style={styles.settingRow} onPress={() => navigation.navigate('NotificationsFeed')}>
               <Ionicons name="notifications-outline" size={18} color={primaryColor} />
               <Text style={styles.settingLabel}>Updates &amp; Alerts</Text>
@@ -1222,8 +1228,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
               <Text style={styles.settingLabel}>Edit Profile</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
-          </View>
-        </ScrollView>
+          </FocusCard>
+        </FocusScrollView>
       )}
     </SafeAreaView>
   );

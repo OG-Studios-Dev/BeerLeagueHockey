@@ -4,8 +4,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import AuthGuestBanner from '../components/AuthGuestBanner';
 import { useAuth } from '../context/AuthContext';
+import { FocusPauseProvider } from '../context/FocusPauseContext';
 import { useLeague } from '../context/LeagueContext';
 import {
   ScheduleStackParamList,
@@ -54,6 +54,7 @@ import ContactScreen from '../screens/league-pages/ContactScreen';
 
 import colors from '../theme/colors';
 import MobileWebDock from './MobileWebDock';
+import GuestBannerLayout from './GuestBannerLayout';
 
 const Tab = createBottomTabNavigator();
 const ScheduleStack = createNativeStackNavigator<ScheduleStackParamList>();
@@ -187,9 +188,10 @@ export default function RootNavigation() {
   const { isGuest } = useAuth();
 
   return (
-    <View style={[styles.root, { backgroundColor: activeTheme.backgroundColor || colors.bgBase }]}>
-      {isGuest ? <AuthGuestBanner /> : null}
-      <Tab.Navigator
+    <FocusPauseProvider>
+      <GuestBannerLayout isGuest={isGuest}>
+        <View style={[styles.root, { backgroundColor: activeTheme.backgroundColor || colors.bgBase }]}>
+          <Tab.Navigator
       initialRouteName="Home"
       tabBar={(props) => <MobileWebDock {...props} />}
       screenOptions={() => ({
@@ -199,18 +201,20 @@ export default function RootNavigation() {
         },
         tabBarHideOnKeyboard: true,
       })}
-    >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Standings" component={StandingsNavigator} />
-      <Tab.Screen name="Schedule" component={ScheduleNavigator} />
-      <Tab.Screen name="Discover" component={DiscoverNavigator} />
-      <Tab.Screen name="Stats" component={StatsNavigator} />
-      <Tab.Screen name="Team" component={TeamNavigator} />
-      <Tab.Screen name="Captain" component={CaptainNavigator} />
-      <Tab.Screen name="Profile" component={ProfileNavigator} />
-      <Tab.Screen name="LeaguePages" component={LeaguePagesNavigator} options={{ tabBarButton: () => null }} />
-    </Tab.Navigator>
-    </View>
+          >
+            <Tab.Screen name="Home" component={HomeScreen} />
+            <Tab.Screen name="Standings" component={StandingsNavigator} />
+            <Tab.Screen name="Schedule" component={ScheduleNavigator} />
+            <Tab.Screen name="Discover" component={DiscoverNavigator} />
+            <Tab.Screen name="Stats" component={StatsNavigator} />
+            <Tab.Screen name="Team" component={TeamNavigator} />
+            <Tab.Screen name="Captain" component={CaptainNavigator} />
+            <Tab.Screen name="Profile" component={ProfileNavigator} />
+            <Tab.Screen name="LeaguePages" component={LeaguePagesNavigator} options={{ tabBarButton: () => null }} />
+          </Tab.Navigator>
+        </View>
+      </GuestBannerLayout>
+    </FocusPauseProvider>
   );
 }
 

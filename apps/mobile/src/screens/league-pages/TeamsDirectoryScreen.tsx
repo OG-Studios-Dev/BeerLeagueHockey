@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
+import { FocusCard } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
 import type { PositioningData, PositionMetric } from '../../lib/leaguePages';
 import { buildBumpChartSegment, buildTeamsDirectoryView, POSITION_METRICS, positioningNarrative } from '../../lib/leaguePagesModel';
@@ -154,18 +155,19 @@ export default function TeamsDirectoryScreen({ route, navigation }: Props) {
           <Text style={commonStyles.sectionTitle}>{group.name}</Text>
           <View style={styles.grid}>
             {group.teams.map((team) => (
-              <Pressable
-                key={team.id}
+              <FocusCard key={team.id} focusId={`league-teams:${data.league.id}:${team.id}`} accentColor={team.primaryColor ?? colors.primary} style={{ width: cardWidth }}>
+                <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${team.name}, ${team.divisionName ?? 'Unassigned'}, ${historical ? 'View Current Roster' : 'View Roster'}`}
                 onPress={() => navigation.navigate('LeagueTeamDetail', { teamId: team.id, leagueId: data.league.id })}
-                style={[commonStyles.card, styles.teamCard, { width: cardWidth }]}
+                style={[commonStyles.card, styles.teamCard]}
               >
                 <TeamLogo teamId={team.id} logoUrl={team.logoUrl} teamName={team.name} primaryColor={team.primaryColor} size={78} transparentBacking />
                 <Text style={styles.teamName}>{team.name}</Text>
                 <Text style={styles.muted}>{team.divisionName ?? 'Unassigned'}</Text>
                 <Text style={styles.link}>{historical ? 'View Current Roster' : 'View Roster'} ›</Text>
-              </Pressable>
+                </Pressable>
+              </FocusCard>
             ))}
           </View>
         </View>

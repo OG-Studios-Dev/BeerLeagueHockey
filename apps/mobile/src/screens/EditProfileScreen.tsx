@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import Avatar from '../components/Avatar';
 import { supabase } from '../lib/supabase/client';
@@ -144,7 +145,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <FocusScrollView contentContainerStyle={styles.content}>
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <Avatar uri={avatarUrl} name={fullName || 'Player'} size={90} borderColor={colors.primary} />
@@ -157,7 +158,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
         </View>
 
         {/* Fields */}
-        <View style={styles.fieldCard}>
+        <FocusCard focusId="edit-profile:name" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Full Name</Text>
           <TextInput
             style={styles.fieldInput}
@@ -167,9 +168,9 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
             placeholderTextColor={colors.textSecondary}
             autoCorrect={false}
           />
-        </View>
+        </FocusCard>
 
-        <View style={styles.fieldCard}>
+        <FocusCard focusId="edit-profile:position" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Position</Text>
           <View style={[styles.positionRow, isCompact && styles.positionRowCompact]}>
             {POSITIONS.map((pos) => (
@@ -182,9 +183,9 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
               </Pressable>
             ))}
           </View>
-        </View>
+        </FocusCard>
 
-        <View style={styles.fieldCard}>
+        <FocusCard focusId="edit-profile:skill" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>League Match Level</Text>
           <Text style={styles.fieldHint}>
             Used to recommend BLH leagues when we do not have enough game data to rate you yet.
@@ -210,9 +211,9 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
               </Pressable>
             ))}
           </View>
-        </View>
+        </FocusCard>
 
-        <View style={styles.fieldCard}>
+        <FocusCard focusId="edit-profile:jersey" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Jersey Number</Text>
           <TextInput
             style={styles.fieldInput}
@@ -224,7 +225,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
             editable={false}
           />
           <Text style={styles.fieldHint}>Jersey number is managed by your team admin.</Text>
-        </View>
+        </FocusCard>
 
         <View style={styles.formActions}>
           <Pressable accessibilityRole="button" accessibilityLabel="Cancel profile editing" style={styles.cancelBtn} onPress={() => navigation.goBack()} disabled={saving}>
@@ -237,7 +238,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
             }
           </Pressable>
         </View>
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

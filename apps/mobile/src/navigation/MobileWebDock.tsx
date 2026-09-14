@@ -22,6 +22,7 @@ import TeamLogo from '../components/TeamLogo';
 import LeagueLogo from '../components/LeagueLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useAuth } from '../context/AuthContext';
+import { useFocusPauseLease } from '../context/FocusPauseContext';
 import { useLeague } from '../context/LeagueContext';
 import colors from '../theme/colors';
 import { getSurfacePalette } from '../theme/ui';
@@ -75,6 +76,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const { activeLeague, activeTheme, isGuestLeague } = useLeague();
   const data = useMobileDockData(activeLeague?.id ?? null, user?.id ?? null);
   const [modal, setModal] = React.useState<ModalSnapshot>({ mounted: false, open: false });
+  useFocusPauseLease(modal.mounted);
   const [keyboardVisible, setKeyboardVisible] = React.useState(false);
   const [progress] = React.useState(() => new Animated.Value(0));
   const animateModal = React.useCallback((open: boolean, complete: (finished: boolean) => void) => {

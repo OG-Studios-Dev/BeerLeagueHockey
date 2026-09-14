@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusFlatList } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
 import { useLeague } from '../../context/LeagueContext';
 import { supabase } from '../../lib/supabase/client';
@@ -198,7 +198,8 @@ export default function LeagueDiscoveryScreen({ navigation }: { navigation: any 
           </Text>
         </View>
       ) : (
-        <FlatList
+        <FocusFlatList
+          focusScopeKey={`discover:${availableLeagues.map((league) => league.id).join('|')}`}
           data={filteredLeagues}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}

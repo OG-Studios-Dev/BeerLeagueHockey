@@ -3,6 +3,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import Avatar from '../../components/Avatar';
+import { FocusCard } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
 import { filterPlayerMemberships, filterPlayers, reconcilePlayerFilters, type PlayerFilters } from '../../lib/leaguePagesModel';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
@@ -59,7 +60,7 @@ export default function PlayersDirectoryScreen({ route, navigation }: Props) {
         {players.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>No players found</Text><Text style={styles.muted}>Try adjusting your roster filters.</Text></View> : players.map((player) => {
           const playerMemberships = memberships.filter((row) => row.id === player.id);
           return (
-            <View key={player.id} style={[commonStyles.card, styles.playerCard]}>
+            <FocusCard key={player.id} focusId={`league-players:${data.league.id}:${player.id}`} style={[commonStyles.card, styles.playerCard]}>
               <Pressable accessibilityRole="button" accessibilityLabel={`${player.fullName}, ${historical ? 'View current player card' : 'View player card'}`} onPress={() => navigation.navigate('LeaguePlayerCard', { playerId: player.id, leagueId: data.league.id })} style={styles.playerTop}>
                 <Avatar uri={player.photoUrl} name={player.fullName} size={62} borderColor={colors.glassStrokeStrong} />
                 <View style={styles.playerIdentity}>
@@ -77,7 +78,7 @@ export default function PlayersDirectoryScreen({ route, navigation }: Props) {
                   </Pressable>
                 ))}
               </View>
-            </View>
+            </FocusCard>
           );
         })}
       </View>

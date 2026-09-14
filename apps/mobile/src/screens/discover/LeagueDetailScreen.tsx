@@ -5,12 +5,13 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
@@ -152,9 +153,9 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={accentColor} intensity="low" />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* League Header */}
-        <View style={styles.heroCard}>
+        <FocusCard focusId={`league:${leagueId}:hero`} accentColor={accentColor} style={styles.heroCard}>
           <LinearGradient
             colors={[`${accentColor}20`, 'transparent']}
             start={{ x: 0, y: 0 }}
@@ -188,7 +189,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
               </View>
             )}
           </View>
-        </View>
+        </FocusCard>
 
         {/* Action Buttons */}
         <View style={styles.actionsRow}>
@@ -225,7 +226,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
         {teams.length > 0 && (
           <>
             <SectionHeader title="Teams" />
-            <View style={styles.teamsList}>
+            <FocusCard focusId={`league:${leagueId}:teams`} accentColor={accentColor} style={styles.teamsList}>
               {teams.map((team) => (
                 <View key={team.id} style={styles.teamRow}>
                   <TeamLogo
@@ -238,7 +239,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
                   <Text style={styles.teamRowName} numberOfLines={1}>{team.name}</Text>
                 </View>
               ))}
-            </View>
+            </FocusCard>
           </>
         )}
 
@@ -246,7 +247,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
         {standings.length > 0 && (
           <>
             <SectionHeader title="Standings" />
-            <View style={styles.standingsCard}>
+            <FocusCard focusId={`league:${leagueId}:standings`} accentColor={accentColor} style={styles.standingsCard}>
               <View style={styles.standingsHeader}>
                 <Text style={[styles.standingsHeaderCell, styles.standingsTeamCol]}>Team</Text>
                 <Text style={styles.standingsHeaderCell}>GP</Text>
@@ -267,10 +268,10 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
                   <Text style={[styles.standingsCell, styles.standingsPts]}>{row.points ?? 0}</Text>
                 </View>
               ))}
-            </View>
+            </FocusCard>
           </>
         )}
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

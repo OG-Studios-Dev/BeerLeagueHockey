@@ -60,6 +60,7 @@ const GlassSurface = load<{ default: Element['type'] }>('../../src/components/Gl
 const calendarEvents: unknown[] = [];
 const GameCard = load<{ default: typeof GameCardComponent }>('../../src/components/GameCard.tsx', {
   './GlassSurface': GlassSurface,
+  './CardFocus': { FocusCard: ({ children }: Props) => children },
   '../lib/calendar': { addGameToCalendar: async (event: unknown) => { calendarEvents.push(event); } },
 }).default;
 
@@ -228,6 +229,10 @@ function renderHome({
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.
     ...Object.fromEntries(['GuestBanner', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
+    '../components/CardFocus': {
+      FocusCard: (props: Props) => jsx('View', props),
+      FocusScrollView: ({ children, ...props }: Props) => jsx('ScrollView', { ...props, children }),
+    },
   }).default;
   const tree = render(HomeScreen({ navigation: { navigate: (...args: unknown[]) => { navigationCalls.push(args); } } }));
   assert.equal(stateIndex, state.length, 'HomeScreen state fixture matches all hook slots');

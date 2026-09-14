@@ -7,13 +7,14 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import BrandAtmosphere from '../components/BrandAtmosphere';
 import QuickCheckinActions from '../components/QuickCheckinActions';
@@ -442,13 +443,13 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
           </Pressable>
         </View>
       ) : (
-        <ScrollView
+        <FocusScrollView
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           showsVerticalScrollIndicator={false}
         >
           <RevealView delay={80}>
-            <View style={styles.summaryCard}>
+            <FocusCard focusId="notifications:summary" style={styles.summaryCard}>
               <LinearGradient
                 colors={['rgba(255,255,255,0.08)', 'rgba(79,216,255,0.06)', 'transparent']}
                 start={{ x: 0, y: 0 }}
@@ -511,7 +512,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                   </Pressable>
                 </View>
               ) : null}
-            </View>
+            </FocusCard>
           </RevealView>
 
           <SectionHeader title="Needs Attention" />
@@ -519,7 +520,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
           {pendingGames.length > 0 ? (
             <View style={styles.cardList}>
               {pendingGames.slice(0, 4).map((game) => (
-                <View key={game.id} style={styles.actionCard}>
+                <FocusCard key={game.id} focusId={`notifications:action:${game.id}`} style={styles.actionCard}>
                   <View style={[styles.cardHeaderRow, isCompact && styles.cardHeaderRowCompact]}>
                     <Text style={styles.cardLeagueName}>{game.leagueName}</Text>
                     <Text style={styles.cardDateText}>{formatRelativeDay(game.scheduled_at)}</Text>
@@ -549,7 +550,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                       <Text style={styles.secondaryActionText}>Calendar</Text>
                     </Pressable>
                   </View>
-                </View>
+                </FocusCard>
               ))}
             </View>
           ) : (
@@ -582,7 +583,8 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
           {soonGames.length > 0 ? (
             <View style={styles.cardList}>
               {soonGames.map((game) => (
-                <Pressable key={game.id} style={styles.upcomingCard} onPress={() => navigateToGame(game)}>
+                <FocusCard key={game.id} focusId={`notifications:upcoming:${game.id}`}>
+                  <Pressable style={styles.upcomingCard} onPress={() => navigateToGame(game)}>
                   <View style={[styles.cardHeaderRow, isCompact && styles.cardHeaderRowCompact]}>
                     <Text style={styles.cardLeagueName}>{game.leagueName}</Text>
                     <View style={styles.statusPill}>
@@ -622,7 +624,8 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                       <Text style={styles.secondaryActionText}>League Site</Text>
                     </Pressable>
                   </View>
-                </Pressable>
+                  </Pressable>
+                </FocusCard>
               ))}
             </View>
           ) : (
@@ -647,7 +650,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                   result === 'W' ? colors.accentGreen : result === 'L' ? colors.accentRed : colors.textSecondary;
 
                 return (
-                  <View key={game.id} style={[styles.resultCard, isCompact && styles.resultCardCompact]}>
+                  <FocusCard key={game.id} focusId={`notifications:result:${game.id}`} style={[styles.resultCard, isCompact && styles.resultCardCompact]}>
                     <View style={[styles.resultBadge, { backgroundColor: `${resultColor}22` }]}>
                       <Text style={[styles.resultBadgeText, { color: resultColor }]}>{result}</Text>
                     </View>
@@ -661,7 +664,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                     <Text style={[styles.resultScore, isCompact && styles.resultScoreCompact]}>
                       {myScore} - {opponentScore}
                     </Text>
-                  </View>
+                  </FocusCard>
                 );
               })}
             </View>
@@ -680,10 +683,10 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
           {filteredStandings.length > 0 ? (
             <View style={styles.teamWatchGrid}>
               {filteredStandings.slice(0, 6).map((team) => (
-                <Pressable
-                  key={team.teamId}
-                  style={styles.teamWatchCard}
-                  onPress={() => {
+                <FocusCard key={team.teamId} focusId={`notifications:team:${team.leagueId}:${team.teamId}`} accentColor={team.teamPrimaryColor ?? colors.primary}>
+                  <Pressable
+                    style={styles.teamWatchCard}
+                    onPress={() => {
                     const targetLeague = availableLeagues.find((league) => league.id === team.leagueId);
                     if (targetLeague) {
                       void setActiveLeague(targetLeague);
@@ -693,7 +696,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                       params: { teamId: team.teamId, leagueId: team.leagueId },
                     });
                   }}
-                >
+                  >
                   <View style={styles.teamWatchHeader}>
                     <TeamLogo
                       teamId={team.teamId}
@@ -716,7 +719,8 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                     {team.wins}-{team.losses}-{team.ties}
                   </Text>
                   <Text style={styles.teamWatchMeta}>{team.points} pts · {team.gamesPlayed} GP</Text>
-                </Pressable>
+                  </Pressable>
+                </FocusCard>
               ))}
             </View>
           ) : (
@@ -728,7 +732,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
               </View>
             </View>
           )}
-        </ScrollView>
+        </FocusScrollView>
       )}
     </SafeAreaView>
   );

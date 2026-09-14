@@ -7,7 +7,6 @@ import {
   Alert,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +14,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import BrandAtmosphere from '../../components/BrandAtmosphere';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
@@ -937,7 +938,11 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={team?.secondary_color ?? colors.brandArena} intensity="medium" />
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <FocusScrollView
+        focusEnabled={!reminderModalVisible && !subModalVisible && !goalieModalVisible}
+        focusScopeKey={`team:${leagueId}:${teamId}:${presentationSeason.id}`}
+        contentContainerStyle={styles.scrollContent}
+      >
         {matchingPublicSnapshot ? (
           <TeamPublicPage
             key={`${leagueId}:${teamId}:${presentationSeason.id}`}
@@ -972,7 +977,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
         {activeSeason ? <View testID="team-operations-wrapper" style={styles.operationsWrapper}>
         {(nextGame || league?.slug) && (
-          <View testID="team-operations-card" style={[styles.opsCard, publicSurface]}>
+          <FocusCard focusId={`team:${teamId}:operations`} testID="team-operations-card" accentColor={primaryColor} style={[styles.opsCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Team Operations</Text>
 
             {nextGame ? (
@@ -1033,11 +1038,11 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.opsSecondaryButtonText}>Team Chat</Text>
               </Pressable>
             ) : null}
-          </View>
+          </FocusCard>
         )}
 
         {captainRole && nextGame ? (
-          <View style={styles.captainCard}>
+          <FocusCard focusId={`team:${teamId}:captain`} accentColor={primaryColor} style={styles.captainCard}>
             <View style={[styles.captainHeaderRow, isCompact && styles.captainHeaderRowCompact]}>
               <View style={styles.captainHeaderCopy}>
                 <Text style={styles.sectionTitle}>Captain Center</Text>
@@ -1197,11 +1202,11 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                 })}
               </View>
             </View>
-          </View>
+          </FocusCard>
         ) : null}
 
         {teamMessages.length > 0 ? (
-          <View testID="team-bulletin-card" style={[styles.messagesCard, publicSurface]}>
+          <FocusCard focusId={`team:${teamId}:bulletin`} testID="team-bulletin-card" accentColor={primaryColor} style={[styles.messagesCard, publicSurface]}>
             <Text style={styles.sectionTitle}>Team Bulletin</Text>
             <View style={styles.messagesList}>
               {teamMessages.map((message) => (
@@ -1225,11 +1230,11 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                 </View>
               ))}
             </View>
-          </View>
+          </FocusCard>
         ) : null}
 
         </View> : null}
-      </ScrollView>
+      </FocusScrollView>
 
       <Modal visible={reminderModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setReminderModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setReminderModalVisible(false)}>
@@ -1298,12 +1303,16 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                 <ActivityIndicator color={colors.primary} />
               </View>
             ) : (
-              <ScrollView style={styles.modalList}>
+              <FocusScrollView
+                focusEnabled={subModalVisible}
+                focusScopeKey={`team-modal:sub:${leagueId}:${teamId}`}
+                style={styles.modalList}
+              >
                 {filteredSubCandidates.length > 0 ? (
                   filteredSubCandidates.map((candidate) => {
                     const alreadyInvited = invitedPlayerIds.has(candidate.id);
                     return (
-                      <View key={candidate.id} style={styles.modalListRow}>
+                      <FocusCard key={candidate.id} focusId={`team-modal:sub-player:${candidate.id}`} style={styles.modalListRow}>
                         <View style={styles.modalListCopy}>
                           <Text style={styles.modalListTitle}>{candidate.full_name ?? 'Unknown player'}</Text>
                           {candidate.email ? <Text style={styles.modalListMeta}>{candidate.email}</Text> : null}
@@ -1323,7 +1332,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                             </Text>
                           </Pressable>
                         )}
-                      </View>
+                      </FocusCard>
                     );
                   })
                 ) : (
@@ -1331,7 +1340,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                     <Text style={styles.inlineSectionBody}>No sub players matched this search.</Text>
                   </View>
                 )}
-              </ScrollView>
+              </FocusScrollView>
             )}
           </Pressable>
         </Pressable>

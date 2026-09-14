@@ -3,7 +3,6 @@ import * as Linking from 'expo-linking';
 import React from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusFlatList } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
 import { useLeague } from '../../context/LeagueContext';
 import { getPublicLeagues, type LeagueRow } from '../../lib/supabase/leagues';
@@ -136,7 +136,7 @@ export default function LeagueSelectScreen({ onComplete, navigation }: LeagueSel
         ) : null}
       </View>
 
-      <FlatList
+      <FocusFlatList
         data={availableLeagues}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}

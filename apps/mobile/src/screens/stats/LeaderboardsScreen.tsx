@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../../components/Avatar';
+import { FocusFlatList } from '../../components/CardFocus';
 import PillToggle from '../../components/PillToggle';
 import { useAuth } from '../../context/AuthContext';
 import { useLeague } from '../../context/LeagueContext';
@@ -191,7 +191,8 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
               </Text>
             </View>
           )}
-          <FlatList
+          <FocusFlatList
+            focusScopeKey={`leaderboards:${activeLeague.id}:${category}`}
             data={leaders}
             keyExtractor={(item) => `${item.player_id}-${item.rank}`}
             contentContainerStyle={styles.listContent}

@@ -2,6 +2,8 @@ import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusScrollView } from '../../components/CardFocus';
+
 import { useLeague } from '../../context/LeagueContext';
 import { getLeaguePage, type LeaguePageKind, type LeaguePageResponse, type PageDivision, type PageSeason } from '../../lib/leaguePages';
 import { commitLatestPageResult, createLatestRequestGate } from '../../lib/leaguePagesModel';
@@ -66,9 +68,9 @@ export function LeaguePageFrame({ children, scrollable = true, onAccessibilityEs
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe} onAccessibilityEscape={onAccessibilityEscape}>
       {scrollable ? (
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <FocusScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {children}
-        </ScrollView>
+        </FocusScrollView>
       ) : children}
     </SafeAreaView>
   );

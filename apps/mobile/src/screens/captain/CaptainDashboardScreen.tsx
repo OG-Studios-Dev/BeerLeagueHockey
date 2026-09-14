@@ -5,12 +5,13 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
@@ -174,7 +175,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={colors.brandGold} intensity="low" />
-      <ScrollView
+      <FocusScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
@@ -182,7 +183,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
         <SectionHeader title="Your Teams" />
 
         {captainTeams.map((team) => (
-          <View key={`${team.teamId}-${team.leagueId}`} style={styles.teamCard}>
+          <FocusCard key={`${team.teamId}-${team.leagueId}`} focusId={`captain-team:${team.leagueId}:${team.teamId}`} accentColor={team.teamPrimaryColor ?? colors.primary} style={styles.teamCard}>
             <LinearGradient
               colors={[`${team.teamPrimaryColor ?? colors.primary}12`, 'transparent']}
               start={{ x: 0, y: 0 }}
@@ -274,9 +275,9 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
                 <Text style={styles.actionButtonText}>Invite</Text>
               </Pressable>
             </View>
-          </View>
+          </FocusCard>
         ))}
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

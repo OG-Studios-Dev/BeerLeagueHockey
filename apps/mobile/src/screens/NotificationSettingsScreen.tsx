@@ -3,13 +3,14 @@ import * as SecureStore from 'expo-secure-store';
 import React from 'react';
 import {
   ActivityIndicator,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import { useLeague } from '../context/LeagueContext';
 import { cancelAllGameReminders, registerForPushNotifications, scheduleGameReminder } from '../lib/notifications';
@@ -129,8 +130,8 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.card}>
+      <FocusScrollView contentContainerStyle={styles.content}>
+        <FocusCard focusId="notification-settings:preferences" style={styles.card}>
           {rows.map((row, idx) => (
             <View key={row.key} style={[styles.row, idx < rows.length - 1 && styles.rowBorder]}>
               <View style={styles.rowIcon}>
@@ -154,8 +155,8 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
               />
             </View>
           ))}
-        </View>
-      </ScrollView>
+        </FocusCard>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

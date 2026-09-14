@@ -4,7 +4,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -12,7 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import Avatar from '../../components/Avatar';
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
+
 import TeamLogo from '../../components/TeamLogo';
 import { supabase } from '../../lib/supabase/client';
 import { getGameGoalScorers, mapGameStatus } from '../../lib/supabase/data';
@@ -167,9 +167,9 @@ export default function GameRecapScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Score Hero */}
-        <View style={styles.scoreCard}>
+        <FocusCard focusId={`recap:${gameId}:score`} accentColor={awayColor} style={styles.scoreCard}>
           <LinearGradient
             colors={[`${awayColor}18`, 'transparent', `${homeColor}18`]}
             start={{ x: 0, y: 0 }}
@@ -218,11 +218,11 @@ export default function GameRecapScreen({ route, navigation }: any) {
           {game.location && (
             <Text style={styles.locationText}>{game.location}</Text>
           )}
-        </View>
+        </FocusCard>
 
         {/* Goal Scorers */}
         {goalScorers.length > 0 && (
-          <View style={styles.sectionCard}>
+          <FocusCard focusId={`recap:${gameId}:scorers`} style={styles.sectionCard}>
             <Text style={styles.sectionLabel}>GOAL SCORERS</Text>
             <View style={styles.twoColRow}>
               <View style={styles.scorerCol}>
@@ -259,12 +259,12 @@ export default function GameRecapScreen({ route, navigation }: any) {
                 )}
               </View>
             </View>
-          </View>
+          </FocusCard>
         )}
 
         {/* Penalties */}
         {penalties.length > 0 && (
-          <View style={styles.sectionCard}>
+          <FocusCard focusId={`recap:${gameId}:penalties`} style={styles.sectionCard}>
             <Text style={styles.sectionLabel}>PENALTIES</Text>
             <View style={styles.twoColRow}>
               <View style={styles.scorerCol}>
@@ -295,7 +295,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
                 )}
               </View>
             </View>
-          </View>
+          </FocusCard>
         )}
 
         {/* Share Button */}
@@ -303,7 +303,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
           <Ionicons name="share-outline" size={18} color={colors.textOnPrimary} />
           <Text style={styles.shareBtnText}>Share Result</Text>
         </Pressable>
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { FocusCard } from '../../components/CardFocus';
 import { eventGroups, normalizeTimeZone } from '../../lib/eventsContactModel';
 import type { LeagueEvent } from '../../lib/leagueContent';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
@@ -15,14 +16,14 @@ type Props = NativeStackScreenProps<LeaguePagesStackParamList, 'Events'>;
 function EventCard({ event, timeZone }: { event: LeagueEvent; timeZone: string }) {
   const date = new Date(event.startTime);
   const when = date.toLocaleString('en-CA', { timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-  return <View style={[commonStyles.card, styles.card]}>
+  return <FocusCard focusId={`league-event:${event.id}`} style={[commonStyles.card, styles.card]}>
     <View style={styles.cardTop}><Text style={styles.type}>{event.eventType}</Text><Ionicons name="calendar-outline" size={20} color={colors.textInteractive} /></View>
     <Text style={styles.eventTitle}>{event.title}</Text>
     <Text style={styles.when}>{when}</Text>
     {event.endTime ? <Text style={styles.meta}>Ends {new Date(event.endTime).toLocaleString('en-CA', { timeZone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</Text> : null}
     <Text style={styles.meta}>{event.location ?? 'Location not provided'}</Text>
     {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
-  </View>;
+  </FocusCard>;
 }
 
 export default function EventsScreen({ route, navigation }: Props) {

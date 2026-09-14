@@ -5,13 +5,14 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import Avatar from '../../components/Avatar';
 import BrandAtmosphere from '../../components/BrandAtmosphere';
@@ -121,13 +122,13 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere intensity="low" />
-      <ScrollView
+      <FocusScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
         {/* Player Identity */}
-        <View style={styles.identityCard}>
+        <FocusCard focusId="career:identity" style={styles.identityCard}>
           <LinearGradient
             colors={['rgba(79,216,255,0.12)', 'transparent']}
             start={{ x: 0, y: 0 }}
@@ -144,11 +145,11 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
             <Text style={styles.playerName}>{profile?.full_name ?? 'Player'}</Text>
             <Text style={styles.playerSub}>Career Overview</Text>
           </View>
-        </View>
+        </FocusCard>
 
         {/* Career Totals Hero */}
         <SectionHeader title="Career Totals" />
-        {totals.roles.includes('skater') ? <View style={styles.totalsCard}>
+        {totals.roles.includes('skater') ? <FocusCard focusId="career:skater-totals" style={styles.totalsCard}>
           <LinearGradient
             colors={['rgba(255,255,255,0.06)', 'rgba(79,216,255,0.08)', 'transparent']}
             start={{ x: 0, y: 0 }}
@@ -177,9 +178,9 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
               <Text style={styles.totalLabel}>PIM</Text>
             </View>
           </View>
-        </View> : null}
+        </FocusCard> : null}
         {totals.goalie ? (
-          <View testID="career-goalie-totals" style={styles.totalsCard}>
+          <FocusCard focusId="career:goalie-totals" testID="career-goalie-totals" style={styles.totalsCard}>
             <Text style={styles.goalieTotalsTitle}>Goalie Totals</Text>
             <View style={[styles.totalsRow, styles.goalieTotalsRow]}>
               {([
@@ -194,7 +195,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
                 </View>
               ))}
             </View>
-          </View>
+          </FocusCard>
         ) : null}
         {totals.roles.includes('skater') && totals.metrics.gamesPlayed.state === 'conflicted' ? <Text style={styles.pimNote}>GP: {formatPublicMetric(totals.metrics.gamesPlayed).hint}</Text> : null}
         {totals.roles.includes('skater') && totals.metrics.penaltyMinutes.value === null ? <Text style={styles.pimNote}>PIM unavailable: {formatPublicMetric(totals.metrics.penaltyMinutes).hint}</Text> : null}
@@ -208,7 +209,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
           <>
             <SectionHeader title="By League" />
             {leagueGroups.map((group) => (
-              <View key={group.leagueId} style={styles.leagueGroupCard}>
+              <FocusCard key={group.leagueId} focusId={`career:league:${group.leagueId}`} style={styles.leagueGroupCard}>
                 <Pressable testID={`career-league-${group.leagueId}`} style={styles.leagueGroupHeader} onPress={() => toggleLeague(group.leagueId)}>
                   <View style={styles.leagueGroupInfo}>
                     <Text style={styles.leagueGroupName}>{group.leagueName}</Text>
@@ -249,7 +250,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
                     ))}
                   </View>
                 )}
-              </View>
+              </FocusCard>
             ))}
           </>
         )}
@@ -264,7 +265,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
             </Text>
           </View>
         )}
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }

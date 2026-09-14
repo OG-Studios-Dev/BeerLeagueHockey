@@ -1,10 +1,11 @@
 import React from 'react';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../components/Avatar';
 import BrandAtmosphere from '../components/BrandAtmosphere';
+import { FocusCard, FocusFlatList, FocusScrollView } from '../components/CardFocus';
 import GuestBanner from '../components/GuestBanner';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
@@ -170,7 +171,7 @@ export default function TeamScreen({ navigation }: Props) {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
         <BrandAtmosphere intensity="low" />
         <GuestBanner />
-        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+        <FocusScrollView focusScopeKey={`teams:global:${availableLeagues.map((league) => league.id).join('|')}`} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
           <Text style={styles.globalIntro}>
             Every BLH team you play on, across every league, in one place.
           </Text>
@@ -190,20 +191,18 @@ export default function TeamScreen({ navigation }: Props) {
             </View>
           ) : (
             globalTeams.map((team) => (
-              <Pressable
-                key={`${team.leagueId}-${team.teamId}`}
-                testID={`team-list-global-card-${team.leagueId}-${team.teamId}`}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${team.teamName}`}
-                style={[styles.globalTeamCard, publicSurface]}
-                onPress={() => {
-                  const nextLeague = availableLeagues.find((league) => league.id === team.leagueId);
-                  if (nextLeague) {
-                    void setActiveLeague(nextLeague);
-                  }
-                  navigation.navigate('TeamDetail', { teamId: team.teamId, leagueId: team.leagueId });
-                }}
-              >
+              <FocusCard key={`${team.leagueId}-${team.teamId}`} focusId={`team-list:${team.leagueId}:${team.teamId}`} accentColor={team.teamPrimaryColor ?? colors.primary}>
+                <Pressable
+                  testID={`team-list-global-card-${team.leagueId}-${team.teamId}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${team.teamName}`}
+                  style={[styles.globalTeamCard, publicSurface]}
+                  onPress={() => {
+                    const nextLeague = availableLeagues.find((league) => league.id === team.leagueId);
+                    if (nextLeague) void setActiveLeague(nextLeague);
+                    navigation.navigate('TeamDetail', { teamId: team.teamId, leagueId: team.leagueId });
+                  }}
+                >
                 <View style={styles.globalTeamHeader}>
                   <View style={styles.globalTeamIdentity}>
                     <TeamLogo
@@ -239,10 +238,11 @@ export default function TeamScreen({ navigation }: Props) {
                   <Text style={styles.globalTeamFooterText}>Open roster, record, and upcoming games</Text>
                   <Text style={styles.globalTeamLink}>View team</Text>
                 </View>
-              </Pressable>
+                </Pressable>
+              </FocusCard>
             ))
           )}
-        </ScrollView>
+        </FocusScrollView>
       </SafeAreaView>
     );
   }
@@ -307,13 +307,15 @@ export default function TeamScreen({ navigation }: Props) {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="low" />
       <GuestBanner />
-      <FlatList
+      <FocusFlatList
+        focusScopeKey={`team:${activeLeague.id}`}
         data={roster}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View>
-            <Pressable
+            <FocusCard focusId={`team-list:${activeLeague.id}:identity`} accentColor={primaryColor}>
+              <Pressable
               testID="team-list-identity-card"
               accessibilityRole="button"
               accessibilityLabel={`Open ${teamName} team details`}
@@ -337,7 +339,8 @@ export default function TeamScreen({ navigation }: Props) {
                 <Text style={styles.teamHeaderSub}>{activeLeague.name} · {seasonName}</Text>
                 <Text style={styles.teamHeaderSub}>{roster.length} active {roster.length === 1 ? 'player' : 'players'}</Text>
               </View>
-            </Pressable>
+              </Pressable>
+            </FocusCard>
             <View style={styles.cardHeader}>
               <Text style={styles.cardHeaderText}>Roster</Text>
             </View>

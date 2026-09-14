@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import { useLeague } from '../context/LeagueContext';
 import colors from '../theme/colors';
 import ScheduleScreen from './ScheduleScreen';
@@ -15,24 +16,25 @@ export default function StandingsScreen(props: { navigation: { navigate: (screen
         <View style={styles.header}>
           <Text style={styles.instructions}>Choose a league for standings</Text>
         </View>
-        <View style={styles.leagueChoices}>
+        <FocusScrollView focusScopeKey="standings:league-select" contentContainerStyle={styles.leagueChoices}>
           {availableLeagues.map((league) => (
-            <Pressable
-              key={league.id}
-              testID={`standings-league-choice-${league.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`View ${league.name} standings`}
-              onPress={() => void setActiveLeague(league)}
-              style={({ pressed }) => [styles.leagueChoice, pressed && styles.pressed]}
-            >
-              <Text style={styles.leagueName}>{league.name}</Text>
-              <Text style={styles.leagueAction}>View standings</Text>
-            </Pressable>
+            <FocusCard key={league.id} focusId={`standings:league:${league.id}`}>
+              <Pressable
+                testID={`standings-league-choice-${league.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${league.name} standings`}
+                onPress={() => void setActiveLeague(league)}
+                style={({ pressed }) => [styles.leagueChoice, pressed && styles.pressed]}
+              >
+                <Text style={styles.leagueName}>{league.name}</Text>
+                <Text style={styles.leagueAction}>View standings</Text>
+              </Pressable>
+            </FocusCard>
           ))}
           {availableLeagues.length === 0 ? (
             <Text style={styles.empty}>Select or discover a league to view its standings.</Text>
           ) : null}
-        </View>
+        </FocusScrollView>
       </SafeAreaView>
     );
   }

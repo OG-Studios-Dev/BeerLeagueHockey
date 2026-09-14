@@ -6,6 +6,7 @@ import { addGameToCalendar } from '../lib/calendar';
 import colors from '../theme/colors';
 import { getHomeVisualPreferences } from '../theme/home';
 import { ui } from '../theme/ui';
+import { FocusCard } from './CardFocus';
 import GlassSurface from './GlassSurface';
 
 export type GameStatus = 'Upcoming' | 'Live' | 'Final';
@@ -160,7 +161,9 @@ export default function GameCard({
       onPress={onPress}
       disabled={!onPress}
     >
-      {cardContent}
+      <FocusCard focusId={`game:${gameId ?? `${scheduledAt ?? dateLabel}:${homeTeam}:${awayTeam}`}`}>
+        {cardContent}
+      </FocusCard>
     </Pressable>
   );
 }

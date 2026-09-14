@@ -3,7 +3,6 @@ import * as Linking from 'expo-linking';
 import React from 'react';
 import {
   Alert,
-  FlatList,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusFlatList, FocusScrollView } from './CardFocus';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
@@ -335,7 +335,7 @@ export default function LeagueMarketplace({
   };
 
   const joinedLeagueStrip = showJoinedLeagues && availableLeagues.length > 0 ? (
-    <View style={styles.joinedLeaguesSection}>
+    <FocusCard focusId="marketplace:joined" style={styles.joinedLeaguesSection}>
       <Text style={styles.sectionEyebrow}>Your leagues</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.joinedLeaguesScroller}>
         {availableLeagues.map((league) => (
@@ -355,7 +355,7 @@ export default function LeagueMarketplace({
           </Pressable>
         ))}
       </ScrollView>
-    </View>
+    </FocusCard>
   ) : null;
 
   const membershipFailure = !isGuest && session && (membershipStatus === 'error' || membershipStatus === 'incomplete');
@@ -373,7 +373,8 @@ export default function LeagueMarketplace({
         ) : null}
       </View>
       {membershipFailure ? (
-        <View style={styles.membershipNotice} accessibilityRole="alert">
+        <FocusCard focusId="marketplace:membership">
+          <View style={styles.membershipNotice} accessibilityRole="alert">
           <Text style={styles.membershipNoticeTitle}>
             {membershipStatus === 'error' ? "Couldn't load leagues" : 'Membership unavailable'}
           </Text>
@@ -394,7 +395,8 @@ export default function LeagueMarketplace({
             onRetry={retryMemberships}
             initiallyExpanded
           />
-        </View>
+          </View>
+        </FocusCard>
       ) : null}
       {joinedLeagueStrip}
     </>
@@ -453,7 +455,9 @@ export default function LeagueMarketplace({
           <SkeletonCard />
         </View>
       ) : (
-        <FlatList
+        <FocusFlatList
+          focusEnabled={selectedLeague == null}
+          focusScopeKey={`marketplace:list:${membershipStatus}`}
           data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -501,7 +505,9 @@ export default function LeagueMarketplace({
                 accessibilityLabel={`${selectedLeague.name} league details`}
                 style={[styles.modalCard, { maxHeight: Math.max(280, height - 32) }]}
               >
-                <ScrollView
+                <FocusScrollView
+                  focusEnabled={selectedLeague != null}
+                  focusScopeKey={`marketplace-modal:${selectedLeague.id}`}
                   bounces={false}
                   keyboardShouldPersistTaps="handled"
                   showsVerticalScrollIndicator={false}
@@ -546,7 +552,7 @@ export default function LeagueMarketplace({
                     ) : null}
                   </View>
 
-                  <View style={styles.modalSection}>
+                  <FocusCard focusId={`marketplace:modal:${selectedLeague.id}:fit`} style={styles.modalSection}>
                     <Text style={styles.modalSectionTitle}>Why it fits</Text>
                     <Text style={styles.modalSectionBody}>
                       BLH Overview ranks leagues using your location and player-rating fit. This league is currently marked as{' '}
@@ -555,10 +561,11 @@ export default function LeagueMarketplace({
                       </Text>
                       .
                     </Text>
-                  </View>
+                  </FocusCard>
 
                   {membershipFailure ? (
-                    <View style={styles.modalMembershipNotice} accessibilityRole="alert">
+                    <FocusCard focusId={`marketplace:modal:${selectedLeague.id}:membership`}>
+                      <View style={styles.modalMembershipNotice} accessibilityRole="alert">
                       <Text style={styles.membershipNoticeTitle}>
                         {membershipStatus === 'error' ? "Couldn't load leagues" : 'Membership unavailable'}
                       </Text>
@@ -578,7 +585,8 @@ export default function LeagueMarketplace({
                         status={membershipStatus}
                         onRetry={retryMemberships}
                       />
-                    </View>
+                      </View>
+                    </FocusCard>
                   ) : null}
 
                   <View style={styles.modalActions}>
@@ -649,7 +657,7 @@ export default function LeagueMarketplace({
                       </>
                     )}
                   </View>
-                </ScrollView>
+                </FocusScrollView>
               </View>
             ) : null}
           </SafeAreaView>

@@ -2,9 +2,10 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ImageStyle, type StyleProp } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageStyle, type StyleProp } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusFlatList, FocusScrollView } from '../../components/CardFocus';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import type { GalleryPhoto } from '../../lib/leagueContent';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
@@ -65,7 +66,9 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
 
   return <>
     <LeaguePageFrame scrollable={false} onAccessibilityEscape={() => navigation.goBack()}>
-      <FlatList
+      <FocusFlatList
+        focusEnabled={photo === null}
+        focusScopeKey={`gallery:${scope.leagueId}:${route.params.albumId}`}
         testID="gallery-grid"
         data={data.photos}
         keyExtractor={item => item.id}
@@ -108,7 +111,7 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
             <Pressable accessibilityRole="button" accessibilityLabel="Next photo" onPress={() => move(1)} style={[styles.nav, styles.next]}><Ionicons name="chevron-forward" size={30} color="#FFFFFF" /></Pressable>
           </> : null}
           <View style={[styles.viewerFooter, { bottom: insets.bottom + 10, maxHeight: Math.max(84, height * 0.28) }]}>
-            {photo.caption ? <ScrollView showsVerticalScrollIndicator contentContainerStyle={styles.footerScroll}><Text style={styles.viewerText}>{photo.caption}</Text></ScrollView> : null}
+            {photo.caption ? <FocusScrollView focusEnabled={photo !== null} focusScopeKey={`gallery-viewer:${photo.id}`} showsVerticalScrollIndicator contentContainerStyle={styles.footerScroll}><FocusCard focusId={`gallery-viewer:caption:${photo.id}`}><Text style={styles.viewerText}>{photo.caption}</Text></FocusCard></FocusScrollView> : null}
             <Text style={styles.counter}>{selected! + 1} of {data.total}</Text>
           </View>
         </> : null}

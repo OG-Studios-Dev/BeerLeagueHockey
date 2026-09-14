@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
+
 import Avatar from '../components/Avatar';
 import BrandAtmosphere from '../components/BrandAtmosphere';
 import RevealView from '../components/RevealView';
@@ -483,14 +485,14 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.contentActions}>
             <Pressable accessibilityRole="button" accessibilityLabel="Share player card" onPress={() => void handleShare()} style={styles.headerButton}>
               <Ionicons name="share-outline" size={20} color={colors.textPrimary} />
             </Pressable>
           </View>
           <RevealView delay={80}>
-            <View style={[styles.heroCard, { borderLeftColor: primaryColor }]}>
+            <FocusCard focusId={`player:${playerId}:hero`} accentColor={primaryColor} style={[styles.heroCard, { borderLeftColor: primaryColor }]}>
               <LinearGradient
                 colors={['rgba(255,255,255,0.08)', `${primaryColor}18`, 'transparent']}
                 start={{ x: 0, y: 0 }}
@@ -525,11 +527,11 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                   </View>
                 </View>
               </View>
-            </View>
+            </FocusCard>
           </RevealView>
 
           <RevealView delay={120}>
-            <View style={[styles.heroMetricsRow, isCompact && styles.heroMetricsRowCompact]}>
+            <FocusCard focusId={`player:${playerId}:metrics`} accentColor={primaryColor} style={[styles.heroMetricsRow, isCompact && styles.heroMetricsRowCompact]}>
               <View style={[styles.heroMetricCard, isCompact && styles.heroMetricCardCompact]}>
                 <Text style={styles.heroMetricValue}>{uniqueLeagueCount}</Text>
                 <Text style={styles.heroMetricLabel}>Leagues</Text>
@@ -542,11 +544,11 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                 <Text style={styles.heroMetricValue}>{badges.length}</Text>
                 <Text style={styles.heroMetricLabel}>Badges</Text>
               </View>
-            </View>
+            </FocusCard>
           </RevealView>
 
           <RevealView delay={150}>
-            <View style={styles.statsCard}>
+            <FocusCard focusId={`player:${playerId}:stats`} accentColor={primaryColor} style={styles.statsCard}>
             <Text style={styles.sectionEyebrow}>CAREER SNAPSHOT</Text>
             <View style={[styles.statsRow, isCompact && styles.statsRowCompact]}>
               {[
@@ -565,13 +567,13 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
               <Text style={styles.ppgLabel}>Points Per Game</Text>
               <Text style={styles.ppgValue}>{careerPpg}</Text>
             </View>
-            </View>
+            </FocusCard>
           </RevealView>
 
           {recentFormGames.length > 0 || teamStandings.length > 0 ? (
             <>
               <SectionHeader title="Season Radar" />
-              <View style={styles.radarCard}>
+              <FocusCard focusId={`player:${playerId}:radar`} accentColor={primaryColor} style={styles.radarCard}>
                 {recentFormGames.length > 0 ? (
                   <View style={styles.formCard}>
                     <View style={[styles.formHeader, isCompact && styles.formHeaderCompact]}>
@@ -650,7 +652,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                     })}
                   </View>
                 ) : null}
-              </View>
+              </FocusCard>
             </>
           ) : null}
 
@@ -662,7 +664,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                   const accentColor = team.teamPrimaryColor ?? team.leaguePrimaryColor ?? colors.primary;
 
                   return (
-                    <View key={`${team.leagueId}-${team.teamId}`} style={[styles.teamCard, { borderLeftColor: accentColor }]}>
+                    <FocusCard key={`${team.leagueId}-${team.teamId}`} focusId={`player:${playerId}:team:${team.leagueId}:${team.teamId}`} accentColor={accentColor} style={[styles.teamCard, { borderLeftColor: accentColor }]}>
                       <View style={[styles.teamCardTop, isCompact && styles.teamCardTopCompact]}>
                         <View style={styles.teamIdentity}>
                           <TeamLogo
@@ -694,7 +696,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
                           <Text style={styles.secondaryButtonText}>League Site</Text>
                         </Pressable>
                       </View>
-                    </View>
+                    </FocusCard>
                   );
                 })}
               </View>
@@ -732,7 +734,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
               </Text>
             </View>
           ) : null}
-        </ScrollView>
+        </FocusScrollView>
       )}
     </SafeAreaView>
   );

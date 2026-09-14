@@ -1,8 +1,9 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { FocusFlatList } from '../../components/CardFocus';
 import { categoryCount, filterArticles, type NewsCategory } from '../../lib/leagueContentModel';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
@@ -26,7 +27,7 @@ export default function NewsFeedScreen({ route, navigation }: Props) {
     </ScrollView></>;
   return (
     <LeaguePageFrame scrollable={false}>
-      <FlatList
+      <FocusFlatList
         testID="news-feed-list"
         data={articles}
         keyExtractor={article => article.id}

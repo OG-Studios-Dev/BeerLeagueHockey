@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { FocusCard } from '../../components/CardFocus';
 import { useAuth } from '../../context/AuthContext';
 import { CONTACT_LIMITS, contactActionUrl, validateContactDraft, type ContactDraft, type ContactErrors } from '../../lib/eventsContactModel';
 import { submitContactSubmission } from '../../lib/supabase/contact';
@@ -94,16 +95,16 @@ export default function ContactScreen({ route, navigation }: Props) {
   const address = [contact.address, contact.city, contact.state, contact.zipCode].filter(Boolean).join(', ') || null;
   return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}>
     <PageHeader eyebrow="Get in touch" title="Contact" detail={`Public contact information for ${page.data.league.name}`} />
-    <View style={commonStyles.section}><Text style={commonStyles.sectionTitle}>League details</Text><View style={commonStyles.card}>
+    <View style={commonStyles.section}><Text style={commonStyles.sectionTitle}>League details</Text><FocusCard focusId={`contact:${scope.leagueId}:details`} style={commonStyles.card}>
       <Detail label="Email" value={contact.email} kind="email" onOpen={(url, kind) => { void openAction(url, kind); }} /><Detail label="Phone" value={contact.phone} kind="phone" onOpen={(url, kind) => { void openAction(url, kind); }} /><Detail label="Website" value={contact.websiteUrl} kind="website" onOpen={(url, kind) => { void openAction(url, kind); }} /><Detail label="Address" value={address} />
       {linkMessage ? <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{linkMessage}</Text></View> : null}
-    </View></View>
-    <View style={commonStyles.section}><Text style={commonStyles.sectionTitle}>Send a message</Text><View style={commonStyles.card}>
+    </FocusCard></View>
+    <View style={commonStyles.section}><Text style={commonStyles.sectionTitle}>Send a message</Text><FocusCard focusId={`contact:${scope.leagueId}:form`} style={commonStyles.card}>
       {result.status === 'success' ? <View accessibilityRole="alert" style={styles.success}><Ionicons name="checkmark-circle" size={24} color={colors.accentGreen} /><Text style={styles.successText}>Your message was accepted.</Text><Text style={styles.meta}>This confirms the league received the form submission. It does not confirm email delivery.</Text></View> : null}
       {result.status === 'error' ? <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>Message not accepted: {result.error}</Text><Text style={styles.meta}>Your draft is still here. You can edit it and try once more.</Text></View> : null}
       {(['name', 'email', 'subject', 'message'] as const).map(field => <View key={field} style={styles.field}><Text style={styles.label}>{field === 'name' ? 'Your name' : field === 'email' ? 'Email address' : field[0]!.toUpperCase() + field.slice(1)}</Text><TextInput testID={`contact-${field}`} accessibilityLabel={field} value={draft[field]} onChangeText={value => setField(field, value)} editable={result.status !== 'submitting'} maxLength={CONTACT_LIMITS[field]} multiline={field === 'message'} numberOfLines={field === 'message' ? 5 : 1} keyboardType={field === 'email' ? 'email-address' : 'default'} autoCapitalize={field === 'email' ? 'none' : 'sentences'} style={[styles.input, field === 'message' && styles.message, errors[field] && styles.inputError]} />{errors[field] ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors[field]}</Text> : null}</View>)}
       <Pressable testID="contact-submit" accessibilityRole="button" accessibilityState={{ disabled: result.status === 'submitting' }} disabled={result.status === 'submitting'} onPress={() => { void submit(); }} style={[commonStyles.primaryButton, result.status === 'submitting' && styles.disabled]}><Text style={commonStyles.primaryButtonText}>{result.status === 'submitting' ? 'Sending…' : 'Send Message'}</Text></Pressable>
-    </View></View>
+    </FocusCard></View>
   </LeaguePageFrame>;
 }
 

@@ -2,6 +2,21 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import type { CardFocusCoordinator, createCardFocusCoordinator } from '../../src/components/CardFocus';
+
+export type TestProps = Record<string, unknown>;
+export type TestFocusCoordinator = Omit<CardFocusCoordinator, 'register'> & {
+  register(id: string, progress: { setValue(value: number): void }, measure: (token: number) => void): ReturnType<CardFocusCoordinator['register']>;
+};
+// The synthetic native animation only needs setValue; all other coordinator signatures stay production-derived.
+export type TestFocusModule = {
+  createCardFocusCoordinator(options?: Parameters<typeof createCardFocusCoordinator>[0]): TestFocusCoordinator;
+  FocusCard(props: TestProps): unknown;
+  FocusScrollView(props: TestProps): unknown;
+  FocusFlatList(props: TestProps): unknown;
+};
+export const forwardTestRef = (render: (props: TestProps, ref: null) => unknown) =>
+  (props: TestProps) => render(props, null);
 
 export type TestNode = {
   type: unknown;
@@ -23,6 +38,27 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
 
   new Function('require', 'exports', compiled)((id: string) => {
     if (id in mocks) return mocks[id];
+    if (id.endsWith('/CardFocus') || id === './CardFocus') {
+      const native = (mocks['react-native'] ?? {}) as TestProps;
+      const animated = native.Animated;
+      const animatedView = animated && typeof animated === 'object' && 'View' in animated
+        ? animated.View : 'AnimatedView';
+      const FocusScrollView = native.ScrollView ?? 'ScrollView';
+      const FocusFlatList = native.FlatList ?? 'FlatList';
+      const FocusCard = ({ children, focusId, style, testID }: TestProps) => {
+        const wrapperTestID = testID ?? `focus-card-${focusId}`;
+        return createElement(
+          native.View ?? 'View',
+          { style, testID: wrapperTestID },
+          children ?? null,
+          createElement(animatedView ?? 'AnimatedView', {
+            testID: `${wrapperTestID}-emphasis`,
+            pointerEvents: 'none',
+          }),
+        );
+      };
+      return { FocusScrollView, FocusFlatList, FocusSectionList: FocusFlatList, FocusCard };
+    }
     return require(id.startsWith('.') ? `${id}.ts` : id);
   }, exports);
 

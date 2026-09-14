@@ -8,12 +8,13 @@ import {
   Easing,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import { addGameToCalendar } from '../lib/calendar';
 import Avatar from '../components/Avatar';
@@ -262,9 +263,9 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <FocusScrollView contentContainerStyle={styles.scrollContent}>
         {/* Hero */}
-        <View style={styles.heroCard}>
+        <FocusCard focusId={`preview:${gameId}:hero`} accentColor={awayColor} style={styles.heroCard}>
           <View style={[styles.teamStrip, { backgroundColor: awayColor + '33' }]}>
             <Text style={[styles.teamHeroLabel, { color: awayColor }]}>AWAY</Text>
             <TeamLogo
@@ -288,7 +289,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
             />
             <Text style={styles.teamHeroName}>{homeName}</Text>
           </View>
-        </View>
+        </FocusCard>
 
         {/* Date/time */}
         <Text style={styles.dateTimeText}>{formatFullDate(game.scheduled_at)}</Text>
@@ -326,7 +327,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
         {(status === 'Final' || status === 'Live') &&
           game.away_score != null &&
           game.home_score != null && (
-            <View style={styles.scoreCard}>
+            <FocusCard focusId={`preview:${gameId}:score`} accentColor={homeColor} style={styles.scoreCard}>
               <View style={styles.scoreTeamCol}>
                 <Text style={styles.scoreTeamName}>{awayName}</Text>
                 <Text style={[styles.bigScore, { color: awayColor }]}>{game.away_score}</Text>
@@ -336,23 +337,23 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                 <Text style={styles.scoreTeamName}>{homeName}</Text>
                 <Text style={[styles.bigScore, { color: homeColor }]}>{game.home_score}</Text>
               </View>
-            </View>
+            </FocusCard>
           )}
 
         {/* Location */}
         {game.location && (
-          <View style={styles.locationCard}>
+          <FocusCard focusId={`preview:${gameId}:location`} style={styles.locationCard}>
             <Ionicons name="location-outline" size={18} color={colors.primary} />
             <Text style={styles.locationText}>{game.location}</Text>
             <Pressable onPress={openDirections} style={styles.directionsBtn}>
               <Text style={styles.directionsBtnText}>Directions</Text>
             </Pressable>
-          </View>
+          </FocusCard>
         )}
 
         {/* Check-in (Upcoming + user is on a team in this game) */}
         {status === 'Upcoming' && userTeamId && !isGuestLeague && (
-          <View style={styles.checkinCard}>
+          <FocusCard focusId={`preview:${gameId}:checkin`} style={styles.checkinCard}>
             <Text style={styles.checkinTitle}>Are you in?</Text>
             <View style={styles.checkinRow}>
               {checkinOptions.map((opt) => {
@@ -383,11 +384,11 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                 ✓ {checkinSummary.confirmed.length} In · {checkinSummary.tentative.length} Maybe · {checkinSummary.out.length} Out
               </Text>
             )}
-          </View>
+          </FocusCard>
         )}
 
         {status === 'Upcoming' && userTeamId && !isGuestLeague && checkinSummary && (
-          <View style={styles.sectionCard}>
+          <FocusCard focusId={`preview:${gameId}:availability`} style={styles.sectionCard}>
             <Text style={styles.sectionLabel}>TEAM AVAILABILITY</Text>
             <Text style={styles.availabilityIntro}>
               Track who is in, who is out, and who still needs to respond before puck drop.
@@ -449,7 +450,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                 </View>
               );
             })}
-          </View>
+          </FocusCard>
         )}
 
         {/* Add to Calendar */}
@@ -476,7 +477,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
             const awayPlayers = topPlayers.filter((p) => p.team_id === game.away_team_id).slice(0, 3);
             const homePlayers = topPlayers.filter((p) => p.team_id === game.home_team_id).slice(0, 3);
             return (
-              <View style={styles.sectionCard}>
+              <FocusCard focusId={`preview:${gameId}:top-players`} style={styles.sectionCard}>
                 <Text style={styles.sectionLabel}>TOP PLAYERS</Text>
                 <View style={styles.twoColRow}>
                   <View style={styles.playerCol}>
@@ -509,7 +510,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                     {homePlayers.length === 0 && <Text style={styles.emptyCol}>No data</Text>}
                   </View>
                 </View>
-              </View>
+              </FocusCard>
             );
           })()}
 
@@ -524,7 +525,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
               .sort((a, b) => (b.games_played ?? 0) - (a.games_played ?? 0))[0];
             if (!awayGoalie && !homeGoalie) return null;
             return (
-              <View style={styles.sectionCard}>
+              <FocusCard focusId={`preview:${gameId}:goalies`} style={styles.sectionCard}>
                 <Text style={styles.sectionLabel}>IN GOAL</Text>
                 <View style={styles.twoColRow}>
                   <Pressable
@@ -550,7 +551,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                     </Text>
                   </Pressable>
                 </View>
-              </View>
+              </FocusCard>
             );
           })()}
 
@@ -576,7 +577,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
             else seriesRecord = `Tied ${homeWins}-${awayWins}`;
 
             return (
-              <View style={styles.sectionCard}>
+              <FocusCard focusId={`preview:${gameId}:series`} style={styles.sectionCard}>
                 <Text style={styles.sectionLabel}>SEASON SERIES</Text>
                 <Text style={styles.seriesRecord}>{seriesRecord}</Text>
                 {seasonSeries.map((g) => {
@@ -593,13 +594,13 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                     </View>
                   );
                 })}
-              </View>
+              </FocusCard>
             );
           })()}
 
         {/* Goal Scorers */}
         {status === 'Final' && goalScorers.length > 0 && (
-          <View style={styles.sectionCard}>
+          <FocusCard focusId={`preview:${gameId}:scorers`} style={styles.sectionCard}>
             <Text style={styles.sectionLabel}>GOAL SCORERS</Text>
             {goalScorers.map((s) => (
               <Pressable key={s.player_id} style={({ pressed }) => [styles.scorerRow, pressed && styles.scorerRowPressed]} onPress={() => openPlayerCard(s.player_id)}>
@@ -607,9 +608,9 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                 <Text style={styles.scorerGoals}>{s.goals > 1 ? `${s.goals} goals` : '1 goal'}</Text>
               </Pressable>
             ))}
-          </View>
+          </FocusCard>
         )}
-      </ScrollView>
+      </FocusScrollView>
     </SafeAreaView>
   );
 }
