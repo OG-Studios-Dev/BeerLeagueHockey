@@ -228,7 +228,7 @@ function renderHome({
     },
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.
-    ...Object.fromEntries(['GuestBanner', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
+    ...Object.fromEntries(['GuestBanner', 'HomeLeagueHero', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
     '../components/CardFocus': {
       FocusCard: (props: Props) => jsx('View', props),
       FocusScrollView: ({ children, ...props }: Props) => jsx('ScrollView', { ...props, children }),

@@ -1,4 +1,5 @@
 import { useIsFocused, useRoute } from '@react-navigation/native';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import React from 'react';
 import {
   Animated,
@@ -439,13 +440,29 @@ function useFocusSurface<T>(forwardedRef: React.ForwardedRef<T>, focusScopeKey?:
   return { contextValue, coordinator, measureSurface, setRef };
 }
 
-type FocusSurfaceProps = { focusScopeKey?: string; focusEnabled?: boolean };
+type FocusSurfaceProps = { focusScopeKey?: string; focusEnabled?: boolean; includeBottomTabInset?: boolean };
+
+export function useBottomTabContentInset() {
+  return React.useContext(BottomTabBarHeightContext) ?? 0;
+}
+
+function useInsetContentContainerStyle(contentContainerStyle: ScrollViewProps['contentContainerStyle'], includeBottomTabInset: boolean) {
+  const bottomTabInset = useBottomTabContentInset();
+  if (!includeBottomTabInset || bottomTabInset <= 0) return contentContainerStyle;
+  const flattened = StyleSheet.flatten(contentContainerStyle);
+  const effectiveBottomPadding = flattened?.paddingBottom ?? flattened?.paddingVertical ?? flattened?.padding;
+  const existingPadding = typeof effectiveBottomPadding === 'number' && Number.isFinite(effectiveBottomPadding)
+    ? effectiveBottomPadding
+    : 0;
+  return [contentContainerStyle, { paddingBottom: existingPadding + bottomTabInset }];
+}
 
 export const FocusScrollView = React.forwardRef<ScrollView, ScrollViewProps & FocusSurfaceProps>(function FocusScrollView(
-  { children, focusEnabled, focusScopeKey, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props },
+  { children, contentContainerStyle, focusEnabled, focusScopeKey, includeBottomTabInset = true, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props },
   forwardedRef,
 ) {
   const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<ScrollView>(forwardedRef, focusScopeKey, focusEnabled);
+  const insetContentContainerStyle = useInsetContentContainerStyle(contentContainerStyle, includeBottomTabInset);
   const handleLayout = React.useCallback((event: LayoutChangeEvent) => {
     coordinator.setViewportHeight(event.nativeEvent.layout.height);
     measureSurface();
@@ -462,7 +479,7 @@ export const FocusScrollView = React.forwardRef<ScrollView, ScrollViewProps & Fo
 
   return (
     <CardFocusContext.Provider value={contextValue}>
-      <ScrollView {...props} ref={setRef} onLayout={handleLayout} onScroll={handleScroll} onContentSizeChange={handleContentSizeChange} scrollEventThrottle={scrollEventThrottle ?? 32}>
+      <ScrollView {...props} ref={setRef} contentContainerStyle={insetContentContainerStyle} onLayout={handleLayout} onScroll={handleScroll} onContentSizeChange={handleContentSizeChange} scrollEventThrottle={scrollEventThrottle ?? 32}>
         {children}
       </ScrollView>
     </CardFocusContext.Provider>
@@ -475,10 +492,11 @@ type FocusFlatListProps<ItemT> = FlatListProps<ItemT> & FocusSurfaceProps & {
 };
 
 function FocusFlatListInner<ItemT>(
-  { focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusFlatListProps<ItemT>,
+  { contentContainerStyle, focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, includeBottomTabInset = true, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusFlatListProps<ItemT>,
   forwardedRef: React.ForwardedRef<FlatList<ItemT>>,
 ) {
   const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<FlatList<ItemT>>(forwardedRef, focusScopeKey, focusEnabled);
+  const insetContentContainerStyle = useInsetContentContainerStyle(contentContainerStyle, includeBottomTabInset);
   const wrappedRenderItem = React.useCallback((info: Parameters<NonNullable<FlatListProps<ItemT>['renderItem']>>[0]) => {
     const rendered = renderItem?.(info) ?? null;
     if (!focusItems) return rendered;
@@ -490,7 +508,7 @@ function FocusFlatListInner<ItemT>(
 
   return (
     <CardFocusContext.Provider value={contextValue}>
-      <FlatList {...props} ref={setRef} keyExtractor={keyExtractor} renderItem={wrappedRenderItem}
+      <FlatList {...props} ref={setRef} contentContainerStyle={insetContentContainerStyle} keyExtractor={keyExtractor} renderItem={wrappedRenderItem}
         onLayout={(event) => { coordinator.setViewportHeight(event.nativeEvent.layout.height); measureSurface(); onLayout?.(event); }}
         onScroll={(event) => { coordinator.setScrollOffset(readVerticalScrollOffset(event)); onScroll?.(event); }}
         onContentSizeChange={(width, height) => { coordinator.requestMeasureAll(); onContentSizeChange?.(width, height); }}
@@ -508,10 +526,11 @@ type FocusSectionListProps<ItemT, SectionT> = SectionListProps<ItemT, SectionT> 
 };
 
 function FocusSectionListInner<ItemT, SectionT>(
-  { focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusSectionListProps<ItemT, SectionT>,
+  { contentContainerStyle, focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, includeBottomTabInset = true, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusSectionListProps<ItemT, SectionT>,
   forwardedRef: React.ForwardedRef<SectionList<ItemT, SectionT>>,
 ) {
   const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<SectionList<ItemT, SectionT>>(forwardedRef, focusScopeKey, focusEnabled);
+  const insetContentContainerStyle = useInsetContentContainerStyle(contentContainerStyle, includeBottomTabInset);
   const wrappedRenderItem = React.useCallback((info: Parameters<NonNullable<SectionListProps<ItemT, SectionT>['renderItem']>>[0]) => {
     const rendered = renderItem?.(info) ?? null;
     if (!focusItems) return rendered;
@@ -523,7 +542,7 @@ function FocusSectionListInner<ItemT, SectionT>(
 
   return (
     <CardFocusContext.Provider value={contextValue}>
-      <SectionList {...props} ref={setRef} keyExtractor={keyExtractor} renderItem={wrappedRenderItem}
+      <SectionList {...props} ref={setRef} contentContainerStyle={insetContentContainerStyle} keyExtractor={keyExtractor} renderItem={wrappedRenderItem}
         onLayout={(event) => { coordinator.setViewportHeight(event.nativeEvent.layout.height); measureSurface(); onLayout?.(event); }}
         onScroll={(event) => { coordinator.setScrollOffset(readVerticalScrollOffset(event)); onScroll?.(event); }}
         onContentSizeChange={(width, height) => { coordinator.requestMeasureAll(); onContentSizeChange?.(width, height); }}

@@ -35,6 +35,42 @@ const native = {
   },
 };
 
+function compileRealHero(harness: ReturnType<typeof createHookHarness>) {
+  class Value {
+    current: number;
+    constructor(value: number) { this.current = value; }
+    setValue(value: number) { this.current = value; }
+    stopAnimation() {}
+    interpolate(config: Record<string, unknown>) { return { value: this, config }; }
+  }
+  const animation = () => ({ start: (callback?: (result: { finished: boolean }) => void) => callback?.({ finished: true }), stop() {} });
+  const Animated = {
+    Value,
+    View: 'AnimatedView',
+    timing: animation,
+    parallel: animation,
+    sequence: animation,
+  };
+  return compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
+    new URL('../../src/components/HomeLeagueHero.tsx', import.meta.url),
+    {
+      react: harness.react,
+      'react-native': {
+        Animated,
+        AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+        Easing: { out: (value: unknown) => value, cubic: 'cubic' },
+        Image: 'Image',
+        StyleSheet: native.StyleSheet,
+        Text: 'Text',
+        View: 'View',
+      },
+      '@react-navigation/native': { useIsFocused: () => true },
+      'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
+      '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
+    },
+  ).default;
+}
+
 function allNodes(root: unknown): TestNode[] {
   if (Array.isArray(root)) return root.flatMap(allNodes);
   if (!root || typeof root !== 'object' || !('props' in root)) return [];
@@ -68,6 +104,7 @@ function makeScreen({
 
   const passthrough = ({ children, ...props }: Record<string, unknown>) =>
     createElement('RevealView', props, children);
+  const HomeLeagueHero = compileRealHero(harness);
 
   const HomeScreen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
     new URL('../../src/screens/HomeScreen.tsx', import.meta.url),
@@ -84,6 +121,7 @@ function makeScreen({
       '../components/BrandAtmosphere': (props: Record<string, unknown>) => createElement('BrandAtmosphere', props),
       '../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
       '../components/GuestBanner': () => createElement('GuestBanner', null),
+      '../components/HomeLeagueHero': HomeLeagueHero,
       '../components/LeagueMarketplace': (props: Record<string, unknown>) => {
         marketplaceCalls.push(props);
         return createElement('LeagueMarketplace', props);
@@ -167,6 +205,7 @@ describe('Home editorial native render', () => {
     assert.equal(flattenStyle(safeArea.props.style).backgroundColor, '#07111F');
 
     assert.equal(findNode(output, (node) => node.props.testID === 'home-editorial-header'), undefined);
+    assert.ok(findNode(output, (node) => node.props.testID === 'home-league-hero'));
     assert.doesNotMatch(nodeText(output), /LEAGUE HOME/);
 
     const sectionOrder = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-loading', 'home-sponsors-section']

@@ -111,7 +111,7 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
             <Pressable accessibilityRole="button" accessibilityLabel="Next photo" onPress={() => move(1)} style={[styles.nav, styles.next]}><Ionicons name="chevron-forward" size={30} color="#FFFFFF" /></Pressable>
           </> : null}
           <View style={[styles.viewerFooter, { bottom: insets.bottom + 10, maxHeight: Math.max(84, height * 0.28) }]}>
-            {photo.caption ? <FocusScrollView focusEnabled={photo !== null} focusScopeKey={`gallery-viewer:${photo.id}`} showsVerticalScrollIndicator contentContainerStyle={styles.footerScroll}><FocusCard focusId={`gallery-viewer:caption:${photo.id}`}><Text style={styles.viewerText}>{photo.caption}</Text></FocusCard></FocusScrollView> : null}
+            {photo.caption ? <FocusScrollView focusEnabled={photo !== null} focusScopeKey={`gallery-viewer:${photo.id}`} includeBottomTabInset={false} showsVerticalScrollIndicator contentContainerStyle={styles.footerScroll}><FocusCard focusId={`gallery-viewer:caption:${photo.id}`}><Text style={styles.viewerText}>{photo.caption}</Text></FocusCard></FocusScrollView> : null}
             <Text style={styles.counter}>{selected! + 1} of {data.total}</Text>
           </View>
         </> : null}
@@ -122,7 +122,7 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   list: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 136 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   row: { gap: 8 },
   header: { marginBottom: 22 },
   title: { color: colors.textPrimary, fontSize: 30, lineHeight: 37, fontWeight: '900', marginTop: 9 },

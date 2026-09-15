@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { BottomTabBarHeightCallbackContext, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
@@ -15,6 +15,7 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -68,7 +69,14 @@ function activeRouteIdentity(state: BottomTabBarProps['state']): string {
   return parts.join('>');
 }
 
+function safeOpaqueHex(value: unknown, fallback: string) {
+  if (typeof value !== 'string') return fallback;
+  const candidate = value.trim();
+  return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback;
+}
+
 export default function MobileWebDock({ state, navigation }: BottomTabBarProps) {
+  const reportHeight = React.useContext(BottomTabBarHeightCallbackContext);
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
@@ -110,6 +118,14 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
       lifecycle.dispose();
     };
   }, [lifecycle, progress]);
+
+  React.useEffect(() => {
+    if (keyboardVisible) reportHeight?.(0);
+  }, [keyboardVisible, reportHeight]);
+
+  const handleLayout = React.useCallback((event: LayoutChangeEvent) => {
+    reportHeight?.(event.nativeEvent.layout.height);
+  }, [reportHeight]);
 
   const identityKey = `${user?.id ?? 'guest'}:${activeLeague?.id ?? 'none'}`;
   const routeIdentity = activeRouteIdentity(state);
@@ -214,8 +230,9 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const routeName = currentRouteName(state);
   const hiddenRouteIsActive = ['Home', 'Discover', 'Profile', 'Captain', 'LeaguePages'].includes(routeName);
   const palette = getSurfacePalette(reduceTransparency);
-  const primary = activeTheme.primaryColor || colors.primary;
-  const secondary = activeTheme.secondaryColor || colors.brandArena;
+  const primary = safeOpaqueHex(activeTheme.primaryColor, colors.primary);
+  const secondary = safeOpaqueHex(activeTheme.secondaryColor, colors.brandArena);
+  const teamAccent = safeOpaqueHex(data.team?.primary_color, primary);
   const categories = React.useMemo(() => {
     const grouped = new Map<MoreMenuItem['category'], MoreMenuItem[]>();
     for (const item of items) {
@@ -233,23 +250,24 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   if (keyboardVisible) return null;
 
   return (
-    <View testID="mobile-web-dock" style={[styles.dockOuter, { height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingBottom: Math.max(insets.bottom, 6), paddingTop: layout.topPadding }]} pointerEvents="box-none">
+    <View testID="mobile-web-dock" onLayout={handleLayout} style={[styles.dockOuter, { height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingBottom: Math.max(insets.bottom, 6), paddingTop: layout.topPadding }]} pointerEvents="box-none">
       <View testID="dock-surface" accessibilityLabel="Primary navigation" style={[styles.dockShadow, { borderColor: `${primary}38` }]}>
-        <LinearGradient
-          colors={reduceTransparency ? [palette.elevated, palette.elevated] : ['rgba(5, 9, 18, 0.99)', 'rgba(13, 23, 40, 0.985)', 'rgba(7, 13, 25, 0.99)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          pointerEvents="none"
-          colors={[`${primary}22`, 'transparent', `${secondary}18`]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.dockSheen} pointerEvents="none" />
-        <View style={styles.dockInnerRim} pointerEvents="none" />
+        <View testID="dock-surface-fill" pointerEvents="none" style={styles.dockSurfaceFill}>
+          <LinearGradient
+            colors={reduceTransparency ? [palette.elevated, palette.elevated] : ['rgba(5, 9, 18, 0.99)', 'rgba(13, 23, 40, 0.985)', 'rgba(7, 13, 25, 0.99)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={[`${primary}22`, 'transparent', `${secondary}18`]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.dockSheen} />
+          <View style={styles.dockInnerRim} />
+        </View>
         <View style={styles.controlsRow}>
           {CONTROLS.map((control) => {
             const active = control.key === 'More'
@@ -280,20 +298,20 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                 ]}
               >
                 {isTeam ? (
-                  <View testID="dock-team-crest" pointerEvents="none" style={[styles.crestWell, { width: layout.crestSize, height: layout.crestSize, borderRadius: layout.crestSize / 2, borderColor: active ? primary : 'rgba(255,255,255,0.22)', shadowColor: active ? primary : '#000000' }]}>
+                  <View testID="dock-team-crest" pointerEvents="none" style={[styles.crestWell, { width: layout.crestSize, height: layout.crestSize, borderRadius: layout.crestSize / 2, borderColor: active ? teamAccent : 'rgba(255,255,255,0.22)', shadowColor: active ? teamAccent : '#000000' }]}>
                     {data.isLoading ? (
-                      <ActivityIndicator color={primary} />
+                      <ActivityIndicator color={teamAccent} />
                     ) : data.team ? (
                       <TeamLogo
                         teamId={data.team.team_id}
                         logoUrl={data.team.logo_url}
                         teamName={data.team.team_name}
-                        primaryColor={data.team.primary_color}
+                        primaryColor={teamAccent}
                         size={layout.crestArtSize}
                         transparentBacking
                       />
                     ) : (
-                      <Ionicons name="shield-outline" size={38} color={active ? primary : colors.textSecondary} />
+                      <Ionicons name="shield-outline" size={38} color={active ? teamAccent : colors.textSecondary} />
                     )}
                   </View>
                 ) : (
@@ -450,12 +468,13 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
 }
 
 const styles = StyleSheet.create({
-  dockOuter: { backgroundColor: 'transparent' },
+  dockOuter: { backgroundColor: 'transparent', position: 'absolute', right: 0, bottom: 0, left: 0, zIndex: 10 },
   dockShadow: {
     flex: 1, minHeight: 70, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth, overflow: 'visible',
     backgroundColor: '#080F1C', shadowColor: '#000', shadowOffset: { width: 0, height: 9 },
     shadowOpacity: 0.5, shadowRadius: 20, elevation: 18,
   },
+  dockSurfaceFill: { ...StyleSheet.absoluteFillObject, borderRadius: 23, overflow: 'hidden' },
   dockSheen: { position: 'absolute', top: 1, right: 24, left: 24, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.3)' },
   dockInnerRim: { ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)' },
   controlsRow: { flex: 1, flexDirection: 'row', alignItems: 'stretch' },

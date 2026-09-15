@@ -508,6 +508,7 @@ export default function LeagueMarketplace({
                 <FocusScrollView
                   focusEnabled={selectedLeague != null}
                   focusScopeKey={`marketplace-modal:${selectedLeague.id}`}
+                  includeBottomTabInset={false}
                   bounces={false}
                   keyboardShouldPersistTaps="handled"
                   showsVerticalScrollIndicator={false}

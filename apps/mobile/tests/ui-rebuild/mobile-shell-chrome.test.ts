@@ -17,8 +17,8 @@ describe('mobile shell chrome contract', () => {
     assert.match(navigation, /tabBar=\{\(props\) => <MobileWebDock \{\.\.\.props\} \/>\}/);
 
     const dock = source('src/navigation/MobileWebDock.tsx');
-    assert.match(dock, /dockOuter:\s*\{\s*backgroundColor:\s*'transparent'\s*\}/);
-    assert.doesNotMatch(dock, /dockOuter:\s*\{[^}]*position:/);
+    assert.match(dock, /dockOuter:\s*\{[^}]*backgroundColor:\s*'transparent'/);
+    assert.match(dock, /dockOuter:\s*\{[^}]*position:\s*'absolute'/);
     assert.match(dock, /dockShadow:\s*\{[\s\S]*?backgroundColor:\s*'#080F1C'/);
 
     const app = source('App.tsx');

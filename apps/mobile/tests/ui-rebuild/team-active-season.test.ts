@@ -751,6 +751,26 @@ describe('Team active-season data boundary', () => {
     assert.ok(guest.navigationCalls.length > 0, 'Read-only visitors retain player-card navigation');
   });
 
+  it('opens Invite a Sub without applying the dock inset inside its native modal', async () => {
+    const runtime = createRuntime({
+      captainApi: {
+        getCaptainRole: async () => 'captain',
+        getLeagueSubPlayers: async () => ({ success: true, data: [{ id: 'sub-one', full_name: 'Fixture Sub' }] }),
+      },
+    });
+    let output = await settle(runtime);
+    const trigger = findNode(output, (node) => node.props.testID === 'team-captain-sub-action');
+    assert.ok(trigger, 'captain substitute action should be available');
+    trigger.props.onPress();
+    output = await settle(runtime);
+
+    const modal = findNode(output, (node) => node.type === 'Modal' && node.props.visible === true && nodeText(node).includes('Invite a Sub'));
+    assert.ok(modal, 'Invite a Sub modal should open on the actual TeamDetail route');
+    const scroller = findNode(modal, (node) => node.type === 'ScrollView' && String(node.props.focusScopeKey).startsWith('team-modal:sub:'));
+    assert.ok(scroller, 'Invite a Sub should render its focus scroller');
+    assert.equal(scroller.props.includeBottomTabInset, false);
+  });
+
   it('keeps game-specific substitute check-ins out of active-roster availability counts', async () => {
     const output = await settle(createRuntime({
       captainApi: {

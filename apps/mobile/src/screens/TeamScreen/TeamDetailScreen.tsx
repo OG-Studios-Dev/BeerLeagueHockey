@@ -1306,6 +1306,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
               <FocusScrollView
                 focusEnabled={subModalVisible}
                 focusScopeKey={`team-modal:sub:${leagueId}:${teamId}`}
+                includeBottomTabInset={false}
                 style={styles.modalList}
               >
                 {filteredSubCandidates.length > 0 ? (

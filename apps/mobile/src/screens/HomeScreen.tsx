@@ -20,6 +20,7 @@ import blhLogo from '../../assets/blh-logo.png';
 import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import GuestBanner from '../components/GuestBanner';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
+import HomeLeagueHero from '../components/HomeLeagueHero';
 import LeagueMarketplace from '../components/LeagueMarketplace';
 import RevealView from '../components/RevealView';
 import TeamLogo from '../components/TeamLogo';
@@ -267,7 +268,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { activeLeague, activeTheme, isGuestLeague } = useLeague();
   const { user, isGuest } = useAuth();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const compact = width < homeTokens.compactBreakpoint;
   const visuals = getHomeVisualPreferences(reduceTransparency, reduceMotion);
   const requestGeneration = React.useRef(0);
@@ -439,11 +440,22 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       <HomeArenaBackdrop accentColor={accent} showAtmosphericGlow={visuals.showAtmosphericGlow} />
       <GuestBanner />
       <FocusScrollView focusScopeKey={`home:${activeLeague.id}`} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />} showsVerticalScrollIndicator={false}>
-        <RevealView delay={20} duration={visuals.revealDuration}>
-          <View style={styles.contentActions}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Updates" style={[styles.iconButton, { backgroundColor: visuals.surface, borderColor: visuals.stroke }]} onPress={() => navigation?.navigate?.('Profile', { screen: 'NotificationsFeed' })}><Ionicons name="notifications-outline" size={20} color={homeTokens.text} /></Pressable>
-          </View>
-        </RevealView>
+        <HomeLeagueHero
+          leagueId={activeLeague.id}
+          leagueName={activeLeague.name}
+          logoUrl={activeLeague.logoUrl}
+          primaryColor={activeTheme.primaryColor}
+          secondaryColor={activeTheme.secondaryColor}
+          reduceMotion={reduceMotion}
+          reduceTransparency={reduceTransparency}
+          width={width}
+          height={height}
+          updatesAction={
+            <RevealView delay={20} duration={visuals.revealDuration}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Updates" style={[styles.iconButton, { backgroundColor: visuals.surface, borderColor: visuals.stroke }]} onPress={() => navigation?.navigate?.('Profile', { screen: 'NotificationsFeed' })}><Ionicons name="notifications-outline" size={20} color={homeTokens.text} /></Pressable>
+            </RevealView>
+          }
+        />
 
         <View testID="home-news-section">
           <SectionHeading eyebrow="LATEST" title="News" />
@@ -529,7 +541,6 @@ const styles = StyleSheet.create({
   arenaCenterLine: { position: 'absolute', top: '50%', right: 0, left: 0, height: 1, backgroundColor: homeTokens.rinkLine },
   arenaCenterCircle: { position: 'absolute', top: 191, left: 81, width: 86, height: 86, borderWidth: 1, borderColor: homeTokens.rinkLine, borderRadius: 43 },
   content: { paddingHorizontal: homeTokens.contentPadding, paddingTop: 6, paddingBottom: 34, gap: 20 },
-  contentActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   iconButton: { width: 44, height: 44, minHeight: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   sectionHeading: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 9 },
   sectionHeadingCopy: { flex: 1 },

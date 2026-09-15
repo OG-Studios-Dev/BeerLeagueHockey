@@ -22,6 +22,7 @@ const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Discover', 'Stats', '
 function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean; member?: boolean } = {}) {
   const harness = createHookHarness();
   let retryCount = 0;
+  let reportedDockHeight: number | undefined;
   let activeLeague: any = { id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null };
   let data: DockState = {
     identityKey: 'guest:league-a', isLoading: false, hasError: false, websiteStatus: 'ready',
@@ -50,6 +51,9 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
     new URL('../../src/navigation/MobileWebDock.tsx', import.meta.url),
     {
       react: harness.react,
+      '@react-navigation/bottom-tabs': {
+        BottomTabBarHeightCallbackContext: { current: (height: number) => { reportedDockHeight = height; } },
+      },
       '@expo/vector-icons': { Ionicons: (props: Record<string, unknown>) => createElement('Ionicons', props) },
       'expo-linear-gradient': { LinearGradient: (props: Record<string, unknown>) => createElement('LinearGradient', props, props.children) },
       'react-native': {
@@ -123,6 +127,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
   return {
     harness, mount, openMore, navigationCalls, emittedEvents, openedUrls, focusPauseStates,
     retryCount: () => retryCount,
+    reportedDockHeight: () => reportedDockHeight,
     emitKeyboard: (event: string) => {
       keyboardListeners.get(event)?.forEach((listener) => listener());
       harness.render();
@@ -222,18 +227,66 @@ describe('MobileWebDock component integration', () => {
     assert.deepEqual(fixture.navigationCalls.at(-1), ['LeagueSelect']);
   });
 
-  it('keeps the outer host and inset transparent while the real capsule remains colored', () => {
+  it('overlays the full scene, reports its measured inset, and clips paint to the capsule only', () => {
     const fixture = createDockFixture();
     fixture.mount();
     const outer = findNode(fixture.harness.output, (node) => node.props.testID === 'mobile-web-dock');
     const surface = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-surface');
+    const surfaceFill = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-surface-fill');
     const outerStyle = flattenStyle(outer?.props.style);
     const surfaceStyle = flattenStyle(surface?.props.style);
+    const fillStyle = flattenStyle(surfaceFill?.props.style);
 
-    assert.equal(outerStyle.position, undefined, 'the custom tab host keeps its measured layout so scroll extents do not change');
+    assert.equal(outerStyle.position, 'absolute');
+    assert.equal(outerStyle.left, 0);
+    assert.equal(outerStyle.right, 0);
+    assert.equal(outerStyle.bottom, 0);
     assert.equal(outerStyle.backgroundColor, 'transparent');
     assert.equal(surfaceStyle.backgroundColor, '#080F1C');
-    assert.ok(findNode(surface, (node) => node.type === 'LinearGradient'));
+    assert.equal(surfaceStyle.overflow, 'visible', 'the raised crest must remain outside the capsule bounds');
+    assert.equal(fillStyle.overflow, 'hidden', 'gradient paint must be clipped at the curved capsule');
+    assert.equal(fillStyle.borderRadius, 23);
+    assert.ok(findNode(surfaceFill, (node) => node.type === 'LinearGradient'));
+
+    outer?.props.onLayout({ nativeEvent: { layout: { height: 158 } } });
+    assert.equal(fixture.reportedDockHeight(), 158);
+  });
+
+  it('uses only the current team colour for the active crest and safely falls back across identity states', () => {
+    const fixture = createDockFixture({
+      team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456' },
+    });
+    fixture.mount();
+    fixture.setFocusedRoute('Team');
+
+    const crestStyle = () => flattenStyle(findNode(fixture.harness.output, (node) => node.props.testID === 'dock-team-crest')?.props.style);
+    assert.equal(crestStyle().borderColor, '#123456');
+    assert.equal(crestStyle().shadowColor, '#123456');
+
+    fixture.setData({ team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color: '#A1B2C3' } });
+    assert.equal(crestStyle().borderColor, '#A1B2C3', 'team identity changes must update the crest accent');
+    assert.equal(crestStyle().shadowColor, '#A1B2C3');
+
+    for (const primary_color of [null, '', 'blue-ish', '#12', '#GGGGGG']) {
+      fixture.setData({ team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color } });
+      assert.equal(crestStyle().borderColor, '#00ffff');
+      assert.equal(crestStyle().shadowColor, '#00ffff');
+    }
+
+    fixture.setData({ team: null });
+    assert.equal(crestStyle().borderColor, '#00ffff', 'no-team active state uses the safe league accent');
+    assert.equal(crestStyle().shadowColor, '#00ffff');
+
+    fixture.setData({ team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color: '#A1B2C3' } });
+    fixture.setFocusedRoute('Schedule');
+    assert.equal(crestStyle().borderColor, 'rgba(255,255,255,0.22)');
+    assert.equal(crestStyle().shadowColor, '#000000');
+
+    fixture.setFocusedRoute('Standings');
+    const standings = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-standings');
+    const standingsStyle = flattenStyle(standings?.props.style({ pressed: false }));
+    assert.equal(standingsStyle.borderColor, '#00ffff48', 'other active tabs retain league theming');
+    assert.equal(standingsStyle.shadowColor, '#00ffff');
   });
 
   it('renders every eligible action once and reserves the outbound icon for external destinations', () => {

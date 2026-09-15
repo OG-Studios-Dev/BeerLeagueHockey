@@ -38,6 +38,9 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
 
   new Function('require', 'exports', compiled)((id: string) => {
     if (id in mocks) return mocks[id];
+    if (id === '@react-navigation/bottom-tabs') {
+      return { BottomTabBarHeightContext: { current: undefined } };
+    }
     if (id.endsWith('/CardFocus') || id === './CardFocus') {
       const native = (mocks['react-native'] ?? {}) as TestProps;
       const animated = native.Animated;
@@ -57,7 +60,7 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
           }),
         );
       };
-      return { FocusScrollView, FocusFlatList, FocusSectionList: FocusFlatList, FocusCard };
+      return { FocusScrollView, FocusFlatList, FocusSectionList: FocusFlatList, FocusCard, useBottomTabContentInset: () => 0 };
     }
     return require(id.startsWith('.') ? `${id}.ts` : id);
   }, exports);
@@ -115,6 +118,9 @@ export function createHookHarness() {
         slot.pending = true;
       }
       effects.set(index, slot);
+    },
+    useLayoutEffect: (effect: () => void | (() => void), dependencies?: readonly unknown[]) => {
+      react.useEffect(effect, dependencies);
     },
     useMemo: <T>(factory: () => T, dependencies: readonly unknown[]) => {
       const index = hookIndex++;

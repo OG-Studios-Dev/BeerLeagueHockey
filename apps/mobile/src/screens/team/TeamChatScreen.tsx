@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../../components/Avatar';
-import { FocusFlatList } from '../../components/CardFocus';
+import { FocusFlatList, useBottomTabContentInset } from '../../components/CardFocus';
 import {
   getRecentTeamMessages,
   postTeamMessage,
@@ -22,6 +22,7 @@ import {
 import colors from '../../theme/colors';
 
 export default function TeamChatScreen({ route, navigation }: any) {
+  const bottomTabInset = useBottomTabContentInset();
   const { teamId, teamName } = route.params;
   const [messages, setMessages] = React.useState<TeamMessageRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -130,7 +131,7 @@ export default function TeamChatScreen({ route, navigation }: any) {
 
       {/* Compose (captains only) */}
       {isCaptain && (
-        <View style={styles.composeBar}>
+        <View style={[styles.composeBar, { bottom: bottomTabInset }]}>
           <TextInput
             style={styles.composeInput}
             value={newMessage}
