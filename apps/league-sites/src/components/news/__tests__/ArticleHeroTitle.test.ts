@@ -38,7 +38,7 @@ describe('ArticleHeroTitle', () => {
       appearance: {
         titleStyle: 'fixed inset-0',
         titleLayout: 'overlay',
-        titleFont: 'font-[url(evil)]',
+        titleFont: 'untrusted-font',
       },
       sections: [],
     })}`;
@@ -54,7 +54,7 @@ describe('ArticleHeroTitle', () => {
     expect(html).toContain('font-sans');
     expect(html).toContain('text-white');
     expect(html).not.toContain('fixed inset-0');
-    expect(html).not.toContain('font-[url(evil)]');
+    expect(html).not.toContain('untrusted-font');
   });
 
   it('drives the public hero layout from validated article appearance metadata', () => {
