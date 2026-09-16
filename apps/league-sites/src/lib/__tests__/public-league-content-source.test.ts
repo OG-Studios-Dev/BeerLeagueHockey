@@ -14,6 +14,10 @@ import {
   type PublicContentDatabase,
 } from '@/lib/public-league-content-source';
 import { getStandings, getUnifiedGoalieStatsRows, getUnifiedSkaterStatsRows } from '@/lib/data';
+import {
+  createArticleDocumentFromContent,
+  serializeArticleDocument,
+} from '@hockey-life/ui/news-article-format';
 
 type Row = Record<string, unknown>;
 type QueryLog = { table: string; projection: string; filters: Array<[string, string, unknown]>; range: [number, number] | null };
@@ -420,6 +424,29 @@ describe('default public content source events/contact composition', () => {
 });
 
 describe('default public content source article/history integrity', () => {
+  it('projects structured article content to readable text for the version-1 public contract', async () => {
+    const articleId = '20000000-0000-4000-8000-000000000002';
+    const document = createArticleDocumentFromContent('The [Wolves](/teams/wolves) won.');
+    document.sections[0].heading = 'Game report';
+    const { client } = semanticDatabase({
+      articles: [{
+        ...syntheticArticle(1),
+        id: articleId,
+        slug: 'structured-detail',
+        content: serializeArticleDocument(document),
+      }],
+    });
+    const source = createPublicLeagueContentSource(
+      client,
+      LEAGUE,
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+
+    const article = await source.loadArticle('structured-detail');
+
+    expect(article?.content).toBe('Game report\n\nThe Wolves won.');
+  });
+
   it('keeps published text unchanged and drops foreign related records', async () => {
     const articleId = '21000000-0000-4000-8000-000000000002';
     const gameId = '30000000-0000-4000-8000-000000000003';

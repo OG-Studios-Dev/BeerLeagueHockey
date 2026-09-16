@@ -2,6 +2,7 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { verifyLeagueOwnerAccess } from './permissions';
+import { articleContentToPlainText } from '@hockey-life/ui/news-article-format';
 import type {
   ArticleEditorSeasonOption,
   ArticleEntityEditorContext,
@@ -303,7 +304,7 @@ export async function suggestArticleEntities(
   });
 
   const haystack = normalizeText(
-    [input.title, input.excerpt, input.content].filter(Boolean).join(' '),
+    [input.title, input.excerpt, articleContentToPlainText(input.content)].filter(Boolean).join(' '),
   );
 
   const linkedPlayerIds = context.players

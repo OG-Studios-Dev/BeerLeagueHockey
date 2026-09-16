@@ -10,6 +10,7 @@
     "./card": "./src/card.tsx",
     "./lib/utils": "./src/utils.ts",
     "./utils": "./src/utils.ts",
+    "./news-article-format": "./src/news-article-format.ts",
     "./standings-table": "./src/components/standings-table.tsx",
     "./team-logo": "./src/components/team-logo.tsx"
   },

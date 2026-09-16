@@ -6,6 +6,11 @@ import {
 } from './data';
 import { filterVisibleSiteSeasons } from './all-time-stats';
 import { createServiceRoleClient } from './supabase/server';
+import {
+  MAX_SERIALIZED_CONTENT_LENGTH,
+  articleContentToPlainText,
+  isStructuredArticleContent,
+} from '@hockey-life/ui/news-article-format';
 import type {
   ArticleResponse,
   ArticleSummary,
@@ -450,7 +455,18 @@ export function createPublicLeagueContentSource(
         .eq('league_id', league.id).eq('published', true).eq('id', row.id).limit(1).maybeSingle(), 'articles');
       const detail = detailResult.data && !Array.isArray(detailResult.data) ? detailResult.data : detailResult.data?.[0] ?? null;
       if (!detail) return null;
-      const content = text(detail.content, 'article content', 512 * 1024);
+      const storedContent = text(
+        detail.content,
+        'stored article content',
+        MAX_SERIALIZED_CONTENT_LENGTH,
+      );
+      const content = text(
+        isStructuredArticleContent(storedContent)
+          ? articleContentToPlainText(storedContent)
+          : storedContent,
+        'article content',
+        512 * 1024,
+      );
       const [playerTags, teamTags, gameTags, seasonRows] = await Promise.all([
         paginate('article_player_tags', 200, () => database.from('article_player_tags').select('article_id, player_id').eq('article_id', row.id).order('player_id')),
         paginate('article_team_tags', 200, () => database.from('article_team_tags').select('article_id, team_id').eq('article_id', row.id).order('team_id')),

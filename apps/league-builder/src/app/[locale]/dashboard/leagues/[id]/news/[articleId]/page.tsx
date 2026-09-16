@@ -6,6 +6,8 @@ import { getNewsArticle, updateNewsArticle, deleteNewsArticle } from '@/lib/acti
 import { getArticleEntityEditorContext, suggestArticleEntities } from '@/lib/actions/article-entities';
 import { uploadNewsImage, deleteNewsImage } from '@/lib/actions/image-upload';
 import { ArticleEntityLinksEditor } from '@/components/news/ArticleEntityLinksEditor';
+import { ArticleFormatEditor } from '@/components/news/ArticleFormatEditor';
+import { serializeArticleEditorContent } from '@/lib/news/article-format-editor';
 import Link from 'next/link';
 import { cn } from '@hockey-life/ui';
 import { ArrowLeft, Loader2, Save, Sparkles, Trash2 } from 'lucide-react';
@@ -181,7 +183,7 @@ export default function EditNewsArticlePage() {
 
     const result = await updateNewsArticle(articleId, {
       title: title.trim(),
-      content: content.trim() || undefined,
+      content: serializeArticleEditorContent(content),
       excerpt: excerpt.trim() || undefined,
       imageUrl: imageUrl.trim() || undefined,
       slug: (slug.trim() || generateSlug(title)).trim(),
@@ -232,7 +234,7 @@ export default function EditNewsArticlePage() {
 
   return (
     <div className="min-h-screen bg-neutral-950">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <Link
             href={`/${locale}/dashboard/leagues/${leagueId}/news`}
@@ -331,20 +333,6 @@ export default function EditNewsArticlePage() {
             </div>
 
             <div>
-              <label htmlFor="content" className="block text-sm font-medium text-neutral-300 mb-2">
-                Content
-              </label>
-              <textarea
-                id="content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Write your article content here..."
-                rows={12}
-                className="w-full px-4 py-3 bg-neutral-900 border border-white/10 rounded-xl text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-rink-500/50 focus:border-rink-500 resize-y"
-              />
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-neutral-300 mb-2">
                 Featured Image
               </label>
@@ -371,6 +359,13 @@ export default function EditNewsArticlePage() {
               />
             </div>
           </div>
+
+          <ArticleFormatEditor
+            value={content}
+            onChange={setContent}
+            title={title}
+            disabled={saving}
+          />
 
           <ArticleEntityLinksEditor
             seasons={seasonOptions}
