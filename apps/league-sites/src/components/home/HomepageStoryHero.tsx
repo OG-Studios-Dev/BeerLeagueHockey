@@ -77,14 +77,6 @@ function getArticleLabel(articleType?: string | null) {
   return 'League Story';
 }
 
-function stripStoryMarkup(value: string) {
-  return value
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/[#>*_`[\]()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function clipText(value: string, maxLength: number) {
   if (value.length <= maxLength) {
     return value;
@@ -95,19 +87,15 @@ function clipText(value: string, maxLength: number) {
   return `${clipped.slice(0, safeBoundary).trimEnd()}...`;
 }
 
-function deriveSnippet(article: NewsArticle) {
+export function deriveSnippet(article: NewsArticle) {
   const excerpt = stripMarkdownLinks(article.excerpt);
   if (excerpt) {
     return clipText(excerpt, 140);
   }
 
-  const blocks = article.content
-    .split(/\n\s*\n/)
-    .map((block) => stripStoryMarkup(block))
-    .filter(Boolean);
-
-  if (blocks[0]) {
-    return clipText(blocks[0], 140);
+  const content = stripMarkdownLinks(article.content);
+  if (content) {
+    return clipText(content, 140);
   }
 
   return 'Fresh current-season league coverage, recaps, and player stories from around the rink.';

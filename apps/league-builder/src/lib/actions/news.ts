@@ -4,6 +4,7 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { verifyLeagueOwnerAccess } from './permissions';
 import { syncArticleEntityTags } from './article-entities';
+import { validateArticleContentForStorage } from '@hockey-life/ui/news-article-format';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -213,6 +214,9 @@ export async function createNewsArticle(params: CreateNewsArticleParams): Promis
   if (!access.authorized) {
     return { success: false, error: access.error || 'Not authorized' };
   }
+  if (!validateArticleContentForStorage(content)) {
+    return { success: false, error: 'Invalid article content format' };
+  }
 
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
@@ -295,6 +299,12 @@ export async function updateNewsArticle(
     const access = await verifyLeagueOwnerAccess(existingArticle.league_id);
     if (!access.authorized) {
       return { success: false, error: access.error || 'Not authorized' };
+    }
+    if (
+      updates.content !== undefined &&
+      !validateArticleContentForStorage(updates.content)
+    ) {
+      return { success: false, error: 'Invalid article content format' };
     }
 
     // Build update object

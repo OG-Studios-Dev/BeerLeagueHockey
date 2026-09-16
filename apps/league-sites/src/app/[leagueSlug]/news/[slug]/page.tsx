@@ -7,9 +7,11 @@ import { TeamLogo } from '@/components/shared/TeamLogo';
 import { LeagueNewsFallbackArtwork } from '@/components/news/LeagueNewsFallbackArtwork';
 import { RichArticleContent } from '@/components/news/RichArticleContent';
 import { EditorialHeroImage } from '@/components/news/EditorialHeroImage';
+import { ArticleHeroTitle } from '@/components/news/ArticleHeroTitle';
 import { buildArticleMentions } from '@/lib/articles/linkify';
 import { getArticleLinkContext, getArticlePlayerTags, getGamePreview, getLeagueBySlug, getNewsArticleBySlug } from '@/lib/data';
-import { stripMarkdownLinks } from '@/lib/news/rich-text';
+import { getArticleTextSnippet } from '@/lib/news/rich-text';
+import { resolveArticleAppearance } from '@hockey-life/ui/news-article-format';
 
 /** Extract the primary color from a "primary,secondary" colors string. */
 function getPrimaryColor(colors: string | null): string | null {
@@ -41,7 +43,7 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
   const article = await getNewsArticleBySlug(league.id, slug);
   if (!article) return { title: 'Article Not Found' };
 
-  const safeExcerpt = stripMarkdownLinks(article.excerpt);
+  const safeExcerpt = getArticleTextSnippet(article.excerpt || article.content, 180);
 
   return {
     title: `${article.title} - ${league.name}`,
@@ -83,6 +85,45 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
     month: 'long',
     day: 'numeric',
   });
+  const articleAppearance = resolveArticleAppearance(article.content);
+  const titleIsOverlay = articleAppearance.titleLayout === 'overlay';
+  const articleTitleBlock = (
+    <>
+      <div className="mb-4 inline-flex items-center rounded-full bg-[var(--league-primary)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--color-accent-text)]">
+        {article.type === 'game_recap' ? 'Game recap' : article.type === 'weekly_wrap' ? 'Weekly wrap' : 'News'}
+      </div>
+      <ArticleHeroTitle
+        title={article.title}
+        content={article.content}
+        tone={titleIsOverlay ? 'light' : 'default'}
+      />
+      <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm ${
+        titleIsOverlay ? 'text-white/72' : 'text-[var(--color-text-secondary)]'
+      }`}>
+        <div className="flex items-center gap-1.5">
+          <Calendar className="w-4 h-4" />
+          <time dateTime={publishedDate}>{formattedDate}</time>
+        </div>
+        {article.author && (
+          <div className="flex items-center gap-1.5">
+            <User className="w-4 h-4" />
+            {article.author_id ? (
+              <Link
+                href={`/${leagueSlug}/players/${article.author_id}`}
+                className={titleIsOverlay
+                  ? 'transition-colors hover:text-white'
+                  : 'transition-colors hover:text-[var(--league-primary)]'}
+              >
+                {article.author.full_name}
+              </Link>
+            ) : (
+              <span>{article.author.full_name}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
 
   return (
     <SubscriptionWall>
@@ -125,36 +166,18 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
               />
             )}
             <div className={`absolute inset-0 ${article.image_url ? 'bg-gradient-to-t from-black/92 via-black/40 to-transparent' : 'bg-gradient-to-t from-slate-950/88 via-slate-950/34 to-transparent'}`} />
-            <div className="absolute inset-x-0 bottom-0 p-6 md:p-8">
-              <div className="mb-4 inline-flex items-center rounded-full bg-[var(--league-primary)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--color-accent-text)]">
-                {article.type === 'game_recap' ? 'Game recap' : article.type === 'weekly_wrap' ? 'Weekly wrap' : 'News'}
+            {articleAppearance.titleLayout === 'overlay' ? (
+              <div className="absolute inset-x-0 bottom-0 p-6 md:p-8">
+                {articleTitleBlock}
               </div>
-              <h1 className="max-w-4xl text-lg font-extrabold leading-[1.18] text-white sm:text-3xl md:text-[2.75rem] md:leading-[1.12]">
-                {article.title}
-              </h1>
-              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/72">
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4" />
-                  <time dateTime={publishedDate}>{formattedDate}</time>
-                </div>
-                {article.author && (
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-4 h-4" />
-                    {article.author_id ? (
-                      <Link
-                        href={`/${leagueSlug}/players/${article.author_id}`}
-                        className="hover:text-white transition-colors"
-                      >
-                        {article.author.full_name}
-                      </Link>
-                    ) : (
-                      <span>{article.author.full_name}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            ) : null}
           </div>
+
+          {!titleIsOverlay ? (
+            <div className="border-t border-[var(--color-border)] px-6 py-7 md:px-8 md:py-9">
+              {articleTitleBlock}
+            </div>
+          ) : null}
 
           <div className="border-t border-[var(--color-border)] p-6 md:p-8 lg:grid lg:grid-cols-[minmax(0,720px)_320px] lg:justify-center lg:gap-10">
             <aside className="lg:order-2 lg:sticky lg:top-24 lg:self-start">
