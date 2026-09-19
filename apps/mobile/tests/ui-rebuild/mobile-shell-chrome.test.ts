@@ -92,11 +92,11 @@ describe('mobile shell chrome contract', () => {
 
     const standings = source('src/screens/StandingsScreen.tsx');
     assert.doesNotMatch(standings, /SectionHeader title="Standings"/);
-    assert.match(standings, /Choose a league for standings/);
+    assert.match(standings, /Hockey Life access required/);
 
     const schedule = source('src/screens/ScheduleScreen.tsx');
     assert.doesNotMatch(schedule, /SectionHeader title=\{standalone \? initialTab : 'Schedule'\}/);
-    assert.match(schedule, /SectionHeader title="Conflict Watch"/);
+    assert.match(schedule, /Hockey Life access required/);
 
     const stats = source('src/screens/StatsScreen.tsx');
     assert.doesNotMatch(stats, /SectionHeader title="(?:Stats|League Leaders)"/);

@@ -61,8 +61,8 @@ describe('full App mobile dock composition', () => {
           }),
         },
         '../theme/colors': { default: { primary: '#0ff', brandArena: '#f0f', textSecondary: '#aaa', textPrimary: '#fff' } },
-        './useMobileDockData': {
-          useMobileDockData: () => ({
+        './MobileShellDataContext': {
+          useMobileShellData: () => ({
             identityKey: 'member-a:league-a', isLoading: false, hasError: false, websiteStatus: 'ready', seasonId: 'season-a',
             isPlayoffs: false, registrationOpen: false, visiblePages: {}, customNavItems: [], team: null, retry: () => undefined,
           }),
@@ -110,11 +110,12 @@ describe('full App mobile dock composition', () => {
         if (id === 'react-native') return { StyleSheet: { create: <T>(value: T) => value }, View: 'View' };
         if (id === '@react-navigation/bottom-tabs') return { createBottomTabNavigator: tabFactory };
         if (id === '@react-navigation/native-stack') return { createNativeStackNavigator: stackFactory };
-        if (id === '../context/AuthContext') return { useAuth: () => ({ isGuest: false }) };
-        if (id === '../context/LeagueContext') return { useLeague: () => ({ activeTheme: { backgroundColor: '#07111F' } }) };
+        if (id === '../context/AuthContext') return { useAuth: () => ({ isGuest: false, user: { id: 'member-a' } }) };
+        if (id === '../context/LeagueContext') return { useLeague: () => ({ activeLeague: { id: 'league-a' }, activeTheme: { backgroundColor: '#07111F', primaryColor: '#00ffff' } }) };
         if (id === '../context/FocusPauseContext') return { FocusPauseProvider: passthrough };
         if (id === './MobileWebDock') return { __esModule: true, default: MobileWebDock };
         if (id === './GuestBannerLayout') return { __esModule: true, default: passthrough };
+        if (id === './MobileShellDataContext') return { MobileShellDataProvider: passthrough };
         if (id === '../theme/colors') return { __esModule: true, default: { bgBase: '#07111F' } };
         return screenModule;
       },

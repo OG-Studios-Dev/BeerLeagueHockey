@@ -5,17 +5,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Avatar from '../components/Avatar';
 import BrandAtmosphere from '../components/BrandAtmosphere';
-import { FocusCard, FocusFlatList, FocusScrollView } from '../components/CardFocus';
+import { FocusCard, FocusFlatList } from '../components/CardFocus';
 import GuestBanner from '../components/GuestBanner';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
 import {
-  getActiveSeasonMembershipsForUser,
   getActiveSeasonRoster,
   getActiveSeasonTeamForUser,
   getTeamActiveSeason,
-  type ActiveTeamMembership,
   type TeamRosterMember,
 } from '../lib/supabase/team';
 import { navigateToPlayerCard } from '../navigation/playerCard';
@@ -27,7 +25,7 @@ type TeamLoadState = 'idle' | 'ready' | 'no-active-season' | 'no-team' | 'error'
 type Props = NativeStackScreenProps<TeamStackParamList, 'TeamList'>;
 
 export default function TeamScreen({ navigation }: Props) {
-  const { activeLeague, activeTheme, isGuestLeague, availableLeagues, setActiveLeague } = useLeague();
+  const { activeLeague, activeTheme, isGuestLeague } = useLeague();
   const { reduceTransparency } = useAccessibilityPreferences();
   const [roster, setRoster] = React.useState<TeamRosterMember[]>([]);
   const [teamName, setTeamName] = React.useState('My Team');
@@ -38,9 +36,6 @@ export default function TeamScreen({ navigation }: Props) {
   const [loadState, setLoadState] = React.useState<TeamLoadState>('idle');
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [globalTeams, setGlobalTeams] = React.useState<ActiveTeamMembership[]>([]);
-  const [globalLoading, setGlobalLoading] = React.useState(false);
-  const [globalError, setGlobalError] = React.useState<string | null>(null);
   const publicSurface = reduceTransparency
     ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
     : { backgroundColor: 'rgba(10, 22, 40, 0.30)', borderColor: 'rgba(125, 190, 255, 0.22)' };
@@ -57,38 +52,6 @@ export default function TeamScreen({ navigation }: Props) {
       setLoadError(null);
       setLoadState('idle');
       setLoading(false);
-      if (availableLeagues.length === 0) {
-        setGlobalTeams([]);
-        setGlobalError(null);
-        setGlobalLoading(false);
-        return () => { cancelled = true; };
-      }
-
-      setGlobalLoading(true);
-      setGlobalError(null);
-      void (async () => {
-        try {
-          const { data } = await supabase.auth.getUser();
-          if (cancelled) return;
-          const userId = data.user?.id;
-          if (!userId) {
-            setGlobalTeams([]);
-            setGlobalLoading(false);
-            return;
-          }
-
-          const result = await getActiveSeasonMembershipsForUser(userId, availableLeagues);
-          if (cancelled) return;
-          setGlobalTeams(result.data);
-          setGlobalError(result.error);
-          setGlobalLoading(false);
-        } catch {
-          if (cancelled) return;
-          setGlobalTeams([]);
-          setGlobalError('We could not load your active team assignments.');
-          setGlobalLoading(false);
-        }
-      })();
       return () => { cancelled = true; };
     }
 
@@ -154,95 +117,15 @@ export default function TeamScreen({ navigation }: Props) {
     })();
 
     return () => { cancelled = true; };
-  }, [activeLeague, availableLeagues]);
-
-  if (!activeLeague && availableLeagues.length === 0) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyTitle}>Select a league to see your team</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  }, [activeLeague]);
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
-        <BrandAtmosphere intensity="low" />
-        <GuestBanner />
-        <FocusScrollView focusScopeKey={`teams:global:${availableLeagues.map((league) => league.id).join('|')}`} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.globalIntro}>
-            Every BLH team you play on, across every league, in one place.
-          </Text>
-
-          {globalLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
-          ) : globalError ? (
-            <View testID="team-list-error-state" style={styles.emptyWrap}>
-              <Text style={styles.emptyTitle}>Unable to load My Teams</Text>
-              <Text style={styles.emptyBody}>{globalError}</Text>
-            </View>
-          ) : globalTeams.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyTitle}>No active team assignments found yet</Text>
-            </View>
-          ) : (
-            globalTeams.map((team) => (
-              <FocusCard key={`${team.leagueId}-${team.teamId}`} focusId={`team-list:${team.leagueId}:${team.teamId}`} accentColor={team.teamPrimaryColor ?? colors.primary}>
-                <Pressable
-                  testID={`team-list-global-card-${team.leagueId}-${team.teamId}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${team.teamName}`}
-                  style={[styles.globalTeamCard, publicSurface]}
-                  onPress={() => {
-                    const nextLeague = availableLeagues.find((league) => league.id === team.leagueId);
-                    if (nextLeague) void setActiveLeague(nextLeague);
-                    navigation.navigate('TeamDetail', { teamId: team.teamId, leagueId: team.leagueId });
-                  }}
-                >
-                <View style={styles.globalTeamHeader}>
-                  <View style={styles.globalTeamIdentity}>
-                    <TeamLogo
-                      teamId={team.teamId}
-                      logoUrl={team.teamLogoUrl}
-                      teamName={team.teamName}
-                      primaryColor={team.teamPrimaryColor ?? colors.primary}
-                      size={52}
-                    />
-                    <View style={styles.globalTeamCopy}>
-                      <Text style={styles.globalTeamName}>{team.teamName}</Text>
-                      <Text style={styles.globalTeamMeta}>
-                        {team.leagueName} · {team.seasonName}
-                        {team.leagueCity ? ` · ${team.leagueCity}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.globalPill,
-                      { backgroundColor: (team.teamPrimaryColor ?? colors.primary) + '22' },
-                    ]}
-                  >
-                    <Text style={[styles.globalPillText, { color: team.teamPrimaryColor ?? colors.primary }]}>
-                      {team.position ?? 'Skater'}
-                      {team.jerseyNumber != null ? ` · #${team.jerseyNumber}` : ''}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.globalTeamFooter}>
-                  <Text style={styles.globalTeamFooterText}>Open roster, record, and upcoming games</Text>
-                  <Text style={styles.globalTeamLink}>View team</Text>
-                </View>
-                </Pressable>
-              </FocusCard>
-            ))
-          )}
-        </FocusScrollView>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Hockey Life access required</Text>
+          <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>
+        </View>
       </SafeAreaView>
     );
   }

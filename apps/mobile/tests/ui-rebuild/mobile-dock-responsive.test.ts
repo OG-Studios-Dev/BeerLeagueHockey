@@ -7,7 +7,9 @@ describe('mobile dock responsive and accessibility layout', () => {
   it('retains 44pt controls and makes the build-16 crest art exactly 25% larger', () => {
     assert.deepEqual(getMobileDockLayout(390, 34, 844, 47), {
       outerHeight: 158,
+      exteriorBottomOffset: 0,
       horizontalPadding: 8,
+      safeAreaPaddingBottom: 34,
       touchMin: 44,
       crestSize: 112.5,
       crestArtSize: 102.5,
@@ -23,7 +25,9 @@ describe('mobile dock responsive and accessibility layout', () => {
     const layout = getMobileDockLayout(320, 0, 568, 20);
     assert.deepEqual(layout, {
       outerHeight: 114,
+      exteriorBottomOffset: 0,
       horizontalPadding: 4,
+      safeAreaPaddingBottom: 6,
       touchMin: 44,
       crestSize: 97.5,
       crestArtSize: 87.5,

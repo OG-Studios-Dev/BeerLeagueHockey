@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, nodeText } from './component-harness';
 
 const leagueA = {
   id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null, city: null,
@@ -94,23 +94,20 @@ async function settle(harness: ReturnType<typeof createHookHarness>) {
 }
 
 describe('native Standings dock destination', () => {
-  it('renders a Standings-specific league chooser without mounting global Schedule work', () => {
+  it('renders a Hockey-Life-specific access state without mounting Schedule work', () => {
     const screen = createRenderedScreens(null);
     screen.harness.mount(() => screen.StandingsScreen({ navigation: { navigate: () => {} } }));
 
-    assert.match(nodeText(screen.harness.output), /Choose a league for standings/);
-    assert.doesNotMatch(nodeText(screen.harness.output), /Upcoming games across every BLH league/);
+    assert.match(nodeText(screen.harness.output), /Hockey Life access required/);
     assert.deepEqual(screen.counts(), { authReads: 0, standingsReads: 0 });
-
-    const choice = findNode(screen.harness.output, (node) => node.props.testID === 'standings-league-choice-league-a');
-    choice?.props.onPress();
-    assert.deepEqual(screen.selected, ['league-a']);
+    assert.deepEqual(screen.selected, []);
   });
 
-  it('preserves the default Schedule cross-league upcoming content', () => {
+  it('fails Schedule closed instead of exposing a cross-league fallback', () => {
     const screen = createRenderedScreens(null);
     screen.harness.mount(() => screen.ScheduleScreen({ navigation: { navigate: () => {} } }));
-    assert.match(nodeText(screen.harness.output), /Upcoming games across every BLH league/);
+    assert.match(nodeText(screen.harness.output), /Hockey Life access required/);
+    assert.deepEqual(screen.selected, []);
   });
 
   it('renders selected-league standings rows through the existing Schedule helpers', async () => {

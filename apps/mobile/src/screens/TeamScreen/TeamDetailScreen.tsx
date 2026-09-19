@@ -314,7 +314,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [loadingSubCandidates, setLoadingSubCandidates] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [isRosterMember, setIsRosterMember] = React.useState(false);
   const [lineupSavingPlayerId, setLineupSavingPlayerId] = React.useState<string | null>(null);
   const [captainError, setCaptainError] = React.useState<string | null>(null);
 
@@ -436,7 +435,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       setRoster([]);
       setUpcomingGames([]);
       setNextGameAvailability(null);
-      setIsRosterMember(false);
       setCaptainRole(null);
       setTeamMessages([]);
       setLineupStatuses({});
@@ -494,7 +492,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
       setActiveSeason(season);
 
-      const [teamRes, leagueRes, standingRes, rosterRes, gamesRes, viewerRes] = await Promise.all([
+      const [teamRes, leagueRes, standingRes, rosterRes, gamesRes] = await Promise.all([
         supabase.from('teams').select('id, name, logo_url, primary_color, secondary_color').eq('id', teamId).eq('league_id', leagueId).maybeSingle(),
         supabase.from('leagues').select('id, name, slug').eq('id', leagueId).maybeSingle(),
         supabase
@@ -525,7 +523,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           .in('status', ['scheduled', 'in_progress'])
           .order('scheduled_at', { ascending: true })
           .limit(8),
-        supabase.auth.getUser(),
       ]);
 
       if (!isMounted) return;
@@ -633,7 +630,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           });
 
         setRoster(players);
-        setIsRosterMember(Boolean(viewerRes.data.user?.id && players.some((player) => player.player_id === viewerRes.data.user?.id)));
 
         if (nextScheduledGame) {
           const summary = await getGameCheckinSummary(nextScheduledGame.id, teamId);
@@ -662,7 +658,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
         await refreshCaptainData(players, nextScheduledGame, generation);
       } else {
         setRoster([]);
-        setIsRosterMember(false);
         setNextGameAvailability(null);
         await refreshCaptainData([], nextScheduledGame, generation);
       }
@@ -1023,19 +1018,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
               <Pressable testID="team-league-site-action" accessibilityRole="button" accessibilityLabel="Open league site" style={styles.opsSecondaryButton} onPress={openLeagueSite}>
                 <Ionicons name="globe-outline" size={16} color={colors.textPrimary} />
                 <Text style={styles.opsSecondaryButtonText}>Open League Site</Text>
-              </Pressable>
-            ) : null}
-
-            {isRosterMember ? (
-              <Pressable
-                testID="team-chat-action"
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${teamName} team chat`}
-                style={styles.opsSecondaryButton}
-                onPress={() => navigation.navigate('TeamChat', { teamId, leagueId, teamName })}
-              >
-                <Ionicons name="chatbubbles-outline" size={16} color={colors.textPrimary} />
-                <Text style={styles.opsSecondaryButtonText}>Team Chat</Text>
               </Pressable>
             ) : null}
           </FocusCard>

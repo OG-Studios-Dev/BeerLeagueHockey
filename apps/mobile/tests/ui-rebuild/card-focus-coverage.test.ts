@@ -97,18 +97,18 @@ describe('routed scroll surface wiring', () => {
     assert.doesNotMatch(reveal, /opacity:\s*progress/);
   });
 
-  it('wires the Standings no-league choices and active standings table without treating rows as cards', () => {
+  it('fails Standings closed without Hockey Life access and keeps active standings rows out of card focus', () => {
     const standings = source('screens/StandingsScreen.tsx');
     const schedule = source('screens/ScheduleScreen.tsx');
-    assert.match(standings, /<FocusScrollView\b/);
-    assert.match(standings, /focusId={`standings:league:/);
+    assert.match(standings, /Hockey Life access required/);
+    assert.doesNotMatch(standings, /standings:league:/);
     assert.match(schedule, /focusId={`standings:table:/);
   });
 
   it('treats each schedule game and adjacent check-in as one candidate while excluding sticky headers', () => {
     const schedule = source('screens/ScheduleScreen.tsx');
     assert.match(schedule, /focusId={`schedule:game:/);
-    assert.match(schedule, /focusId={`schedule:global-game:/);
+    assert.doesNotMatch(schedule, /focusId={`schedule:global-game:/);
     assert.doesNotMatch(schedule, /focusId=.*sticky/);
   });
 

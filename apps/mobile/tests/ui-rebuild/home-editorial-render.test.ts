@@ -228,23 +228,10 @@ describe('Home editorial native render', () => {
     assert.ok(findNode(output, (node) => node.props.testID === 'home-personal-loading'));
   });
 
-  it('preserves the exact no-active-league marketplace return contract', () => {
+  it('shows an honest Hockey Life access state without a league marketplace', () => {
     const { output, marketplaceCalls } = makeScreen({ activeLeague: null });
-    assert.equal((output as TestNode).type, 'LeagueMarketplace');
-    assert.ok(marketplaceCalls.length >= 1);
-    assert.deepEqual(
-      {
-        title: marketplaceCalls[0].title,
-        subtitle: marketplaceCalls[0].subtitle,
-        showJoinedLeagues: marketplaceCalls[0].showJoinedLeagues,
-        includeTopInset: marketplaceCalls[0].includeTopInset,
-      },
-      {
-        title: 'BLH Overview',
-        subtitle: 'Nearby leagues, fit, and difficulty across Beer League Hockey.',
-        showJoinedLeagues: true,
-        includeTopInset: true,
-      },
-    );
+    assert.equal((output as TestNode).type, 'SafeAreaView');
+    assert.match(nodeText(output), /Hockey Life access required/);
+    assert.equal(marketplaceCalls.length, 0);
   });
 });

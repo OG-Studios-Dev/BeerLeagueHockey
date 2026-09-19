@@ -51,8 +51,9 @@ describe('unauthenticated app diagnostics reachability', () => {
       './src/components/MembershipDiagnosticsCard': (props: Record<string, unknown>) => (
         createElement('MembershipDiagnosticsCard', { ...props, accessibilityLabel: 'League status diagnostics' })
       ),
+      './src/components/CutIceTitle': 'CutIceTitle',
+      './src/navigation/CutIceScreenBoundary': { cutIceScreenLayout: ({ children }: { children: unknown }) => children },
       './src/navigation': 'RootNavigation',
-      './src/screens/auth/LeagueSelectScreen': 'LeagueSelectScreen',
       './src/screens/auth/LoginScreen': 'LoginScreen',
       './src/screens/auth/ForgotPasswordScreen': 'ForgotPasswordScreen',
       './src/screens/auth/SignUpScreen': 'SignUpScreen',

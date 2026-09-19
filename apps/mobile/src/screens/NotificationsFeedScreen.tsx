@@ -23,6 +23,7 @@ import ScheduleConflictList from '../components/ScheduleConflictList';
 import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useLeague } from '../context/LeagueContext';
+import { HOCKEY_LIFE_ID } from '../config/hockeyLife';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { addGameToCalendar } from '../lib/calendar';
 import { getScheduleConflicts } from '../lib/scheduleConflicts';
@@ -117,7 +118,7 @@ function openLeagueSite(slug: string) {
 }
 
 export default function NotificationsFeedScreen({ navigation }: { navigation: any }) {
-  const { activeLeague, availableLeagues, setActiveLeague } = useLeague();
+  const { activeLeague } = useLeague();
   const { width } = useWindowDimensions();
   const isCompact = width < 390;
 
@@ -168,6 +169,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
           league:leagues!team_rosters_league_id_fkey(id, name, slug, primary_color)
         `)
         .eq('player_id', user.id)
+        .eq('league_id', HOCKEY_LIFE_ID)
         .eq('status', 'active');
 
       const slots = ((rosterRows as any[]) ?? [])
@@ -397,11 +399,6 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
   };
 
   const navigateToGame = (game: PlayerGame) => {
-    const targetLeague = availableLeagues.find((league) => league.id === game.leagueId);
-    if (targetLeague) {
-      void setActiveLeague(targetLeague);
-    }
-
     navigation.navigate('Schedule', {
       screen: 'GamePreview',
       params: { gameId: game.id },
@@ -687,10 +684,6 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                   <Pressable
                     style={styles.teamWatchCard}
                     onPress={() => {
-                    const targetLeague = availableLeagues.find((league) => league.id === team.leagueId);
-                    if (targetLeague) {
-                      void setActiveLeague(targetLeague);
-                    }
                     navigation.navigate('Team', {
                       screen: 'TeamDetail',
                       params: { teamId: team.teamId, leagueId: team.leagueId },

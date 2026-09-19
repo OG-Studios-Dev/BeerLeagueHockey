@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { compileCommonJs, createHookHarness } from './component-harness.ts';
+import { HOCKEY_LIFE_ID } from '../../src/config/hockeyLife.ts';
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -22,9 +23,9 @@ function deferred<T>(): Deferred<T> {
 }
 
 const leagueRow = (id: string) => ({
-  id,
+  id: HOCKEY_LIFE_ID,
   name: `League ${id}`,
-  slug: `league-${id.toLowerCase()}`,
+  slug: 'hockey-life',
   logo_url: null,
   city: null,
   primary_color: null,
@@ -297,7 +298,7 @@ describe('LeagueProvider persisted selection ordering', () => {
     const providerA = leagueModule.mount();
     providerA.emit('SIGNED_IN', { user: { id: 'account-a' } });
     await providerA.settle();
-    assert.deepEqual(providerA.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(providerA.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     assert.deepEqual(operations, ['read:start']);
 
     providerA.emit('SIGNED_OUT', null);
@@ -313,21 +314,22 @@ describe('LeagueProvider persisted selection ordering', () => {
     await selectingB;
     await providerB.settle();
 
-    assert.equal(providerB.value.activeLeague?.id, 'B');
-    assert.equal(persisted, 'B');
-    assert.equal(operations.at(-1), 'set:B');
+    assert.equal(providerB.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(persisted, HOCKEY_LIFE_ID);
+    assert.equal(operations.at(-1), `set:${HOCKEY_LIFE_ID}`);
   });
 
   it('orders a pending set and logout delete before a remounted provider selection', async () => {
     const bootstrap = deferred<SessionResult>();
     const pendingASet = deferred<void>();
+    let setCalls = 0;
     let persisted: string | null = null;
     const operations: string[] = [];
     const leagueModule = createLeagueModule({
       getSession: () => bootstrap.promise,
       setItemAsync: async (_key, value) => {
         operations.push(`set:${value}:start`);
-        if (value === 'A') await pendingASet.promise;
+        if (++setCalls === 1) await pendingASet.promise;
         persisted = value;
         operations.push(`set:${value}:finish`);
       },
@@ -340,7 +342,7 @@ describe('LeagueProvider persisted selection ordering', () => {
     const providerA = leagueModule.mount();
     const selectingA = providerA.value.setActiveLeague({ ...leagueRow('A'), logoUrl: null, theme: {} });
     await flush();
-    assert.deepEqual(operations, ['set:A:start']);
+    assert.deepEqual(operations, [`set:${HOCKEY_LIFE_ID}:start`]);
     providerA.emit('SIGNED_OUT', null);
     providerA.unmount();
 
@@ -350,14 +352,14 @@ describe('LeagueProvider persisted selection ordering', () => {
     await Promise.all([selectingA, selectingB]);
     await providerB.settle();
 
-    assert.equal(providerB.value.activeLeague?.id, 'B');
-    assert.equal(persisted, 'B');
+    assert.equal(providerB.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(persisted, HOCKEY_LIFE_ID);
     assert.deepEqual(operations, [
-      'set:A:start',
-      'set:A:finish',
+      `set:${HOCKEY_LIFE_ID}:start`,
+      `set:${HOCKEY_LIFE_ID}:finish`,
       'delete',
-      'set:B:start',
-      'set:B:finish',
+      `set:${HOCKEY_LIFE_ID}:start`,
+      `set:${HOCKEY_LIFE_ID}:finish`,
     ]);
   });
 
@@ -396,9 +398,9 @@ describe('LeagueProvider persisted selection ordering', () => {
     await selectingB;
     await providerB.settle();
 
-    assert.equal(providerB.value.activeLeague?.id, 'B');
-    assert.equal(persisted, 'B');
-    assert.equal(operations.at(-1), 'set:B');
+    assert.equal(providerB.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(persisted, HOCKEY_LIFE_ID);
+    assert.equal(operations.at(-1), `set:${HOCKEY_LIFE_ID}`);
   });
 
   it('cannot let account A storage restoration delete account B selection', async () => {
@@ -428,28 +430,29 @@ describe('LeagueProvider persisted selection ordering', () => {
 
     fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
 
     fixture.emit('SIGNED_OUT', null);
     fixture.emit('SIGNED_IN', { user: { id: 'account-b' } });
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['B']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
 
     const accountBLeague = fixture.value.availableLeagues[0];
     const selectingB = fixture.value.setActiveLeague(accountBLeague);
-    persisted = 'B';
+    persisted = HOCKEY_LIFE_ID;
     storageRead.resolve('B');
     await selectingB;
     await fixture.settle();
 
-    assert.equal(persisted, 'B');
-    assert.equal(fixture.value.activeLeague?.id, 'B');
-    assert.equal(operations.at(-1), 'set:B');
+    assert.equal(persisted, HOCKEY_LIFE_ID);
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(operations.at(-1), `set:${HOCKEY_LIFE_ID}`);
   });
 
   it('serializes a pending account A set, sign-out delete, and account B set', async () => {
     const bootstrap = deferred<SessionResult>();
     const pendingASet = deferred<void>();
+    let setCalls = 0;
     let persisted: string | null = null;
     const operations: string[] = [];
     const fixture = createLeagueFixture({
@@ -457,7 +460,7 @@ describe('LeagueProvider persisted selection ordering', () => {
       getUserLeagues: async () => [],
       setItemAsync: async (_key, value) => {
         operations.push(`set:${value}:start`);
-        if (value === 'A') await pendingASet.promise;
+        if (++setCalls === 1) await pendingASet.promise;
         persisted = value;
         operations.push(`set:${value}:finish`);
       },
@@ -476,8 +479,8 @@ describe('LeagueProvider persisted selection ordering', () => {
     await Promise.all([selectingA, selectingB]);
     await fixture.settle();
 
-    assert.equal(persisted, 'B');
-    assert.deepEqual(operations, ['set:A:start', 'set:A:finish', 'delete', 'set:B:start', 'set:B:finish']);
+    assert.equal(persisted, HOCKEY_LIFE_ID);
+    assert.deepEqual(operations, [`set:${HOCKEY_LIFE_ID}:start`, `set:${HOCKEY_LIFE_ID}:finish`, 'delete', `set:${HOCKEY_LIFE_ID}:start`, `set:${HOCKEY_LIFE_ID}:finish`]);
   });
 
   it('continues preference ordering after a sign-out deletion failure', async () => {
@@ -502,7 +505,7 @@ describe('LeagueProvider persisted selection ordering', () => {
     await fixture.settle();
 
     assert.equal(deleteAttempts, 1);
-    assert.equal(persisted, 'B');
+    assert.equal(persisted, HOCKEY_LIFE_ID);
   });
 });
 
@@ -540,7 +543,7 @@ describe('LeagueProvider auth bootstrap freshness', () => {
     await fixture.settle();
 
     assert.equal(fixture.value.isLoading, false);
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
   });
 
   it('ignores an older null bootstrap after a newer SIGNED_IN load', async () => {
@@ -552,12 +555,12 @@ describe('LeagueProvider auth bootstrap freshness', () => {
 
     fixture.emit('SIGNED_IN', { user: { id: 'account-b' } });
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['B']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
 
     bootstrap.resolve({ data: { session: null } });
     await fixture.settle();
 
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['B']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     assert.equal(fixture.value.isLoading, false);
   });
 
@@ -858,7 +861,7 @@ describe('LeagueProvider auth bootstrap freshness', () => {
     assert.deepEqual(queryCalls[0]?.slice(0, 3), ['league_memberships', 'league:leagues(id, name, slug, logo_url, primary_color, secondary_color, short_name, city)', 'user_id']);
     assert.equal(queryCalls[0]?.[3], 'account-a');
     assert.equal(fixture.value.membershipStatus, 'ready');
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     const rendered = formatProviderDiagnostics(diagnostics, fixture.value);
     assert.match(rendered, /getSession: HTTP unknown · code unknown/);
     assert.match(rendered, /getUser: ok · HTTP unknown · code unknown/);
@@ -893,7 +896,7 @@ describe('LeagueProvider auth bootstrap freshness', () => {
     assert.equal(sessionCalls, 2);
     assert.equal(membershipCalls, 1);
     assert.equal(fixture.value.membershipStatus, 'ready');
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     assert.equal(fixture.value.membershipDiagnostics.entries.at(-1)?.trigger, 'manual-retry');
   });
 
@@ -970,7 +973,7 @@ describe('LeagueProvider auth bootstrap freshness', () => {
     await fixture.settle();
     retryForSwitch.resolve({ data: { session: { user: { id: 'account-a' } } }, error: null });
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['B']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
 
     const retryForUnmount = deferred<SessionResult>();
     let unmountCalls = 0;
@@ -1004,7 +1007,7 @@ describe('LeagueProvider membership request status and generation safety', () =>
 
     fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     const currentRequestId = fixture.value.membershipDiagnostics.entries.at(-1)?.requestId;
     const selecting = fixture.value.setActiveLeague(fixture.value.availableLeagues[0]);
     storageRead.resolve(null);
@@ -1014,8 +1017,8 @@ describe('LeagueProvider membership request status and generation safety', () =>
     const finalEntry = fixture.value.membershipDiagnostics.entries.at(-1);
     assert.equal(fixture.value.membershipStatus, 'ready');
     assert.equal(fixture.value.isLoading, false);
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
-    assert.equal(fixture.value.activeLeague?.id, 'A');
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
     assert.equal(finalEntry?.requestId, currentRequestId);
     assert.equal(finalEntry?.outcome, 'success');
     assert.equal(finalEntry?.commit, 'committed');
@@ -1063,7 +1066,7 @@ describe('LeagueProvider membership request status and generation safety', () =>
     await fixture.settle();
     assert.equal(requests, 2);
     assert.equal(fixture.value.membershipStatus, 'ready');
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     assert.equal(fixture.value.membershipDiagnostics.entries.at(-1)?.trigger, 'manual-retry');
     assert.equal(fixture.value.membershipDiagnostics.entries.at(-1)?.commit, 'committed');
   });
@@ -1108,8 +1111,8 @@ describe('LeagueProvider membership request status and generation safety', () =>
     await fixture.settle();
 
     assert.equal(fixture.value.membershipStatus, 'error');
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['A']);
-    assert.equal(fixture.value.activeLeague?.id, 'A');
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
     assert.equal(fixture.value.membershipDiagnostics.entries.at(-1)?.availableLeagueCount, 1);
     assert.equal(fixture.value.membershipDiagnostics.entries.at(-1)?.commit, 'retained');
   });
@@ -1128,11 +1131,11 @@ describe('LeagueProvider membership request status and generation safety', () =>
     fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
     fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['new']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
 
     oldRequest.resolve(lookup('success'));
     await fixture.settle();
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['new']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     assert.equal(fixture.value.membershipStatus, 'ready');
     assert.equal(fixture.value.membershipDiagnostics.entries.some(({ commit }) => commit === 'dropped'), true);
   });
@@ -1153,7 +1156,7 @@ describe('LeagueProvider membership request status and generation safety', () =>
     accountA.resolve(lookup('success', [leagueRow('A')], { userSuffix: '••••aaaa' }));
     await fixture.settle();
 
-    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), ['B']);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
     assert.equal(JSON.stringify(fixture.value.membershipDiagnostics).includes('aaaa'), false);
     assert.equal(JSON.stringify(fixture.value.membershipDiagnostics).includes('bbbb'), true);
   });
@@ -1218,7 +1221,7 @@ describe('LeagueProvider division request freshness', () => {
     accountADivisions.resolve([{ id: 'A-current-division' }]);
     await fixture.settle();
 
-    assert.equal(fixture.value.activeLeague?.id, 'A');
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
     assert.deepEqual(fixture.value.divisions.map(({ id }) => id), ['A-current-division']);
   });
 
@@ -1238,7 +1241,7 @@ describe('LeagueProvider division request freshness', () => {
     accountADivisions.resolve([{ id: 'A-current-division' }]);
     await fixture.settle();
 
-    assert.equal(fixture.value.activeLeague?.id, 'A');
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
     assert.equal(fixture.value.isGuestLeague, true);
     assert.deepEqual(fixture.value.divisions.map(({ id }) => id), ['A-current-division']);
   });
@@ -1261,17 +1264,20 @@ describe('LeagueProvider division request freshness', () => {
     assert.deepEqual(fixture.value.divisions, []);
   });
 
-  it('does not let an older league A response replace current league B divisions', async () => {
+  it('does not let an older account response replace current Hockey Life divisions after an identity reset', async () => {
     const bootstrap = deferred<SessionResult>();
     const accountADivisions = deferred<DivisionFixture[]>();
+    let divisionReads = 0;
     const fixture = createLeagueFixture({
       getSession: () => bootstrap.promise,
-      getDivisions: (leagueId) => leagueId === 'A'
+      getDivisions: () => ++divisionReads === 1
         ? accountADivisions.promise
         : Promise.resolve([{ id: 'B-current-division' }]),
     });
 
     await fixture.value.setActiveLeague({ ...leagueRow('A'), logoUrl: null, theme: {} });
+    await fixture.settle();
+    fixture.emit('SIGNED_OUT', null);
     await fixture.settle();
     await fixture.value.setActiveLeague({ ...leagueRow('B'), logoUrl: null, theme: {} });
     await fixture.settle();
@@ -1280,7 +1286,7 @@ describe('LeagueProvider division request freshness', () => {
     accountADivisions.resolve([{ id: 'A-private-division' }]);
     await fixture.settle();
 
-    assert.equal(fixture.value.activeLeague?.id, 'B');
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
     assert.deepEqual(fixture.value.divisions.map(({ id }) => id), ['B-current-division']);
   });
 

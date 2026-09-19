@@ -137,9 +137,9 @@ describe('career and goalie screen behavior', () => {
     assert.equal(h.stateUpdateCount,updates,'late career completion must not update unmounted state');
   });
 
-  it('binds global leaders to tab and league set before effects and labels estimates outside metric columns', async () => {
+  it('binds Hockey Life leaders to tab and active league before effects and labels estimates outside metric columns', async () => {
     const h=createHookHarness(); const renders:any[]=[];
-    const league:any={activeLeague:null,activeDivision:null,divisions:[],availableLeagues:[{id:'11111111-1111-4111-8111-111111111111',slug:'harbour',name:'Harbour',theme:{primaryColor:'#0ff'}}],activeTheme:{backgroundColor:'#000',primaryColor:'#0ff'},setActiveDivision(){}};
+    const league:any={activeLeague:{id:'11111111-1111-4111-8111-111111111111',slug:'hockey-life',name:'Hockey Life',theme:{primaryColor:'#0ff'}},activeDivision:null,divisions:[],availableLeagues:[],activeTheme:{backgroundColor:'#000',primaryColor:'#0ff'},setActiveDivision(){}};
     const Stats=compileCommonJs<any>(new URL('../../src/screens/StatsScreen.tsx',import.meta.url),{
       react:h.react,'react-native':native(),'@react-navigation/native':{useNavigation:()=>({})},'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'},
       '../components/DivisionFilter':()=>null,'../components/GuestBanner':()=>null,'../components/PillToggle':(p:any)=>createElement('PillToggle',p),
@@ -155,9 +155,9 @@ describe('career and goalie screen behavior', () => {
     const start=renders.length; findNode(h.output,n=>n.type==='PillToggle')!.props.onChange('Goalies'); h.render();
     assert.doesNotMatch(nodeText(renders[start]),/OLD SKATER/,'first goalie render must not paint skater snapshot');
     await settle(h); const row=findNode(h.output,n=>n.type==='PlayerRow')!;
-    assert.equal(row.props.stats.length,3); assert.doesNotMatch(nodeText(row),/Estimated/); assert.match(nodeText(h.output),/Estimated/);
+    assert.equal(row.props.stats.length,3); assert.doesNotMatch(nodeText(row),/estimate/i); assert.match(nodeText(h.output),/estimate/i);
     const leagueStart=renders.length;
-    league.availableLeagues=[{id:'55555555-5555-4555-8555-555555555555',slug:'bay',name:'Bay',theme:{primaryColor:'#0ff'}}]; h.render();
+    league.activeLeague={id:'55555555-5555-4555-8555-555555555555',slug:'hockey-life',name:'Hockey Life',theme:{primaryColor:'#0ff'}}; h.render();
     assert.doesNotMatch(nodeText(renders[leagueStart]),/A GOALIE/,'first changed-league render must not paint old league snapshot');
     await settle(h); assert.match(nodeText(h.output),/B GOALIE/);
   });
