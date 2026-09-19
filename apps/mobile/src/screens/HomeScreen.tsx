@@ -21,7 +21,6 @@ import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import GuestBanner from '../components/GuestBanner';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import HomeLeagueHero from '../components/HomeLeagueHero';
-import LeagueMarketplace from '../components/LeagueMarketplace';
 import RevealView from '../components/RevealView';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
@@ -376,7 +375,15 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   React.useEffect(() => { setStoryIndex(0); }, [activeLeague?.id, publicHome?.presentationSeason?.id, storyIds]);
 
   if (!activeLeague) {
-    return <LeagueMarketplace navigation={navigation} title="BLH Overview" subtitle="Nearby leagues, fit, and difficulty across Beer League Hockey." showJoinedLeagues includeTopInset />;
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['top', 'left', 'right']}>
+        <View style={styles.accessState}>
+          <Image source={hockeyLifeLogo} style={styles.accessStateLogo} resizeMode="contain" />
+          <Text style={styles.accessStateTitle}>Hockey Life access required</Text>
+          <Text style={styles.accessStateCopy}>This account does not have an accessible Hockey Life membership.</Text>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   const canCheckIn = Boolean(user && !isGuest && !isGuestLeague && personal.team && personal.game);
@@ -535,6 +542,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
+  accessState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 12 },
+  accessStateLogo: { width: 92, height: 92 },
+  accessStateTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', textAlign: 'center' },
+  accessStateCopy: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 320 },
   arenaBackdrop: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   arenaGlow: { position: 'absolute', top: -80, left: -60, right: -80, height: 360, borderRadius: 180 },
   arenaRink: { position: 'absolute', width: 250, height: 470, right: -120, top: 120, borderWidth: 1, borderColor: homeTokens.rinkLine, borderRadius: 125, transform: [{ rotate: '-10deg' }] },

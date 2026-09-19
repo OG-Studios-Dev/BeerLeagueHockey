@@ -720,7 +720,7 @@ describe('Team active-season data boundary', () => {
     assert.match(missingText, /selected league/);
   });
 
-  it('retains member, captain, game, chat, and player actions while guests remain read-only', async () => {
+  it('retains member, captain, game, and player actions while Team Chat stays removed', async () => {
     const member = createRuntime({
       userId: 'player-current',
       captainApi: { getCaptainRole: async () => 'captain' },
@@ -728,7 +728,6 @@ describe('Team active-season data boundary', () => {
     const memberOutput = await settle(member);
     for (const testID of [
       'team-open-game-action',
-      'team-chat-action',
       'team-captain-reminder-action',
       'team-captain-sub-action',
       'team-captain-goalie-action',
@@ -740,8 +739,7 @@ describe('Team active-season data boundary', () => {
       assert.ok((flattenStyle(style).minHeight ?? 0) >= 44, `${testID} must be a 44pt target`);
     }
 
-    findNode(memberOutput, (node) => node.props.testID === 'team-chat-action')?.props.onPress();
-    assert.ok(member.navigationCalls.some((call) => call[0] === 'TeamChat'));
+    assert.equal(findNode(memberOutput, (node) => node.props.testID === 'team-chat-action'), undefined);
 
     const guest = createRuntime({ userId: null });
     const guestOutput = await settle(guest);

@@ -6,6 +6,12 @@ import { supabase } from '../lib/supabase/client';
 import { getDivisions, type Division } from '../lib/supabase/data';
 import { getUserLeaguesDetailed, type LeagueRow, type UserLeagueLookupResult } from '../lib/supabase/leagues';
 import {
+  HOCKEY_LIFE_PRIMARY,
+  HOCKEY_LIFE_SECONDARY,
+  isHockeyLifeLeague,
+  selectHockeyLifeMembership,
+} from '../config/hockeyLife';
+import {
   getSafeDiagnosticErrorFacts,
   getMembershipDiagnosticRuntime,
   type MembershipDiagnosticEntry,
@@ -64,8 +70,8 @@ function rowToLeague(row: LeagueRow): League {
     city: row.city,
     theme: {
       ...BLH_THEME,
-      primaryColor: row.primary_color ?? '#22D3EE',
-      secondaryColor: row.secondary_color ?? '#3B82F6',
+      primaryColor: row.primary_color ?? HOCKEY_LIFE_PRIMARY,
+      secondaryColor: row.secondary_color ?? HOCKEY_LIFE_SECONDARY,
       logoUrl: row.logo_url,
       leagueName: row.name,
     },
@@ -167,18 +173,18 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
   }, [activeLeagueId]);
 
   const setActiveLeague = React.useCallback(async (league: League | null) => {
+    if (!league || !isHockeyLifeLeague(league)) return;
     selectionGeneration.current += 1;
-    if (league?.id !== activeLeagueId) {
+    if (league.id !== activeLeagueId) {
       divisionLoadGeneration.current += 1;
     }
     replaceActiveLeague(league);
     setIsGuestLeague(false);
-    await runPreferenceOperation(() => league
-      ? SecureStore.setItemAsync(PERSIST_KEY, league.id)
-      : SecureStore.deleteItemAsync(PERSIST_KEY)).catch(() => {});
+    await runPreferenceOperation(() => SecureStore.setItemAsync(PERSIST_KEY, league.id)).catch(() => {});
   }, [activeLeagueId, replaceActiveLeague]);
 
   const previewLeague = React.useCallback((league: League) => {
+    if (!isHockeyLifeLeague(league)) return;
     if (league.id !== activeLeagueId) {
       divisionLoadGeneration.current += 1;
     }
@@ -270,7 +276,8 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
           setMembershipStatus('error');
           setIsLoading(false);
         } else if (requestIsCurrent && result.status === 'success') {
-          const leagues = result.leagues.map(rowToLeague);
+          const memberships = selectHockeyLifeMembership(result.leagues, null);
+          const leagues = memberships.available.map(rowToLeague);
           replaceAvailableLeagues(leagues);
           hasSuccessfulMembership.current = true;
           commit = 'committed';
@@ -286,8 +293,8 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
               && currentIdentity.current === expectedUserId
               && selection === selectionGeneration.current
             ) {
-              const restoredLeague = leagues.find((league) => league.id === savedId) ?? null;
-              if (savedId && !restoredLeague) {
+              const selectionResult = selectHockeyLifeMembership(leagues, savedId);
+              if (selectionResult.shouldClearPersistedSelection) {
                 await runPreferenceOperation(() => SecureStore.deleteItemAsync(PERSIST_KEY)).catch(() => {});
               }
               if (
@@ -297,7 +304,10 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
                 && currentIdentity.current === expectedUserId
                 && selection === selectionGeneration.current
               ) {
-                replaceActiveLeague(restoredLeague);
+                replaceActiveLeague(selectionResult.active);
+                if (selectionResult.active) {
+                  await runPreferenceOperation(() => SecureStore.setItemAsync(PERSIST_KEY, selectionResult.active!.id)).catch(() => {});
+                }
               }
             }
           } catch {
@@ -316,7 +326,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
           }
         } else if (requestIsCurrent) {
           if (result.status === 'incomplete' && !hasSuccessfulMembership.current) {
-            replaceAvailableLeagues(result.leagues.map(rowToLeague));
+            replaceAvailableLeagues(selectHockeyLifeMembership(result.leagues, null).available.map(rowToLeague));
             commit = 'committed';
           } else {
             commit = 'retained';

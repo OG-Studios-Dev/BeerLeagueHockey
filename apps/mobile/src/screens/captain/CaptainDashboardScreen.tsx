@@ -17,9 +17,9 @@ import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
 import TeamLogo from '../../components/TeamLogo';
 import { useAuth } from '../../context/AuthContext';
-import { useLeague } from '../../context/LeagueContext';
+import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import { supabase } from '../../lib/supabase/client';
-import { getCaptainRole, type CaptainRole } from '../../lib/supabase/captain';
+import { type CaptainRole } from '../../lib/supabase/captain';
 import colors from '../../theme/colors';
 
 type CaptainTeam = {
@@ -41,7 +41,6 @@ type CaptainTeam = {
 
 export default function CaptainDashboardScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
-  const { activeTheme, availableLeagues, setActiveLeague } = useLeague();
   const [captainTeams, setCaptainTeams] = React.useState<CaptainTeam[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -59,6 +58,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
           league:leagues!team_rosters_league_id_fkey(id, name)
         `)
         .eq('player_id', user.id)
+        .eq('league_id', HOCKEY_LIFE_ID)
         .eq('status', 'active')
         .in('leadership_role', ['captain', 'alternate_captain']);
 
@@ -252,17 +252,6 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
                   <Text style={styles.actionButtonText}>Availability</Text>
                 </Pressable>
               )}
-              <Pressable
-                style={styles.actionButton}
-                onPress={() => navigation.navigate('TeamChat', {
-                  teamId: team.teamId,
-                  leagueId: team.leagueId,
-                  teamName: team.teamName,
-                })}
-              >
-                <Ionicons name="megaphone-outline" size={16} color={colors.textPrimary} />
-                <Text style={styles.actionButtonText}>Announce</Text>
-              </Pressable>
               <Pressable
                 style={styles.actionButton}
                 onPress={() => navigation.navigate('InvitePlayers', {

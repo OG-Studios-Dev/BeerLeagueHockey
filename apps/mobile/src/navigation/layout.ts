@@ -13,7 +13,9 @@ export function getMobileDockLayout(width: number, bottomInset: number, height: 
   const compact = width < 360;
   return {
     outerHeight: (compact ? 114 : 124) + bottomInset,
+    exteriorBottomOffset: 0,
     horizontalPadding: compact ? 4 : 8,
+    safeAreaPaddingBottom: Math.max(bottomInset, 6),
     touchMin: 44,
     crestSize: compact ? 97.5 : 112.5,
     crestArtSize: compact ? 87.5 : 102.5,

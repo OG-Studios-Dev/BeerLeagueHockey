@@ -8,6 +8,9 @@ type RenderOptions = {
   loading?: boolean;
   profile?: { id: string; full_name: string } | null;
   signOutResult?: { error: Error | null };
+  deleteResult?: { error: Error | null };
+  signOutImpl?: () => Promise<{ error: Error | null }>;
+  deleteImpl?: () => Promise<{ error: Error | null }>;
 };
 
 function renderProfile({
@@ -15,10 +18,14 @@ function renderProfile({
   loading = true,
   profile = null,
   signOutResult = { error: null },
+  deleteResult = { error: null },
+  signOutImpl,
+  deleteImpl,
 }: RenderOptions = {}) {
   const sourceUrl = new URL('../../src/screens/ProfileScreen.tsx', import.meta.url);
   const alerts: Array<{ title: string; message?: string; buttons?: any[] }> = [];
   const signOutCalls: unknown[] = [];
+  const deleteAccountCalls: unknown[] = [];
   const exitGuestCalls: unknown[] = [];
   const effects: Array<() => unknown> = [];
   const stateUpdates: unknown[][] = Array.from({ length: 20 }, () => []);
@@ -69,7 +76,7 @@ function renderProfile({
       useAuth: () => ({
         isGuest,
         session: isGuest ? null : { user: { id: 'user-1' } },
-        signOut: async () => { signOutCalls.push(true); return signOutResult; },
+        signOut: async () => { signOutCalls.push(true); return signOutImpl ? signOutImpl() : signOutResult; },
         exitGuest: () => exitGuestCalls.push(true),
       }),
     },
@@ -85,13 +92,19 @@ function renderProfile({
       }),
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
+    '../lib/supabase/accountDeletion': {
+      deleteCurrentAccount: async () => {
+        deleteAccountCalls.push(true);
+        return deleteImpl ? deleteImpl() : deleteResult;
+      },
+    },
     '../lib/supabase/client': { supabase: {} },
     '../theme/colors': { default: { textPrimary: '#F7FBFF', textSecondary: '#A8B4C8', primary: '#22D3EE', accentGreen: '#22C55E', accentRed: '#EF4444', brandGold: '#D4AF37' } },
     '../theme/contrast': { getContrastTextColor: () => '#F7FBFF' },
   });
 
   const tree = exports.default({ navigation: { navigate: () => undefined } });
-  return { tree, alerts, signOutCalls, exitGuestCalls, stateUpdates, effects };
+  return { tree, alerts, signOutCalls, deleteAccountCalls, exitGuestCalls, stateUpdates, effects };
 }
 
 function renderPendingProfile(signOutImpl: () => Promise<{ error: Error | null }>) {
@@ -147,6 +160,7 @@ function renderPendingProfile(signOutImpl: () => Promise<{ error: Error | null }
       }),
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
+    '../lib/supabase/accountDeletion': { deleteCurrentAccount: async () => ({ error: null }) },
     '../lib/supabase/client': {
       supabase: { auth: { getUser: () => new Promise(() => undefined) } },
     },
@@ -230,6 +244,80 @@ describe('Profile account action', () => {
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.length, 1);
     assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+  });
+
+  it('requires two destructive confirmations, deletes the authenticated account, and signs out locally', async () => {
+    const rendered = renderProfile({ loading: false });
+    const button = accountButton(rendered.tree, 'Delete account');
+    assert.ok(button);
+
+    button.props.onPress();
+    assert.equal(rendered.deleteAccountCalls.length, 0);
+    assert.equal(rendered.alerts[0]?.title, 'Delete Account?');
+    assert.equal(rendered.alerts[0]?.buttons?.[0]?.text, 'Cancel');
+    assert.equal(rendered.alerts[0]?.buttons?.[1]?.text, 'Continue');
+    assert.equal(rendered.alerts[0]?.buttons?.[1]?.style, 'destructive');
+
+    rendered.alerts[0]?.buttons?.[1]?.onPress();
+    assert.equal(rendered.deleteAccountCalls.length, 0);
+    assert.equal(rendered.alerts[1]?.title, 'Permanently Delete Account?');
+    assert.equal(rendered.alerts[1]?.buttons?.[1]?.text, 'Delete Forever');
+    assert.equal(rendered.alerts[1]?.buttons?.[1]?.style, 'destructive');
+
+    await rendered.alerts[1]?.buttons?.[1]?.onPress();
+    assert.equal(rendered.deleteAccountCalls.length, 1);
+    assert.equal(rendered.signOutCalls.length, 1);
+  });
+
+  it('keeps deletion unavailable to guests and reports organization ownership without signing out', async () => {
+    const guest = renderProfile({ isGuest: true, loading: false });
+    assert.equal(accountButton(guest.tree, 'Delete account'), undefined);
+
+    const message = 'Transfer ownership of every organization you own, then try again.';
+    const member = renderProfile({ loading: false, deleteResult: { error: new Error(message) } });
+    accountButton(member.tree, 'Delete account')?.props.onPress();
+    member.alerts[0]?.buttons?.[1]?.onPress();
+    await member.alerts[1]?.buttons?.[1]?.onPress();
+
+    assert.equal(member.deleteAccountCalls.length, 1);
+    assert.equal(member.signOutCalls.length, 0);
+    assert.equal(member.alerts.at(-1)?.title, 'Unable to Delete Account');
+    assert.equal(member.alerts.at(-1)?.message, message);
+  });
+
+  it('blocks logout while account deletion is pending', async () => {
+    let resolveDeletion!: (result: { error: Error | null }) => void;
+    const deletionPending = new Promise<{ error: Error | null }>((resolve) => {
+      resolveDeletion = resolve;
+    });
+    const rendered = renderProfile({ loading: false, deleteImpl: () => deletionPending });
+
+    accountButton(rendered.tree, 'Delete account')?.props.onPress();
+    rendered.alerts[0]?.buttons?.[1]?.onPress();
+    const deletion = rendered.alerts[1]?.buttons?.[1]?.onPress();
+    accountButton(rendered.tree, 'Log out')?.props.onPress();
+
+    assert.equal(rendered.alerts.length, 2);
+    assert.equal(rendered.signOutCalls.length, 0);
+    resolveDeletion({ error: new Error('Deletion stopped for test') });
+    await deletion;
+  });
+
+  it('blocks account deletion while logout is pending', async () => {
+    let resolveSignOut!: (result: { error: Error | null }) => void;
+    const signOutPending = new Promise<{ error: Error | null }>((resolve) => {
+      resolveSignOut = resolve;
+    });
+    const rendered = renderProfile({ loading: false, signOutImpl: () => signOutPending });
+
+    accountButton(rendered.tree, 'Log out')?.props.onPress();
+    const logout = rendered.alerts[0]?.buttons?.[1]?.onPress();
+    accountButton(rendered.tree, 'Delete account')?.props.onPress();
+
+    assert.equal(rendered.alerts.length, 1);
+    assert.equal(rendered.deleteAccountCalls.length, 0);
+    resolveSignOut({ error: new Error('Logout stopped for test') });
+    await logout;
   });
 
   it('renders pending state, prevents duplicate confirmation, and restores the current button after failure', async () => {

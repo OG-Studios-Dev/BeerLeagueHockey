@@ -8,12 +8,9 @@ import GuestBanner from '../components/GuestBanner';
 import GameCard from '../components/GameCard';
 import PillToggle from '../components/PillToggle';
 import QuickCheckinActions from '../components/QuickCheckinActions';
-import ScheduleConflictList from '../components/ScheduleConflictList';
-import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useLeague } from '../context/LeagueContext';
-import { getScheduleConflicts } from '../lib/scheduleConflicts';
-import { getMyCheckins, getMyCheckinsForTeams, type CheckinStatus, updateCheckin } from '../lib/supabase/checkins';
+import { getMyCheckins, type CheckinStatus, updateCheckin } from '../lib/supabase/checkins';
 import {
   getCurrentSeason,
   getSchedule,
@@ -32,14 +29,6 @@ type ScheduleTab = 'Upcoming' | 'Scores' | 'Standings';
 type UpcomingRow =
   | { type: 'header'; id: string; title: string }
   | { type: 'game'; id: string; game: GameRow };
-
-type GlobalUpcomingGame = GameRow & {
-  leagueId: string;
-  leagueName: string;
-  leagueSlug: string;
-  myTeamId: string;
-  myTeamName: string;
-};
 
 const scheduleTabs: readonly ScheduleTab[] = ['Upcoming', 'Scores', 'Standings'];
 
@@ -94,8 +83,6 @@ export default function ScheduleScreen({
     setActiveDivision,
     divisions,
     isGuestLeague,
-    availableLeagues,
-    setActiveLeague,
   } = useLeague();
   const [selectedTab, setSelectedTab] = React.useState<ScheduleTab>(initialTab);
   const [season, setSeason] = React.useState<Season | null>(null);
@@ -105,11 +92,7 @@ export default function ScheduleScreen({
   const [loadingStandings, setLoadingStandings] = React.useState(false);
   const [userTeamId, setUserTeamId] = React.useState<string | null>(null);
   const [checkins, setCheckins] = React.useState<Record<string, CheckinStatus>>({});
-  const [globalGames, setGlobalGames] = React.useState<GlobalUpcomingGame[]>([]);
-  const [globalLoading, setGlobalLoading] = React.useState(false);
-  const [globalCheckins, setGlobalCheckins] = React.useState<Record<string, CheckinStatus>>({});
   const [savingGameId, setSavingGameId] = React.useState<string | null>(null);
-  const [savingGlobalGameId, setSavingGlobalGameId] = React.useState<string | null>(null);
 
   // Load user's team once per league
   React.useEffect(() => {
@@ -132,112 +115,6 @@ export default function ScheduleScreen({
     getMyCheckins(userTeamId).then(setCheckins);
   }, [userTeamId, games.length]);
 
-  React.useEffect(() => {
-    if (activeLeague || availableLeagues.length === 0) {
-      setGlobalGames([]);
-      setGlobalCheckins({});
-      return;
-    }
-
-    setGlobalLoading(true);
-
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) {
-        setGlobalGames([]);
-        setGlobalCheckins({});
-        setGlobalLoading(false);
-        return;
-      }
-
-      const { data: rosterRows } = await supabase
-        .from('team_rosters')
-        .select(`
-          team_id, league_id,
-          team:teams!team_rosters_team_id_fkey(id, name),
-          league:leagues!team_rosters_league_id_fkey(id, name, slug)
-        `)
-        .eq('player_id', user.id)
-        .eq('status', 'active');
-
-      const teamSlots = ((rosterRows as any[]) ?? [])
-        .map((row) => {
-          const team = Array.isArray(row.team) ? row.team[0] : row.team;
-          const league = Array.isArray(row.league) ? row.league[0] : row.league;
-          if (!team || !league) return null;
-
-          return {
-            leagueId: row.league_id,
-            leagueName: league.name,
-            leagueSlug: league.slug,
-            teamId: row.team_id,
-            teamName: team.name,
-          };
-        })
-        .filter(Boolean) as Array<{
-          leagueId: string;
-          leagueName: string;
-          leagueSlug: string;
-          teamId: string;
-          teamName: string;
-        }>;
-
-      if (teamSlots.length === 0) {
-        setGlobalGames([]);
-        setGlobalCheckins({});
-        setGlobalLoading(false);
-        return;
-      }
-
-      const teamMap = new Map(teamSlots.map((slot) => [slot.teamId, slot]));
-      const leagueIds = [...new Set(teamSlots.map((slot) => slot.leagueId))];
-      const teamIds = teamSlots.map((slot) => slot.teamId);
-
-      const [gamesResponse, myCheckins] = await Promise.all([
-        supabase
-          .from('games')
-          .select(
-            `id, league_id, home_team_id, away_team_id, home_score, away_score,
-             scheduled_at, status, location, season_id, division_id,
-             home_team:teams!games_home_team_id_fkey(id, name, primary_color, logo_url),
-             away_team:teams!games_away_team_id_fkey(id, name, primary_color, logo_url)`,
-          )
-          .in('league_id', leagueIds)
-          .eq('status', 'scheduled')
-          .gte('scheduled_at', new Date().toISOString())
-          .order('scheduled_at', { ascending: true })
-          .limit(40),
-        getMyCheckinsForTeams(teamIds),
-      ]);
-      const gamesData = gamesResponse.data;
-
-      const normalizedGames = ((gamesData as any[]) ?? []).map((game) => ({
-        ...game,
-        home_team: Array.isArray(game.home_team) ? game.home_team[0] ?? null : game.home_team ?? null,
-        away_team: Array.isArray(game.away_team) ? game.away_team[0] ?? null : game.away_team ?? null,
-      })) as GameRow[];
-
-      const upcoming = normalizedGames
-        .map((game) => {
-          const teamSlot = teamMap.get(game.home_team_id) ?? teamMap.get(game.away_team_id);
-          if (!teamSlot) return null;
-
-          return {
-            ...game,
-            leagueId: teamSlot.leagueId,
-            leagueName: teamSlot.leagueName,
-            leagueSlug: teamSlot.leagueSlug,
-            myTeamId: teamSlot.teamId,
-            myTeamName: teamSlot.teamName,
-          };
-        })
-        .filter(Boolean) as GlobalUpcomingGame[];
-
-      setGlobalGames(upcoming);
-      setGlobalCheckins(myCheckins);
-      setGlobalLoading(false);
-    });
-  }, [activeLeague, availableLeagues.length]);
-
   const handleLeagueScheduleCheckin = async (gameId: string, status: CheckinStatus) => {
     if (!userTeamId || savingGameId) return;
 
@@ -256,30 +133,6 @@ export default function ScheduleScreen({
           next[gameId] = previous;
         } else {
           delete next[gameId];
-        }
-        return next;
-      });
-    }
-  };
-
-  const handleGlobalScheduleCheckin = async (game: GlobalUpcomingGame, status: CheckinStatus) => {
-    if (savingGlobalGameId) return;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const previous = globalCheckins[game.id] ?? null;
-    setGlobalCheckins((current) => ({ ...current, [game.id]: status }));
-    setSavingGlobalGameId(game.id);
-
-    const result = await updateCheckin(game.id, game.myTeamId, status);
-    setSavingGlobalGameId(null);
-
-    if (!result.success) {
-      setGlobalCheckins((current) => {
-        const next = { ...current };
-        if (previous) {
-          next[game.id] = previous;
-        } else {
-          delete next[game.id];
         }
         return next;
       });
@@ -334,112 +187,13 @@ export default function ScheduleScreen({
     [games],
   );
 
-  const globalScheduleConflicts = React.useMemo(
-    () =>
-      getScheduleConflicts(
-        globalGames.map((game) => ({
-          id: game.id,
-          scheduled_at: game.scheduled_at,
-          leagueId: game.leagueId,
-          leagueName: game.leagueName,
-          teamName: game.myTeamName,
-          location: game.location ?? null,
-        })),
-      ),
-    [globalGames],
-  );
-
-  const openGlobalGame = React.useCallback(
-    (game: { id: string; leagueId?: string }) => {
-      if (game.leagueId) {
-        const nextLeague = availableLeagues.find((league) => league.id === game.leagueId);
-        if (nextLeague) {
-          void setActiveLeague(nextLeague);
-        }
-      }
-
-      navigation.navigate('GamePreview', { gameId: game.id });
-    },
-    [availableLeagues, navigation, setActiveLeague],
-  );
-
-  if (!activeLeague && availableLeagues.length === 0) {
+  if (!activeLeague) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyTitle}>Select a league to see the schedule</Text>
+          <Text style={styles.emptyTitle}>Hockey Life access required</Text>
+          <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>
         </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!activeLeague) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={['top', 'left', 'right']}>
-        <View style={styles.screenPadding}>
-          <Text style={styles.globalScheduleIntro}>
-            Upcoming games across every BLH league you play in. Switch into a league when you want standings or league-only views.
-          </Text>
-        </View>
-
-        {globalLoading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        ) : globalGames.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyTitle}>No upcoming games across your leagues</Text>
-          </View>
-                ) : (
-                  <FocusFlatList
-            focusItems={false}
-            focusScopeKey="schedule:global"
-            data={globalGames}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            ListHeaderComponent={
-              globalScheduleConflicts.length > 0 ? (
-                <View style={styles.globalListHeader}>
-                  <SectionHeader title="Conflict Watch" />
-                  <ScheduleConflictList conflicts={globalScheduleConflicts} onOpenGame={openGlobalGame} />
-                  <SectionHeader title="Upcoming Across Leagues" />
-                </View>
-              ) : null
-            }
-            renderItem={({ item }) => (
-              <FocusCard focusId={`schedule:global-game:${item.id}`}>
-                <View style={styles.globalLeagueRow}>
-                  <Text style={styles.globalLeagueLabel}>{item.leagueName}</Text>
-                  <Text style={styles.globalLeagueMeta}>{item.myTeamName}</Text>
-                </View>
-                <GameCard
-                  gameId={item.id}
-                  homeTeam={item.home_team?.name ?? item.home_team_id}
-                  awayTeam={item.away_team?.name ?? item.away_team_id}
-                  dateLabel={formatDate(item.scheduled_at)}
-                  timeLabel={formatTime(item.scheduled_at)}
-                  rinkName={item.location ?? ''}
-                  status={mapGameStatus(item.status)}
-                  homeScore={item.home_score ?? undefined}
-                  awayScore={item.away_score ?? undefined}
-                  scheduledAt={item.scheduled_at}
-                  location={item.location}
-                  onPress={() => openGlobalGame(item)}
-                />
-                {!isGuestLeague ? (
-                  <View style={styles.globalCheckinWrap}>
-                    <QuickCheckinActions
-                      value={globalCheckins[item.id] ?? null}
-                      onChange={(status) => void handleGlobalScheduleCheckin(item, status)}
-                      disabled={savingGlobalGameId === item.id}
-                      compact
-                    />
-                  </View>
-                ) : null}
-              </FocusCard>
-            )}
-          />
-        )}
       </SafeAreaView>
     );
   }
@@ -622,6 +376,7 @@ const styles = StyleSheet.create({
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
+  emptyBody: { color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   globalScheduleIntro: {
     marginTop: -2,
     fontSize: 13,

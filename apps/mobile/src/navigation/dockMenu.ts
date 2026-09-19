@@ -146,7 +146,6 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
 
   const appItems: MoreMenuItem[] = [
     { key: 'app-home', label: 'Home', category: 'App', icon: 'home-outline', destination: { kind: 'native', tab: 'Home' } },
-    { key: 'app-discover', label: 'Discover Leagues', category: 'App', icon: 'compass-outline', destination: { kind: 'native', tab: 'Discover', screen: 'DiscoverMain' } },
   ];
   const accountItems: MoreMenuItem[] = [
     { key: 'account-profile', label: 'Account', category: 'Account', icon: 'person-outline', destination: { kind: 'native', tab: 'Profile', screen: 'ProfileMain' } },

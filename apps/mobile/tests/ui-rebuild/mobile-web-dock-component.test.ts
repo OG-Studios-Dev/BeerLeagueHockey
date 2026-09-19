@@ -17,7 +17,7 @@ type DockState = {
   retry: () => void;
 };
 
-const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Discover', 'Stats', 'Team', 'Captain', 'Profile', 'LeaguePages'];
+const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Stats', 'Team', 'Captain', 'Profile', 'LeaguePages'];
 
 function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean; member?: boolean } = {}) {
   const harness = createHookHarness();
@@ -87,7 +87,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
       },
       '../context/FocusPauseContext': { useFocusPauseLease: (active: boolean) => { focusPauseStates.push(active); } },
       '../theme/colors': { default: { primary: '#0ff', brandArena: '#f0f', textSecondary: '#aaa', tabInactive: '#999', textPrimary: '#fff' } },
-      './useMobileDockData': { useMobileDockData: () => data },
+      './MobileShellDataContext': { useMobileShellData: () => data },
     },
   ).default;
   const navigationCalls: unknown[][] = [];
@@ -112,7 +112,6 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
       { key: 'Home-key', name: 'Home' },
       { key: 'Standings-key', name: 'Standings' },
       { key: 'Schedule-key', name: 'Schedule' },
-      { key: 'Discover-key', name: 'Discover' },
       { key: 'Stats-key', name: 'Stats' },
       { key: 'Team-key', name: 'Team' },
       { key: 'Captain-key', name: 'Captain' },
@@ -185,12 +184,12 @@ describe('MobileWebDock component integration', () => {
     assert.deepEqual(sheetStyle.transform, []);
 
     const panelText = nodeText(sheet);
-    const groupLabels = ['League', 'Your account', 'Team tools', 'App', 'Links'];
+    const groupLabels = ['League', 'Your account', 'Team tools', 'Links'];
     assert.ok(groupLabels.every((label) => panelText.includes(label)));
     for (let index = 1; index < groupLabels.length; index += 1) {
       assert.ok(panelText.indexOf(groupLabels[index - 1]) < panelText.indexOf(groupLabels[index]));
     }
-    assert.match(panelText, /^MoreLeague AHomeSwitch leagueLeague/);
+    assert.match(panelText, /^MoreLeague AHomeLeague/);
     assert.doesNotMatch(panelText, /LEAGUE NAVIGATION|Every page, one smooth move away/);
 
     const teams = findNode(sheet, (node) => node.props.testID === 'more-item-league-teams');
@@ -205,7 +204,7 @@ describe('MobileWebDock component integration', () => {
     assert.equal(teamsLabel?.props.numberOfLines, undefined);
   });
 
-  it('offers the active league identity as a guarded Home target and league selection separately', () => {
+  it('offers the active Hockey Life identity as a guarded Home target without league switching', () => {
     const fixture = createDockFixture({}, { reduceMotion: true });
     fixture.mount();
     fixture.openMore();
@@ -221,10 +220,7 @@ describe('MobileWebDock component integration', () => {
     assert.deepEqual(fixture.navigationCalls, [['Home']]);
 
     fixture.openMore();
-    const switchLeague = findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Switch league');
-    assert.ok(switchLeague);
-    switchLeague.props.onPress();
-    assert.deepEqual(fixture.navigationCalls.at(-1), ['LeagueSelect']);
+    assert.equal(findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Switch league'), undefined);
   });
 
   it('overlays the full scene, reports its measured inset, and clips paint to the capsule only', () => {
@@ -245,7 +241,8 @@ describe('MobileWebDock component integration', () => {
     assert.equal(surfaceStyle.backgroundColor, '#080F1C');
     assert.equal(surfaceStyle.overflow, 'visible', 'the raised crest must remain outside the capsule bounds');
     assert.equal(fillStyle.overflow, 'hidden', 'gradient paint must be clipped at the curved capsule');
-    assert.equal(fillStyle.borderRadius, 23);
+    assert.equal(fillStyle.borderTopLeftRadius, 23);
+    assert.equal(fillStyle.borderBottomLeftRadius, undefined);
     assert.ok(findNode(surfaceFill, (node) => node.type === 'LinearGradient'));
 
     outer?.props.onLayout({ nativeEvent: { layout: { height: 158 } } });
@@ -301,7 +298,7 @@ describe('MobileWebDock component integration', () => {
     fixture.openMore();
     const sheet = findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet');
 
-    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Register', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Discover Leagues', 'Long custom league handbook link that must wrap in full'];
+    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Register', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Long custom league handbook link that must wrap in full'];
     for (const label of expected) {
       const matches: unknown[] = [];
       const visit = (root: unknown) => {
@@ -447,7 +444,7 @@ describe('MobileWebDock component integration', () => {
     assert.equal(fixture.emittedEvents.at(-1)?.defaultPrevented, true);
     assert.equal(fixture.navigationCalls.length, 0);
 
-    fixture.setFocusedRoute('Team', 'TeamChat');
+    fixture.setFocusedRoute('Team', 'PlayerCard');
     findNode(fixture.harness.output, (node) => node.props.testID === 'dock-team')!.props.onPress();
     assert.equal(fixture.emittedEvents.at(-1)?.target, 'Team-key');
     assert.equal(fixture.emittedEvents.at(-1)?.defaultPrevented, true);
@@ -487,7 +484,7 @@ describe('MobileWebDock component integration', () => {
 
     assert.match(text, /Loading league navigation/);
     assert.match(text, /Home/);
-    assert.match(text, /Discover Leagues/);
+    assert.doesNotMatch(text, /Discover Leagues/);
     assert.match(text, /Account/);
     assert.doesNotMatch(text, /Teams/);
     assert.doesNotMatch(text, /News/);

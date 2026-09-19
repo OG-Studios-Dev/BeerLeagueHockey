@@ -25,7 +25,9 @@ import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
+import { HOCKEY_LIFE_ID } from '../config/hockeyLife';
 import { navigateToPlayerCard } from '../navigation/playerCard';
+import { deleteCurrentAccount } from '../lib/supabase/accountDeletion';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
@@ -190,8 +192,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const {
     activeLeague,
     activeTheme,
-    setActiveLeague,
-    availableLeagues,
     membershipStatus,
     membershipDiagnostics,
     retryMemberships,
@@ -215,6 +215,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const [isCaptain, setIsCaptain] = React.useState(false);
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const isSigningOutRef = React.useRef(false);
+  const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
+  const isDeletingAccountRef = React.useRef(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -265,6 +267,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
           .from('player_badges')
           .select('badge_type, league_id, awarded_at, league:leagues(name, primary_color)')
           .eq('player_id', user.id)
+          .eq('league_id', HOCKEY_LIFE_ID)
           .order('awarded_at', { ascending: false }),
         supabase
           .from('team_rosters')
@@ -274,6 +277,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             league:leagues!team_rosters_league_id_fkey(id, name, slug, logo_url, primary_color)
           `)
           .eq('player_id', user.id)
+          .eq('league_id', HOCKEY_LIFE_ID)
           .eq('status', 'active'),
       ]);
 
@@ -284,6 +288,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         .from('team_rosters')
         .select('leadership_role')
         .eq('player_id', user.id)
+        .eq('league_id', HOCKEY_LIFE_ID)
         .eq('status', 'active')
         .in('leadership_role', ['captain', 'alternate_captain'])
         .limit(1);
@@ -624,7 +629,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
       totals.gp > 0 ? `${totals.pts} points in ${totals.gp} games` : null,
       playerRating ? `BLH rating: ${playerRating}` : skillLabel(profile?.self_assessed_skill ?? null) ? `League match level: ${skillLabel(profile?.self_assessed_skill ?? null)}` : null,
       badges.length > 0 ? `${badges.length} BLH achievements earned` : null,
-      'Track games, teams, and leagues in the Beer League Hockey app.',
+      'Track Hockey Life games, teams, and stats in the app.',
     ].filter(Boolean);
 
     return lines.join('\n');
@@ -638,11 +643,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   };
 
   const handleOpenTeam = async (team: ActiveTeamCard) => {
-    const targetLeague = availableLeagues.find((league) => league.id === team.leagueId);
-    if (targetLeague) {
-      await setActiveLeague(targetLeague);
-    }
-
     navigation.navigate('Team', {
       screen: 'TeamDetail',
       params: { teamId: team.teamId, leagueId: team.leagueId },
@@ -655,7 +655,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   };
 
   const handleAccountAction = () => {
-    if (isSigningOutRef.current) return;
+    if (isSigningOutRef.current || isDeletingAccountRef.current) return;
 
     if (isGuest) {
       exitGuest();
@@ -689,6 +689,61 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     );
   };
 
+  const performAccountDeletion = async () => {
+    if (isDeletingAccountRef.current) return;
+    isDeletingAccountRef.current = true;
+    setIsDeletingAccount(true);
+
+    try {
+      const { error } = await deleteCurrentAccount();
+      if (error) {
+        Alert.alert('Unable to Delete Account', error.message);
+        return;
+      }
+
+      const { error: signOutError } = await signOut();
+      if (signOutError) {
+        Alert.alert(
+          'Account Deleted',
+          'Your account was deleted, but this device could not finish signing out. Close and reopen the app.',
+        );
+      }
+    } finally {
+      isDeletingAccountRef.current = false;
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    if (isGuest || isDeletingAccountRef.current || isSigningOutRef.current) return;
+
+    Alert.alert(
+      'Delete Account?',
+      'This permanently deletes your sign-in, profile, memberships, and personal account data. Legally required records may be retained only in anonymized form.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Permanently Delete Account?',
+              'This cannot be undone. You will lose access to every team and league connected to this account.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete Forever',
+                  style: 'destructive',
+                  onPress: performAccountDeletion,
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="medium" />
@@ -696,12 +751,12 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={isGuest ? 'Sign in' : 'Log out'}
-          accessibilityState={{ busy: isSigningOut, disabled: isSigningOut }}
-          disabled={isSigningOut}
+          accessibilityState={{ busy: isSigningOut, disabled: isSigningOut || isDeletingAccount }}
+          disabled={isSigningOut || isDeletingAccount}
           hitSlop={6}
           style={({ pressed }) => [
             styles.accountActionButton,
-            pressed && !isSigningOut && styles.accountActionButtonPressed,
+            pressed && !isSigningOut && !isDeletingAccount && styles.accountActionButtonPressed,
           ]}
           onPress={handleAccountAction}
         >
@@ -1159,19 +1214,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             </>
           ) : null}
 
-          <SectionHeader title="Explore BLH" />
-          <FocusCard focusId="profile:explore" accentColor={primaryColor} style={[styles.exploreCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
-            <View style={styles.exploreCopy}>
-              <Text style={styles.exploreTitle}>Find your next league</Text>
-              <Text style={styles.exploreSubtitle}>
-                Compare BLH leagues by fit, city, and current membership without leaving the app.
-              </Text>
-            </View>
-            <Pressable style={styles.exploreButton} onPress={() => navigation.navigate('LeagueMarketplace')}>
-              <Text style={styles.exploreButtonText}>Open League Directory</Text>
-            </Pressable>
-          </FocusCard>
-
           <SectionHeader title="Settings" />
           <FocusCard focusId="profile:settings" accentColor={primaryColor} style={[styles.settingsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
             <Pressable style={styles.settingRow} onPress={() => navigation.navigate('NotificationsFeed')}>
@@ -1182,11 +1224,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             <Pressable style={styles.settingRow} onPress={() => navigation.navigate('NotificationSettings')}>
               <Ionicons name="settings-outline" size={18} color={primaryColor} />
               <Text style={styles.settingLabel}>Notification Preferences</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            </Pressable>
-            <Pressable style={styles.settingRow} onPress={() => navigation.navigate('LeagueMarketplace')}>
-              <Ionicons name="search-outline" size={18} color={primaryColor} />
-              <Text style={styles.settingLabel}>Find a League</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             <Pressable
@@ -1228,6 +1265,29 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
               <Text style={styles.settingLabel}>Edit Profile</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
+            {!isGuest ? (
+              <Pressable
+                testID="account-delete-button"
+                accessibilityRole="button"
+                accessibilityLabel="Delete account"
+                accessibilityState={{ busy: isDeletingAccount, disabled: isDeletingAccount || isSigningOut }}
+                disabled={isDeletingAccount || isSigningOut}
+                style={[styles.settingRow, styles.deleteAccountRow]}
+                onPress={handleDeleteAccount}
+              >
+                {isDeletingAccount ? (
+                  <ActivityIndicator size="small" color={colors.accentRed} />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color={colors.accentRed} />
+                )}
+                <View style={styles.deleteAccountCopy}>
+                  <Text style={styles.deleteAccountLabel}>
+                    {isDeletingAccount ? 'Deleting Account…' : 'Delete Account'}
+                  </Text>
+                  <Text style={styles.deleteAccountMeta}>Permanently remove your account and personal data</Text>
+                </View>
+              </Pressable>
+            ) : null}
           </FocusCard>
         </FocusScrollView>
       )}
@@ -1632,4 +1692,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   settingLabel: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  deleteAccountRow: { borderTopWidth: 1, borderTopColor: colors.borderCard, borderBottomWidth: 0 },
+  deleteAccountCopy: { flex: 1, gap: 2 },
+  deleteAccountLabel: { fontSize: 15, fontWeight: '800', color: colors.accentRed },
+  deleteAccountMeta: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
 });

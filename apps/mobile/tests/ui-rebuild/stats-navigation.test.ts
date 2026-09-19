@@ -44,7 +44,8 @@ describe('Stats navigation', () => {
     activeLeague = null; h.render();
     assert.equal(findNode(h.output, node => node.props.style === capturedStyles.headerWrap), undefined, 'empty global branch has no title row');
     league.availableLeagues.push({ id: 'league-a', name: 'League A', slug: 'league-a' }); h.render();
-    assert.ok(findNode(h.output, node => node.type === 'View' && node.props.style === capturedStyles.headerWrap && nodeText(node).includes('Top skaters')), 'populated global branch retains content controls without a title');
+    assert.match(nodeText(h.output), /Hockey Life access required/);
+    assert.doesNotMatch(nodeText(h.output), /Top skaters/);
     assert.equal(capturedStyles.headerTitleWrap, undefined);
     h.unmount();
   });

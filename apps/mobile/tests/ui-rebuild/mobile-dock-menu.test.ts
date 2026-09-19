@@ -29,7 +29,7 @@ describe('mobile More catalog', () => {
     assert.equal(byLabel.has('Venues'), false);
     assert.equal(byLabel.has('About'), false);
     assert.equal(byLabel.has('Suspensions'), false);
-    assert.deepEqual(byLabel.get('Discover Leagues'), { kind: 'native', tab: 'Discover', screen: 'DiscoverMain' });
+    assert.equal(byLabel.has('Discover Leagues'), false);
     assert.deepEqual(byLabel.get('Account'), { kind: 'native', tab: 'Profile', screen: 'ProfileMain' });
   });
 
@@ -165,7 +165,7 @@ describe('mobile More catalog', () => {
 
   it('offers only safe native app entry points when no league is selected', () => {
     const items = buildMoreMenu({ ...base, leagueSlug: '' });
-    assert.deepEqual(items.map((item) => item.label), ['Home', 'Discover Leagues', 'Account']);
+    assert.deepEqual(items.map((item) => item.label), ['Home', 'Account']);
     assert.ok(items.every((item) => item.destination.kind === 'native'));
     assert.ok(items.every((item) => JSON.stringify(item.destination).includes('beerleaguehockey.ca') === false));
   });

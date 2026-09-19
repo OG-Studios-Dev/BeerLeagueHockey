@@ -20,7 +20,7 @@ function stack(routeNames: string[], initialRoutes: string[]) {
 describe('League Pages runtime navigation aliases', () => {
   it('keeps directory -> team -> player -> back -> back in the League Pages stack', () => {
     const navigation = stack(
-      ['TeamsDirectory', 'LeagueTeamDetail', 'LeaguePlayerCard', 'LeagueGamePreview', 'TeamChat'],
+      ['TeamsDirectory', 'LeagueTeamDetail', 'LeaguePlayerCard', 'LeagueGamePreview'],
       ['TeamsDirectory', 'LeagueTeamDetail'],
     );
 
@@ -47,12 +47,12 @@ describe('League Pages runtime navigation aliases', () => {
     assert.deepEqual(navigation.routes, ['PlayersDirectory']);
   });
 
-  it('mounts the player and game helpers in the actual detail sources while TeamChat stays local', () => {
+  it('mounts the player and game helpers without restoring Team Chat navigation', () => {
     const team = readFileSync(fileURLToPath(new URL('../../src/screens/TeamScreen/TeamDetailScreen.tsx', import.meta.url).toString()), 'utf8');
     const game = readFileSync(fileURLToPath(new URL('../../src/screens/GamePreviewScreen.tsx', import.meta.url).toString()), 'utf8');
     assert.match(team, /navigateToPlayerCard\(navigation/);
     assert.match(team, /navigateToGamePreview\(navigation/);
-    assert.match(team, /navigation\.navigate\('TeamChat'/);
+    assert.doesNotMatch(team, /navigation\.navigate\('TeamChat'/);
     assert.match(game, /navigateToPlayerCard\(navigation/);
     assert.match(readFileSync(fileURLToPath(new URL('../../src/screens/PlayerCardScreen.tsx', import.meta.url).toString()), 'utf8'), /navigateToTeamDetail\(navigation/);
   });
