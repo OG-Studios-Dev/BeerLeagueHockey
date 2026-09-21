@@ -128,19 +128,6 @@ describe('shell form exits', () => {
   it('executes the real player-card Share callback with the loaded synthetic identity', async () => {
     const harness = createHookHarness();
     const shares: Record<string, unknown>[] = [];
-    const supabase = {
-      from: (table: string) => {
-        const data = table === 'profiles'
-          ? { id: 'synthetic-player', full_name: 'Synthetic Player', avatar_url: null, position: null, self_assessed_skill: null }
-          : [];
-        const chain: Record<string, unknown> = {};
-        for (const method of ['select', 'eq', 'order', 'limit', 'in', 'gte']) chain[method] = () => chain;
-        chain.single = async () => ({ data });
-        chain.then = (resolve: (result: { data: unknown }) => unknown) => Promise.resolve(resolve({ data }));
-        return chain;
-      },
-    };
-    const passthrough = ({ children, ...props }: Record<string, unknown>) => createElement('View', props, children);
     const Screen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
       new URL('../../src/screens/PlayerCardScreen.tsx', import.meta.url),
       {
@@ -148,26 +135,28 @@ describe('shell form exits', () => {
         'react-native': {
           ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
           Share: { share: async (payload: Record<string, unknown>) => { shares.push(payload); } },
-          StyleSheet: { create: <T>(styles: T) => styles, absoluteFill: {} }, useWindowDimensions: () => ({ width: 390 }),
+          StyleSheet: { create: <T>(styles: T) => styles, absoluteFill: {}, hairlineWidth: 1 },
         },
         'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-        '@expo/vector-icons': { Ionicons: { glyphMap: {} } },
-        'expo-linear-gradient': { LinearGradient: passthrough },
-        'expo-linking': { openURL: async () => undefined },
+        '@expo/vector-icons': { Ionicons: (props: Record<string, unknown>) => createElement('Ionicons', props) },
         '../components/Avatar': () => null, '../components/BrandAtmosphere': () => null,
-        '../components/RevealView': passthrough, '../components/SectionHeader': () => null, '../components/TeamLogo': () => null,
-        '../navigation/teamDetail': { navigateToTeamDetail: () => undefined },
-        '../lib/supabase/client': { supabase },
+        '../components/SectionHeader': () => null, '../components/TeamLogo': () => null,
+        '../lib/supabase/playerPage': { loadHockeyLifePlayerPage: async () => ({
+          playerId: 'synthetic-player', rosterId: 'roster-1', fullName: 'Synthetic Player', photoUrl: null,
+          position: null, leadershipRole: null, jerseyNumber: null, isGoalie: false, team: null,
+          seasons: [], selectedSeasonId: null, selectedSeasonName: null, isCareer: true, metrics: null,
+          careerRows: [], badges: [], games: [], matchups: [], articles: [],
+        }) },
         '../theme/colors': { default: { ...colors, primary: '#0ff', bgBase: '#000', brandArena: '#00f', brandGold: '#fc0', bgElevated: '#222', bgInteractive: '#222', glassStroke: '#333' } },
         '../theme/contrast': { getContrastTextColor: () => '#000' },
       },
     ).default;
-    harness.mount(() => Screen({ route: { params: { playerId: 'synthetic-player', leagueId: null } }, navigation: { goBack: () => undefined } }));
+    harness.mount(() => Screen({ route: { params: { playerId: 'synthetic-player', leagueId: null } }, navigation: { goBack: () => undefined, navigate: () => undefined } }));
     await new Promise<void>((resolve) => setImmediate(resolve));
     harness.render();
     const share = findNode(harness.output, (node) => node.props.accessibilityLabel === 'Share player card');
     assert.ok(share);
     await share.props.onPress();
-    assert.deepEqual(shares, [{ title: 'Synthetic Player · BLH Player Card', message: 'Synthetic Player · BLH Player Card\nNo season stats posted yet\nView this player in the Beer League Hockey app.' }]);
+    assert.deepEqual(shares, [{ title: 'Synthetic Player · Hockey Life Player', message: 'Synthetic Player · Hockey Life Player\nCareer stats and history in the Hockey Life app.' }]);
   });
 });

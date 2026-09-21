@@ -8,9 +8,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AccessibilityPreferencesProvider } from './src/context/AccessibilityPreferencesContext';
 import MembershipDiagnosticsCard from './src/components/MembershipDiagnosticsCard';
+import CutIceTitle from './src/components/CutIceTitle';
+import { cutIceScreenLayout } from './src/navigation/CutIceScreenBoundary';
 import { LeagueProvider, useLeague } from './src/context/LeagueContext';
 import RootNavigation from './src/navigation';
-import LeagueSelectScreen from './src/screens/auth/LeagueSelectScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
 import SignUpScreen from './src/screens/auth/SignUpScreen';
@@ -22,10 +23,19 @@ type AuthStackParamList = {
   ForgotPassword: undefined;
   SignUp: undefined;
 };
-type AppStackParamList = { Main: undefined; LeagueSelect: undefined; };
+type AppStackParamList = { Main: undefined };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
+
+function authCutIceOptions(title: string) {
+  return {
+    headerShown: true,
+    header: ({ navigation, back }: { navigation: { goBack: () => void }; back?: unknown }) => (
+      <CutIceTitle title={title} onBack={back ? navigation.goBack : undefined} />
+    ),
+  };
+}
 
 export const APP_NAVIGATION_THEME: Theme = {
   ...DarkTheme,
@@ -56,11 +66,6 @@ function AppContent() {
     return (
       <AppStack.Navigator screenOptions={{ headerShown: false, contentStyle: styles.navigationCanvas }}>
         <AppStack.Screen name="Main" component={RootNavigation} />
-        <AppStack.Screen
-          name="LeagueSelect"
-          component={LeagueSelectScreen}
-          options={{ presentation: "modal", headerShown: false }}
-        />
       </AppStack.Navigator>
     );
   }
@@ -68,11 +73,11 @@ function AppContent() {
   return (
     <View style={styles.authShell}>
       <View style={styles.authNavigation}>
-        <AuthStack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, contentStyle: styles.navigationCanvas }}>
-          <AuthStack.Screen name="Splash" component={SplashScreen} />
-          <AuthStack.Screen name="Login" component={LoginScreen} />
-          <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-          <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+        <AuthStack.Navigator initialRouteName="Splash" screenOptions={{ contentStyle: styles.navigationCanvas }} screenLayout={cutIceScreenLayout}>
+          <AuthStack.Screen name="Splash" component={SplashScreen} options={authCutIceOptions('Hockey Life')} />
+          <AuthStack.Screen name="Login" component={LoginScreen} options={authCutIceOptions('Sign In')} />
+          <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={authCutIceOptions('Reset Password')} />
+          <AuthStack.Screen name="SignUp" component={SignUpScreen} options={authCutIceOptions('Create Account')} />
         </AuthStack.Navigator>
       </View>
       {membershipStatus === 'error' || membershipStatus === 'incomplete' ? (

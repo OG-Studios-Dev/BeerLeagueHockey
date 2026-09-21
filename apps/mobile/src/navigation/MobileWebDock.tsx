@@ -30,7 +30,7 @@ import { getSurfacePalette } from '../theme/ui';
 import { buildMoreMenu, type DockDestination, type MoreMenuItem } from './dockMenu';
 import { createDockModalLifecycle, type ModalSnapshot } from './dockModalLifecycle';
 import { getDockAccessibilityVisuals, getMobileDockLayout } from './layout';
-import { useMobileDockData } from './useMobileDockData';
+import { useMobileShellData } from './MobileShellDataContext';
 
 const CONTROLS = [
   { key: 'Standings', label: 'Standings', icon: 'trophy-outline' },
@@ -82,7 +82,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { user, isGuest } = useAuth();
   const { activeLeague, activeTheme, isGuestLeague } = useLeague();
-  const data = useMobileDockData(activeLeague?.id ?? null, user?.id ?? null);
+  const data = useMobileShellData();
   const [modal, setModal] = React.useState<ModalSnapshot>({ mounted: false, open: false });
   useFocusPauseLease(modal.mounted);
   const [keyboardVisible, setKeyboardVisible] = React.useState(false);
@@ -185,10 +185,6 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
     lifecycle.close(() => navigation.navigate('Home'));
   }, [lifecycle, navigation]);
 
-  const openLeagueSelection = React.useCallback(() => {
-    lifecycle.close(() => navigation.navigate('LeagueSelect'));
-  }, [lifecycle, navigation]);
-
   const pressRegisteredTab = React.useCallback((tab: 'Standings' | 'Schedule' | 'Team' | 'Stats', destination?: DockDestination) => {
     const routeIndex = state.routes.findIndex((route) => route.name === tab);
     const route = state.routes[routeIndex];
@@ -228,7 +224,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   }, [activeLeague, data.team, lifecycle, pressRegisteredTab]);
 
   const routeName = currentRouteName(state);
-  const hiddenRouteIsActive = ['Home', 'Discover', 'Profile', 'Captain', 'LeaguePages'].includes(routeName);
+  const hiddenRouteIsActive = ['Home', 'Profile', 'Captain', 'LeaguePages'].includes(routeName);
   const palette = getSurfacePalette(reduceTransparency);
   const primary = safeOpaqueHex(activeTheme.primaryColor, colors.primary);
   const secondary = safeOpaqueHex(activeTheme.secondaryColor, colors.brandArena);
@@ -250,7 +246,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   if (keyboardVisible) return null;
 
   return (
-    <View testID="mobile-web-dock" onLayout={handleLayout} style={[styles.dockOuter, { height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingBottom: Math.max(insets.bottom, 6), paddingTop: layout.topPadding }]} pointerEvents="box-none">
+    <View testID="mobile-web-dock" onLayout={handleLayout} style={[styles.dockOuter, { bottom: layout.exteriorBottomOffset, height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingTop: layout.topPadding }]} pointerEvents="box-none">
       <View testID="dock-surface" accessibilityLabel="Primary navigation" style={[styles.dockShadow, { borderColor: `${primary}38` }]}>
         <View testID="dock-surface-fill" pointerEvents="none" style={styles.dockSurfaceFill}>
           <LinearGradient
@@ -268,7 +264,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
           <View style={styles.dockSheen} />
           <View style={styles.dockInnerRim} />
         </View>
-        <View style={styles.controlsRow}>
+        <View style={[styles.controlsRow, { paddingBottom: layout.safeAreaPaddingBottom }]}>
           {CONTROLS.map((control) => {
             const active = control.key === 'More'
               ? modal.open || hiddenRouteIsActive
@@ -403,15 +399,6 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                     <Text style={styles.leagueHomeLabel}>Home</Text>
                   </View>
                 </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Switch league"
-                  onPress={openLeagueSelection}
-                  style={({ pressed }) => [styles.switchLeague, { borderColor: `${primary}66` }, pressed && styles.menuRowPressed]}
-                >
-                  <Ionicons name="swap-horizontal-outline" size={18} color={primary} />
-                  <Text style={[styles.switchLeagueLabel, { color: primary }]}>Switch league</Text>
-                </Pressable>
               </View>
               {activeLeague && data.websiteStatus === 'loading' ? (
                 <View style={styles.metadataStatus} accessibilityLiveRegion="polite">
@@ -423,7 +410,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
               {activeLeague && data.websiteStatus === 'error' ? (
                 <View style={styles.metadataStatus} accessibilityLiveRegion="polite">
                   <Text style={styles.metadataStatusTitle}>League navigation unavailable</Text>
-                  <Text style={styles.metadataStatusCopy}>Home, Discover, and Account are still available.</Text>
+                  <Text style={styles.metadataStatusCopy}>Home and Account are still available.</Text>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Retry league navigation"
@@ -470,13 +457,13 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
 const styles = StyleSheet.create({
   dockOuter: { backgroundColor: 'transparent', position: 'absolute', right: 0, bottom: 0, left: 0, zIndex: 10 },
   dockShadow: {
-    flex: 1, minHeight: 70, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth, overflow: 'visible',
+    flex: 1, minHeight: 70, borderTopLeftRadius: 23, borderTopRightRadius: 23, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderWidth: StyleSheet.hairlineWidth, overflow: 'visible',
     backgroundColor: '#080F1C', shadowColor: '#000', shadowOffset: { width: 0, height: 9 },
     shadowOpacity: 0.5, shadowRadius: 20, elevation: 18,
   },
-  dockSurfaceFill: { ...StyleSheet.absoluteFillObject, borderRadius: 23, overflow: 'hidden' },
+  dockSurfaceFill: { ...StyleSheet.absoluteFillObject, borderTopLeftRadius: 23, borderTopRightRadius: 23, overflow: 'hidden' },
   dockSheen: { position: 'absolute', top: 1, right: 24, left: 24, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.3)' },
-  dockInnerRim: { ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)' },
+  dockInnerRim: { ...StyleSheet.absoluteFillObject, borderTopLeftRadius: 22, borderTopRightRadius: 22, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.07)' },
   controlsRow: { flex: 1, flexDirection: 'row', alignItems: 'stretch' },
   control: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 44, minHeight: 44, marginVertical: 7, marginHorizontal: 0, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 2 },
   controlActive: { backgroundColor: 'rgba(255,255,255,0.085)', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 2 },
@@ -508,8 +495,6 @@ const styles = StyleSheet.create({
   leagueHomeCopy: { minWidth: 0, flex: 1 },
   leagueName: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '800' },
   leagueHomeLabel: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 1 },
-  switchLeague: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, paddingHorizontal: 10 },
-  switchLeagueLabel: { fontSize: 12, lineHeight: 16, fontWeight: '900' },
   metadataStatus: { alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 14 },
   metadataStatusTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', textAlign: 'center' },
   metadataStatusCopy: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, textAlign: 'center' },

@@ -111,10 +111,10 @@ describe('Team membership selection', () => {
     assert.doesNotMatch(text, /Old Wolves|Old Team Player/);
   });
 
-  it('keeps My Teams coherent by showing only current active-season assignments', async () => {
+  it('fails closed to Hockey Life when no active Hockey Life membership is available', async () => {
     const text = nodeText(await settle(createRuntime({ activeLeague: null })));
-    assert.match(text, /Current Comets/);
-    assert.doesNotMatch(text, /Old Wolves/);
+    assert.match(text, /Hockey Life access required/);
+    assert.doesNotMatch(text, /Current Comets|Old Wolves/);
   });
 
   it('renders explicit no-active-season and lookup-error states', async () => {
