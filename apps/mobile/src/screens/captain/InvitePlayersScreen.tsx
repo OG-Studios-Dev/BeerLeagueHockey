@@ -16,31 +16,19 @@ import SectionHeader from '../../components/SectionHeader';
 import colors from '../../theme/colors';
 
 export default function InvitePlayersScreen({ route, navigation }: any) {
-  const { teamId, leagueId, teamName } = route.params;
+  const { teamId, teamName } = route.params;
 
   const joinLink = `https://beerleaguehockey.ca/join/${teamId}`;
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Join ${teamName} on Beer League Hockey!\n\n${joinLink}`,
+        message: `Join ${teamName} in Hockey Life!\n\n${joinLink}`,
         title: `Join ${teamName}`,
       });
     } catch {
-      // User cancelled share
+      Alert.alert('Unable to Share Invitation', 'The invitation could not be shared. Please try again.');
     }
-  };
-
-  const handleCopyLink = () => {
-    // React Native doesn't have a built-in clipboard API, but Share works
-    Alert.alert(
-      'Share Join Link',
-      `Share this link with players to join ${teamName}:\n\n${joinLink}`,
-      [
-        { text: 'Share', onPress: handleShare },
-        { text: 'OK', style: 'cancel' },
-      ],
-    );
   };
 
   return (
@@ -64,23 +52,6 @@ export default function InvitePlayersScreen({ route, navigation }: any) {
               <Ionicons name="share-outline" size={18} color={colors.textOnPrimary} />
               <Text style={styles.shareBtnText}>Share Link</Text>
             </Pressable>
-            <Pressable style={styles.copyBtn} onPress={handleCopyLink}>
-              <Ionicons name="copy-outline" size={18} color={colors.textPrimary} />
-              <Text style={styles.copyBtnText}>Copy</Text>
-            </Pressable>
-          </View>
-        </FocusCard>
-
-        {/* QR Code placeholder */}
-        <FocusCard focusId={`invite:${teamId}:qr`} style={styles.qrCard}>
-          <Ionicons name="qr-code-outline" size={64} color={colors.textSecondary} />
-          <Text style={styles.qrTitle}>QR Code</Text>
-          <Text style={styles.qrSub}>
-            Show this QR code at the rink for players to scan and join your team instantly.
-          </Text>
-          <View style={styles.qrPlaceholder}>
-            <Ionicons name="qr-code" size={120} color={colors.glassStroke} />
-            <Text style={styles.qrPlaceholderText}>QR scanning requires a native camera module</Text>
           </View>
         </FocusCard>
 
@@ -93,7 +64,7 @@ export default function InvitePlayersScreen({ route, navigation }: any) {
           </View>
           <View style={styles.tipRow}>
             <Ionicons name="checkmark-circle" size={16} color={colors.accentGreen} />
-            <Text style={styles.tipText}>Players need a BLH account to join</Text>
+            <Text style={styles.tipText}>Players need a Hockey Life account to join</Text>
           </View>
           <View style={styles.tipRow}>
             <Ionicons name="checkmark-circle" size={16} color={colors.accentGreen} />
@@ -143,38 +114,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   shareBtnText: { fontSize: 14, fontWeight: '800', color: colors.textOnPrimary },
-  copyBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.bgInteractive,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    paddingVertical: 12,
-  },
-  copyBtnText: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
-
-  qrCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: 20,
-    alignItems: 'center',
-    gap: 10,
-  },
-  qrTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
-  qrSub: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, textAlign: 'center', lineHeight: 18 },
-  qrPlaceholder: {
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 16,
-  },
-  qrPlaceholderText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
-
   tipsCard: {
     backgroundColor: colors.bgSurface,
     borderRadius: 16,

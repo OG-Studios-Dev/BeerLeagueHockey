@@ -195,6 +195,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     membershipStatus,
     membershipDiagnostics,
     retryMemberships,
+    exitGuestLeague,
   } = useLeague();
   const { width } = useWindowDimensions();
   const isCompact = width < 390;
@@ -579,7 +580,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
   const passportMetrics = React.useMemo(
     () => [
-      { label: 'Active Leagues', value: String(new Set(activeTeams.map((team) => team.leagueId)).size) },
+      { label: 'Active Seasons', value: String(new Set(activeTeams.map((team) => team.leagueId)).size) },
       { label: 'Active Teams', value: String(activeTeams.length) },
       { label: 'Career PPG', value: careerPpg },
       { label: 'Badges', value: String(badges.length) },
@@ -624,11 +625,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const playerCardMessage = React.useMemo(() => {
     const activeTeamNames = activeTeams.map((team) => `${team.teamName} (${team.leagueName})`).slice(0, 3);
     const lines = [
-      `${displayName} on Beer League Hockey`,
-      activeTeamNames.length > 0 ? `Playing for ${activeTeamNames.join(', ')}` : 'BLH player account',
+      `${displayName} on Hockey Life`,
+      activeTeamNames.length > 0 ? `Playing for ${activeTeamNames.join(', ')}` : 'Hockey Life player account',
       totals.gp > 0 ? `${totals.pts} points in ${totals.gp} games` : null,
-      playerRating ? `BLH rating: ${playerRating}` : skillLabel(profile?.self_assessed_skill ?? null) ? `League match level: ${skillLabel(profile?.self_assessed_skill ?? null)}` : null,
-      badges.length > 0 ? `${badges.length} BLH achievements earned` : null,
+      playerRating ? `Hockey Life rating: ${playerRating}` : skillLabel(profile?.self_assessed_skill ?? null) ? `League match level: ${skillLabel(profile?.self_assessed_skill ?? null)}` : null,
+      badges.length > 0 ? `${badges.length} Hockey Life achievements earned` : null,
       'Track Hockey Life games, teams, and stats in the app.',
     ].filter(Boolean);
 
@@ -637,7 +638,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
   const handleSharePlayerCard = async () => {
     await Share.share({
-      title: `${displayName} · BLH Player Card`,
+      title: `${displayName} · Hockey Life Player Card`,
       message: playerCardMessage,
     });
   };
@@ -658,6 +659,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     if (isSigningOutRef.current || isDeletingAccountRef.current) return;
 
     if (isGuest) {
+      exitGuestLeague();
       exitGuest();
       return;
     }
@@ -835,7 +837,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                     <Text style={styles.teamName}>{teamName}</Text>
                   </View>
                 ) : (
-                  <Text style={styles.teamName}>BLH player account</Text>
+                  <Text style={styles.teamName}>Hockey Life player account</Text>
                 )}
               </View>
             </FocusCard>
@@ -850,10 +852,10 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                 end={{ x: 1, y: 1 }}
                 style={styles.passportGlow}
               />
-              <Text style={styles.passportEyebrow}>BLH IDENTITY</Text>
-              <Text style={styles.passportTitle}>Your cross-league player snapshot.</Text>
+              <Text style={styles.passportEyebrow}>HOCKEY LIFE PLAYER</Text>
+              <Text style={styles.passportTitle}>Your current player snapshot.</Text>
               <Text style={styles.passportSub}>
-                Track where you play, how your career is trending, and the signal used to match you with other BLH leagues.
+                Track your team, career trend, and Hockey Life player rating.
               </Text>
 
               <View style={[styles.passportGrid, isCompact && styles.passportGridCompact]}>
@@ -1225,19 +1227,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
               <Ionicons name="settings-outline" size={18} color={primaryColor} />
               <Text style={styles.settingLabel}>Notification Preferences</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            </Pressable>
-            <Pressable
-              style={styles.settingRow}
-              onPress={() => {
-                const url = activeLeague?.slug
-                  ? `https://beerleaguehockey.ca/${activeLeague.slug}/register`
-                  : 'https://beerleaguehockey.ca';
-                Linking.openURL(url);
-              }}
-            >
-              <Ionicons name="card-outline" size={18} color={primaryColor} />
-              <Text style={styles.settingLabel}>Registration &amp; Payments</Text>
-              <Ionicons name="open-outline" size={16} color={colors.textSecondary} />
             </Pressable>
             <Pressable style={styles.settingRow} onPress={() => navigation.navigate('CareerStats')}>
               <Ionicons name="trophy-outline" size={18} color={primaryColor} />

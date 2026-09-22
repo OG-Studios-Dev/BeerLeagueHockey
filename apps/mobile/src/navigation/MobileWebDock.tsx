@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Keyboard,
   Linking,
@@ -167,7 +168,9 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
 
   const navigate = React.useCallback((destination: DockDestination) => {
     if (destination.kind === 'external') {
-      void Linking.openURL(destination.url).catch(() => {});
+      void Linking.openURL(destination.url).catch(() => {
+        Alert.alert('Unable to Open Link', 'This link could not be opened. Please try again.');
+      });
       return;
     }
     if (destination.screen) {
@@ -214,14 +217,21 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
       return;
     }
     if (key === 'Team') {
-      const destination: DockDestination = data.team && activeLeague
-        ? { kind: 'native', tab: 'Team', screen: 'TeamDetail', params: { teamId: data.team.team_id, leagueId: activeLeague.id } }
-        : { kind: 'native', tab: 'Team', screen: 'TeamList' };
+      const destination: DockDestination = !isMember && activeLeague
+        ? {
+            kind: 'native',
+            tab: 'LeaguePages',
+            screen: 'TeamsDirectory',
+            params: { leagueId: activeLeague.id, leagueSlug: activeLeague.slug },
+          }
+        : data.team && activeLeague
+          ? { kind: 'native', tab: 'Team', screen: 'TeamDetail', params: { teamId: data.team.team_id, leagueId: activeLeague.id } }
+          : { kind: 'native', tab: 'Team', screen: 'TeamList' };
       pressRegisteredTab('Team', destination);
       return;
     }
     pressRegisteredTab(key);
-  }, [activeLeague, data.team, lifecycle, pressRegisteredTab]);
+  }, [activeLeague, data.team, isMember, lifecycle, pressRegisteredTab]);
 
   const routeName = currentRouteName(state);
   const hiddenRouteIsActive = ['Home', 'Profile', 'Captain', 'LeaguePages'].includes(routeName);
@@ -378,7 +388,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                 <Pressable
                   testID="more-league-home"
                   accessibilityRole="button"
-                  accessibilityLabel={`${activeLeague?.name ?? 'Beer League Hockey'} home`}
+                  accessibilityLabel={`${activeLeague?.name ?? 'Hockey Life'} home`}
                   onPress={openLeagueHome}
                   style={({ pressed }) => [styles.leagueHome, pressed && styles.menuRowPressed]}
                 >
@@ -395,7 +405,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                     </View>
                   )}
                   <View style={styles.leagueHomeCopy}>
-                    <Text numberOfLines={1} style={styles.leagueName}>{activeLeague?.name ?? 'Beer League Hockey'}</Text>
+                    <Text numberOfLines={1} style={styles.leagueName}>{activeLeague?.name ?? 'Hockey Life'}</Text>
                     <Text style={styles.leagueHomeLabel}>Home</Text>
                   </View>
                 </Pressable>

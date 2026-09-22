@@ -128,7 +128,7 @@ describe('routed scroll surface wiring', () => {
     assert.match(marketplace, /marketplace:joined/);
     assert.match(gallery, /focusEnabled={photo === null}/);
     assert.match(gallery, /focusScopeKey={`gallery-viewer:/);
-    assert.match(team, /focusEnabled={!reminderModalVisible && !subModalVisible && !goalieModalVisible}/);
+    assert.match(team, /focusEnabled={!subModalVisible && !goalieModalVisible}/);
     assert.match(team, /focusScopeKey={`team-modal:/);
   });
 });

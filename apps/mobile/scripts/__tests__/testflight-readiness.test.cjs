@@ -31,7 +31,7 @@ test('keeps the existing Expo, Apple, and package identity exact', () => {
 
   assert.equal(packageJson.name, '@hockey-life/mobile');
   assert.equal(packageJson.version, '1.0.0');
-  assert.equal(packageJson.dependencies.expo, '^54.0.33');
+  assert.equal(packageJson.dependencies.expo, '~54.0.37');
   assert.equal(packageJson.dependencies['react-native'], '0.81.5');
 
   assert.equal(expo.name, 'Hockey Life');
@@ -45,6 +45,24 @@ test('keeps the existing Expo, Apple, and package identity exact', () => {
     expo.extra.eas.projectId,
     'ed35ed7d-c5a3-415c-a7d1-ee0366a77dc3',
   );
+});
+
+test('pins the Expo SDK 54 packages to the supported patch set', () => {
+  const expected = {
+    expo: '~54.0.37',
+    'expo-asset': '~12.0.13',
+    'expo-constants': '~18.0.14',
+    'expo-crypto': '~15.0.9',
+    'expo-font': '~14.0.12',
+    'expo-image-picker': '~17.0.11',
+    'expo-linking': '~8.0.12',
+    'expo-notifications': '~0.32.17',
+    'expo-web-browser': '~15.0.11',
+  };
+
+  for (const [name, version] of Object.entries(expected)) {
+    assert.equal(packageJson.dependencies[name], version, name);
+  }
 });
 
 test('accepts incremented or reconciled positive integer build counters', () => {

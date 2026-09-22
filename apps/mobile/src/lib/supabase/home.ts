@@ -155,8 +155,8 @@ export function toSafeWebUrl(value: string | null | undefined) {
 }
 
 const BLH_SPONSOR: HomeSponsor = {
-  id: 'blh-contract-fallback', name: 'Beer League Hockey', logo_url: null,
-  website_url: 'https://beerleaguehockey.ca/', tier: 'platform', display_order: 0,
+  id: 'hockey-life-contract-fallback', name: 'Hockey Life', logo_url: null,
+  website_url: 'https://hockey-life.beerleaguehockey.ca/', tier: 'league', display_order: 0,
 };
 
 export function selectSponsorStrip(rows: HomeSponsor[]) {

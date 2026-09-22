@@ -37,7 +37,6 @@ import LeaderboardsScreen from '../screens/stats/LeaderboardsScreen';
 import CaptainDashboardScreen from '../screens/captain/CaptainDashboardScreen';
 import GameAvailabilityScreen from '../screens/captain/GameAvailabilityScreen';
 import InvitePlayersScreen from '../screens/captain/InvitePlayersScreen';
-import LineupNotesScreen from '../screens/captain/LineupNotesScreen';
 import TeamsDirectoryScreen from '../screens/league-pages/TeamsDirectoryScreen';
 import PlayersDirectoryScreen from '../screens/league-pages/PlayersDirectoryScreen';
 import PlayoffsDirectoryScreen from '../screens/league-pages/PlayoffsDirectoryScreen';
@@ -150,7 +149,6 @@ function CaptainNavigator() {
       <CaptainStack.Screen name="CaptainDashboard" component={CaptainDashboardScreen} options={cutIceOptions('Captain Dashboard')} />
       <CaptainStack.Screen name="GameAvailability" component={GameAvailabilityScreen} options={cutIceOptions('Game Availability')} />
       <CaptainStack.Screen name="InvitePlayers" component={InvitePlayersScreen} options={cutIceOptions('Invite Players')} />
-      <CaptainStack.Screen name="LineupNotes" component={LineupNotesScreen} options={cutIceOptions('Lineup Notes')} />
     </CaptainStack.Navigator>
   );
 }

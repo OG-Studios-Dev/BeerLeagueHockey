@@ -64,7 +64,8 @@ describe('web-contract Home data boundary', () => {
       { id: 'silver', name: 'Silver', logo_url: 'https://images.test/s.png', website_url: null, tier: 'silver', display_order: 1 },
       { id: 'gold', name: 'Gold', logo_url: 'https://images.test/g.png', website_url: 'https://gold.test', tier: 'gold', display_order: 2 },
     ]).map((row: any) => row.id), ['gold']);
-    assert.equal(selectSponsorStrip([])[0].id, 'blh-contract-fallback');
+    assert.equal(selectSponsorStrip([])[0].id, 'hockey-life-contract-fallback');
+    assert.equal(selectSponsorStrip([])[0].name, 'Hockey Life');
   });
 
   it('issues published, season-scoped, bounded read-only queries and keeps endpoint failure local to leaders', async () => {

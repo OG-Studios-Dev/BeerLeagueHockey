@@ -152,13 +152,16 @@ test('accepts release-independent canonical counters and rejects malformed value
 });
 
 test('uses Hockey Life in app-owned iOS permission explanations', () => {
-  const permissionCopy = Object.values(readJson('app.json').expo.ios.infoPlist)
+  const infoPlist = readJson('app.json').expo.ios.infoPlist;
+  const permissionCopy = Object.values(infoPlist)
     .filter((value) => typeof value === 'string');
-  assert.ok(permissionCopy.length >= 4);
+  assert.equal(permissionCopy.length, 2);
   for (const value of permissionCopy) {
     assert.match(value, /^Hockey Life\b/);
     assert.doesNotMatch(value, /\bBLH\b|Beer League Hockey/);
   }
+  assert.equal(infoPlist.NSLocationWhenInUseUsageDescription, undefined);
+  assert.equal(infoPlist.NSCameraUsageDescription, undefined);
 });
 
 test('ships an opaque square 1024px iOS icon with the supplied dark background', () => {

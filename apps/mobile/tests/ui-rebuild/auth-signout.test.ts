@@ -20,6 +20,8 @@ type AuthValue = {
   user: any;
   isLoading: boolean;
   isGuest: boolean;
+  continueAsGuest: () => void;
+  exitGuest: () => void;
   signOut: () => Promise<{ error: Error | null }>;
 };
 
@@ -81,6 +83,48 @@ function createAuthFixture(options: {
 }
 
 describe('AuthProvider bootstrap freshness', () => {
+  it('enters and exits guest mode from a fresh signed-out state', async () => {
+    const fixture = createAuthFixture();
+    await fixture.settle();
+
+    fixture.value.continueAsGuest();
+    await fixture.settle();
+    assert.equal(fixture.value.isGuest, true);
+    assert.equal(fixture.value.session, null);
+    assert.equal(fixture.value.user, null);
+
+    fixture.value.exitGuest();
+    await fixture.settle();
+    assert.equal(fixture.value.isGuest, false);
+    assert.equal(fixture.value.session, null);
+  });
+
+  it('does not restore stale bootstrap account state after guest entry', async () => {
+    const bootstrap = deferred<any>();
+    const fixture = createAuthFixture({ getSession: () => bootstrap.promise });
+
+    fixture.value.continueAsGuest();
+    bootstrap.resolve({ data: { session: { user: { id: 'stale-account' } } } });
+    await fixture.settle();
+
+    assert.equal(fixture.value.isGuest, true);
+    assert.equal(fixture.value.session, null);
+    assert.equal(fixture.value.user, null);
+    assert.equal(fixture.value.isLoading, false);
+  });
+
+  it('keeps guest mode when a stale signed-out auth event arrives after entry', async () => {
+    const fixture = createAuthFixture();
+    await fixture.settle();
+
+    fixture.value.continueAsGuest();
+    fixture.emit('INITIAL_SESSION', null);
+    await fixture.settle();
+
+    assert.equal(fixture.value.isGuest, true);
+    assert.equal(fixture.value.session, null);
+  });
+
   it('ignores an older null bootstrap after a newer SIGNED_IN event', async () => {
     const bootstrap = deferred<any>();
     const fixture = createAuthFixture({ getSession: () => bootstrap.promise });

@@ -7,6 +7,9 @@ import { getDivisions, type Division } from '../lib/supabase/data';
 import { getUserLeaguesDetailed, type LeagueRow, type UserLeagueLookupResult } from '../lib/supabase/leagues';
 import {
   HOCKEY_LIFE_PRIMARY,
+  HOCKEY_LIFE_NAME,
+  HOCKEY_LIFE_ID,
+  HOCKEY_LIFE_SLUG,
   HOCKEY_LIFE_SECONDARY,
   isHockeyLifeLeague,
   selectHockeyLifeMembership,
@@ -55,6 +58,8 @@ type LeagueContextValue = {
   retryMemberships: () => void;
   setActiveLeague: (league: League | null) => void;
   previewLeague: (league: League) => void;
+  enterGuestLeague: () => void;
+  exitGuestLeague: () => void;
   isGuestLeague: boolean;
   activeDivision: Division | null;
   setActiveDivision: (division: Division | null) => void;
@@ -78,6 +83,21 @@ function rowToLeague(row: LeagueRow): League {
   };
 }
 
+const HOCKEY_LIFE_PUBLIC_LEAGUE: League = {
+  id: HOCKEY_LIFE_ID,
+  name: HOCKEY_LIFE_NAME,
+  slug: HOCKEY_LIFE_SLUG,
+  logoUrl: null,
+  city: 'London, Ontario',
+  theme: {
+    ...BLH_THEME,
+    primaryColor: HOCKEY_LIFE_PRIMARY,
+    secondaryColor: HOCKEY_LIFE_SECONDARY,
+    logoUrl: null,
+    leagueName: HOCKEY_LIFE_NAME,
+  },
+};
+
 const LeagueContext = React.createContext<LeagueContextValue | undefined>(undefined);
 
 export function LeagueProvider({ children }: { children: React.ReactNode }) {
@@ -87,6 +107,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
   const [activeDivision, setActiveDivision] = React.useState<Division | null>(null);
   const [divisions, setDivisions] = React.useState<Division[]>([]);
   const [isGuestLeague, setIsGuestLeague] = React.useState(false);
+  const isGuestLeagueRef = React.useRef(false);
   const [membershipStatus, setMembershipStatus] = React.useState<MembershipLoadStatus>('loading');
   const [diagnosticEntries, setDiagnosticEntries] = React.useState<MembershipDiagnosticEntry[]>([]);
   const authLoadGeneration = React.useRef(0);
@@ -130,6 +151,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
     divisionLoadGeneration.current += 1;
     replaceAvailableLeagues([]);
     replaceActiveLeague(null);
+    isGuestLeagueRef.current = false;
     setIsGuestLeague(false);
     setActiveDivision(null);
     setDivisions([]);
@@ -179,6 +201,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
       divisionLoadGeneration.current += 1;
     }
     replaceActiveLeague(league);
+    isGuestLeagueRef.current = false;
     setIsGuestLeague(false);
     await runPreferenceOperation(() => SecureStore.setItemAsync(PERSIST_KEY, league.id)).catch(() => {});
   }, [activeLeagueId, replaceActiveLeague]);
@@ -189,6 +212,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
       divisionLoadGeneration.current += 1;
     }
     replaceActiveLeague(league);
+    isGuestLeagueRef.current = true;
     setIsGuestLeague(true);
   }, [activeLeagueId, replaceActiveLeague]);
 
@@ -459,6 +483,24 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserLeagues, resolveSession]);
 
+  const enterGuestLeague = React.useCallback(() => {
+    invalidateSessionResolution();
+    changeIdentity(null, true);
+    replaceAvailableLeagues([HOCKEY_LIFE_PUBLIC_LEAGUE]);
+    replaceActiveLeague(HOCKEY_LIFE_PUBLIC_LEAGUE);
+    isGuestLeagueRef.current = true;
+    setIsGuestLeague(true);
+    setMembershipStatus('signed-out');
+    setIsLoading(false);
+  }, [changeIdentity, invalidateSessionResolution, replaceActiveLeague, replaceAvailableLeagues]);
+
+  const exitGuestLeague = React.useCallback(() => {
+    invalidateSessionResolution();
+    changeIdentity(null, true);
+    setMembershipStatus('signed-out');
+    setIsLoading(false);
+  }, [changeIdentity, invalidateSessionResolution]);
+
   React.useEffect(() => {
     isMounted.current = true;
     resolveSession('bootstrap');
@@ -472,6 +514,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
         changeIdentity(session.user.id, false);
         loadUserLeagues('sign-in', session.user.id);
       } else if (event === 'SIGNED_OUT') {
+        if (isGuestLeagueRef.current) return;
         invalidateSessionResolution();
         hasSessionResolutionFailure.current = false;
         changeIdentity(null, true);
@@ -484,6 +527,7 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
           changeIdentity(session.user.id, false);
           loadUserLeagues('bootstrap', session.user.id);
         } else if (!hasSessionResolutionFailure.current) {
+          if (isGuestLeagueRef.current) return;
           // INITIAL_SESSION(null) is enough to render signed-out, but it does not
           // cancel an independently pending getSession resolution. The SDK also
           // emits this callback on an initialization error path, whose returned
@@ -524,12 +568,14 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
       retryMemberships,
       setActiveLeague,
       previewLeague,
+      enterGuestLeague,
+      exitGuestLeague,
       isGuestLeague,
       activeDivision,
       setActiveDivision,
       divisions,
     }),
-    [activeLeague, availableLeagues, isLoading, membershipStatus, membershipDiagnostics, retryMemberships, setActiveLeague, previewLeague, isGuestLeague, activeDivision, divisions],
+    [activeLeague, availableLeagues, isLoading, membershipStatus, membershipDiagnostics, retryMemberships, setActiveLeague, previewLeague, enterGuestLeague, exitGuestLeague, isGuestLeague, activeDivision, divisions],
   );
 
   return <LeagueContext.Provider value={value}>{children}</LeagueContext.Provider>;

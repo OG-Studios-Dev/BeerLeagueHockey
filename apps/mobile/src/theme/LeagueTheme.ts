@@ -17,7 +17,7 @@ export const BLH_THEME: LeagueTheme = {
   cardColor: colors.bgSurface,
   textColor: colors.textPrimary,
   logoUrl: null,
-  leagueName: 'Beer League Hockey',
+  leagueName: 'Hockey Life',
 };
 
 export const SAMPLE_LEAGUE_THEME: LeagueTheme = {

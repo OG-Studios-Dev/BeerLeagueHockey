@@ -252,7 +252,7 @@ describe('MobileWebDock component integration', () => {
   it('uses only the current team colour for the active crest and safely falls back across identity states', () => {
     const fixture = createDockFixture({
       team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456' },
-    });
+    }, { member: true });
     fixture.mount();
     fixture.setFocusedRoute('Team');
 
@@ -298,7 +298,7 @@ describe('MobileWebDock component integration', () => {
     fixture.openMore();
     const sheet = findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet');
 
-    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Register', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Long custom league handbook link that must wrap in full'];
+    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Support', 'Privacy', 'Terms', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Long custom league handbook link that must wrap in full'];
     for (const label of expected) {
       const matches: unknown[] = [];
       const visit = (root: unknown) => {
@@ -314,7 +314,7 @@ describe('MobileWebDock component integration', () => {
     assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-app-home'), undefined, 'the league identity row replaces the duplicate catalog Home row');
     assert.ok(findNode(sheet, (node) => node.props.testID === 'more-league-home'));
     assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-league-teams-external'), undefined);
-    assert.ok(findNode(sheet, (node) => node.props.testID === 'more-item-league-register-external'));
+    assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-league-register-external'), undefined);
     assert.ok(findNode(sheet, (node) => node.props.testID?.startsWith('more-item-custom-') && node.props.testID.endsWith('-external')));
   });
 
@@ -423,7 +423,7 @@ describe('MobileWebDock component integration', () => {
   it('emits preventable tabPress events with route keys and preserves nested stack reselects', () => {
     const fixture = createDockFixture({
       team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456' },
-    });
+    }, { member: true });
     fixture.mount();
 
     fixture.setFocusedRoute('Schedule', 'GamePreview');
@@ -457,6 +457,21 @@ describe('MobileWebDock component integration', () => {
     fixture.openMore();
     assert.equal(fixture.emittedEvents.length, eventCount);
     assert.ok(fixture.navigationCalls.every((call) => stateRouteNames.includes(String(call[0]))));
+  });
+
+  it('opens the public Hockey Life teams directory from the guest Team control', () => {
+    const fixture = createDockFixture({}, { member: false });
+    fixture.mount();
+
+    findNode(fixture.harness.output, (node) => node.props.testID === 'dock-team')!.props.onPress();
+
+    assert.deepEqual(fixture.navigationCalls.at(-1), [
+      'LeaguePages',
+      {
+        screen: 'TeamsDirectory',
+        params: { leagueId: 'league-a', leagueSlug: 'league-a' },
+      },
+    ]);
   });
 
   it('hides and restores the custom dock with public keyboard events and cleans up listeners', () => {

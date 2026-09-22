@@ -43,7 +43,7 @@ describe('mobile More catalog', () => {
     }
   });
 
-  it('respects visible pages, playoff phase, registration, member and captain gates', () => {
+  it('respects visible pages, playoff phase, member and captain gates without generic registration', () => {
     const labels = buildMoreMenu({
       ...base,
       visiblePages: { news: false, gallery: false },
@@ -55,16 +55,13 @@ describe('mobile More catalog', () => {
     }).map((item) => item.label);
 
     assert.ok(labels.includes('Playoffs'));
-    assert.ok(labels.includes('Register'));
+    assert.ok(!labels.includes('Register'));
     assert.ok(labels.includes('My Page'));
     assert.ok(labels.includes('Captain Dashboard'));
     assert.ok(labels.includes('Goalies'));
     assert.ok(!labels.includes('News'));
     assert.ok(!labels.includes('Gallery'));
-    assert.deepEqual(
-      buildMoreMenu({ ...base, registrationOpen: true }).find((item) => item.key === 'league-register')?.destination,
-      { kind: 'external', url: 'https://hockey-life.beerleaguehockey.ca/goalies/register' },
-    );
+    assert.equal(buildMoreMenu({ ...base, registrationOpen: true }).some((item) => item.key === 'league-register'), false);
   });
 
   it('normalizes safe tenant custom links and rejects unsafe configured URLs', () => {
@@ -165,8 +162,8 @@ describe('mobile More catalog', () => {
 
   it('offers only safe native app entry points when no league is selected', () => {
     const items = buildMoreMenu({ ...base, leagueSlug: '' });
-    assert.deepEqual(items.map((item) => item.label), ['Home', 'Account']);
-    assert.ok(items.every((item) => item.destination.kind === 'native'));
-    assert.ok(items.every((item) => JSON.stringify(item.destination).includes('beerleaguehockey.ca') === false));
+    assert.deepEqual(items.map((item) => item.label), ['Home', 'Support', 'Privacy', 'Terms', 'Account']);
+    assert.ok(items.filter((item) => ['Home', 'Account'].includes(item.label)).every((item) => item.destination.kind === 'native'));
+    assert.ok(items.filter((item) => ['Support', 'Privacy', 'Terms'].includes(item.label)).every((item) => item.destination.kind === 'external'));
   });
 });

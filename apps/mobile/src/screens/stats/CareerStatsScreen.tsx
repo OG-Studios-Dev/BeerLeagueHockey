@@ -261,7 +261,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
             <Ionicons name="stats-chart-outline" size={32} color={colors.textSecondary} />
             <Text style={styles.emptyTitle}>No career stats yet</Text>
             <Text style={styles.emptySub}>
-              Stats from your games will accumulate here as you play in BLH leagues.
+              Stats from your Hockey Life games will accumulate here as you play.
             </Text>
           </View>
         )}

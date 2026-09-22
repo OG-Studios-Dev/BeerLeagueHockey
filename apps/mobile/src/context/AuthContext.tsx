@@ -1,5 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 import { signInWithOAuth } from '../lib/supabase/auth';
 import { supabase } from '../lib/supabase/client';
@@ -24,19 +24,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
+  const authGeneration = useRef(0);
+  const isGuestRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
-    let isBootstrapCurrent = true;
+    const bootstrapGeneration = ++authGeneration.current;
 
     void supabase.auth.getSession()
       .then(({ data: { session } }) => {
-        if (!isMounted || !isBootstrapCurrent) return;
+        if (!isMounted || bootstrapGeneration !== authGeneration.current) return;
         setSession(session);
         setIsLoading(false);
       })
       .catch(() => {
-        if (!isMounted || !isBootstrapCurrent) return;
+        if (!isMounted || bootstrapGeneration !== authGeneration.current) return;
         setIsLoading(false);
       });
 
@@ -44,14 +46,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!isMounted) return;
-      isBootstrapCurrent = false;
+      if (!nextSession && isGuestRef.current) return;
+      authGeneration.current += 1;
       setSession(nextSession);
+      isGuestRef.current = false;
+      setIsGuest(false);
       setIsLoading(false);
     });
 
     return () => {
       isMounted = false;
-      isBootstrapCurrent = false;
+      authGeneration.current += 1;
       subscription.unsubscribe();
     };
   }, []);
@@ -82,10 +87,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => signInWithOAuth('google');
 
   const continueAsGuest = () => {
+    authGeneration.current += 1;
+    isGuestRef.current = true;
+    setSession(null);
+    setIsLoading(false);
     setIsGuest(true);
   };
 
   const exitGuest = () => {
+    isGuestRef.current = false;
     setIsGuest(false);
   };
 
@@ -96,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error(error.message) };
       }
 
+      isGuestRef.current = false;
       setIsGuest(false);
       return { error: null };
     } catch (error) {

@@ -1,4 +1,3 @@
-import * as Location from 'expo-location';
 import { supabase } from './supabase/client';
 
 export type LeagueMatch = {
@@ -94,19 +93,9 @@ const SKILL_TIER_MAP: Record<string, number> = {
 };
 
 export async function getLeagueMarketplace(userId: string | null): Promise<MarketplaceResult> {
-  // 1. Get user location
-  let userLat: number | null = null;
-  let userLng: number | null = null;
-  try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === 'granted') {
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      userLat = loc.coords.latitude;
-      userLng = loc.coords.longitude;
-    }
-  } catch {}
+  // Location ranking is disabled in the single-league mobile candidate.
+  const userLat: number | null = null;
+  const userLng: number | null = null;
 
   // 2. Get all public leagues
   const { data: leagues } = await supabase

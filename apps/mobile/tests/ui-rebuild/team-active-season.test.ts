@@ -499,7 +499,7 @@ describe('Team active-season data boundary', () => {
     assert.doesNotMatch(text, /Old Captain Bulletin|Old team only|Captain Center/);
   });
 
-  it('clears open dialogs, drafts, caches, saving state, and public A data when the route becomes B', async () => {
+  it('clears open structured dialogs, caches, saving state, and public A data when the route becomes B', async () => {
     let releaseBRole!: (role: string) => void;
     let markBRoleStarted!: () => void;
     const bRoleStarted = new Promise<void>((resolve) => { markBRoleStarted = resolve; });
@@ -517,13 +517,10 @@ describe('Team active-season data boundary', () => {
       },
     });
     let output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-reminder-action')?.props.onPress();
     findNode(output, (node) => node.props.testID === 'team-captain-sub-action')?.props.onPress();
     findNode(output, (node) => node.props.testID === 'team-captain-goalie-action')?.props.onPress();
     output = await settle(runtime);
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Write the reminder to your team...')?.props.onChangeText('A reminder draft');
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Optional message to the player...')?.props.onChangeText('A sub draft');
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Anything the goalie should know...')?.props.onChangeText('A goalie draft');
+    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Search by name or email...')?.props.onChangeText('Alpha');
     runtime.harness.render();
 
     routeParams.teamId = 'team-b';
@@ -531,17 +528,15 @@ describe('Team active-season data boundary', () => {
     runtime.harness.render();
     await bRoleStarted;
     output = runtime.harness.output;
-    assert.doesNotMatch(nodeText(output), /North Stars|Current Casey|A reminder draft|A sub draft|A goalie draft|Alpha Sub/);
+    assert.doesNotMatch(nodeText(output), /North Stars|Current Casey|Alpha Sub/);
     assert.equal(findNode(output, (node) => node.type === 'Modal' && node.props.visible === true), undefined);
 
     releaseBRole('captain');
     output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-reminder-action')?.props.onPress();
     findNode(output, (node) => node.props.testID === 'team-captain-goalie-action')?.props.onPress();
     output = runtime.harness.render();
-    assert.equal(findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Anything the goalie should know...')?.props.value, '');
-    assert.equal(findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Example: "Free", "$20", "Beer"')?.props.value, 'Free');
-    assert.doesNotMatch(nodeText(output), /A reminder draft|A sub draft|A goalie draft|Alpha Sub/);
+    assert.match(nodeText(output), /CompensationFreePaid/);
+    assert.doesNotMatch(nodeText(output), /Alpha Sub/);
   });
 
   it('ignores delayed A sub candidates and refetches B candidates with clean defaults', async () => {
@@ -569,7 +564,6 @@ describe('Team active-season data boundary', () => {
     findNode(output, (node) => node.props.testID === 'team-captain-sub-action')?.props.onPress();
     await aCandidatesStarted;
     output = runtime.harness.render();
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Optional message to the player...')?.props.onChangeText('A-only invite');
     findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Search by name or email...')?.props.onChangeText('Alpha');
     runtime.harness.render();
 
@@ -579,100 +573,13 @@ describe('Team active-season data boundary', () => {
     await settle(runtime);
     releaseACandidates({ success: true, data: [{ id: 'sub-a', full_name: 'Alpha Sub', email: 'alpha@example.invalid' }] });
     output = await settle(runtime);
-    assert.doesNotMatch(nodeText(output), /Alpha Sub|A-only invite/);
+    assert.doesNotMatch(nodeText(output), /Alpha Sub/);
 
     findNode(output, (node) => node.props.testID === 'team-captain-sub-action')?.props.onPress();
     output = await settle(runtime);
     assert.deepEqual(calls, [['league-a', 'team-current'], ['league-b', 'team-b']]);
     assert.match(nodeText(output), /Beta Sub/);
-    assert.equal(findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Optional message to the player...')?.props.value, '');
     assert.equal(findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Search by name or email...')?.props.value, '');
-  });
-
-  it('keeps an issued reminder mutation on A and ignores its stale completion after switching to B', async () => {
-    let releasePost!: (result: Row) => void;
-    let markPostStarted!: () => void;
-    const postStarted = new Promise<void>((resolve) => { markPostStarted = resolve; });
-    const payloads: Row[] = [];
-    const messageReads: string[] = [];
-    const routeParams = { teamId: 'team-current', leagueId: 'league-a' };
-    const runtime = createRuntime({
-      dataset: fixturesWithSecondRoute(),
-      routeParams,
-      captainApi: {
-        getCaptainRole: async () => 'captain',
-        getRecentTeamMessages: async (teamId: string) => { messageReads.push(teamId); return []; },
-        postTeamMessage: async (payload: Row) => {
-          payloads.push(payload);
-          markPostStarted();
-          return new Promise<Row>((resolve) => { releasePost = resolve; });
-        },
-      },
-    });
-    let output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-reminder-action')?.props.onPress();
-    output = runtime.harness.render();
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Write the reminder to your team...')?.props.onChangeText('A-only reminder');
-    output = runtime.harness.render();
-    findNode(output, (node) => node.type === 'Pressable' && nodeText(node) === 'Send Reminder')?.props.onPress();
-    await postStarted;
-
-    routeParams.teamId = 'team-b';
-    routeParams.leagueId = 'league-b';
-    runtime.harness.render();
-    await settle(runtime);
-    releasePost({ success: true });
-    output = await settle(runtime);
-
-    assert.deepEqual(payloads, [{
-      teamId: 'team-current',
-      seasonId: 'season-current',
-      subject: 'Check-in reminder vs Current Opponent',
-      message: 'A-only reminder',
-      messageType: 'checkin_reminder',
-      isUrgent: true,
-    }]);
-    assert.deepEqual(messageReads, ['team-current', 'team-b']);
-    assert.deepEqual(runtime.alerts, []);
-    assert.doesNotMatch(nodeText(output), /A-only reminder/);
-  });
-
-  it('ignores an A reminder refresh that resolves after B has loaded', async () => {
-    let releaseARefresh!: (messages: Row[]) => void;
-    let markARefreshStarted!: () => void;
-    const aRefreshStarted = new Promise<void>((resolve) => { markARefreshStarted = resolve; });
-    let aReads = 0;
-    const routeParams = { teamId: 'team-current', leagueId: 'league-a' };
-    const runtime = createRuntime({
-      dataset: fixturesWithSecondRoute(),
-      routeParams,
-      captainApi: {
-        getCaptainRole: async () => 'captain',
-        postTeamMessage: async () => ({ success: true }),
-        getRecentTeamMessages: async (teamId: string) => {
-          if (teamId !== 'team-current') return [];
-          aReads += 1;
-          if (aReads === 1) return [];
-          markARefreshStarted();
-          return new Promise<Row[]>((resolve) => { releaseARefresh = resolve; });
-        },
-      },
-    });
-    let output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-reminder-action')?.props.onPress();
-    output = runtime.harness.render();
-    findNode(output, (node) => node.type === 'Pressable' && nodeText(node) === 'Send Reminder')?.props.onPress();
-    await aRefreshStarted;
-
-    routeParams.teamId = 'team-b';
-    routeParams.leagueId = 'league-b';
-    runtime.harness.render();
-    await settle(runtime);
-    releaseARefresh([{ id: 'stale-a', subject: 'Stale A Bulletin', message: 'A only', createdAt: null, isUrgent: true, sentBy: null }]);
-    output = await settle(runtime);
-
-    assert.doesNotMatch(nodeText(output), /Stale A Bulletin|A only/);
-    assert.deepEqual(runtime.alerts, []);
   });
 
   it('renders the current web public composition with its identity, roster and near-black surface at 320pt', async () => {
@@ -728,7 +635,6 @@ describe('Team active-season data boundary', () => {
     const memberOutput = await settle(member);
     for (const testID of [
       'team-open-game-action',
-      'team-captain-reminder-action',
       'team-captain-sub-action',
       'team-captain-goalie-action',
       'team-roster-player-player-current',
@@ -744,7 +650,7 @@ describe('Team active-season data boundary', () => {
     const guest = createRuntime({ userId: null });
     const guestOutput = await settle(guest);
     assert.equal(findNode(guestOutput, (node) => node.props.testID === 'team-chat-action'), undefined);
-    assert.equal(findNode(guestOutput, (node) => node.props.testID === 'team-captain-reminder-action'), undefined);
+    assert.equal(findNode(guestOutput, (node) => node.props.testID === 'team-captain-sub-action'), undefined);
     findNode(guestOutput, (node) => node.props.testID === 'team-roster-player-player-current')?.props.onPress();
     assert.ok(guest.navigationCalls.length > 0, 'Read-only visitors retain player-card navigation');
   });

@@ -30,14 +30,11 @@ import {
   getGameCheckinStatusMap,
   getLeagueSubPlayers,
   getOpenGoalieRequest,
-  getRecentTeamMessages,
   getTeamSubInvitations,
   inviteSub,
-  postTeamMessage,
   type CaptainRole,
   type GoalieRequestRow,
   type SubCandidate,
-  type TeamMessageRow,
   type TeamSubInvitation,
   updatePlayerCheckinAsCaptain,
 } from '../../lib/supabase/captain';
@@ -152,6 +149,8 @@ const GOALIE_SKILL_LEVELS = [
   { value: 'expert', label: 'Expert' },
 ] as const;
 
+const GOALIE_COMPENSATION_OPTIONS = ['Free', 'Paid'] as const;
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
@@ -162,21 +161,6 @@ function formatTime(iso: string): string {
 
 function formatDateTime(iso: string): string {
   return `${formatDate(iso)} · ${formatTime(iso)}`;
-}
-
-function formatRelativeTime(iso: string | null) {
-  if (!iso) return 'Just now';
-
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
-
-  if (diffHours <= 0) return 'Just now';
-  if (diffHours < 24) return `${diffHours}h ago`;
-
-  const diffDays = Math.round(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return formatDate(iso);
 }
 
 function formatRosterPosition(position: string | null, isGoalie: boolean) {
@@ -306,7 +290,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [upcomingGames, setUpcomingGames] = React.useState<UpcomingGame[]>([]);
   const [nextGameAvailability, setNextGameAvailability] = React.useState<NextGameAvailability | null>(null);
   const [captainRole, setCaptainRole] = React.useState<CaptainRole | null>(null);
-  const [teamMessages, setTeamMessages] = React.useState<TeamMessageRow[]>([]);
   const [lineupStatuses, setLineupStatuses] = React.useState<Record<string, CheckinStatus>>({});
   const [subInvitations, setSubInvitations] = React.useState<TeamSubInvitation[]>([]);
   const [goalieRequest, setGoalieRequest] = React.useState<GoalieRequestRow | null>(null);
@@ -317,19 +300,13 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [lineupSavingPlayerId, setLineupSavingPlayerId] = React.useState<string | null>(null);
   const [captainError, setCaptainError] = React.useState<string | null>(null);
 
-  const [reminderModalVisible, setReminderModalVisible] = React.useState(false);
-  const [reminderMessage, setReminderMessage] = React.useState('');
-  const [reminderSaving, setReminderSaving] = React.useState(false);
-
   const [subModalVisible, setSubModalVisible] = React.useState(false);
   const [subSearch, setSubSearch] = React.useState('');
-  const [subInviteMessage, setSubInviteMessage] = React.useState('');
   const [subSavingPlayerId, setSubSavingPlayerId] = React.useState<string | null>(null);
 
   const [goalieModalVisible, setGoalieModalVisible] = React.useState(false);
   const [goalieSkillLevel, setGoalieSkillLevel] = React.useState('intermediate');
   const [goalieCompensation, setGoalieCompensation] = React.useState('Free');
-  const [goalieNotes, setGoalieNotes] = React.useState('');
   const [goalieSaving, setGoalieSaving] = React.useState(false);
   const loadGenerationRef = React.useRef(0);
   const publicLoadGenerationRef = React.useRef(0);
@@ -339,7 +316,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [publicRetryToken, setPublicRetryToken] = React.useState(0);
 
   const nextGame = upcomingGames[0] ?? null;
-  const teamName = team?.name ?? 'Team';
   const primaryColor = team?.primary_color ?? colors.primary;
   const publicSurface = reduceTransparency
     ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
@@ -352,14 +328,10 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   const refreshCaptainData = React.useCallback(
     async (currentRoster: RosterPlayer[], currentNextGame: UpcomingGame | null, generation: number) => {
-      const [role, messages] = await Promise.all([
-        getCaptainRole(teamId),
-        getRecentTeamMessages(teamId, 5),
-      ]);
+      const role = await getCaptainRole(teamId);
 
       if (generation !== loadGenerationRef.current) return;
       setCaptainRole(role);
-      setTeamMessages(messages);
 
       if (!role || !currentNextGame) {
         setLineupStatuses({});
@@ -436,7 +408,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       setUpcomingGames([]);
       setNextGameAvailability(null);
       setCaptainRole(null);
-      setTeamMessages([]);
       setLineupStatuses({});
       setSubInvitations([]);
       setGoalieRequest(null);
@@ -444,17 +415,12 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       setLoadingSubCandidates(false);
       setLineupSavingPlayerId(null);
       setCaptainError(null);
-      setReminderModalVisible(false);
-      setReminderMessage('');
-      setReminderSaving(false);
       setSubModalVisible(false);
       setSubSearch('');
-      setSubInviteMessage('');
       setSubSavingPlayerId(null);
       setGoalieModalVisible(false);
       setGoalieSkillLevel('intermediate');
       setGoalieCompensation('Free');
-      setGoalieNotes('');
       setGoalieSaving(false);
 
       const [activeSeasonRes, presentationSeasonRes] = await Promise.all([
@@ -680,20 +646,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     [lineupStatuses, roster],
   );
 
-  const reminderTemplate = React.useMemo(() => {
-    if (!nextGame) {
-      return 'Please update your availability as soon as you can.';
-    }
-
-    const pendingNames = pendingPlayers.slice(0, 4).map((player) => player.player_name.split(' ')[0]);
-    const nameSuffix =
-      pendingNames.length > 0 ? ` Still waiting on ${pendingNames.join(', ')}${pendingPlayers.length > 4 ? ` and ${pendingPlayers.length - 4} more` : ''}.` : '';
-
-    return `Please update your availability for ${teamName} vs ${nextOpponent ?? 'our next opponent'} on ${formatDateTime(
-      nextGame.scheduled_at,
-    )}.${nameSuffix}`;
-  }, [nextGame, nextOpponent, pendingPlayers, teamName]);
-
   const invitedPlayerIds = React.useMemo(() => new Set(subInvitations.map((invite) => invite.invitedPlayerId)), [subInvitations]);
 
   const filteredSubCandidates = React.useMemo(() => {
@@ -712,12 +664,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const openLeagueSite = () => {
     if (!league?.slug) return;
     Linking.openURL(`https://${league.slug}.beerleaguehockey.ca`).catch(() => {});
-  };
-
-  const openReminderModal = () => {
-    setReminderMessage(reminderTemplate);
-    setReminderModalVisible(true);
-    setCaptainError(null);
   };
 
   const openSubModal = async () => {
@@ -785,53 +731,14 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     }
   };
 
-  const handleSendReminder = async () => {
-    if (!captainRole || !nextGame || !reminderMessage.trim()) {
-      return;
-    }
-    const generation = loadGenerationRef.current;
-    const operationTeamId = teamId;
-    const operationSeasonId = nextGame.season_id ?? null;
-    const operationOpponent = nextOpponent ?? 'opponent';
-    const operationMessage = reminderMessage.trim();
-    const operationTemplate = reminderTemplate;
-
-    setCaptainError(null);
-    setReminderSaving(true);
-    const result = await postTeamMessage({
-      teamId: operationTeamId,
-      seasonId: operationSeasonId,
-      subject: `Check-in reminder vs ${operationOpponent}`,
-      message: operationMessage,
-      messageType: 'checkin_reminder',
-      isUrgent: true,
-    });
-    if (generation !== loadGenerationRef.current) return;
-    setReminderSaving(false);
-
-    if (!result.success) {
-      setCaptainError(result.error ?? 'Unable to send reminder.');
-      return;
-    }
-
-    setReminderModalVisible(false);
-    setReminderMessage(operationTemplate);
-    const messages = await getRecentTeamMessages(operationTeamId, 5);
-    if (generation !== loadGenerationRef.current) return;
-    setTeamMessages(messages);
-    Alert.alert('Reminder sent', 'Your team bulletin has been updated with a check-in reminder.');
-  };
-
   const handleInviteSub = async (playerId: string) => {
     if (!captainRole || !nextGame) return;
     const generation = loadGenerationRef.current;
     const operationGameId = nextGame.id;
     const operationTeamId = teamId;
-    const operationMessage = subInviteMessage;
-
     setCaptainError(null);
     setSubSavingPlayerId(playerId);
-    const result = await inviteSub(operationGameId, operationTeamId, playerId, operationMessage);
+    const result = await inviteSub(operationGameId, operationTeamId, playerId);
     if (generation !== loadGenerationRef.current) return;
     setSubSavingPlayerId(null);
 
@@ -854,7 +761,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     const operationRequest = {
       skillLevelNeeded: goalieSkillLevel,
       compensation: goalieCompensation,
-      notes: goalieNotes,
+      notes: null,
     };
 
     setCaptainError(null);
@@ -934,7 +841,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
       <FocusScrollView
-        focusEnabled={!reminderModalVisible && !subModalVisible && !goalieModalVisible}
+        focusEnabled={!subModalVisible && !goalieModalVisible}
         focusScopeKey={`team:${leagueId}:${teamId}:${presentationSeason.id}`}
         contentContainerStyle={styles.scrollContent}
       >
@@ -1039,12 +946,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             </View>
 
             <View style={[styles.captainActionRow, isCompact && styles.captainActionRowCompact]}>
-              <Pressable testID="team-captain-reminder-action" accessibilityRole="button" style={styles.captainActionButton} onPress={openReminderModal}>
-                <Ionicons name="notifications-outline" size={16} color={colors.primary} />
-                <Text style={styles.captainActionTitle}>Remind Team</Text>
-                <Text style={styles.captainActionMeta}>{pendingPlayers.length} awaiting response</Text>
-              </Pressable>
-
               <Pressable testID="team-captain-sub-action" accessibilityRole="button" style={styles.captainActionButton} onPress={() => void openSubModal()}>
                 <Ionicons name="person-add-outline" size={16} color={colors.primary} />
                 <Text style={styles.captainActionTitle}>Request Sub</Text>
@@ -1119,7 +1020,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
                     Skill: {goalieRequest.skillLevelNeeded ?? 'intermediate'}
                     {goalieRequest.compensation ? ` · ${goalieRequest.compensation}` : ''}
                   </Text>
-                  {goalieRequest.notes ? <Text style={styles.inlineSectionBody}>{goalieRequest.notes}</Text> : null}
                 </View>
               </View>
             ) : null}
@@ -1187,71 +1087,8 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           </FocusCard>
         ) : null}
 
-        {teamMessages.length > 0 ? (
-          <FocusCard focusId={`team:${teamId}:bulletin`} testID="team-bulletin-card" accentColor={primaryColor} style={[styles.messagesCard, publicSurface]}>
-            <Text style={styles.sectionTitle}>Team Bulletin</Text>
-            <View style={styles.messagesList}>
-              {teamMessages.map((message) => (
-                <View key={message.id} style={styles.messageRow}>
-                  <View style={styles.messageHeader}>
-                    <View style={styles.messageTitleWrap}>
-                      <Text style={styles.messageTitle}>
-                        {message.subject ?? 'Team update'}
-                      </Text>
-                      <Text style={styles.messageMeta}>
-                        {message.sentBy?.fullName ?? 'Team'} · {formatRelativeTime(message.createdAt)}
-                      </Text>
-                    </View>
-                    {message.isUrgent ? (
-                      <View style={styles.urgentBadge}>
-                        <Text style={styles.urgentBadgeText}>Urgent</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={styles.messageBody}>{message.message}</Text>
-                </View>
-              ))}
-            </View>
-          </FocusCard>
-        ) : null}
-
         </View> : null}
       </FocusScrollView>
-
-      <Modal visible={reminderModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setReminderModalVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setReminderModalVisible(false)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Send Check-in Reminder</Text>
-              <Pressable onPress={() => setReminderModalVisible(false)} style={styles.modalCloseButton}>
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-            <Text style={styles.modalMeta}>Post an urgent team bulletin for players who still have not responded.</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextarea]}
-              value={reminderMessage}
-              onChangeText={setReminderMessage}
-              placeholder="Write the reminder to your team..."
-              placeholderTextColor={colors.textSecondary}
-              multiline
-              textAlignVertical="top"
-            />
-            <View style={styles.modalButtonRow}>
-              <Pressable style={styles.modalSecondaryButton} onPress={() => setReminderModalVisible(false)}>
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalPrimaryButton, reminderSaving && styles.buttonDisabled]}
-                onPress={() => void handleSendReminder()}
-                disabled={reminderSaving}
-              >
-                <Text style={styles.modalPrimaryButtonText}>{reminderSaving ? 'Sending...' : 'Send Reminder'}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <Modal visible={subModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setSubModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setSubModalVisible(false)}>
@@ -1265,13 +1102,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             <Text style={styles.modalMeta}>
               Invite registered sub or part-time players from this league for {nextOpponent ?? 'your next game'}.
             </Text>
-            <TextInput
-              style={styles.modalInput}
-              value={subInviteMessage}
-              onChangeText={setSubInviteMessage}
-              placeholder="Optional message to the player..."
-              placeholderTextColor={colors.textSecondary}
-            />
             <TextInput
               style={styles.modalInput}
               value={subSearch}
@@ -1339,7 +1169,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
               </Pressable>
             </View>
             <Text style={styles.modalMeta}>
-              Create an open goalie request for {nextOpponent ?? 'this game'} and record the compensation or notes.
+              Create an open goalie request for {nextOpponent ?? 'this game'} using fixed request details.
             </Text>
 
             <Text style={styles.fieldLabel}>Skill level needed</Text>
@@ -1359,24 +1189,20 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             </View>
 
             <Text style={styles.fieldLabel}>Compensation</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={goalieCompensation}
-              onChangeText={setGoalieCompensation}
-              placeholder='Example: "Free", "$20", "Beer"'
-              placeholderTextColor={colors.textSecondary}
-            />
-
-            <Text style={styles.fieldLabel}>Notes</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextarea]}
-              value={goalieNotes}
-              onChangeText={setGoalieNotes}
-              placeholder="Anything the goalie should know..."
-              placeholderTextColor={colors.textSecondary}
-              multiline
-              textAlignVertical="top"
-            />
+            <View style={styles.skillRow}>
+              {GOALIE_COMPENSATION_OPTIONS.map((option) => {
+                const selected = goalieCompensation === option;
+                return (
+                  <Pressable
+                    key={option}
+                    style={[styles.skillPill, selected && styles.skillPillSelected]}
+                    onPress={() => setGoalieCompensation(option)}
+                  >
+                    <Text style={[styles.skillPillText, selected && styles.skillPillTextSelected]}>{option}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
             <View style={styles.modalButtonRow}>
               <Pressable style={styles.modalSecondaryButton} onPress={() => setGoalieModalVisible(false)}>
@@ -1873,61 +1699,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  messagesCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-    padding: 16,
-  },
-  messagesList: {
-    gap: 10,
-  },
-  messageRow: {
-    gap: 8,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderCard,
-  },
-  messageHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  messageTitleWrap: {
-    minWidth: 0,
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 'auto',
-  },
-  messageTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  messageMeta: {
-    marginTop: 2,
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-  messageBody: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.textSecondary,
-  },
-  urgentBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: colors.accentRed + '18',
-    borderWidth: 1,
-    borderColor: colors.accentRed + '30',
-  },
-  urgentBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.accentRed,
-  },
   rosterCard: {
     backgroundColor: colors.bgSurface,
     borderRadius: 16,
@@ -2094,10 +1865,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
     fontSize: 14,
-  },
-  modalTextarea: {
-    minHeight: 104,
-    paddingTop: 12,
   },
   modalButtonRow: {
     flexDirection: 'row',

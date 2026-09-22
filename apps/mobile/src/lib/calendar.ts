@@ -27,7 +27,7 @@ export async function addGameToCalendar(game: {
     startDate,
     endDate,
     location: game.location ?? undefined,
-    notes: 'BLH Hockey Game',
+    notes: 'Hockey Life game',
     alarms: [{ relativeOffset: -120 }, { relativeOffset: -30 }], // 2h and 30min reminders
   });
 

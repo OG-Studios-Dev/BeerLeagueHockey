@@ -188,7 +188,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
         <FocusCard focusId="edit-profile:skill" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>League Match Level</Text>
           <Text style={styles.fieldHint}>
-            Used to recommend BLH leagues when we do not have enough game data to rate you yet.
+            Used to place you in the right Hockey Life division when we do not have enough game data to rate you yet.
           </Text>
           <View style={styles.skillRow}>
             {SKILL_LEVELS.map((skill) => (
