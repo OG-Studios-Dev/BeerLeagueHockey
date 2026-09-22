@@ -252,17 +252,6 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
                   <Text style={styles.actionButtonText}>Availability</Text>
                 </Pressable>
               )}
-              <Pressable
-                style={styles.actionButton}
-                onPress={() => navigation.navigate('InvitePlayers', {
-                  teamId: team.teamId,
-                  leagueId: team.leagueId,
-                  teamName: team.teamName,
-                })}
-              >
-                <Ionicons name="person-add-outline" size={16} color={colors.textPrimary} />
-                <Text style={styles.actionButtonText}>Invite</Text>
-              </Pressable>
             </View>
           </FocusCard>
         ))}

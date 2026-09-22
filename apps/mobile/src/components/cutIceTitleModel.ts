@@ -6,8 +6,8 @@ export const CUT_ICE_EXCLUDED_ROUTES = ['Home', 'TeamDetail', 'LeagueTeamDetail'
 export const CUT_ICE_ROUTE_TITLES: Partial<Record<RegisteredUserScreen, string>> = {
   Splash: 'Hockey Life', Login: 'Sign In', ForgotPassword: 'Reset Password', SignUp: 'Create Account',
   Standings: 'Standings', Schedule: 'Schedule', TeamList: 'Teams', PlayerCard: 'Player Profile',
-  ProfileMain: 'My Profile', EditProfile: 'Edit Profile', NotificationsFeed: 'Notifications', NotificationSettings: 'Notification Settings', CareerStats: 'Career Stats',
-  StatsMain: 'Stats', Leaderboards: 'Leaderboards', CaptainDashboard: 'Captain Dashboard', GameAvailability: 'Game Availability', InvitePlayers: 'Invite Players',
+  ProfileMain: 'My Profile', EditProfile: 'Player Preferences', NotificationsFeed: 'Notifications', NotificationSettings: 'Notification Settings', CareerStats: 'Career Stats',
+  StatsMain: 'Stats', Leaderboards: 'Leaderboards', CaptainDashboard: 'Captain Dashboard', GameAvailability: 'Game Availability',
   TeamsDirectory: 'Teams', PlayersDirectory: 'Players', PlayoffsDirectory: 'Playoffs', NewsFeed: 'News', NewsArticle: 'News Article',
   LeagueHistory: 'League History', GalleryAlbums: 'Gallery', GalleryAlbum: 'Gallery Album', Events: 'Events', Contact: 'Contact', GamePreview: 'Game Preview', GameRecap: 'Game Recap',
   LeaguePlayerCard: 'Player Profile', LeagueGamePreview: 'Game Preview',

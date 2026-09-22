@@ -161,7 +161,6 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
 
   const captainItems: MoreMenuItem[] = input.isCaptain ? [
     { key: 'captain-dashboard', label: 'Captain Dashboard', category: 'Captain', icon: 'shield-outline', destination: { kind: 'native', tab: 'Captain', screen: 'CaptainDashboard' } },
-    { key: 'captain-goalies', label: 'Goalies', category: 'Captain', icon: 'hand-left-outline', destination: { kind: 'external', url: tenantPage(input.leagueSlug, '/captain/goalies') } },
   ] : [];
 
   const customItems: MoreMenuItem[] = (hasTenant ? input.customNavItems ?? [] : []).flatMap((item, index): MoreMenuItem[] => {

@@ -8,6 +8,10 @@ const APPROVED_PUBLIC_URLS = new Set([
   HOCKEY_LIFE_SUPPORT_URL,
 ]);
 
+export function isApprovedPublicLink(url: string) {
+  return APPROVED_PUBLIC_URLS.has(url);
+}
+
 export type PublicLinkResult =
   | { success: true }
   | { success: false; error: string };
@@ -16,7 +20,7 @@ export async function openPublicLink(
   url: string,
   opener: (approvedUrl: string) => Promise<unknown>,
 ): Promise<PublicLinkResult> {
-  if (!APPROVED_PUBLIC_URLS.has(url)) {
+  if (!isApprovedPublicLink(url)) {
     return { success: false, error: 'This link is not available in Hockey Life.' };
   }
 

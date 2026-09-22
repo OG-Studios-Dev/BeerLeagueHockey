@@ -37,13 +37,17 @@ describe('minimum-v1 social surface', () => {
 });
 
 describe('minimum-v1 reviewer controls', () => {
-  it('removes the fake QR and non-copying copy control from captain invitations', () => {
-    const invite = source('src/screens/captain/InvitePlayersScreen.tsx');
+  it('removes the unproven captain invitation action and route from minimum v1', () => {
+    const dashboard = source('src/screens/captain/CaptainDashboardScreen.tsx');
+    assert.doesNotMatch(dashboard, /InvitePlayers|person-add-outline|>Invite</);
 
-    assert.doesNotMatch(invite, /QR Code|qrPlaceholder|qr-code/);
-    assert.doesNotMatch(invite, /handleCopyLink|>Copy</);
-    assert.match(invite, /Share\.share/);
-    assert.match(invite, /Unable to Share Invitation/);
+    for (const relativePath of [
+      'src/navigation/index.tsx',
+      'src/navigation/types.ts',
+      'src/navigation/screenRegistry.ts',
+    ]) {
+      assert.doesNotMatch(source(relativePath), /InvitePlayers/, relativePath);
+    }
   });
 
   it('does not expose generic registration or payment destinations', () => {
@@ -65,7 +69,6 @@ describe('single-league reviewer copy', () => {
       'src/screens/ProfileScreen.tsx',
       'src/screens/games/GameRecapScreen.tsx',
       'src/screens/stats/CareerStatsScreen.tsx',
-      'src/screens/captain/InvitePlayersScreen.tsx',
     ];
 
     for (const relativePath of reachableSources) {
@@ -96,7 +99,9 @@ describe('minimum-v1 permissions and privacy inventory', () => {
     assert.match(privacy, /Profile/i);
     assert.match(privacy, /Push notification/i);
     assert.match(privacy, /Calendar/i);
-    assert.match(privacy, /Photo library/i);
+    assert.match(privacy, /does not request photo-library/i);
+    assert.match(privacy, /does not collect a public player name/i);
+    assert.match(privacy, /league administrators remain responsible for approved identity changes/i);
     assert.match(privacy, /business-owned/i);
     assert.match(privacy, /App Store Connect/i);
     assert.doesNotMatch(privacy, /metadata (?:has been|was) submitted/i);

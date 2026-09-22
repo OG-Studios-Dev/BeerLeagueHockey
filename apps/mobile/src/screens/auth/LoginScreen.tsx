@@ -238,15 +238,33 @@ export default function LoginScreen() {
           </Pressable>
 
           <View style={styles.legalLinks}>
-            <Pressable onPress={() => void handlePublicLink(PRIVACY_URL)}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open Privacy Policy"
+              accessibilityHint="Opens the Hockey Life privacy policy in your browser"
+              style={styles.legalLink}
+              onPress={() => void handlePublicLink(PRIVACY_URL)}
+            >
               <Text style={styles.legalText}>Privacy Policy</Text>
             </Pressable>
             <Text style={styles.legalSeparator}>|</Text>
-            <Pressable onPress={() => void handlePublicLink(TERMS_URL)}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open Terms of Service"
+              accessibilityHint="Opens the Hockey Life terms of service in your browser"
+              style={styles.legalLink}
+              onPress={() => void handlePublicLink(TERMS_URL)}
+            >
               <Text style={styles.legalText}>Terms of Service</Text>
             </Pressable>
             <Text style={styles.legalSeparator}>|</Text>
-            <Pressable onPress={() => void handlePublicLink(HOCKEY_LIFE_SUPPORT_URL)}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open Support"
+              accessibilityHint="Opens Hockey Life support in your browser"
+              style={styles.legalLink}
+              onPress={() => void handlePublicLink(HOCKEY_LIFE_SUPPORT_URL)}
+            >
               <Text style={styles.legalText}>Support</Text>
             </Pressable>
           </View>
@@ -388,6 +406,10 @@ const styles = StyleSheet.create({
   legalText: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  legalLink: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   legalSeparator: {
     color: colors.textSecondary,

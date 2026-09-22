@@ -58,7 +58,8 @@ describe('mobile More catalog', () => {
     assert.ok(!labels.includes('Register'));
     assert.ok(labels.includes('My Page'));
     assert.ok(labels.includes('Captain Dashboard'));
-    assert.ok(labels.includes('Goalies'));
+    assert.ok(!labels.includes('Goalies'));
+    assert.equal(labels.some((label) => label.includes('captain/goalies')), false);
     assert.ok(!labels.includes('News'));
     assert.ok(!labels.includes('Gallery'));
     assert.equal(buildMoreMenu({ ...base, registrationOpen: true }).some((item) => item.key === 'league-register'), false);

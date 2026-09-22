@@ -26,6 +26,7 @@ import { useAccessibilityPreferences } from '../context/AccessibilityPreferences
 import { useAuth } from '../context/AuthContext';
 import { useFocusPauseLease } from '../context/FocusPauseContext';
 import { useLeague } from '../context/LeagueContext';
+import { isApprovedPublicLink, openPublicLink } from '../lib/publicLinks';
 import colors from '../theme/colors';
 import { getSurfacePalette } from '../theme/ui';
 import { buildMoreMenu, type DockDestination, type MoreMenuItem } from './dockMenu';
@@ -168,6 +169,12 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
 
   const navigate = React.useCallback((destination: DockDestination) => {
     if (destination.kind === 'external') {
+      if (isApprovedPublicLink(destination.url)) {
+        void openPublicLink(destination.url, Linking.openURL).then((result) => {
+          if (!result.success) Alert.alert('Unable to Open Link', result.error);
+        });
+        return;
+      }
       void Linking.openURL(destination.url).catch(() => {
         Alert.alert('Unable to Open Link', 'This link could not be opened. Please try again.');
       });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
 
 function mountNotifications(getUser: () => Promise<unknown>) {
   const harness = createHookHarness();
@@ -40,6 +40,34 @@ function mountNotifications(getUser: () => Promise<unknown>) {
   return { harness, navigationCalls };
 }
 
+async function mountNotificationSettings() {
+  const harness = createHookHarness();
+  const passthrough = ({ children, ...props }: Record<string, unknown>) => createElement('View', props, children);
+  const Screen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
+    new URL('../../src/screens/NotificationSettingsScreen.tsx', import.meta.url),
+    {
+      react: harness.react,
+      'react-native': {
+        ActivityIndicator: 'ActivityIndicator', StyleSheet: { create: <T>(styles: T) => styles },
+        Switch: 'Switch', Text: 'Text', View: 'View',
+      },
+      'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+      '@expo/vector-icons': { Ionicons: 'Ionicons' },
+      'expo-secure-store': { getItemAsync: async () => null, setItemAsync: async () => undefined },
+      '../components/CardFocus': { FocusCard: passthrough, FocusScrollView: passthrough },
+      '../context/LeagueContext': { useLeague: () => ({ activeLeague: null }) },
+      '../lib/notifications': { cancelAllGameReminders: async () => undefined, registerForPushNotifications: async () => null, scheduleGameReminder: async () => undefined },
+      '../lib/supabase/data': { getSchedule: async () => [], getCurrentSeason: async () => null, mapGameStatus: () => 'Upcoming' },
+      '../lib/supabase/client': { supabase: { auth: { getUser: async () => ({ data: { user: null } }) } } },
+      '../theme/colors': { default: { primary: '#0ff', bgBase: '#000', textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333' } },
+    },
+  ).default;
+  harness.mount(() => Screen({ navigation: { goBack: () => undefined } }));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  harness.render();
+  return harness;
+}
+
 describe('Notifications settings action', () => {
   it('remains actionable while the independent feed request is pending', () => {
     const runtime = mountNotifications(() => new Promise(() => {}));
@@ -65,5 +93,24 @@ describe('Notifications settings action', () => {
       assert.equal(Boolean(findNode(runtime.harness.output, (node) => node.props.testID === 'notifications-feed-error')), scenario.error);
       runtime.harness.unmount();
     }
+  });
+
+  it('renders only the working local game-reminder setting with truthful scope', async () => {
+    const harness = await mountNotificationSettings();
+    const copy = nodeText(harness.output);
+    assert.match(copy, /Game Reminders/);
+    assert.match(copy, /Local alerts 2 hours before currently listed upcoming team games/);
+    assert.doesNotMatch(copy, /Check-in Reminders|Score Alerts|League Announcements/);
+
+    const switches: unknown[] = [];
+    const visit = (root: unknown) => {
+      if (Array.isArray(root)) return root.forEach(visit);
+      if (!root || typeof root !== 'object' || !('props' in root)) return;
+      const node = root as { type: unknown; props: Record<string, unknown> };
+      if (node.type === 'Switch') switches.push(node);
+      visit(node.props.children);
+    };
+    visit(harness.output);
+    assert.equal(switches.length, 1);
   });
 });

@@ -19,7 +19,7 @@ type DockState = {
 
 const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Stats', 'Team', 'Captain', 'Profile', 'LeaguePages'];
 
-function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean; member?: boolean } = {}) {
+function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean; member?: boolean; failLinks?: boolean } = {}) {
   const harness = createHookHarness();
   let retryCount = 0;
   let reportedDockHeight: number | undefined;
@@ -30,6 +30,8 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
     customNavItems: [], team: null, retry: () => { retryCount += 1; }, ...initialData,
   };
   const openedUrls: string[] = [];
+  const publicLinkCalls: string[] = [];
+  const alerts: Array<{ title: string; message?: string }> = [];
   const keyboardListeners = new Map<string, Set<() => void>>();
   const animationCompletions: Array<(result: { finished: boolean }) => void> = [];
   let animationStops = 0;
@@ -58,6 +60,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
       'expo-linear-gradient': { LinearGradient: (props: Record<string, unknown>) => createElement('LinearGradient', props, props.children) },
       'react-native': {
         ActivityIndicator: 'ActivityIndicator',
+        Alert: { alert: (title: string, message?: string) => alerts.push({ title, message }) },
         Animated: { Value: AnimatedValue, View: 'AnimatedView', Image: 'AnimatedImage', spring: immediateAnimation, timing: immediateAnimation },
         Keyboard: {
           addListener: (event: string, listener: () => void) => {
@@ -68,7 +71,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
           },
         },
         Platform: { OS: 'ios' },
-        Linking: { openURL: async (url: string) => { openedUrls.push(url); } },
+        Linking: { openURL: async (url: string) => { openedUrls.push(url); if (options.failLinks) throw new Error('synthetic open failure'); } },
         Modal: 'Modal', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
         StyleSheet: { create: <T>(value: T) => value, absoluteFill: {}, absoluteFillObject: {}, hairlineWidth: 1 },
         useWindowDimensions: () => ({ width: 390, height: 844 }),
@@ -86,6 +89,18 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
         }),
       },
       '../context/FocusPauseContext': { useFocusPauseLease: (active: boolean) => { focusPauseStates.push(active); } },
+      '../lib/publicLinks': {
+        isApprovedPublicLink: (url: string) => [
+          'https://hockey-life.beerleaguehockey.ca/contact',
+          'https://beerleaguehockey.ca/privacy',
+          'https://beerleaguehockey.ca/terms',
+        ].includes(url),
+        openPublicLink: async (url: string, opener: (value: string) => Promise<unknown>) => {
+          publicLinkCalls.push(url);
+          try { await opener(url); return { success: true }; }
+          catch { return { success: false, error: 'This link could not be opened. Please try again.' }; }
+        },
+      },
       '../theme/colors': { default: { primary: '#0ff', brandArena: '#f0f', textSecondary: '#aaa', tabInactive: '#999', textPrimary: '#fff' } },
       './MobileShellDataContext': { useMobileShellData: () => data },
     },
@@ -124,7 +139,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
     harness.render();
   };
   return {
-    harness, mount, openMore, navigationCalls, emittedEvents, openedUrls, focusPauseStates,
+    harness, mount, openMore, navigationCalls, emittedEvents, openedUrls, publicLinkCalls, alerts, focusPauseStates,
     retryCount: () => retryCount,
     reportedDockHeight: () => reportedDockHeight,
     emitKeyboard: (event: string) => {
@@ -298,7 +313,7 @@ describe('MobileWebDock component integration', () => {
     fixture.openMore();
     const sheet = findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet');
 
-    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Support', 'Privacy', 'Terms', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Goalies', 'Long custom league handbook link that must wrap in full'];
+    const expected = ['Teams', 'Players', 'Playoffs', 'News', 'History', 'Gallery', 'Events', 'Contact', 'Support', 'Privacy', 'Terms', 'My Page', 'Account', 'Notifications', 'Settings', 'Captain Dashboard', 'Long custom league handbook link that must wrap in full'];
     for (const label of expected) {
       const matches: unknown[] = [];
       const visit = (root: unknown) => {
@@ -313,9 +328,34 @@ describe('MobileWebDock component integration', () => {
     }
     assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-app-home'), undefined, 'the league identity row replaces the duplicate catalog Home row');
     assert.ok(findNode(sheet, (node) => node.props.testID === 'more-league-home'));
+    assert.equal(findNode(sheet, (node) => node.props.accessibilityLabel === 'Goalies'), undefined);
     assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-league-teams-external'), undefined);
     assert.equal(findNode(sheet, (node) => node.props.testID === 'more-item-league-register-external'), undefined);
     assert.ok(findNode(sheet, (node) => node.props.testID?.startsWith('more-item-custom-') && node.props.testID.endsWith('-external')));
+  });
+
+  it('routes each approved public link through the allowlist and alerts when opening is rejected', async () => {
+    const fixture = createDockFixture({}, { failLinks: true });
+    fixture.mount();
+
+    for (const itemKey of ['app-support', 'app-privacy', 'app-terms']) {
+      fixture.openMore();
+      const item = findNode(fixture.harness.output, (node) => node.props.testID === `more-item-${itemKey}`);
+      assert.ok(item);
+      item.props.onPress();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      fixture.harness.render();
+    }
+
+    assert.deepEqual(fixture.publicLinkCalls, [
+      'https://hockey-life.beerleaguehockey.ca/contact',
+      'https://beerleaguehockey.ca/privacy',
+      'https://beerleaguehockey.ca/terms',
+    ]);
+    assert.deepEqual(fixture.alerts, Array.from({ length: 3 }, () => ({
+      title: 'Unable to Open Link',
+      message: 'This link could not be opened. Please try again.',
+    })));
   });
 
   it('renders the enlarged crest in a dedicated center column without visible Team text', () => {

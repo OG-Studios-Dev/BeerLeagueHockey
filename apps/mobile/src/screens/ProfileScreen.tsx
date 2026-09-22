@@ -1251,7 +1251,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             )}
             <Pressable style={[styles.settingRow, { borderBottomWidth: 0 }]} onPress={() => navigation.navigate('EditProfile')}>
               <Ionicons name="create-outline" size={18} color={primaryColor} />
-              <Text style={styles.settingLabel}>Edit Profile</Text>
+              <Text style={styles.settingLabel}>Player Preferences</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             {!isGuest ? (

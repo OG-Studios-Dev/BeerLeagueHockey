@@ -17,14 +17,6 @@
       "expo-asset",
       "expo-secure-store",
       "expo-web-browser",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Hockey Life lets you choose a photo for your player profile.",
-          "cameraPermission": false,
-          "microphonePermission": false
-        }
-      ],
       "expo-notifications",
       "expo-font"
     ],
@@ -36,7 +28,6 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCalendarsUsageDescription": "Hockey Life adds your hockey games to your calendar.",
-        "NSPhotoLibraryUsageDescription": "Hockey Life lets you choose a photo for your player profile.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -49,7 +40,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#111717"
       },
-      "permissions": []
+      "permissions": [],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "extra": {
       "eas": {

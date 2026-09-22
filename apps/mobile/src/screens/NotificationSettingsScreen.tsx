@@ -22,16 +22,10 @@ const PREFS_KEY = 'blh_notification_prefs';
 
 type NotifPrefs = {
   gameReminders: boolean;
-  checkinReminders: boolean;
-  scoreAlerts: boolean;
-  leagueAnnouncements: boolean;
 };
 
 const DEFAULT_PREFS: NotifPrefs = {
   gameReminders: false,
-  checkinReminders: false,
-  scoreAlerts: false,
-  leagueAnnouncements: false,
 };
 
 export default function NotificationSettingsScreen({ navigation }: { navigation: any }) {
@@ -42,7 +36,7 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
   React.useEffect(() => {
     SecureStore.getItemAsync(PREFS_KEY)
       .then((val) => {
-        if (val) setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(val) });
+        if (val) setPrefs({ gameReminders: JSON.parse(val).gameReminders === true });
       })
       .finally(() => setLoading(false));
   }, []);
@@ -92,31 +86,13 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
     await savePrefs({ ...prefs, gameReminders: val });
   }
 
-  const rows: { key: keyof NotifPrefs; label: string; subtitle: string; icon: string; onToggle?: (val: boolean) => Promise<void> }[] = [
+  const rows: { key: keyof NotifPrefs; label: string; subtitle: string; icon: string; onToggle: (val: boolean) => Promise<void> }[] = [
     {
       key: 'gameReminders',
       label: 'Game Reminders',
-      subtitle: '2 hours before each game',
+      subtitle: 'Local alerts 2 hours before currently listed upcoming team games',
       icon: 'notifications-outline',
       onToggle: handleGameRemindersToggle,
-    },
-    {
-      key: 'checkinReminders',
-      label: 'Check-in Reminders',
-      subtitle: 'Reminder to check in 24h before game',
-      icon: 'checkmark-circle-outline',
-    },
-    {
-      key: 'scoreAlerts',
-      label: 'Score Alerts',
-      subtitle: 'When your team\'s game goes final',
-      icon: 'trophy-outline',
-    },
-    {
-      key: 'leagueAnnouncements',
-      label: 'League Announcements',
-      subtitle: 'New posts and updates from your league',
-      icon: 'megaphone-outline',
     },
   ];
 
@@ -144,11 +120,7 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
               <Switch
                 value={prefs[row.key]}
                 onValueChange={async (val) => {
-                  if (row.onToggle) {
-                    await row.onToggle(val);
-                  } else {
-                    await savePrefs({ ...prefs, [row.key]: val });
-                  }
+                  await row.onToggle(val);
                 }}
                 trackColor={{ false: colors.bgInteractive, true: colors.primary }}
                 thumbColor="#fff"

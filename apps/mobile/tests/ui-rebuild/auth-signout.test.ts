@@ -16,12 +16,13 @@ function deferred<T>() {
 }
 
 type AuthValue = {
-  session: any;
-  user: any;
+  session: { user: { id: string } } | null;
+  user: { id: string } | null;
   isLoading: boolean;
   isGuest: boolean;
   continueAsGuest: () => void;
   exitGuest: () => void;
+  signUpWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<{ error: Error | null }>;
 };
 
@@ -32,6 +33,7 @@ function createAuthFixture(options: {
   const harness = createHookHarness();
   let authListener: ((event: string, session: any) => void) | undefined;
   let providerValue: AuthValue | undefined;
+  const signUpCalls: unknown[] = [];
   const context = {
     Provider: ({ value }: { value: AuthValue }) => {
       providerValue = value;
@@ -48,7 +50,7 @@ function createAuthFixture(options: {
       },
       signOut: options.signOut ?? (async () => ({ error: null })),
       signInWithPassword: async () => ({ error: null }),
-      signUp: async () => ({ error: null }),
+      signUp: async (payload: unknown) => { signUpCalls.push(payload); return { error: null }; },
     },
   };
   const exports = compileCommonJs<{ AuthProvider: (props: { children: null }) => unknown }>(
@@ -78,6 +80,7 @@ function createAuthFixture(options: {
       assert.ok(providerValue);
       return providerValue;
     },
+    signUpCalls,
     unmount: () => harness.unmount(),
   };
 }
@@ -196,5 +199,14 @@ describe('AuthProvider signOut', () => {
 
     const result = await fixture.value.signOut();
     assert.equal(result.error?.message, 'Secure storage unavailable');
+  });
+});
+
+describe('AuthProvider account creation identity boundary', () => {
+  it('creates a private auth account without user-controlled public profile metadata', async () => {
+    const fixture = createAuthFixture();
+
+    assert.deepEqual(await fixture.value.signUpWithEmail('player@example.test', 'password123'), { error: null });
+    assert.deepEqual(fixture.signUpCalls, [{ email: 'player@example.test', password: 'password123' }]);
   });
 });

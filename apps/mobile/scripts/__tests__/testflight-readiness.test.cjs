@@ -54,7 +54,6 @@ test('pins the Expo SDK 54 packages to the supported patch set', () => {
     'expo-constants': '~18.0.14',
     'expo-crypto': '~15.0.9',
     'expo-font': '~14.0.12',
-    'expo-image-picker': '~17.0.11',
     'expo-linking': '~8.0.12',
     'expo-notifications': '~0.32.17',
     'expo-web-browser': '~15.0.11',
