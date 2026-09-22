@@ -76,7 +76,7 @@ function renderProfile({
       useAuth: () => ({
         isGuest,
         session: isGuest ? null : { user: { id: 'user-1' } },
-        signOut: async () => { signOutCalls.push(true); return signOutImpl ? signOutImpl() : signOutResult; },
+        signOut: async (options?: unknown) => { signOutCalls.push(options); return signOutImpl ? signOutImpl() : signOutResult; },
         exitGuest: () => exitGuestCalls.push(true),
       }),
     },
@@ -267,6 +267,7 @@ describe('Profile account action', () => {
     await rendered.alerts[1]?.buttons?.[1]?.onPress();
     assert.equal(rendered.deleteAccountCalls.length, 1);
     assert.equal(rendered.signOutCalls.length, 1);
+    assert.deepEqual(rendered.signOutCalls[0], { pushTokenAlreadyCleared: true });
   });
 
   it('keeps deletion unavailable to guests and reports organization ownership without signing out', async () => {

@@ -20,12 +20,13 @@ type AuthValue = {
   user: any;
   isLoading: boolean;
   isGuest: boolean;
-  signOut: () => Promise<{ error: Error | null }>;
+  signOut: (options?: { pushTokenAlreadyCleared?: boolean }) => Promise<{ error: Error | null }>;
 };
 
 function createAuthFixture(options: {
   getSession?: () => Promise<any>;
   signOut?: (...args: any[]) => Promise<any>;
+  clearPushToken?: (userId: string) => Promise<{ error: { message: string } | null }>;
 } = {}) {
   const harness = createHookHarness();
   let authListener: ((event: string, session: any) => void) | undefined;
@@ -48,6 +49,16 @@ function createAuthFixture(options: {
       signInWithPassword: async () => ({ error: null }),
       signUp: async () => ({ error: null }),
     },
+    from: (table: string) => ({
+      update: (values: unknown) => ({
+        eq: async (column: string, userId: string) => {
+          assert.equal(table, 'profiles');
+          assert.deepEqual(values, { push_token: null });
+          assert.equal(column, 'id');
+          return options.clearPushToken?.(userId) ?? { error: null };
+        },
+      }),
+    }),
   };
   const exports = compileCommonJs<{ AuthProvider: (props: { children: null }) => unknown }>(
     new URL('../../src/context/AuthContext.tsx', import.meta.url),
@@ -121,6 +132,69 @@ describe('AuthProvider bootstrap freshness', () => {
 });
 
 describe('AuthProvider signOut', () => {
+  it('clears the authenticated profile push token before ending the local session', async () => {
+    const calls: string[] = [];
+    const fixture = createAuthFixture({
+      clearPushToken: async (userId) => {
+        calls.push(`clear:${userId}`);
+        return { error: null };
+      },
+      signOut: async () => {
+        calls.push('signOut');
+        return { error: null };
+      },
+    });
+    fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
+
+    assert.deepEqual(await fixture.value.signOut(), { error: null });
+    assert.deepEqual(calls, ['clear:account-a', 'signOut']);
+  });
+
+  it('keeps the session active and returns safe feedback when push-token cleanup fails', async () => {
+    let signOutCalls = 0;
+    const fixture = createAuthFixture({
+      clearPushToken: async () => ({ error: { message: 'private schema detail' } }),
+      signOut: async () => {
+        signOutCalls += 1;
+        return { error: null };
+      },
+    });
+    fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
+
+    const result = await fixture.value.signOut();
+
+    assert.equal(
+      result.error?.message,
+      'Unable to turn off notifications for this account. Check your connection and try logging out again.',
+    );
+    assert.equal(result.error?.message.includes('private schema detail'), false);
+    assert.equal(signOutCalls, 0);
+    assert.equal(fixture.value.user?.id, 'account-a');
+  });
+
+  it('skips the redundant profile write after verified server-side account deletion', async () => {
+    let pushTokenClears = 0;
+    let localSignOuts = 0;
+    const fixture = createAuthFixture({
+      clearPushToken: async () => {
+        pushTokenClears += 1;
+        return { error: null };
+      },
+      signOut: async () => {
+        localSignOuts += 1;
+        return { error: null };
+      },
+    });
+    fixture.emit('SIGNED_IN', { user: { id: 'deleted-account' } });
+
+    assert.deepEqual(
+      await fixture.value.signOut({ pushTokenAlreadyCleared: true }),
+      { error: null },
+    );
+    assert.equal(pushTokenClears, 0);
+    assert.equal(localSignOuts, 1);
+  });
+
   it('signs out only this device and closes guest mode after success', async () => {
     const calls: unknown[] = [];
     const fixture = createAuthFixture({

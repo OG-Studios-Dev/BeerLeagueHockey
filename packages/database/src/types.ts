@@ -7926,6 +7926,7 @@ export type Database = {
           photo_url: string | null
           position: string | null
           province: string | null
+          push_token: string | null
           role: Database["public"]["Enums"]["user_role"] | null
           security_answer_hash: string | null
           security_question: string | null
@@ -7966,6 +7967,7 @@ export type Database = {
           photo_url?: string | null
           position?: string | null
           province?: string | null
+          push_token?: string | null
           role?: Database["public"]["Enums"]["user_role"] | null
           security_answer_hash?: string | null
           security_question?: string | null
@@ -8006,6 +8008,7 @@ export type Database = {
           photo_url?: string | null
           position?: string | null
           province?: string | null
+          push_token?: string | null
           role?: Database["public"]["Enums"]["user_role"] | null
           security_answer_hash?: string | null
           security_question?: string | null

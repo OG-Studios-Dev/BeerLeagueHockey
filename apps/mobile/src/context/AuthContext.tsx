@@ -15,10 +15,12 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   continueAsGuest: () => void;
   exitGuest: () => void;
-  signOut: () => Promise<{ error: Error | null }>;
+  signOut: (options?: { pushTokenAlreadyCleared?: boolean }) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const PUSH_TOKEN_CLEAR_ERROR =
+  'Unable to turn off notifications for this account. Check your connection and try logging out again.';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -89,7 +91,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuest(false);
   };
 
-  const signOut = async () => {
+  const signOut = async (options?: { pushTokenAlreadyCleared?: boolean }) => {
+    const userId = session?.user.id;
+    if (userId && !options?.pushTokenAlreadyCleared) {
+      try {
+        const { error: pushTokenError } = await supabase
+          .from('profiles')
+          .update({ push_token: null })
+          .eq('id', userId);
+        if (pushTokenError) {
+          return { error: new Error(PUSH_TOKEN_CLEAR_ERROR) };
+        }
+      } catch {
+        return { error: new Error(PUSH_TOKEN_CLEAR_ERROR) };
+      }
+    }
+
     try {
       const { error } = await supabase.auth.signOut({ scope: 'local' });
       if (error) {

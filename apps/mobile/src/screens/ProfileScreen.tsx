@@ -701,7 +701,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         return;
       }
 
-      const { error: signOutError } = await signOut();
+      const { error: signOutError } = await signOut({ pushTokenAlreadyCleared: true });
       if (signOutError) {
         Alert.alert(
           'Account Deleted',
