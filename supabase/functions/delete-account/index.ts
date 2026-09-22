@@ -2,7 +2,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-import { createAppleAuthorizationRevoker } from './apple.ts';
+import { createAppleAuthorizationService } from './apple.ts';
 import { createDeleteAccountHandler } from './handler.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -23,7 +23,7 @@ if (
   throw new Error('Missing required account-deletion server configuration.');
 }
 
-const revokeAppleAuthorizationCode = createAppleAuthorizationRevoker({
+const appleAuthorization = createAppleAuthorizationService({
   teamId: APPLE_TEAM_ID,
   keyId: APPLE_KEY_ID,
   clientId: APPLE_CLIENT_ID,
@@ -37,7 +37,7 @@ const deleteAccountHandler = createDeleteAccountHandler(() =>
       persistSession: false,
     },
   }),
-  { revokeAppleAuthorizationCode },
+  { appleAuthorization },
 );
 
 Deno.serve(deleteAccountHandler);

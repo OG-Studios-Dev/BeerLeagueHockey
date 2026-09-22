@@ -31,11 +31,15 @@ credential purge so the deleted profile cannot continue making server writes.
 ## In-app deletion
 
 Profile includes a two-confirmation permanent deletion action. The server
-derives the user only from the verified bearer JWT. For Apple-linked accounts,
-the app first asks Apple for a fresh authorization code; the server exchanges
-and revokes it before storage or database mutation. Provider failure blocks
-deletion. A durable `apple_revoked_at` marker makes a database-failure retry
-independent of a second Apple grant.
+derives the user only from the verified bearer JWT. The app first asks the
+server whether Apple reauthentication is required and does not decide from
+client provider metadata. For an Apple-linked account, it then asks Apple for a
+fresh authorization code; the server exchanges it and verifies the
+Apple-signed subject against the account's server-side Apple
+identity, durably stages the server-returned revocation token, and then revokes
+it before storage or database mutation. Provider/network and marker failures
+retain server-only retry state. The client never sends a refresh/access/provider
+token or Apple secret.
 
 The deletion path:
 
@@ -43,8 +47,11 @@ The deletion path:
   validated ownership prefixes;
 - deletes contact/profile, security, messaging, notification, current-access,
   and unfinished workflow data;
-- inactivates roster rows, removes leadership/current authorization, and keeps
-  jersey/position and completed-game appearance/stat history linked to an
+- deletes or deactivates open/future check-ins, availability, invitations,
+  spare/draft pools, opt-ins, duties, assignments, scorekeeper swaps,
+  duty-rotation entries and lineup selections;
+- removes leadership/current authorization and keeps only roster rows tied to
+  completed-game history, with jersey/position and completed stats linked to an
   anonymized historical profile;
 - retains signed waivers with their minimum evidentiary fields; these records
   are legally retained and are **not anonymous**;

@@ -188,7 +188,7 @@ function formatRecord(wins: number, losses: number, ties: number) {
 }
 
 export default function ProfileScreen({ navigation }: { navigation: any }) {
-  const { isGuest, user, exitGuest, signOut } = useAuth();
+  const { isGuest, exitGuest, signOut } = useAuth();
   const {
     activeLeague,
     activeTheme,
@@ -695,11 +695,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     setIsDeletingAccount(true);
 
     try {
-      const providers = user?.app_metadata?.providers;
-      const appleLinked = user?.app_metadata?.provider === 'apple'
-        || (Array.isArray(providers) && providers.includes('apple'))
-        || user?.identities?.some((identity) => identity.provider === 'apple') === true;
-      const { error } = await deleteCurrentAccount({ appleLinked });
+      const { error } = await deleteCurrentAccount();
       if (error) {
         Alert.alert('Unable to Delete Account', error.message);
         return;

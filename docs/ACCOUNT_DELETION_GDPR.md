@@ -41,18 +41,35 @@ A first-attempt failure leaves only that step's minimum retry payload and never
 marks overall completion. Immediate mobile deletion creates the same state and
 can therefore be finished by the scheduled processor.
 
-Organization and league ownership are checked under the profile lock. Constraint
-triggers also prevent a deleting user from acquiring either ownership path until
-the state reaches completion, closing the precheck/mutation race.
+Organization and league ownership preflight and every organization/league
+ownership writer acquire the same per-user advisory transaction lock. The
+preflight rechecks ownership after locking and inserts deletion state before the
+lock is released. Writer triggers reject deleting, deleted, and authless
+profiles, closing the precheck/mutation race for `owner_user_id`, `owner_id`,
+the authorization-bearing `created_by` path, organization memberships, and
+explicit league-ownership rows. Promotions/updates on those rows recheck the
+same invariant after taking the lock.
 
 ## Sign in with Apple
 
-For a verified Apple-linked user, the native app performs deletion-time Apple
-reauthentication and sends only the one-time authorization code. The Edge
-Function mints an ES256 Apple client secret using server configuration,
-exchanges the code, and revokes the returned refresh/access token. It records a
-durable revocation marker before storage or DB mutation. Provider failure stops
-deletion; a later DB failure can retry without another Apple grant.
+The native app first invokes deletion without deciding provider linkage from
+client metadata. If server-derived `auth.identities` state requires Apple, the
+server requests deletion-time reauthentication and the app retries with only
+the one-time authorization code. The Edge Function mints an ES256 Apple client
+secret using server configuration and
+exchanges the code. It verifies the Apple-signed identity token (`iss`, `aud`,
+expiry, signature, and subject) and requires that subject to equal the Apple
+identity read server-side from `auth.identities`. Before calling revocation, it
+stores the server-returned refresh/access token in a client-inaccessible retry
+table. Provider/network failure leaves that token retryable. Only provider
+success records `apple_revoked_at` and removes the token in the same database
+transaction; a marker failure therefore remains retryable without another
+client code or client-supplied token. The marker also stores the exact revoked
+subject. Execution rechecks that the current server identity has exactly that
+subject; a changed binding invalidates the marker and requires fresh
+reauthorization. If the identity is unlinked after a server-verified token is
+staged, that durable token still must be revoked and cleared; database deletion
+cannot bypass a remaining provider secret.
 
 Required server-only secrets are `APPLE_TEAM_ID`, `APPLE_KEY_ID`,
 `APPLE_CLIENT_ID`, and `APPLE_PRIVATE_KEY_P8`. Apple prerequisites are an active
@@ -92,11 +109,17 @@ diagnostic bug reports, contact submissions linked by exact normalized email,
 future availability, unpaid/unsigned registration workflows, provider payment
 identifiers, metadata, idempotency keys, reminder state, and authored free text.
 
-Historical hockey facts remain: an anonymized profile UUID/name, completed-game
-stats and appearances, inactive historical roster team/season/jersey/position,
-badges, completed attendance categories, accepted substitution facts, and
-filled goalie-marketplace facts. These rows confer no current membership,
-leadership, or authorization.
+Historical hockey facts remain only under completed-state predicates: an
+anonymized profile UUID/name, completed-game stats and appearances, inactive
+rosters whose interval covers a completed game, badges, completed attendance,
+accepted completed-game substitutions, and filled completed-game goalie facts.
+Open/future check-ins, availability, substitutions, captain/player invitations,
+spare/draft pools, opt-ins, duties, scorekeeper assignments, and lineup JSON are
+deleted, deactivated, or stripped of the UUID. Organization/league access rows,
+scorekeeper swaps, and duty-rotation selection arrays are also removed. Paid or
+waiver-backed registrations are forced to `cancelled` and lose team/jersey
+assignments; non-terminal suspensions are deleted, while only minimized
+`served`/`denied` discipline facts may remain.
 
 Signed waivers retain signature/name, signing IP, acceptance timestamps,
 document version/hash, and linkage needed as evidence. They are legally
@@ -117,7 +140,8 @@ Postgres-owned functions in `public`.
 ## Rollout and stop conditions
 
 Apply prior lane migrations first, then
-`20260922120000_account_deletion_review_corrections.sql`; deploy server functions
+`20260922120000_account_deletion_review_corrections.sql` and
+`20260922170000_account_deletion_correction_pass_2.sql`; deploy server functions
 before the matching mobile client. Configure Apple secrets and external provider
 keys before allowing Apple deletion. Run the disposable SQL/live matrix and
 external-provider failure/retry cases before release.

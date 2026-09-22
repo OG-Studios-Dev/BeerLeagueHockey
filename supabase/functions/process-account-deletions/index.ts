@@ -3,6 +3,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
 
+import { createAppleAuthorizationService } from '../delete-account/apple.ts';
 import { listOwnedProfileImageObjects } from '../delete-account/handler.ts';
 import { processExternalDeletionSteps, type ExternalDeletionState } from './processor.ts';
 
@@ -10,12 +11,25 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+const APPLE_TEAM_ID = Deno.env.get('APPLE_TEAM_ID');
+const APPLE_KEY_ID = Deno.env.get('APPLE_KEY_ID');
+const APPLE_CLIENT_ID = Deno.env.get('APPLE_CLIENT_ID');
+const APPLE_PRIVATE_KEY_P8 = Deno.env.get('APPLE_PRIVATE_KEY_P8');
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY || !RESEND_API_KEY) {
+if (
+  !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY || !RESEND_API_KEY
+  || !APPLE_TEAM_ID || !APPLE_KEY_ID || !APPLE_CLIENT_ID || !APPLE_PRIVATE_KEY_P8
+) {
   throw new Error('Missing required account-deletion processor configuration.');
 }
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-11-20.acacia' });
+const appleAuthorization = createAppleAuthorizationService({
+  teamId: APPLE_TEAM_ID,
+  keyId: APPLE_KEY_ID,
+  clientId: APPLE_CLIENT_ID,
+  privateKeyP8: APPLE_PRIVATE_KEY_P8,
+});
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
@@ -113,9 +127,42 @@ Deno.serve(async (request) => {
           p_user_id: deletion.user_id,
         });
         if (prepareError) throw new Error('Deletion preflight failed.');
-        const prepared = preparation as { apple_required?: boolean; apple_revoked?: boolean } | null;
+        const prepared = preparation as {
+          apple_required?: boolean;
+          apple_revoked?: boolean;
+          apple_subject?: string;
+          apple_retry_ready?: boolean;
+        } | null;
         if (prepared?.apple_required && !prepared.apple_revoked) {
-          throw new Error('Apple reauthentication is required before scheduled deletion can continue.');
+          if (!prepared.apple_retry_ready || !prepared.apple_subject) {
+            throw new Error('Apple reauthentication is required before scheduled deletion can continue.');
+          }
+          const { data: retry, error: retryError } = await supabase.rpc(
+            'get_account_apple_revocation_retry',
+            { p_user_id: deletion.user_id },
+          );
+          const retryState = retry as {
+            apple_subject?: unknown;
+            revocation_token?: unknown;
+            token_type_hint?: unknown;
+          } | null;
+          if (
+            retryError
+            || retryState?.apple_subject !== prepared.apple_subject
+            || typeof retryState.revocation_token !== 'string'
+            || (retryState.token_type_hint !== 'refresh_token'
+              && retryState.token_type_hint !== 'access_token')
+          ) {
+            throw new Error('Apple revocation retry state is unavailable.');
+          }
+          await appleAuthorization.revokeToken({
+            revocationToken: retryState.revocation_token,
+            tokenTypeHint: retryState.token_type_hint,
+          });
+          const { error: appleMarkerError } = await supabase.rpc('mark_account_apple_revoked', {
+            p_user_id: deletion.user_id,
+          });
+          if (appleMarkerError) throw new Error('Apple revocation marker failed.');
         }
         await removeOwnedStorage(deletion.user_id);
         const { error: databaseError } = await supabase.rpc('execute_account_deletion', {
@@ -123,11 +170,11 @@ Deno.serve(async (request) => {
         });
         if (databaseError) throw new Error('Database deletion failed.');
       }
-    } catch (error) {
+    } catch {
       results.failed += 1;
       await supabase.from('account_deletion_log').update({
         status: 'failed',
-        error_message: error instanceof Error ? error.message : 'Deletion failed.',
+        error_message: 'Deletion attempt failed; retry is required.',
       }).eq('id', deletion.id);
     }
   }
@@ -162,10 +209,10 @@ Deno.serve(async (request) => {
         },
       });
       results.completed += 1;
-    } catch (error) {
+    } catch {
       results.failed += 1;
       await supabase.from('account_deletion_state').update({
-        last_error: error instanceof Error ? error.message : 'External deletion step failed.',
+        last_error: 'External deletion attempt failed; retry is required.',
         updated_at: new Date().toISOString(),
       }).eq('user_id', state.user_id);
     }

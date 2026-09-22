@@ -99,8 +99,8 @@ function renderProfile({
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
     '../lib/supabase/accountDeletion': {
-      deleteCurrentAccount: async (options: unknown) => {
-        deleteAccountCalls.push(options);
+      deleteCurrentAccount: async () => {
+        deleteAccountCalls.push(true);
         return deleteImpl ? deleteImpl() : deleteResult;
       },
     },
@@ -280,13 +280,13 @@ describe('Profile account action', () => {
     assert.deepEqual(rendered.signOutCalls[0], { pushTokenAlreadyCleared: true });
   });
 
-  it('requests deletion-time Apple reauthentication for an Apple-linked user', async () => {
+  it('does not use client provider metadata to select the deletion flow', async () => {
     const rendered = renderProfile({ loading: false, appleLinked: true });
     accountButton(rendered.tree, 'Delete account')?.props.onPress();
     rendered.alerts[0]?.buttons?.[1]?.onPress();
     await rendered.alerts[1]?.buttons?.[1]?.onPress();
 
-    assert.deepEqual(rendered.deleteAccountCalls, [{ appleLinked: true }]);
+    assert.deepEqual(rendered.deleteAccountCalls, [true]);
   });
 
   it('keeps deletion unavailable to guests and reports organization ownership without signing out', async () => {

@@ -1,9 +1,9 @@
+import type { AppleAuthorizationService, AppleRevocationGrant } from './apple.ts';
+
 type BackendError = { message: string };
 
 type AuthUser = {
   id: string;
-  app_metadata?: { provider?: unknown; providers?: unknown };
-  identities?: Array<{ provider?: unknown }> | null;
 };
 
 type ProfileImageFields = {
@@ -33,15 +33,15 @@ type BackendClient = {
       remove: (paths: string[]) => PromiseLike<{ error: unknown }>;
     };
   };
-  rpc: (
-    name: 'prepare_account_deletion' | 'mark_account_apple_revoked' | 'mark_account_storage_deleted' | 'execute_account_deletion',
-    args: { p_user_id: string },
-  ) => PromiseLike<{ data: unknown; error: BackendError | null }>;
+  rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{
+    data: unknown;
+    error: BackendError | null;
+  }>;
 };
 
 type BackendClientFactory = () => BackendClient;
 type DeleteAccountDependencies = {
-  revokeAppleAuthorizationCode?: (authorizationCode: string) => Promise<void>;
+  appleAuthorization?: AppleAuthorizationService;
 };
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -186,14 +186,6 @@ export async function listOwnedProfileImageObjects(
   return objects;
 }
 
-function isAppleLinked(user: AuthUser): boolean {
-  const provider = user.app_metadata?.provider;
-  const providers = user.app_metadata?.providers;
-  return provider === 'apple'
-    || (Array.isArray(providers) && providers.includes('apple'))
-    || user.identities?.some((identity) => identity.provider === 'apple') === true;
-}
-
 function isNotFoundStorageError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const candidate = error as { status?: unknown; statusCode?: unknown };
@@ -264,12 +256,25 @@ export function createDeleteAccountHandler(
         'client_secret',
         'appleRefreshToken',
         'apple_refresh_token',
+        'accessToken',
+        'access_token',
+        'providerToken',
+        'provider_token',
+        'revocationToken',
+        'revocation_token',
+        'token_type_hint',
         'identityToken',
         'identity_token',
+        'provider',
+        'providers',
+        'providerMetadata',
+        'provider_metadata',
+        'appleLinked',
+        'identities',
       ]);
       if (Object.keys(payload).some((key) => providerCredentialFields.has(key))) {
         return json(400, {
-          error: 'Provider credentials are not accepted from the client.',
+          error: 'Provider metadata and credentials are not accepted from the client.',
           code: 'unsupported_provider_credentials',
         });
       }
@@ -295,32 +300,97 @@ export function createDeleteAccountHandler(
         return json(500, { error: 'Unable to prepare account deletion.', code: 'deletion_preflight_failed' });
       }
 
-      if (isAppleLinked(authData.user)) {
-        const appleAlreadyRevoked = (preparation as { apple_revoked?: unknown }).apple_revoked === true;
+      const prepared = preparation as {
+        apple_required?: unknown;
+        apple_revoked?: unknown;
+        apple_subject?: unknown;
+        apple_retry_ready?: unknown;
+      };
+      if (prepared.apple_required === true) {
+        const appleAlreadyRevoked = prepared.apple_revoked === true;
         if (!appleAlreadyRevoked) {
-          const authorizationCode = (payload as { appleAuthorizationCode?: unknown }).appleAuthorizationCode;
-          if (typeof authorizationCode !== 'string' || !authorizationCode.trim()) {
-            return json(409, {
-              error: 'Sign in with Apple again to authorize account deletion.',
-              code: 'apple_reauthentication_required',
-            });
-          }
-          if (!dependencies.revokeAppleAuthorizationCode) {
+          if (!dependencies.appleAuthorization) {
             return json(500, {
               error: 'Apple account revocation is not configured.',
               code: 'apple_revocation_configuration_error',
             });
           }
+          if (typeof prepared.apple_subject !== 'string' || !prepared.apple_subject) {
+            return json(500, {
+              error: 'Unable to verify the Sign in with Apple account binding.',
+              code: 'apple_identity_binding_failed',
+            });
+          }
+
+          let grant: AppleRevocationGrant;
+          if (prepared.apple_retry_ready === true) {
+            const { data: retry, error: retryError } = await backend.rpc(
+              'get_account_apple_revocation_retry',
+              { p_user_id: authData.user.id },
+            );
+            const retryState = retry as {
+              apple_subject?: unknown;
+              revocation_token?: unknown;
+              token_type_hint?: unknown;
+            } | null;
+            if (
+              retryError
+              || retryState?.apple_subject !== prepared.apple_subject
+              || typeof retryState.revocation_token !== 'string'
+              || (retryState.token_type_hint !== 'refresh_token'
+                && retryState.token_type_hint !== 'access_token')
+            ) {
+              return json(500, {
+                error: 'Unable to resume Sign in with Apple revocation.',
+                code: 'apple_revocation_retry_unavailable',
+              });
+            }
+            grant = {
+              subject: retryState.apple_subject,
+              revocationToken: retryState.revocation_token,
+              tokenTypeHint: retryState.token_type_hint,
+            };
+          } else {
+            const authorizationCode = (payload as { appleAuthorizationCode?: unknown }).appleAuthorizationCode;
+            if (typeof authorizationCode !== 'string' || !authorizationCode.trim()) {
+              return json(409, {
+                error: 'Sign in with Apple again to authorize account deletion.',
+                code: 'apple_reauthentication_required',
+              });
+            }
+            try {
+              grant = await dependencies.appleAuthorization.exchangeAuthorizationCode(
+                authorizationCode,
+                prepared.apple_subject,
+              );
+            } catch {
+              return json(502, {
+                error: 'Unable to verify Sign in with Apple access. Your account was not deleted.',
+                code: 'apple_identity_verification_failed',
+              });
+            }
+            const { error: stageError } = await backend.rpc('stage_account_apple_revocation', {
+              p_user_id: authData.user.id,
+              p_apple_subject: grant.subject,
+              p_revocation_token: grant.revocationToken,
+              p_token_type_hint: grant.tokenTypeHint,
+            });
+            if (stageError) {
+              return json(500, {
+                error: 'Unable to save Sign in with Apple revocation for retry. Your account was not deleted.',
+                code: 'apple_revocation_stage_failed',
+              });
+            }
+          }
 
           try {
-            await dependencies.revokeAppleAuthorizationCode(authorizationCode);
+            await dependencies.appleAuthorization.revokeToken(grant);
           } catch {
             return json(502, {
               error: 'Unable to revoke Sign in with Apple access. Your account was not deleted.',
               code: 'apple_revocation_failed',
             });
           }
-
           const { error: markerError } = await backend.rpc('mark_account_apple_revoked', {
             p_user_id: authData.user.id,
           });

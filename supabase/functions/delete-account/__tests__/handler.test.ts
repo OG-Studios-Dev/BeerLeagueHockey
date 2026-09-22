@@ -180,7 +180,7 @@ describe('delete-account Edge Function authorization', () => {
     assert.equal(rpcCalls, 0);
   });
 
-  it('rejects provider refresh tokens and client secrets from the client', async () => {
+  it('rejects provider metadata, refresh tokens, and client secrets from the client', async () => {
     let rpcCalls = 0;
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend(),
@@ -203,12 +203,13 @@ describe('delete-account Edge Function authorization', () => {
         confirmation: 'DELETE',
         refreshToken: 'must-not-be-accepted',
         clientSecret: 'must-not-be-accepted',
+        appleLinked: true,
       }),
     }));
 
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), {
-      error: 'Provider credentials are not accepted from the client.',
+      error: 'Provider metadata and credentials are not accepted from the client.',
       code: 'unsupported_provider_credentials',
     });
     assert.equal(rpcCalls, 0);
@@ -332,7 +333,7 @@ describe('delete-account Edge Function authorization', () => {
 
     assert.match(source, /Deno\.env\.get\('SUPABASE_SERVICE_ROLE_KEY'\)/);
     assert.match(source, /createDeleteAccountHandler/);
-    assert.match(source, /createAppleAuthorizationRevoker/);
+    assert.match(source, /createAppleAuthorizationService/);
     for (const secretName of ['APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_CLIENT_ID', 'APPLE_PRIVATE_KEY_P8']) {
       assert.match(source, new RegExp(`Deno\\.env\\.get\\('${secretName}'\\)`));
     }
@@ -545,31 +546,54 @@ describe('delete-account profile image ownership', () => {
 });
 
 describe('delete-account Apple revocation guard', () => {
-  it('exchanges and revokes a fresh Apple authorization code before destructive work', async () => {
+  const grant = {
+    subject: 'server-derived-apple-subject',
+    revocationToken: 'server-only-revocation-token',
+    tokenTypeHint: 'refresh_token' as const,
+  };
+
+  it('binds, stages, and revokes a fresh Apple grant before destructive work', async () => {
     const events: string[] = [];
     const handler = createDeleteAccountHandler(
       () => ({
         ...lifecycleBackend(),
         auth: {
-          getUser: async () => ({
-            data: {
-              user: {
-                id: USER_ID,
-                app_metadata: { providers: ['apple'] },
-                identities: [{ provider: 'apple' }],
-              },
-            },
-            error: null,
-          }),
+          getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }),
         },
-        rpc: async (name: string) => {
+        rpc: async (name: string, args: Record<string, unknown>) => {
           events.push(`rpc:${name}`);
-          return { data: name === 'prepare_account_deletion' ? { apple_revoked: false } : { success: true }, error: null };
+          if (name === 'prepare_account_deletion') {
+            return {
+              data: {
+                apple_required: true,
+                apple_revoked: false,
+                apple_subject: grant.subject,
+                apple_retry_ready: false,
+              },
+              error: null,
+            };
+          }
+          if (name === 'stage_account_apple_revocation') {
+            assert.deepEqual(args, {
+              p_user_id: USER_ID,
+              p_apple_subject: grant.subject,
+              p_revocation_token: grant.revocationToken,
+              p_token_type_hint: grant.tokenTypeHint,
+            });
+          }
+          return { data: { success: true }, error: null };
         },
       }),
       {
-        revokeAppleAuthorizationCode: async (code: string) => {
-          events.push(`apple:${code}`);
+        appleAuthorization: {
+          exchangeAuthorizationCode: async (code, expectedSubject) => {
+            events.push(`apple-exchange:${code}:${expectedSubject}`);
+            return grant;
+          },
+          revokeToken: async (receivedGrant) => {
+            assert.deepEqual(receivedGrant, grant);
+            events.push('apple-revoke');
+          },
         },
       },
     );
@@ -583,7 +607,9 @@ describe('delete-account Apple revocation guard', () => {
     assert.equal(response.status, 200);
     assert.deepEqual(events, [
       'rpc:prepare_account_deletion',
-      'apple:fresh-one-time-code',
+      `apple-exchange:fresh-one-time-code:${grant.subject}`,
+      'rpc:stage_account_apple_revocation',
+      'apple-revoke',
       'rpc:mark_account_apple_revoked',
       'rpc:mark_account_storage_deleted',
       'rpc:execute_account_deletion',
@@ -595,22 +621,18 @@ describe('delete-account Apple revocation guard', () => {
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend({ remove: async () => { lifecycleCalls += 1; return { error: null }; } }),
       auth: {
-        getUser: async () => ({
-          data: {
-            user: {
-              id: USER_ID,
-              app_metadata: { provider: 'apple', providers: ['email', 'apple'] },
-              identities: [{ provider: 'apple' }],
-            },
-          },
-          error: null,
-        }),
+        getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }),
       },
       rpc: async (name: string) => {
         if (name !== 'prepare_account_deletion') lifecycleCalls += 1;
-        return { data: name === 'prepare_account_deletion' ? { apple_revoked: false } : null, error: null };
+        return {
+          data: name === 'prepare_account_deletion'
+            ? { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false }
+            : null,
+          error: null,
+        };
       },
-    }));
+    }), { appleAuthorization: { exchangeAuthorizationCode: async () => grant, revokeToken: async () => {} } });
 
     const response = await handler(new Request('https://example.test/delete-account', {
       method: 'POST',
@@ -626,26 +648,36 @@ describe('delete-account Apple revocation guard', () => {
     assert.equal(lifecycleCalls, 0);
   });
 
-  it('retries database deletion from the durable Apple marker without a second provider grant', async () => {
+  it('retries revocation from durable server state without another client code', async () => {
     let providerCalls = 0;
     const rpcNames: string[] = [];
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend(),
-      auth: {
-        getUser: async () => ({
-          data: { user: { id: USER_ID, app_metadata: { providers: ['apple'] } } },
-          error: null,
-        }),
-      },
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
       rpc: async (name: string) => {
         rpcNames.push(name);
+        if (name === 'get_account_apple_revocation_retry') {
+          return {
+            data: {
+              apple_subject: grant.subject,
+              revocation_token: grant.revocationToken,
+              token_type_hint: grant.tokenTypeHint,
+            },
+            error: null,
+          };
+        }
         return {
-          data: name === 'prepare_account_deletion' ? { apple_revoked: true } : { success: true },
+          data: name === 'prepare_account_deletion'
+            ? { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: true }
+            : { success: true },
           error: null,
         };
       },
     }), {
-      revokeAppleAuthorizationCode: async () => { providerCalls += 1; },
+      appleAuthorization: {
+        exchangeAuthorizationCode: async () => { throw new Error('must use durable retry'); },
+        revokeToken: async () => { providerCalls += 1; },
+      },
     });
 
     const response = await handler(new Request('https://example.test/delete-account', {
@@ -655,27 +687,33 @@ describe('delete-account Apple revocation guard', () => {
     }));
 
     assert.equal(response.status, 200);
-    assert.equal(providerCalls, 0);
-    assert.doesNotMatch(rpcNames.join(','), /mark_account_apple_revoked/);
+    assert.equal(providerCalls, 1);
+    assert.match(rpcNames.join(','), /get_account_apple_revocation_retry/);
+    assert.match(rpcNames.join(','), /mark_account_apple_revoked/);
     assert.match(rpcNames.join(','), /execute_account_deletion/);
   });
 
-  it('stops before storage or database mutation when Apple rejects the provider grant', async () => {
+  it('stages retry state before a provider failure and stops before other mutation', async () => {
     let destructiveCalls = 0;
+    const events: string[] = [];
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend({ remove: async () => { destructiveCalls += 1; return { error: null }; } }),
-      auth: {
-        getUser: async () => ({
-          data: { user: { id: USER_ID, app_metadata: { providers: ['apple'] } } },
-          error: null,
-        }),
-      },
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
       rpc: async (name: string) => {
-        if (name !== 'prepare_account_deletion') destructiveCalls += 1;
-        return { data: { apple_revoked: false }, error: null };
+        events.push(name);
+        if (!['prepare_account_deletion', 'stage_account_apple_revocation'].includes(name)) destructiveCalls += 1;
+        return {
+          data: name === 'prepare_account_deletion'
+            ? { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false }
+            : null,
+          error: null,
+        };
       },
     }), {
-      revokeAppleAuthorizationCode: async () => { throw new Error('provider detail'); },
+      appleAuthorization: {
+        exchangeAuthorizationCode: async () => grant,
+        revokeToken: async () => { throw new Error('provider detail'); },
+      },
     });
 
     const response = await handler(new Request('https://example.test/delete-account', {
@@ -690,26 +728,65 @@ describe('delete-account Apple revocation guard', () => {
       code: 'apple_revocation_failed',
     });
     assert.equal(destructiveCalls, 0);
+    assert.deepEqual(events, ['prepare_account_deletion', 'stage_account_apple_revocation']);
   });
 
-  it('keeps the Apple marker durable when database deletion fails after revocation', async () => {
+  it('does not revoke when staging the provider retry token fails', async () => {
+    let revokeCalls = 0;
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+      rpc: async (name: string) => name === 'prepare_account_deletion'
+        ? {
+            data: { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false },
+            error: null,
+          }
+        : name === 'stage_account_apple_revocation'
+          ? { data: null, error: { message: 'secret database detail' } }
+          : { data: null, error: null },
+    }), {
+      appleAuthorization: {
+        exchangeAuthorizationCode: async () => grant,
+        revokeToken: async () => { revokeCalls += 1; },
+      },
+    });
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE', appleAuthorizationCode: 'fresh-code' }),
+    }));
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), {
+      error: 'Unable to save Sign in with Apple revocation for retry. Your account was not deleted.',
+      code: 'apple_revocation_stage_failed',
+    });
+    assert.equal(revokeCalls, 0);
+  });
+
+  it('keeps the staged token retryable when the durable revoked marker fails', async () => {
     const events: string[] = [];
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend(),
-      auth: {
-        getUser: async () => ({
-          data: { user: { id: USER_ID, app_metadata: { providers: ['apple'] } } },
-          error: null,
-        }),
-      },
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
       rpc: async (name: string) => {
         events.push(name);
-        if (name === 'prepare_account_deletion') return { data: { apple_revoked: false }, error: null };
-        if (name === 'execute_account_deletion') return { data: null, error: { message: 'database failure' } };
+        if (name === 'prepare_account_deletion') {
+          return {
+            data: { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false },
+            error: null,
+          };
+        }
+        if (name === 'mark_account_apple_revoked') {
+          return { data: null, error: { message: 'database failure' } };
+        }
         return { data: { success: true }, error: null };
       },
     }), {
-      revokeAppleAuthorizationCode: async () => { events.push('apple-provider-revoked'); },
+      appleAuthorization: {
+        exchangeAuthorizationCode: async () => grant,
+        revokeToken: async () => { events.push('apple-provider-revoked'); },
+      },
     });
 
     const response = await handler(new Request('https://example.test/delete-account', {
@@ -719,6 +796,11 @@ describe('delete-account Apple revocation guard', () => {
     }));
 
     assert.equal(response.status, 500);
-    assert.ok(events.indexOf('mark_account_apple_revoked') < events.indexOf('execute_account_deletion'));
+    assert.deepEqual(await response.json(), {
+      error: 'Apple access was revoked, but deletion could not be recorded. Try again.',
+      code: 'apple_revocation_marker_failed',
+    });
+    assert.ok(events.indexOf('stage_account_apple_revocation') < events.indexOf('apple-provider-revoked'));
+    assert.doesNotMatch(events.join(','), /execute_account_deletion/);
   });
 });

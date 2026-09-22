@@ -15,11 +15,25 @@ BEGIN
     AND rp.privilege_type = 'EXECUTE'
     AND rp.routine_name IN (
       'prepare_account_deletion',
+      'stage_account_apple_revocation',
+      'get_account_apple_revocation_retry',
       'mark_account_apple_revoked',
       'mark_account_storage_deleted',
       'record_account_deletion_external_step',
       'execute_account_deletion',
-      'clear_current_push_destination'
+      'clear_current_push_destination',
+      'require_auth_for_active_profile',
+      'preserve_auth_for_active_profile',
+      'anonymize_audit_logs',
+      'anonymize_payment_history',
+      'delete_user_sessions',
+      'delete_push_device_tokens',
+      'lock_account_deletion_user',
+      'validate_optional_deletion_relations',
+      'block_deleting_organization_owner',
+      'block_deleting_league_owner',
+      'block_deleting_organization_member',
+      'block_deleting_league_ownership'
     )
     AND rp.grantee NOT IN ('postgres', 'supabase_admin', 'service_role', 'authenticated');
   IF v_bad_acl_count <> 0 THEN
@@ -31,6 +45,94 @@ BEGIN
   END IF;
   IF NOT pg_catalog.has_function_privilege('authenticated', 'public.clear_current_push_destination()', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated cannot execute exact-one logout RPC';
+  END IF;
+
+  IF pg_catalog.has_function_privilege('authenticated', 'public.anonymize_audit_logs(uuid)', 'EXECUTE')
+     OR pg_catalog.has_function_privilege('authenticated', 'public.delete_user_sessions(uuid)', 'EXECUTE')
+     OR pg_catalog.has_function_privilege('authenticated', 'public.delete_push_device_tokens(uuid)', 'EXECUTE')
+     OR NOT pg_catalog.has_function_privilege('service_role', 'public.anonymize_audit_logs(uuid)', 'EXECUTE')
+     OR NOT pg_catalog.has_function_privilege('service_role', 'public.delete_user_sessions(uuid)', 'EXECUTE')
+     OR NOT pg_catalog.has_function_privilege('service_role', 'public.delete_push_device_tokens(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Unexpected effective helper privileges';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      VALUES
+        ('public.require_auth_for_active_profile()', FALSE),
+        ('public.preserve_auth_for_active_profile()', FALSE),
+        ('public.anonymize_audit_logs(uuid)', TRUE),
+        ('public.anonymize_payment_history(uuid,text)', TRUE),
+        ('public.delete_user_sessions(uuid)', TRUE),
+        ('public.delete_push_device_tokens(uuid)', TRUE),
+        ('public.lock_account_deletion_user(uuid)', FALSE),
+        ('public.validate_optional_deletion_relations()', FALSE),
+        ('public.prepare_account_deletion(uuid)', TRUE),
+        ('public.stage_account_apple_revocation(uuid,text,text,text)', TRUE),
+        ('public.get_account_apple_revocation_retry(uuid)', TRUE),
+        ('public.mark_account_apple_revoked(uuid)', TRUE),
+        ('public.mark_account_storage_deleted(uuid)', TRUE),
+        ('public.record_account_deletion_external_step(uuid,text)', TRUE),
+        ('public.block_deleting_organization_owner()', FALSE),
+        ('public.block_deleting_league_owner()', FALSE),
+        ('public.block_deleting_organization_member()', FALSE),
+        ('public.block_deleting_league_ownership()', FALSE),
+        ('public.execute_account_deletion(uuid)', TRUE)
+    ) AS expected(signature, service_expected)
+    WHERE pg_catalog.has_function_privilege('anon', expected.signature, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', expected.signature, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('service_role', expected.signature, 'EXECUTE')
+          IS DISTINCT FROM expected.service_expected
+  ) THEN
+    RAISE EXCEPTION 'Unexpected effective deletion call-graph privileges';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS p
+    JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN (
+        'require_auth_for_active_profile',
+        'preserve_auth_for_active_profile',
+        'anonymize_audit_logs',
+        'anonymize_payment_history',
+        'delete_user_sessions',
+        'delete_push_device_tokens',
+        'lock_account_deletion_user',
+        'validate_optional_deletion_relations',
+        'prepare_account_deletion',
+        'stage_account_apple_revocation',
+        'get_account_apple_revocation_retry',
+        'mark_account_apple_revoked',
+        'mark_account_storage_deleted',
+        'record_account_deletion_external_step',
+        'block_deleting_organization_owner',
+        'block_deleting_league_owner',
+        'block_deleting_organization_member',
+        'block_deleting_league_ownership',
+        'execute_account_deletion'
+      )
+      AND (
+        NOT p.prosecdef
+        OR pg_catalog.pg_get_userbyid(p.proowner) <> 'postgres'
+        OR NOT COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=""']::text[]
+      )
+  ) THEN
+    RAISE EXCEPTION 'Transitive helper security properties are not pinned';
+  END IF;
+
+  IF pg_catalog.has_table_privilege('anon', 'public.account_deletion_provider_secrets', 'SELECT')
+     OR pg_catalog.has_table_privilege('authenticated', 'public.account_deletion_provider_secrets', 'SELECT') THEN
+    RAISE EXCEPTION 'Provider retry secrets are visible to a client role';
+  END IF;
+  IF (
+    SELECT pg_catalog.pg_get_userbyid(c.relowner) <> 'postgres'
+    FROM pg_catalog.pg_class AS c
+    WHERE c.oid = 'public.account_deletion_provider_secrets'::pg_catalog.regclass
+  ) THEN
+    RAISE EXCEPTION 'Provider retry secret table owner is not pinned';
   END IF;
 
   SELECT pg_catalog.count(*) INTO v_cascade_count

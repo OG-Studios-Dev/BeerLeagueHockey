@@ -89,6 +89,7 @@ export type Database = {
       account_deletion_state: {
         Row: {
           apple_revoked_at: string | null
+          apple_revoked_subject: string | null
           completed_at: string | null
           completion_email: string | null
           database_deleted_at: string | null
@@ -103,6 +104,7 @@ export type Database = {
         }
         Insert: {
           apple_revoked_at?: string | null
+          apple_revoked_subject?: string | null
           completed_at?: string | null
           completion_email?: string | null
           database_deleted_at?: string | null
@@ -117,6 +119,7 @@ export type Database = {
         }
         Update: {
           apple_revoked_at?: string | null
+          apple_revoked_subject?: string | null
           completed_at?: string | null
           completion_email?: string | null
           database_deleted_at?: string | null
@@ -130,6 +133,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      account_deletion_provider_secrets: {
+        Row: {
+          apple_revocation_token: string
+          apple_subject: string
+          apple_token_type_hint: string
+          created_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          apple_revocation_token: string
+          apple_subject: string
+          apple_token_type_hint: string
+          created_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          apple_revocation_token?: string
+          apple_subject?: string
+          apple_token_type_hint?: string
+          created_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_deletion_provider_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "account_deletion_state"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       account_recovery_requests: {
         Row: {
@@ -753,6 +791,91 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      captain_player_invites: {
+        Row: {
+          brand_scope: string
+          consumed_at: string | null
+          consumed_by: string | null
+          created_at: string
+          id: string
+          invitee_name: string | null
+          invited_by: string | null
+          league_id: string
+          player_type: string
+          position: string | null
+          registration_path: string
+          roster_id: string | null
+          season_id: string
+          share_phone: string | null
+          share_with_league: boolean
+          target_player_id: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          brand_scope?: string
+          consumed_at?: string | null
+          consumed_by?: string | null
+          created_at?: string
+          id?: string
+          invitee_name?: string | null
+          invited_by?: string | null
+          league_id: string
+          player_type?: string
+          position?: string | null
+          registration_path: string
+          roster_id?: string | null
+          season_id: string
+          share_phone?: string | null
+          share_with_league?: boolean
+          target_player_id: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          brand_scope?: string
+          consumed_at?: string | null
+          consumed_by?: string | null
+          created_at?: string
+          id?: string
+          invitee_name?: string | null
+          invited_by?: string | null
+          league_id?: string
+          player_type?: string
+          position?: string | null
+          registration_path?: string
+          roster_id?: string | null
+          season_id?: string
+          share_phone?: string | null
+          share_with_league?: boolean
+          target_player_id?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "captain_player_invites_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "captain_player_invites_target_player_id_fkey"
+            columns: ["target_player_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "captain_player_invites_roster_id_fkey"
+            columns: ["roster_id"]
+            isOneToOne: false
+            referencedRelation: "team_rosters"
             referencedColumns: ["id"]
           },
         ]
@@ -3443,6 +3566,87 @@ export type Database = {
           },
         ]
       }
+      game_team_lineups: {
+        Row: {
+          created_at: string
+          formation: string | null
+          game_id: string
+          id: string
+          layout_json: Json
+          league_id: string
+          published_at: string | null
+          published_by: string | null
+          status: string
+          team_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          formation?: string | null
+          game_id: string
+          id?: string
+          layout_json?: Json
+          league_id: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          team_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          formation?: string | null
+          game_id?: string
+          id?: string
+          layout_json?: Json
+          league_id?: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          team_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_team_lineups_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_team_lineups_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_team_lineups_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_team_lineups_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_team_lineups_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       games: {
         Row: {
           away_captain_verified: boolean | null
@@ -4981,6 +5185,74 @@ export type Database = {
             columns: ["scorekeeper_id"]
             isOneToOne: false
             referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      league_spare_pool: {
+        Row: {
+          active: boolean
+          added_by: string | null
+          created_at: string
+          id: string
+          league_id: string
+          notes: string | null
+          player_id: string
+          position: string | null
+          season_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          league_id: string
+          notes?: string | null
+          player_id: string
+          position?: string | null
+          season_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          league_id?: string
+          notes?: string | null
+          player_id?: string
+          position?: string | null
+          season_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_spare_pool_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_spare_pool_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_spare_pool_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_spare_pool_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
             referencedColumns: ["id"]
           },
         ]
@@ -13069,9 +13341,23 @@ export type Database = {
       delete_user_sessions: { Args: { p_user_id: string }; Returns: number }
       exec_sql: { Args: { sql_text: string }; Returns: undefined }
       execute_account_deletion: { Args: { p_user_id: string }; Returns: Json }
+      get_account_apple_revocation_retry: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
+      lock_account_deletion_user: { Args: { p_user_id: string }; Returns: undefined }
       mark_account_apple_revoked: { Args: { p_user_id: string }; Returns: undefined }
       mark_account_storage_deleted: { Args: { p_user_id: string }; Returns: undefined }
       prepare_account_deletion: { Args: { p_user_id: string }; Returns: Json }
+      stage_account_apple_revocation: {
+        Args: {
+          p_apple_subject: string
+          p_revocation_token: string
+          p_token_type_hint: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       record_account_deletion_external_step: {
         Args: { p_step: string; p_user_id: string }
         Returns: boolean
