@@ -23,17 +23,19 @@ type AuthValue = {
   continueAsGuest: () => void;
   exitGuest: () => void;
   signUpWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<{ error: Error | null }>;
+  signOut: (options?: { notificationDestinationAlreadyRevoked?: boolean }) => Promise<{ error: Error | null }>;
 };
 
 function createAuthFixture(options: {
   getSession?: () => Promise<any>;
   signOut?: (...args: any[]) => Promise<any>;
+  unregister?: () => Promise<{ error: Error | null }>;
 } = {}) {
   const harness = createHookHarness();
   let authListener: ((event: string, session: any) => void) | undefined;
   let providerValue: AuthValue | undefined;
   const signUpCalls: unknown[] = [];
+  const lifecycleCalls: string[] = [];
   const context = {
     Provider: ({ value }: { value: AuthValue }) => {
       providerValue = value;
@@ -57,6 +59,12 @@ function createAuthFixture(options: {
     new URL('../../src/context/AuthContext.tsx', import.meta.url),
     {
       react,
+      '../lib/notifications': {
+        unregisterPushNotifications: options.unregister ?? (async () => {
+          lifecycleCalls.push('unregister');
+          return { error: null };
+        }),
+      },
       '../lib/supabase/auth': { signInWithOAuth: async () => ({ error: null }) },
       '../lib/supabase/client': { supabase },
     },
@@ -81,6 +89,7 @@ function createAuthFixture(options: {
       return providerValue;
     },
     signUpCalls,
+    lifecycleCalls,
     unmount: () => harness.unmount(),
   };
 }
@@ -172,6 +181,7 @@ describe('AuthProvider signOut', () => {
     const calls: unknown[] = [];
     const fixture = createAuthFixture({
       signOut: async (options: unknown) => {
+        calls.push('signOut');
         calls.push(options);
         return { error: null };
       },
@@ -179,7 +189,31 @@ describe('AuthProvider signOut', () => {
 
     assert.deepEqual(await fixture.value.signOut(), { error: null });
     fixture.unmount();
-    assert.deepEqual(calls, [{ scope: 'local' }]);
+    assert.deepEqual(fixture.lifecycleCalls, ['unregister']);
+    assert.deepEqual(calls, ['signOut', { scope: 'local' }]);
+  });
+
+  it('keeps the authenticated session when the push destination cannot be revoked', async () => {
+    const signOutCalls: unknown[] = [];
+    const fixture = createAuthFixture({
+      unregister: async () => ({ error: new Error('profile update denied') }),
+      signOut: async (options: unknown) => { signOutCalls.push(options); return { error: null }; },
+    });
+
+    const result = await fixture.value.signOut();
+    assert.equal(result.error?.message, 'profile update denied');
+    assert.deepEqual(signOutCalls, []);
+  });
+
+  it('finishes local sign-out after account deletion without a redundant profile lookup', async () => {
+    const fixture = createAuthFixture({
+      unregister: async () => { throw new Error('must not be called'); },
+    });
+
+    assert.deepEqual(
+      await fixture.value.signOut({ notificationDestinationAlreadyRevoked: true }),
+      { error: null },
+    );
   });
 
   it('does not force session or guest state closed when Supabase returns an error', async () => {

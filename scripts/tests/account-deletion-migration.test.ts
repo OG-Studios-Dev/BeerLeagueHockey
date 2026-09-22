@@ -160,6 +160,7 @@ describe('corrective account deletion migration', () => {
       'last_failed_login_at',
       'locked_until',
       'password_changed_at',
+      'push_token',
     ];
 
     assert.match(master, /UPDATE\s+public\.profiles\s+SET/i);
@@ -187,6 +188,7 @@ describe('corrective account deletion migration', () => {
       'last_failed_login_at',
       'locked_until',
       'password_changed_at',
+      'push_token',
       'availability',
     ]) {
       assert.match(master, new RegExp(`\\b${column}\\s*=\\s*NULL`, 'i'), column);

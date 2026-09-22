@@ -13,12 +13,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import { useLeague } from '../context/LeagueContext';
-import { cancelAllGameReminders, registerForPushNotifications, scheduleGameReminder } from '../lib/notifications';
+import {
+  NOTIFICATION_PREFS_KEY,
+  registerForPushNotifications,
+  scheduleGameReminder,
+  unregisterPushNotifications,
+} from '../lib/notifications';
 import { getSchedule, getCurrentSeason, mapGameStatus } from '../lib/supabase/data';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
-
-const PREFS_KEY = 'blh_notification_prefs';
 
 type NotifPrefs = {
   gameReminders: boolean;
@@ -32,9 +35,10 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
   const { activeLeague } = useLeague();
   const [prefs, setPrefs] = React.useState<NotifPrefs>(DEFAULT_PREFS);
   const [loading, setLoading] = React.useState(true);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    SecureStore.getItemAsync(PREFS_KEY)
+    SecureStore.getItemAsync(NOTIFICATION_PREFS_KEY)
       .then((val) => {
         if (val) setPrefs({ gameReminders: JSON.parse(val).gameReminders === true });
       })
@@ -43,14 +47,16 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
 
   async function savePrefs(updated: NotifPrefs) {
     setPrefs(updated);
-    await SecureStore.setItemAsync(PREFS_KEY, JSON.stringify(updated));
+    await SecureStore.setItemAsync(NOTIFICATION_PREFS_KEY, JSON.stringify(updated));
   }
 
   async function handleGameRemindersToggle(val: boolean) {
+    setErrorMessage(null);
     if (val) {
       const token = await registerForPushNotifications();
-      if (!token && val) {
-        // permission denied but local still works
+      if (!token) {
+        setErrorMessage('Game Reminders were not enabled. Allow notifications and try again.');
+        return;
       }
       // Schedule reminders for upcoming games
       if (activeLeague) {
@@ -81,7 +87,11 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
         } catch (_) {}
       }
     } else {
-      await cancelAllGameReminders();
+      const { error } = await unregisterPushNotifications();
+      if (error) {
+        setErrorMessage(`Game Reminders are still enabled: ${error.message}`);
+        return;
+      }
     }
     await savePrefs({ ...prefs, gameReminders: val });
   }
@@ -118,6 +128,8 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
                 <Text style={styles.rowSubtitle}>{row.subtitle}</Text>
               </View>
               <Switch
+                accessibilityLabel={row.label}
+                accessibilityHint="Turns reminders for currently listed upcoming team games on or off"
                 value={prefs[row.key]}
                 onValueChange={async (val) => {
                   await row.onToggle(val);
@@ -128,6 +140,11 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
             </View>
           ))}
         </FocusCard>
+        {errorMessage ? (
+          <View accessibilityRole="alert" style={styles.errorBanner}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
       </FocusScrollView>
     </SafeAreaView>
   );
@@ -156,4 +173,13 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowLabel: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   rowSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  errorBanner: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accentRed,
+    backgroundColor: colors.bgSurface,
+  },
+  errorText: { color: colors.accentRed, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 });

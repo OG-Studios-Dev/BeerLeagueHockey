@@ -1,3 +1,4 @@
+import { unregisterPushNotifications } from '../notifications';
 import { supabase } from './client';
 
 type FunctionError = {
@@ -43,8 +44,12 @@ async function responseErrorMessage(context: unknown): Promise<string | null> {
 
 export async function deleteCurrentAccount(
   client: AccountDeletionClient = supabase,
+  revokeNotifications: () => Promise<{ error: Error | null }> = unregisterPushNotifications,
 ): Promise<{ error: Error | null }> {
   try {
+    const { error: revocationError } = await revokeNotifications();
+    if (revocationError) return { error: revocationError };
+
     const { data, error } = await client.functions.invoke('delete-account', {
       body: { confirmation: 'DELETE' },
     });

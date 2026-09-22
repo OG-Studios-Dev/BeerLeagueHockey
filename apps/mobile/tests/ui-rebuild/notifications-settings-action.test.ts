@@ -40,8 +40,15 @@ function mountNotifications(getUser: () => Promise<unknown>) {
   return { harness, navigationCalls };
 }
 
-async function mountNotificationSettings() {
+async function mountNotificationSettings(options: {
+  initialPrefs?: string | null;
+  registerToken?: string | null;
+  unregisterError?: Error | null;
+} = {}) {
   const harness = createHookHarness();
+  let unregisterCalls = 0;
+  let registerCalls = 0;
+  const storedPrefs: string[] = [];
   const passthrough = ({ children, ...props }: Record<string, unknown>) => createElement('View', props, children);
   const Screen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
     new URL('../../src/screens/NotificationSettingsScreen.tsx', import.meta.url),
@@ -53,10 +60,18 @@ async function mountNotificationSettings() {
       },
       'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
       '@expo/vector-icons': { Ionicons: 'Ionicons' },
-      'expo-secure-store': { getItemAsync: async () => null, setItemAsync: async () => undefined },
+      'expo-secure-store': {
+        getItemAsync: async () => options.initialPrefs ?? null,
+        setItemAsync: async (_key: string, value: string) => { storedPrefs.push(value); },
+      },
       '../components/CardFocus': { FocusCard: passthrough, FocusScrollView: passthrough },
       '../context/LeagueContext': { useLeague: () => ({ activeLeague: null }) },
-      '../lib/notifications': { cancelAllGameReminders: async () => undefined, registerForPushNotifications: async () => null, scheduleGameReminder: async () => undefined },
+      '../lib/notifications': {
+        NOTIFICATION_PREFS_KEY: 'blh_notification_prefs',
+        registerForPushNotifications: async () => { registerCalls += 1; return options.registerToken === undefined ? 'ExponentPushToken[test]' : options.registerToken; },
+        scheduleGameReminder: async () => undefined,
+        unregisterPushNotifications: async () => { unregisterCalls += 1; return { error: options.unregisterError ?? null }; },
+      },
       '../lib/supabase/data': { getSchedule: async () => [], getCurrentSeason: async () => null, mapGameStatus: () => 'Upcoming' },
       '../lib/supabase/client': { supabase: { auth: { getUser: async () => ({ data: { user: null } }) } } },
       '../theme/colors': { default: { primary: '#0ff', bgBase: '#000', textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333' } },
@@ -65,7 +80,12 @@ async function mountNotificationSettings() {
   harness.mount(() => Screen({ navigation: { goBack: () => undefined } }));
   await new Promise<void>((resolve) => setImmediate(resolve));
   harness.render();
-  return harness;
+  return {
+    harness,
+    get registerCalls() { return registerCalls; },
+    storedPrefs,
+    get unregisterCalls() { return unregisterCalls; },
+  };
 }
 
 describe('Notifications settings action', () => {
@@ -96,8 +116,8 @@ describe('Notifications settings action', () => {
   });
 
   it('renders only the working local game-reminder setting with truthful scope', async () => {
-    const harness = await mountNotificationSettings();
-    const copy = nodeText(harness.output);
+    const runtime = await mountNotificationSettings();
+    const copy = nodeText(runtime.harness.output);
     assert.match(copy, /Game Reminders/);
     assert.match(copy, /Local alerts 2 hours before currently listed upcoming team games/);
     assert.doesNotMatch(copy, /Check-in Reminders|Score Alerts|League Announcements/);
@@ -110,7 +130,53 @@ describe('Notifications settings action', () => {
       if (node.type === 'Switch') switches.push(node);
       visit(node.props.children);
     };
-    visit(harness.output);
+    visit(runtime.harness.output);
     assert.equal(switches.length, 1);
+  });
+
+  it('revokes the stored push destination when game reminders are disabled', async () => {
+    const runtime = await mountNotificationSettings({ initialPrefs: JSON.stringify({ gameReminders: true }) });
+    const toggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+    assert.ok(toggle);
+
+    await toggle.props.onValueChange(false);
+
+    assert.equal(runtime.unregisterCalls, 1);
+    assert.deepEqual(runtime.storedPrefs, [JSON.stringify({ gameReminders: false })]);
+  });
+
+  it('enables only after token registration succeeds and exposes a failed enable', async () => {
+    const success = await mountNotificationSettings();
+    const successToggle = findNode(success.harness.output, (node) => node.type === 'Switch');
+    assert.ok(successToggle);
+    await successToggle.props.onValueChange(true);
+    success.harness.render();
+    assert.equal(success.registerCalls, 1);
+    assert.deepEqual(success.storedPrefs, [JSON.stringify({ gameReminders: true })]);
+
+    const denied = await mountNotificationSettings({ registerToken: null });
+    const deniedToggle = findNode(denied.harness.output, (node) => node.type === 'Switch');
+    assert.ok(deniedToggle);
+    await deniedToggle.props.onValueChange(true);
+    denied.harness.render();
+    assert.deepEqual(denied.storedPrefs, []);
+    assert.ok(findNode(denied.harness.output, (node) => node.props.accessibilityRole === 'alert'));
+  });
+
+  it('keeps the toggle on and exposes an error when revocation fails', async () => {
+    const runtime = await mountNotificationSettings({
+      initialPrefs: JSON.stringify({ gameReminders: true }),
+      unregisterError: new Error('profile update denied'),
+    });
+    const toggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+    assert.ok(toggle);
+
+    await toggle.props.onValueChange(false);
+    runtime.harness.render();
+
+    assert.deepEqual(runtime.storedPrefs, []);
+    const currentToggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+    assert.equal(currentToggle?.props.value, true);
+    assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityRole === 'alert'));
   });
 });

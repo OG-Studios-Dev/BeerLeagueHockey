@@ -245,6 +245,11 @@ function createRuntime({
       'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       'expo-linking': { openURL: async () => {} },
       '../../components/Avatar': (props: Record<string, unknown>) => createElement('Avatar', props),
+      '../../components/AccessibleChoiceGroup': (props: Record<string, any>) => createElement(
+        'AccessibleChoiceGroup',
+        props,
+        ...(props.options ?? []).map((option: { label: string }) => option.label),
+      ),
       '../../components/BrandAtmosphere': (props: Record<string, unknown>) => createElement('BrandAtmosphere', props),
       '../../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
       '../../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),

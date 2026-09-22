@@ -205,6 +205,7 @@ BEGIN
     last_failed_login_at = NULL,
     locked_until = NULL,
     password_changed_at = NULL,
+    push_token = NULL,
     availability = NULL,
     updated_at = pg_catalog.statement_timestamp()
   WHERE id = p_user_id;

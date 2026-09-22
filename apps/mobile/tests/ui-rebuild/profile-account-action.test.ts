@@ -76,7 +76,7 @@ function renderProfile({
       useAuth: () => ({
         isGuest,
         session: isGuest ? null : { user: { id: 'user-1' } },
-        signOut: async () => { signOutCalls.push(true); return signOutImpl ? signOutImpl() : signOutResult; },
+        signOut: async (options?: unknown) => { signOutCalls.push(options); return signOutImpl ? signOutImpl() : signOutResult; },
         exitGuest: () => exitGuestCalls.push(true),
       }),
     },
@@ -233,7 +233,7 @@ describe('Profile account action', () => {
     await rendered.alerts[0]?.buttons?.[1]?.onPress();
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.at(-1)?.title, 'Unable to Log Out');
-    assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+    assert.deepEqual(rendered.stateUpdates[12], [true, false]);
   });
 
   it('finishes a confirmed successful logout without showing an error', async () => {
@@ -245,7 +245,7 @@ describe('Profile account action', () => {
     await rendered.alerts[0]?.buttons?.[1]?.onPress();
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.length, 1);
-    assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+    assert.deepEqual(rendered.stateUpdates[12], [true, false]);
   });
 
   it('requires two destructive confirmations, deletes the authenticated account, and signs out locally', async () => {
@@ -269,6 +269,7 @@ describe('Profile account action', () => {
     await rendered.alerts[1]?.buttons?.[1]?.onPress();
     assert.equal(rendered.deleteAccountCalls.length, 1);
     assert.equal(rendered.signOutCalls.length, 1);
+    assert.deepEqual(rendered.signOutCalls, [{ notificationDestinationAlreadyRevoked: true }]);
   });
 
   it('keeps deletion unavailable to guests and reports organization ownership without signing out', async () => {

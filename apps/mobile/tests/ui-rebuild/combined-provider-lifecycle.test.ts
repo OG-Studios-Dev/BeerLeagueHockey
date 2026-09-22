@@ -54,6 +54,7 @@ describe('combined AuthProvider and LeagueProvider lifecycle', () => {
       new URL('../../src/context/AuthContext.tsx', import.meta.url),
       {
         react: authReact,
+        '../lib/notifications': { unregisterPushNotifications: async () => ({ error: null }) },
         '../lib/supabase/auth': { signInWithOAuth: async () => ({ error: null }) },
         '../lib/supabase/client': { supabase },
       },

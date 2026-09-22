@@ -15,10 +15,20 @@ does not indicate completion or approval of App Store Connect privacy metadata.
   captain role, sub invitations, and structured goalie requests are read or
   updated as required by the signed-in user's role.
 - **Account deletion:** the authenticated delete-account operation sends the
-  current session to the configured Supabase function and then signs out locally.
+  current session to the configured Supabase function only after the client has
+  cleared `profiles.push_token`, cancelled this device's scheduled reminders,
+  and removed its local notification preference. The backend deletion repeats
+  the profile-token clear, deletes push subscriptions and notification data, and
+  removes authentication access; the app then signs out locally without another
+  server profile lookup.
 - **Push notifications:** notification permission and an Expo push token may be
-  requested after sign-in. The current client obtains the token locally; verify
-  server-side token storage, association, retention, and deletion before release.
+  requested only when a signed-in user enables Game Reminders. After permission
+  is granted, the Expo push token is stored by Supabase in
+  `profiles.push_token`, linked to the authenticated profile, and replaced when
+  that device registers again. Disabling Game Reminders, logout, and account
+  deletion clear the stored profile token. Those same actions cancel local
+  scheduled reminders and clear the local notification preference. Logout stops
+  and reports an error instead of completing if revocation cannot be confirmed.
 - **Public content:** signed-out guests read Hockey Life schedule, standings,
   stats, teams, news, gallery, events, and contact content without membership.
 - **Contact submissions:** guests and signed-in members can submit name, email,
@@ -41,9 +51,11 @@ reachable in this minimum-v1 route surface.
 
 - **Calendar (user initiated):** requested only when a user chooses Add to
   Calendar. Hockey Life creates a game event in an available writable calendar.
-- **Push notifications (user initiated or after sign-in):** used for game
-  reminders and push-notification setup. Users can change notification
-  preferences in the app and operating-system settings.
+- **Push notifications (user initiated):** permission is requested when a
+  signed-in user enables Game Reminders. The app stores the resulting Expo token
+  on that user's Supabase profile and schedules local alerts for the currently
+  listed upcoming team games. Users can disable the setting in the app or change
+  notification permission in operating-system settings.
 - **Secure/local storage:** Supabase stores authentication session material;
   Expo SecureStore stores the active Hockey Life selection; notification
   preferences and offline/cache helpers may store app state on device.
@@ -81,8 +93,9 @@ The business owner must verify and enter the final App Store Connect answers for
 2. Supabase, Expo push, Apple sign-in, and Google sign-in processor practices;
 3. privacy-policy disclosures, the business retention period applied by league
    administrators, and any legally required record retention;
-4. whether push tokens are stored server-side in the release backend and how
-   they are removed on logout or account deletion;
+4. Expo push processor practices, operational token-delivery behavior, and the
+   production retention policy beyond the source-enforced disable, logout, and
+   account-deletion clears;
 5. account-deletion function deployment and end-to-end deletion behavior;
 6. age rating, audience, regional availability, and any children-related answer;
 7. final permission prompts on a release-signed physical iOS device.

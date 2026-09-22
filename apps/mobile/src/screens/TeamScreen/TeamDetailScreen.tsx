@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
+import AccessibleChoiceGroup from '../../components/AccessibleChoiceGroup';
 import BrandAtmosphere from '../../components/BrandAtmosphere';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import {
@@ -149,7 +150,10 @@ const GOALIE_SKILL_LEVELS = [
   { value: 'expert', label: 'Expert' },
 ] as const;
 
-const GOALIE_COMPENSATION_OPTIONS = ['Free', 'Paid'] as const;
+const GOALIE_COMPENSATION_OPTIONS = [
+  { value: 'Free', label: 'Free' },
+  { value: 'Paid', label: 'Paid' },
+] as const;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -1173,36 +1177,20 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             </Text>
 
             <Text style={styles.fieldLabel}>Skill level needed</Text>
-            <View style={styles.skillRow}>
-              {GOALIE_SKILL_LEVELS.map((level) => {
-                const selected = goalieSkillLevel === level.value;
-                return (
-                  <Pressable
-                    key={level.value}
-                    style={[styles.skillPill, selected && styles.skillPillSelected]}
-                    onPress={() => setGoalieSkillLevel(level.value)}
-                  >
-                    <Text style={[styles.skillPillText, selected && styles.skillPillTextSelected]}>{level.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <AccessibleChoiceGroup
+              accessibilityLabel="Goalie skill level needed"
+              options={GOALIE_SKILL_LEVELS}
+              selectedValue={goalieSkillLevel}
+              onSelect={setGoalieSkillLevel}
+            />
 
             <Text style={styles.fieldLabel}>Compensation</Text>
-            <View style={styles.skillRow}>
-              {GOALIE_COMPENSATION_OPTIONS.map((option) => {
-                const selected = goalieCompensation === option;
-                return (
-                  <Pressable
-                    key={option}
-                    style={[styles.skillPill, selected && styles.skillPillSelected]}
-                    onPress={() => setGoalieCompensation(option)}
-                  >
-                    <Text style={[styles.skillPillText, selected && styles.skillPillTextSelected]}>{option}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <AccessibleChoiceGroup
+              accessibilityLabel="Goalie compensation"
+              options={GOALIE_COMPENSATION_OPTIONS}
+              selectedValue={goalieCompensation}
+              onSelect={setGoalieCompensation}
+            />
 
             <View style={styles.modalButtonRow}>
               <Pressable style={styles.modalSecondaryButton} onPress={() => setGoalieModalVisible(false)}>
@@ -1966,32 +1954,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-  },
-  skillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  skillPill: {
-    minHeight: ui.minTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-    backgroundColor: colors.bgInteractive,
-  },
-  skillPillSelected: {
-    borderColor: colors.primary + '50',
-    backgroundColor: colors.primary + '1A',
-  },
-  skillPillText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.textSecondary,
-  },
-  skillPillTextSelected: {
-    color: colors.primary,
   },
 });

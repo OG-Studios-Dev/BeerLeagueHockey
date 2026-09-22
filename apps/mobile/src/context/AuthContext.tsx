@@ -1,6 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
+import { unregisterPushNotifications } from '../lib/notifications';
 import { signInWithOAuth } from '../lib/supabase/auth';
 import { supabase } from '../lib/supabase/client';
 
@@ -15,7 +16,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   continueAsGuest: () => void;
   exitGuest: () => void;
-  signOut: () => Promise<{ error: Error | null }>;
+  signOut: (options?: { notificationDestinationAlreadyRevoked?: boolean }) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -96,8 +97,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuest(false);
   };
 
-  const signOut = async () => {
+  const signOut = async (options?: { notificationDestinationAlreadyRevoked?: boolean }) => {
     try {
+      if (!options?.notificationDestinationAlreadyRevoked) {
+        const { error: unregisterError } = await unregisterPushNotifications();
+        if (unregisterError) return { error: unregisterError };
+      }
+
       const { error } = await supabase.auth.signOut({ scope: 'local' });
       if (error) {
         return { error: new Error(error.message) };

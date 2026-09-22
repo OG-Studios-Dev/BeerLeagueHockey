@@ -1,5 +1,4 @@
 import * as SecureStore from 'expo-secure-store';
-import { registerForPushNotifications } from '../lib/notifications';
 import React from 'react';
 
 import { supabase } from '../lib/supabase/client';
@@ -510,7 +509,6 @@ export function LeagueProvider({ children }: { children: React.ReactNode }) {
       if (event === 'SIGNED_IN' && session) {
         invalidateSessionResolution();
         hasSessionResolutionFailure.current = false;
-        registerForPushNotifications().catch(() => {});
         changeIdentity(session.user.id, false);
         loadUserLeagues('sign-in', session.user.id);
       } else if (event === 'SIGNED_OUT') {
