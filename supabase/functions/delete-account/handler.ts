@@ -26,16 +26,23 @@ type BackendClient = {
   from: (table: string) => unknown;
   storage: {
     from: (bucket: string) => {
+      list: (
+        prefix: string,
+        options: { limit: number; offset: number; search?: string },
+      ) => PromiseLike<{ data: Array<{ name: string }> | null; error: unknown }>;
       remove: (paths: string[]) => PromiseLike<{ error: unknown }>;
     };
   };
   rpc: (
-    name: 'execute_account_deletion',
+    name: 'prepare_account_deletion' | 'mark_account_apple_revoked' | 'mark_account_storage_deleted' | 'execute_account_deletion',
     args: { p_user_id: string },
   ) => PromiseLike<{ data: unknown; error: BackendError | null }>;
 };
 
 type BackendClientFactory = () => BackendClient;
+type DeleteAccountDependencies = {
+  revokeAppleAuthorizationCode?: (authorizationCode: string) => Promise<void>;
+};
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const PROFILE_IMAGE_ERROR = 'Unable to remove your profile image. Your account was not deleted.';
@@ -109,6 +116,76 @@ export function extractOwnedProfileImageObjects(
   return [...unique.values()];
 }
 
+type StorageClient = BackendClient['storage'];
+const STORAGE_PAGE_SIZE = 100;
+const STORAGE_MAX_PAGES = 100;
+
+export async function listOwnedProfileImageObjects(
+  userId: string,
+  storage: StorageClient,
+): Promise<ProfileImageObject[]> {
+  const specifications: Array<{
+    bucket: ProfileImageObject['bucket'];
+    prefix: string;
+    search?: string;
+    ownedPath: (name: string) => string | null;
+  }> = [
+    {
+      bucket: 'avatars',
+      prefix: userId,
+      ownedPath: (name) => /^avatar\.(?:jpe?g|png|webp)$/i.test(name)
+        ? `${userId}/${name}`
+        : null,
+    },
+    {
+      bucket: 'player-photos',
+      prefix: userId,
+      ownedPath: (name) => /^[0-9]+\.(?:jpe?g|png|webp)$/i.test(name)
+        ? `${userId}/${name}`
+        : null,
+    },
+    {
+      bucket: 'player-avatars',
+      prefix: '',
+      search: `${userId}-`,
+      ownedPath: (name) => new RegExp(
+        `^${regexEscape(userId)}-[0-9]+\\.(?:jpe?g|png|webp)$`,
+        'i',
+      ).test(name) ? name : null,
+    },
+  ];
+
+  const objects: ProfileImageObject[] = [];
+  for (const specification of specifications) {
+    let exhausted = false;
+    for (let page = 0; page < STORAGE_MAX_PAGES; page += 1) {
+      const options = {
+        limit: STORAGE_PAGE_SIZE,
+        offset: page * STORAGE_PAGE_SIZE,
+        ...(specification.search ? { search: specification.search } : {}),
+      };
+      const { data, error } = await storage.from(specification.bucket).list(
+        specification.prefix,
+        options,
+      );
+      if (error || !data) throw new Error('Unable to list account-owned storage objects.');
+
+      for (const entry of data) {
+        if (!entry || typeof entry.name !== 'string') continue;
+        if (entry.name.includes('/') || entry.name.includes('\\') || entry.name.includes('%') || entry.name.includes('\0')) continue;
+        const path = specification.ownedPath(entry.name);
+        if (path) objects.push({ bucket: specification.bucket, path });
+      }
+      if (data.length < STORAGE_PAGE_SIZE) {
+        exhausted = true;
+        break;
+      }
+    }
+    if (!exhausted) throw new Error('Account-owned storage listing exceeded the safety bound.');
+  }
+  return objects;
+}
+
 function isAppleLinked(user: AuthUser): boolean {
   const provider = user.app_metadata?.provider;
   const providers = user.app_metadata?.providers;
@@ -143,7 +220,10 @@ type OrganizationsTable = {
   };
 };
 
-export function createDeleteAccountHandler(createBackendClient: BackendClientFactory) {
+export function createDeleteAccountHandler(
+  createBackendClient: BackendClientFactory,
+  dependencies: DeleteAccountDependencies = {},
+) {
   return async function handleDeleteAccount(request: Request): Promise<Response> {
     if (request.method !== 'POST') {
       return json(405, { error: 'Method not allowed.', code: 'method_not_allowed' }, { Allow: 'POST' });
@@ -177,12 +257,80 @@ export function createDeleteAccountHandler(createBackendClient: BackendClientFac
           code: 'confirmation_required',
         });
       }
+      const providerCredentialFields = new Set([
+        'refreshToken',
+        'refresh_token',
+        'clientSecret',
+        'client_secret',
+        'appleRefreshToken',
+        'apple_refresh_token',
+        'identityToken',
+        'identity_token',
+      ]);
+      if (Object.keys(payload).some((key) => providerCredentialFields.has(key))) {
+        return json(400, {
+          error: 'Provider credentials are not accepted from the client.',
+          code: 'unsupported_provider_credentials',
+        });
+      }
+
+      const { data: preparation, error: preparationError } = await backend.rpc(
+        'prepare_account_deletion',
+        { p_user_id: authData.user.id },
+      );
+      if (preparationError || !preparation || typeof preparation !== 'object') {
+        const message = preparationError?.message.toLowerCase() ?? '';
+        if (message.includes('league') && message.includes('ownership')) {
+          return json(409, {
+            error: 'Transfer ownership of every league you own, then try again.',
+            code: 'league_ownership',
+          });
+        }
+        if (message.includes('organization') && message.includes('ownership')) {
+          return json(409, {
+            error: 'Transfer ownership of every organization you own, then try again.',
+            code: 'organization_ownership',
+          });
+        }
+        return json(500, { error: 'Unable to prepare account deletion.', code: 'deletion_preflight_failed' });
+      }
 
       if (isAppleLinked(authData.user)) {
-        return json(409, {
-          error: 'Apple sign-in access must be revoked before this account can be deleted. Contact support to complete deletion.',
-          code: 'apple_revocation_unavailable',
-        });
+        const appleAlreadyRevoked = (preparation as { apple_revoked?: unknown }).apple_revoked === true;
+        if (!appleAlreadyRevoked) {
+          const authorizationCode = (payload as { appleAuthorizationCode?: unknown }).appleAuthorizationCode;
+          if (typeof authorizationCode !== 'string' || !authorizationCode.trim()) {
+            return json(409, {
+              error: 'Sign in with Apple again to authorize account deletion.',
+              code: 'apple_reauthentication_required',
+            });
+          }
+          if (!dependencies.revokeAppleAuthorizationCode) {
+            return json(500, {
+              error: 'Apple account revocation is not configured.',
+              code: 'apple_revocation_configuration_error',
+            });
+          }
+
+          try {
+            await dependencies.revokeAppleAuthorizationCode(authorizationCode);
+          } catch {
+            return json(502, {
+              error: 'Unable to revoke Sign in with Apple access. Your account was not deleted.',
+              code: 'apple_revocation_failed',
+            });
+          }
+
+          const { error: markerError } = await backend.rpc('mark_account_apple_revoked', {
+            p_user_id: authData.user.id,
+          });
+          if (markerError) {
+            return json(500, {
+              error: 'Apple access was revoked, but deletion could not be recorded. Try again.',
+              code: 'apple_revocation_marker_failed',
+            });
+          }
+        }
       }
 
       const organizationsTable = backend.from('organizations') as OrganizationsTable;
@@ -208,8 +356,20 @@ export function createDeleteAccountHandler(createBackendClient: BackendClientFac
         return json(500, { error: PROFILE_IMAGE_ERROR, code: 'image_cleanup_failed' });
       }
 
-      const profileImages = extractOwnedProfileImageObjects(authData.user.id, profile);
-      for (const object of profileImages) {
+      let listedImages: ProfileImageObject[];
+      try {
+        listedImages = await listOwnedProfileImageObjects(authData.user.id, backend.storage);
+      } catch {
+        return json(500, { error: PROFILE_IMAGE_ERROR, code: 'image_cleanup_failed' });
+      }
+      const profileImages = new Map<string, ProfileImageObject>();
+      for (const object of [
+        ...listedImages,
+        ...extractOwnedProfileImageObjects(authData.user.id, profile),
+      ]) {
+        profileImages.set(`${object.bucket}\0${object.path}`, object);
+      }
+      for (const object of profileImages.values()) {
         const { error: storageError } = await backend.storage
           .from(object.bucket)
           .remove([object.path]);
@@ -218,11 +378,24 @@ export function createDeleteAccountHandler(createBackendClient: BackendClientFac
         }
       }
 
+      const { error: storageMarkerError } = await backend.rpc('mark_account_storage_deleted', {
+        p_user_id: authData.user.id,
+      });
+      if (storageMarkerError) {
+        return json(500, { error: 'Unable to record image cleanup.', code: 'image_cleanup_failed' });
+      }
+
       const { error: deletionError } = await backend.rpc('execute_account_deletion', {
         p_user_id: authData.user.id,
       });
       if (deletionError) {
         const normalizedMessage = deletionError.message.toLowerCase();
+        if (normalizedMessage.includes('league') && normalizedMessage.includes('transfer ownership')) {
+          return json(409, {
+            error: 'Transfer ownership of every league you own, then try again.',
+            code: 'league_ownership',
+          });
+        }
         if (normalizedMessage.includes('organization') && normalizedMessage.includes('transfer ownership')) {
           return json(409, {
             error: 'Transfer ownership of every organization you own, then try again.',

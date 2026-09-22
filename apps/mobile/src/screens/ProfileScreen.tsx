@@ -188,7 +188,7 @@ function formatRecord(wins: number, losses: number, ties: number) {
 }
 
 export default function ProfileScreen({ navigation }: { navigation: any }) {
-  const { isGuest, exitGuest, signOut } = useAuth();
+  const { isGuest, user, exitGuest, signOut } = useAuth();
   const {
     activeLeague,
     activeTheme,
@@ -695,7 +695,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     setIsDeletingAccount(true);
 
     try {
-      const { error } = await deleteCurrentAccount();
+      const providers = user?.app_metadata?.providers;
+      const appleLinked = user?.app_metadata?.provider === 'apple'
+        || (Array.isArray(providers) && providers.includes('apple'))
+        || user?.identities?.some((identity) => identity.provider === 'apple') === true;
+      const { error } = await deleteCurrentAccount({ appleLinked });
       if (error) {
         Alert.alert('Unable to Delete Account', error.message);
         return;
@@ -719,7 +723,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
     Alert.alert(
       'Delete Account?',
-      'This permanently deletes your sign-in, profile, memberships, and personal account data. Legally required records may be retained only in anonymized form.',
+      'This deletes your sign-in, contact/profile data, active memberships, and security/notification data. An anonymized hockey identity and completed-game history remain. Signed waivers and payment audit records retain minimum legal identifiers and are not anonymous.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

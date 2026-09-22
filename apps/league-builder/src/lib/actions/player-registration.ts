@@ -47,6 +47,7 @@ import {
 import { getLeagueBillingConfig } from '@/lib/fees/platform-fees';
 import { reconcileSeasonRegistrationFees } from '@/lib/payments/registration-fee-reconciliation';
 import { verifyLeagueOwnerAccess } from './permissions';
+import { profileImageExtension } from '@/lib/profile-image-mime';
 
 let _stripe: Stripe | null = null;
 
@@ -609,8 +610,8 @@ export async function uploadPlayerPhoto(
       return { success: false, error: 'File size must be less than 5MB.' };
     }
 
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    const canonicalExtension = profileImageExtension(file.type);
+    if (!canonicalExtension) {
       return {
         success: false,
         error: 'Please upload a valid image (PNG, JPG, or WebP).',
@@ -620,8 +621,7 @@ export async function uploadPlayerPhoto(
     const supabase = await createClient();
 
     // Generate unique filename
-    const ext = file.name.split('.').pop() || 'jpg';
-    const filename = `${user.id}/${Date.now()}.${ext}`;
+    const filename = `${user.id}/${Date.now()}.${canonicalExtension}`;
 
     // Upload to storage
     const { data: uploadData, error: uploadError } = await supabase.storage

@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 import {
   createDeleteAccountHandler,
   extractOwnedProfileImageObjects,
+  listOwnedProfileImageObjects,
 } from '../handler.ts';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
@@ -38,6 +39,7 @@ function lifecycleBackend(options: {
     }),
     storage: {
       from: (bucket: string) => ({
+        list: async () => ({ data: [], error: null }),
         remove: (paths: string[]) => options.remove?.(bucket, paths) ?? Promise.resolve({ error: null }),
       }),
     },
@@ -137,6 +139,12 @@ describe('delete-account Edge Function authorization', () => {
     assert.deepEqual(await response.json(), { success: true });
     assert.deepEqual(validatedTokens, ['verified-user-token']);
     assert.deepEqual(rpcCalls, [{
+      name: 'prepare_account_deletion',
+      args: { p_user_id: 'authenticated-user' },
+    }, {
+      name: 'mark_account_storage_deleted',
+      args: { p_user_id: 'authenticated-user' },
+    }, {
       name: 'execute_account_deletion',
       args: { p_user_id: 'authenticated-user' },
     }]);
@@ -172,6 +180,40 @@ describe('delete-account Edge Function authorization', () => {
     assert.equal(rpcCalls, 0);
   });
 
+  it('rejects provider refresh tokens and client secrets from the client', async () => {
+    let rpcCalls = 0;
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: {
+        getUser: async () => ({ data: { user: { id: 'authenticated-user' } }, error: null }),
+      },
+      rpc: async () => {
+        rpcCalls += 1;
+        return { data: { success: true }, error: null };
+      },
+    }));
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer verified-user-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        confirmation: 'DELETE',
+        refreshToken: 'must-not-be-accepted',
+        clientSecret: 'must-not-be-accepted',
+      }),
+    }));
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: 'Provider credentials are not accepted from the client.',
+      code: 'unsupported_provider_credentials',
+    });
+    assert.equal(rpcCalls, 0);
+  });
+
   it('returns actionable guidance when organization ownership blocks deletion', async () => {
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend(),
@@ -202,16 +244,43 @@ describe('delete-account Edge Function authorization', () => {
     });
   });
 
+  it('returns actionable guidance when league ownership blocks deletion', async () => {
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: {
+        getUser: async () => ({ data: { user: { id: 'league-owner' } }, error: null }),
+      },
+      rpc: async () => ({
+        data: null,
+        error: { message: 'Cannot delete account: transfer league ownership first.' },
+      }),
+    }));
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer verified-user-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ confirmation: 'DELETE' }),
+    }));
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: 'Transfer ownership of every league you own, then try again.',
+      code: 'league_ownership',
+    });
+  });
+
   it('sanitizes generic deletion errors returned by the backend', async () => {
     const handler = createDeleteAccountHandler(() => ({
       ...lifecycleBackend(),
       auth: {
         getUser: async () => ({ data: { user: { id: 'authenticated-user' } }, error: null }),
       },
-      rpc: async () => ({
-        data: null,
-        error: { message: 'relation private_accounts failed with password=database-secret' },
-      }),
+      rpc: async (name: string) => name === 'execute_account_deletion'
+        ? { data: null, error: { message: 'relation private_accounts failed with password=database-secret' } }
+        : { data: { success: true }, error: null },
     }));
 
     const response = await handler(new Request('https://example.test/delete-account', {
@@ -263,6 +332,10 @@ describe('delete-account Edge Function authorization', () => {
 
     assert.match(source, /Deno\.env\.get\('SUPABASE_SERVICE_ROLE_KEY'\)/);
     assert.match(source, /createDeleteAccountHandler/);
+    assert.match(source, /createAppleAuthorizationRevoker/);
+    for (const secretName of ['APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_CLIENT_ID', 'APPLE_PRIVATE_KEY_P8']) {
+      assert.match(source, new RegExp(`Deno\\.env\\.get\\('${secretName}'\\)`));
+    }
     assert.match(source, /Deno\.serve\(deleteAccountHandler\)/);
     assert.doesNotMatch(source, /EXPO_PUBLIC_/);
     assert.match(config, /\[functions\.delete-account\][\s\S]*?verify_jwt\s*=\s*true/);
@@ -270,6 +343,46 @@ describe('delete-account Edge Function authorization', () => {
 });
 
 describe('delete-account profile image ownership', () => {
+  it('lists every owned allowlisted object across bounded pages, including orphans', async () => {
+    const calls: Array<{ bucket: string; prefix: string; options: unknown }> = [];
+    const objects = await listOwnedProfileImageObjects(USER_ID, {
+      from: (bucket: string) => ({
+        list: async (prefix: string, options: { limit: number; offset: number; search?: string }) => {
+          calls.push({ bucket, prefix, options });
+          if (bucket === 'avatars') {
+            return options.offset === 0
+              ? { data: Array.from({ length: 100 }, (_, index) => ({ name: index === 0 ? 'avatar.webp' : `ignore-${index}` })), error: null }
+              : { data: [{ name: 'avatar.png' }], error: null };
+          }
+          if (bucket === 'player-photos') {
+            return { data: [{ name: '1700000000000.jpeg' }, { name: '../foreign.png' }], error: null };
+          }
+          return {
+            data: [
+              { name: `${USER_ID}-1700000000000.jpg` },
+              { name: '22222222-2222-4222-8222-222222222222-1700000000000.jpg' },
+            ],
+            error: null,
+          };
+        },
+        remove: async () => ({ error: null }),
+      }),
+    });
+
+    assert.deepEqual(objects, [
+      { bucket: 'avatars', path: `${USER_ID}/avatar.webp` },
+      { bucket: 'avatars', path: `${USER_ID}/avatar.png` },
+      { bucket: 'player-photos', path: `${USER_ID}/1700000000000.jpeg` },
+      { bucket: 'player-avatars', path: `${USER_ID}-1700000000000.jpg` },
+    ]);
+    assert.equal(calls.filter(({ bucket }) => bucket === 'avatars').length, 2);
+    assert.deepEqual(calls.find(({ bucket }) => bucket === 'player-avatars'), {
+      bucket: 'player-avatars',
+      prefix: '',
+      options: { limit: 100, offset: 0, search: `${USER_ID}-` },
+    });
+  });
+
   it('extracts only repository-proven buckets and caller-owned paths', () => {
     assert.deepEqual(extractOwnedProfileImageObjects(USER_ID, {
       avatar_url: `https://project.supabase.co/storage/v1/object/public/avatars/${USER_ID}/avatar.jpg?t=1`,
@@ -335,8 +448,10 @@ describe('delete-account profile image ownership', () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(events, [
+      'rpc',
       `remove:avatars:${USER_ID}/avatar.jpg`,
       `remove:player-photos:${USER_ID}/1700000000000.jpg`,
+      'rpc',
       'rpc',
     ]);
   });
@@ -364,7 +479,7 @@ describe('delete-account profile image ownership', () => {
         body: JSON.stringify({ confirmation: 'DELETE' }),
       }));
       assert.equal(response.status, 200);
-      assert.equal(rpcCalls, 1);
+      assert.equal(rpcCalls, 3);
     }
   });
 
@@ -393,7 +508,7 @@ describe('delete-account profile image ownership', () => {
       error: 'Unable to remove your profile image. Your account was not deleted.',
       code: 'image_cleanup_failed',
     });
-    assert.equal(rpcCalls, 0);
+    assert.equal(rpcCalls, 1);
   });
 
   it('does not remove an image when organization ownership blocks deletion', async () => {
@@ -408,7 +523,10 @@ describe('delete-account profile image ownership', () => {
         remove: async () => { lifecycleCalls += 1; return { error: null }; },
       }),
       auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
-      rpc: async () => { lifecycleCalls += 1; return { data: null, error: null }; },
+      rpc: async (name: string) => {
+        if (name !== 'prepare_account_deletion') lifecycleCalls += 1;
+        return { data: { success: true }, error: null };
+      },
     }));
 
     const response = await handler(new Request('https://example.test/delete-account', {
@@ -427,6 +545,51 @@ describe('delete-account profile image ownership', () => {
 });
 
 describe('delete-account Apple revocation guard', () => {
+  it('exchanges and revokes a fresh Apple authorization code before destructive work', async () => {
+    const events: string[] = [];
+    const handler = createDeleteAccountHandler(
+      () => ({
+        ...lifecycleBackend(),
+        auth: {
+          getUser: async () => ({
+            data: {
+              user: {
+                id: USER_ID,
+                app_metadata: { providers: ['apple'] },
+                identities: [{ provider: 'apple' }],
+              },
+            },
+            error: null,
+          }),
+        },
+        rpc: async (name: string) => {
+          events.push(`rpc:${name}`);
+          return { data: name === 'prepare_account_deletion' ? { apple_revoked: false } : { success: true }, error: null };
+        },
+      }),
+      {
+        revokeAppleAuthorizationCode: async (code: string) => {
+          events.push(`apple:${code}`);
+        },
+      },
+    );
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE', appleAuthorizationCode: 'fresh-one-time-code' }),
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(events, [
+      'rpc:prepare_account_deletion',
+      'apple:fresh-one-time-code',
+      'rpc:mark_account_apple_revoked',
+      'rpc:mark_account_storage_deleted',
+      'rpc:execute_account_deletion',
+    ]);
+  });
+
   it('blocks Apple-linked deletion before mutation when no revocable Apple grant is stored', async () => {
     let lifecycleCalls = 0;
     const handler = createDeleteAccountHandler(() => ({
@@ -443,7 +606,10 @@ describe('delete-account Apple revocation guard', () => {
           error: null,
         }),
       },
-      rpc: async () => { lifecycleCalls += 1; return { data: null, error: null }; },
+      rpc: async (name: string) => {
+        if (name !== 'prepare_account_deletion') lifecycleCalls += 1;
+        return { data: name === 'prepare_account_deletion' ? { apple_revoked: false } : null, error: null };
+      },
     }));
 
     const response = await handler(new Request('https://example.test/delete-account', {
@@ -454,9 +620,105 @@ describe('delete-account Apple revocation guard', () => {
 
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), {
-      error: 'Apple sign-in access must be revoked before this account can be deleted. Contact support to complete deletion.',
-      code: 'apple_revocation_unavailable',
+      error: 'Sign in with Apple again to authorize account deletion.',
+      code: 'apple_reauthentication_required',
     });
     assert.equal(lifecycleCalls, 0);
+  });
+
+  it('retries database deletion from the durable Apple marker without a second provider grant', async () => {
+    let providerCalls = 0;
+    const rpcNames: string[] = [];
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: USER_ID, app_metadata: { providers: ['apple'] } } },
+          error: null,
+        }),
+      },
+      rpc: async (name: string) => {
+        rpcNames.push(name);
+        return {
+          data: name === 'prepare_account_deletion' ? { apple_revoked: true } : { success: true },
+          error: null,
+        };
+      },
+    }), {
+      revokeAppleAuthorizationCode: async () => { providerCalls += 1; },
+    });
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE' }),
+    }));
+
+    assert.equal(response.status, 200);
+    assert.equal(providerCalls, 0);
+    assert.doesNotMatch(rpcNames.join(','), /mark_account_apple_revoked/);
+    assert.match(rpcNames.join(','), /execute_account_deletion/);
+  });
+
+  it('stops before storage or database mutation when Apple rejects the provider grant', async () => {
+    let destructiveCalls = 0;
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend({ remove: async () => { destructiveCalls += 1; return { error: null }; } }),
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: USER_ID, app_metadata: { providers: ['apple'] } } },
+          error: null,
+        }),
+      },
+      rpc: async (name: string) => {
+        if (name !== 'prepare_account_deletion') destructiveCalls += 1;
+        return { data: { apple_revoked: false }, error: null };
+      },
+    }), {
+      revokeAppleAuthorizationCode: async () => { throw new Error('provider detail'); },
+    });
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE', appleAuthorizationCode: 'rejected-code' }),
+    }));
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), {
+      error: 'Unable to revoke Sign in with Apple access. Your account was not deleted.',
+      code: 'apple_revocation_failed',
+    });
+    assert.equal(destructiveCalls, 0);
+  });
+
+  it('keeps the Apple marker durable when database deletion fails after revocation', async () => {
+    const events: string[] = [];
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: USER_ID, app_metadata: { providers: ['apple'] } } },
+          error: null,
+        }),
+      },
+      rpc: async (name: string) => {
+        events.push(name);
+        if (name === 'prepare_account_deletion') return { data: { apple_revoked: false }, error: null };
+        if (name === 'execute_account_deletion') return { data: null, error: { message: 'database failure' } };
+        return { data: { success: true }, error: null };
+      },
+    }), {
+      revokeAppleAuthorizationCode: async () => { events.push('apple-provider-revoked'); },
+    });
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE', appleAuthorizationCode: 'fresh-code' }),
+    }));
+
+    assert.equal(response.status, 500);
+    assert.ok(events.indexOf('mark_account_apple_revoked') < events.indexOf('execute_account_deletion'));
   });
 });

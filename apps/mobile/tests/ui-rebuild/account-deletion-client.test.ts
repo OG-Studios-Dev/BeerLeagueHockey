@@ -6,12 +6,23 @@ import { compileCommonJs } from './component-harness.ts';
 type Invocation = { name: string; options: { body: unknown } };
 
 type AccountDeletionModule = {
-  deleteCurrentAccount: (client: unknown) => Promise<{ error: Error | null }>;
+  deleteCurrentAccount: (
+    options?: { appleLinked?: boolean },
+    client?: unknown,
+  ) => Promise<{ error: Error | null }>;
 };
 
 const { deleteCurrentAccount } = compileCommonJs<AccountDeletionModule>(
   new URL('../../src/lib/supabase/accountDeletion.ts', import.meta.url),
-  { './client': { supabase: {} } },
+  {
+    './client': { supabase: {} },
+    './auth': {
+      getAppleDeletionAuthorizationCode: async () => ({
+        authorizationCode: 'fresh-delete-code',
+        error: null,
+      }),
+    },
+  },
 );
 
 function clientReturning(result: { data: unknown; error: unknown }, invocations: Invocation[]) {
@@ -29,6 +40,7 @@ describe('mobile account-deletion client', () => {
   it('invokes the authenticated delete-account function with an explicit confirmation and no user id', async () => {
     const invocations: Invocation[] = [];
     const result = await deleteCurrentAccount(
+      undefined,
       clientReturning({ data: { success: true }, error: null }, invocations),
     );
 
@@ -40,6 +52,26 @@ describe('mobile account-deletion client', () => {
     assert.equal(JSON.stringify(invocations).includes('userId'), false);
   });
 
+  it('sends only the fresh Apple authorization code for an Apple-linked deletion', async () => {
+    const invocations: Invocation[] = [];
+    const result = await deleteCurrentAccount(
+      { appleLinked: true },
+      clientReturning({ data: { success: true }, error: null }, invocations),
+    );
+
+    assert.deepEqual(result, { error: null });
+    assert.deepEqual(invocations, [{
+      name: 'delete-account',
+      options: {
+        body: {
+          confirmation: 'DELETE',
+          appleAuthorizationCode: 'fresh-delete-code',
+        },
+      },
+    }]);
+    assert.doesNotMatch(JSON.stringify(invocations), /refresh|clientSecret|identityToken/i);
+  });
+
   it('returns the backend organization-ownership guidance from a failed function response', async () => {
     const invocations: Invocation[] = [];
     const context = new Response(JSON.stringify({
@@ -47,7 +79,7 @@ describe('mobile account-deletion client', () => {
       code: 'organization_ownership',
     }), { status: 409, headers: { 'Content-Type': 'application/json' } });
 
-    const result = await deleteCurrentAccount(clientReturning({
+    const result = await deleteCurrentAccount(undefined, clientReturning({
       data: null,
       error: { message: 'Edge Function returned a non-2xx status code', context },
     }, invocations));
@@ -57,7 +89,7 @@ describe('mobile account-deletion client', () => {
 
   it('uses a safe fallback when the function error has no readable response body', async () => {
     const invocations: Invocation[] = [];
-    const result = await deleteCurrentAccount(clientReturning({
+    const result = await deleteCurrentAccount(undefined, clientReturning({
       data: null,
       error: { message: 'network unavailable' },
     }, invocations));

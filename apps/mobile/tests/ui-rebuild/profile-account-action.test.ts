@@ -5,6 +5,7 @@ import { compileCommonJs, createElement, createHookHarness, findNode, nodeText }
 
 type RenderOptions = {
   isGuest?: boolean;
+  appleLinked?: boolean;
   loading?: boolean;
   profile?: { id: string; full_name: string } | null;
   signOutResult?: { error: Error | null };
@@ -15,6 +16,7 @@ type RenderOptions = {
 
 function renderProfile({
   isGuest = false,
+  appleLinked = false,
   loading = true,
   profile = null,
   signOutResult = { error: null },
@@ -75,6 +77,10 @@ function renderProfile({
     '../context/AuthContext': {
       useAuth: () => ({
         isGuest,
+        user: isGuest ? null : {
+          id: 'user-1',
+          app_metadata: { providers: appleLinked ? ['email', 'apple'] : ['email'] },
+        },
         session: isGuest ? null : { user: { id: 'user-1' } },
         signOut: async (options?: unknown) => { signOutCalls.push(options); return signOutImpl ? signOutImpl() : signOutResult; },
         exitGuest: () => exitGuestCalls.push(true),
@@ -93,8 +99,8 @@ function renderProfile({
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
     '../lib/supabase/accountDeletion': {
-      deleteCurrentAccount: async () => {
-        deleteAccountCalls.push(true);
+      deleteCurrentAccount: async (options: unknown) => {
+        deleteAccountCalls.push(options);
         return deleteImpl ? deleteImpl() : deleteResult;
       },
     },
@@ -254,6 +260,10 @@ describe('Profile account action', () => {
     button.props.onPress();
     assert.equal(rendered.deleteAccountCalls.length, 0);
     assert.equal(rendered.alerts[0]?.title, 'Delete Account?');
+    assert.match(rendered.alerts[0]?.message ?? '', /signed waivers/i);
+    assert.match(rendered.alerts[0]?.message ?? '', /payment audit/i);
+    assert.match(rendered.alerts[0]?.message ?? '', /not anonymous/i);
+    assert.match(rendered.alerts[0]?.message ?? '', /completed-game/i);
     assert.equal(rendered.alerts[0]?.buttons?.[0]?.text, 'Cancel');
     assert.equal(rendered.alerts[0]?.buttons?.[1]?.text, 'Continue');
     assert.equal(rendered.alerts[0]?.buttons?.[1]?.style, 'destructive');
@@ -268,6 +278,15 @@ describe('Profile account action', () => {
     assert.equal(rendered.deleteAccountCalls.length, 1);
     assert.equal(rendered.signOutCalls.length, 1);
     assert.deepEqual(rendered.signOutCalls[0], { pushTokenAlreadyCleared: true });
+  });
+
+  it('requests deletion-time Apple reauthentication for an Apple-linked user', async () => {
+    const rendered = renderProfile({ loading: false, appleLinked: true });
+    accountButton(rendered.tree, 'Delete account')?.props.onPress();
+    rendered.alerts[0]?.buttons?.[1]?.onPress();
+    await rendered.alerts[1]?.buttons?.[1]?.onPress();
+
+    assert.deepEqual(rendered.deleteAccountCalls, [{ appleLinked: true }]);
   });
 
   it('keeps deletion unavailable to guests and reports organization ownership without signing out', async () => {

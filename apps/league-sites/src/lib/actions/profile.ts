@@ -3,6 +3,7 @@
 import { createAuthClient as createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { resolvePlayerPhotoUrl } from '@/lib/player-photo';
+import { profileImageExtension } from '@/lib/profile-image-mime';
 
 export type ProfileActionResult<T = void> =
   | { success: true; data: T }
@@ -38,7 +39,8 @@ export async function uploadProfilePhoto(
     }
 
     // Validate file type
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    const canonicalExtension = profileImageExtension(file.type);
+    if (!canonicalExtension || !ALLOWED_MIME_TYPES.includes(file.type)) {
       return {
         success: false,
         error: 'Invalid file type. Please upload a JPG, PNG, or WebP image.',
@@ -80,9 +82,8 @@ export async function uploadProfilePhoto(
     }
 
     // Generate unique filename
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const timestamp = Date.now();
-    const filename = `${user.id}-${timestamp}.${ext}`;
+    const filename = `${user.id}-${timestamp}.${canonicalExtension}`;
 
     // Upload to storage
     const { error: uploadError } = await supabase.storage

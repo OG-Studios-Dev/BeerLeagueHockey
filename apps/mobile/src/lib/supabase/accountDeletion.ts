@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import { getAppleDeletionAuthorizationCode } from './auth';
 
 type FunctionError = {
   message?: string;
@@ -14,7 +15,12 @@ type AccountDeletionClient = {
   functions: {
     invoke: (
       name: string,
-      options: { body: { confirmation: 'DELETE' } },
+      options: {
+        body: {
+          confirmation: 'DELETE';
+          appleAuthorizationCode?: string;
+        };
+      },
     ) => Promise<{ data: unknown; error: unknown }>;
   };
 };
@@ -42,11 +48,26 @@ async function responseErrorMessage(context: unknown): Promise<string | null> {
 }
 
 export async function deleteCurrentAccount(
+  options: { appleLinked?: boolean } = {},
   client: AccountDeletionClient = supabase,
 ): Promise<{ error: Error | null }> {
   try {
+    let appleAuthorizationCode: string | undefined;
+    if (options.appleLinked) {
+      const reauthentication = await getAppleDeletionAuthorizationCode();
+      if (reauthentication.error || !reauthentication.authorizationCode) {
+        return {
+          error: reauthentication.error ?? new Error('Apple reauthentication is required.'),
+        };
+      }
+      appleAuthorizationCode = reauthentication.authorizationCode;
+    }
+
     const { data, error } = await client.functions.invoke('delete-account', {
-      body: { confirmation: 'DELETE' },
+      body: {
+        confirmation: 'DELETE',
+        ...(appleAuthorizationCode ? { appleAuthorizationCode } : {}),
+      },
     });
 
     if (error) {

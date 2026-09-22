@@ -1,154 +1,131 @@
 # Account and privacy lifecycle
 
-**Implementation reviewed:** 2026-09-21
+**Implementation reviewed:** 2026-09-22
 **Mobile path:** immediate authenticated deletion through `delete-account`
 
-This document describes current repository behavior. It is not a certification
-of production deployment or a legal conclusion.
+This is a source-level implementation description, not production-deployment or
+legal certification. The exact field contract is
+`docs/account-deletion-retention-matrix.md`.
 
-## Mobile logout
+## Logout
 
-Authenticated logout first updates only the current profile and sets
-`profiles.push_token` to null. Local Supabase sign-out runs only after that
-write succeeds. If token cleanup fails, the session remains active and the app
-shows a generic retry message so a device token is not knowingly left assigned
-to an account while another account signs in.
+Authenticated logout calls `clear_current_push_destination()` with no user ID.
+The `SECURITY DEFINER` RPC uses `auth.uid()`, accepts only an active profile,
+clears `profiles.push_token`, and raises unless exactly one row was updated.
+Local sign-out happens only after that proof. Missing/stale sessions, an account
+switch, RLS/RPC failure, or zero-row cleanup returns safe retry feedback.
 
-The Expo device token itself is not deleted from the device or Expo. The server
-association is removed. Local scheduled game reminders are controlled
-separately by notification settings.
+After server deletion, local sign-out failure is handled differently: the app
+purges its stored Supabase credential and clears in-memory state so credentials
+for the deleted profile are not reused.
 
-## Immediate mobile account deletion
+## Immediate and scheduled deletion state machine
 
-The app requires two destructive confirmations, then calls the authenticated
-`delete-account` Edge Function without accepting a user ID from the client.
-The function validates the bearer token and derives the target UUID from the
-verified user.
+The Edge Function validates the bearer token with Supabase and derives the
+target UUID only from that verified user. It never accepts a target user ID,
+provider token, refresh token, Apple client secret, bucket, or object path from
+the request.
 
-Before database/auth deletion, the function:
+Durable state records these idempotent boundaries:
 
-1. blocks Apple-linked users as described below;
-2. checks organization ownership;
-3. reads `avatar_url` and `photo_url` from the authenticated user's profile;
-4. extracts only exact repository-proven, user-owned Storage paths; and
-5. removes those objects with the service-role client.
+1. Apple authorization revoked (when Apple-linked).
+2. Owned profile-image storage cleanup completed.
+3. Database and auth deletion committed.
+4. Stripe customer cleanup completed and its customer ID erased.
+5. Completion email sent and its destination erased.
+6. Overall completion, allowed only after steps 3-5.
 
-Recognized image contracts are:
+The scheduled processor resumes incomplete steps. Stripe `resource_missing` is
+idempotent success, and completion email uses a stable provider idempotency key.
+A first-attempt failure leaves only that step's minimum retry payload and never
+marks overall completion. Immediate mobile deletion creates the same state and
+can therefore be finished by the scheduled processor.
 
-- `avatars/{user_id}/avatar.jpg` (current native mobile upload);
-- `player-avatars/{user_id}-{timestamp}.{jpg|jpeg|png|webp}` (league-site
-  profile upload); and
-- `player-photos/{user_id}/{timestamp}.{jpg|jpeg|png|webp}` (registration
-  upload when the resulting URL becomes the profile photo).
+Organization and league ownership are checked under the profile lock. Constraint
+triggers also prevent a deleting user from acquiring either ownership path until
+the state reaches completion, closing the precheck/mutation race.
 
-Bucket and ownership are derived from stored profile URLs, not request input.
-Foreign UUIDs, arbitrary buckets, malformed URLs, backslashes, encoded
-traversal, and nonconforming filenames are ignored. A proven object that is
-absent/already missing does not block deletion. Any other Storage removal error
-stops before the database RPC and auth deletion.
+## Sign in with Apple
 
-Storage and Postgres cannot share a transaction. Therefore a later database
-failure can leave an otherwise valid account without its profile image. The
-organization precheck avoids the normal known business-rule failure before
-Storage mutation, but a concurrent ownership/profile change remains a rollout
-test and monitoring concern.
+For a verified Apple-linked user, the native app performs deletion-time Apple
+reauthentication and sends only the one-time authorization code. The Edge
+Function mints an ES256 Apple client secret using server configuration,
+exchanges the code, and revokes the returned refresh/access token. It records a
+durable revocation marker before storage or DB mutation. Provider failure stops
+deletion; a later DB failure can retry without another Apple grant.
 
-## Transactional database cleanup
+Required server-only secrets are `APPLE_TEAM_ID`, `APPLE_KEY_ID`,
+`APPLE_CLIENT_ID`, and `APPLE_PRIVATE_KEY_P8`. Apple prerequisites are an active
+Sign in with Apple `.p8` key with the matching Team/Key IDs and an enabled client
+identifier matching the native authorization-code grant. Values do not belong
+in source, the mobile bundle, logs, or client requests. WebCrypto provides the
+ES256 signing implementation without adding a JWT library.
 
-Migration `20260921170000_complete_account_lifecycle_cleanup.sql` replaces the
-privileged RPC in a forward-only migration. Database work runs in one Postgres
-transaction. Any error, including failure to delete exactly one auth user,
-rolls back all DB changes.
+## Storage
 
-Deleted account-facing data:
+New uploads map validated MIME types to canonical extensions:
+`image/jpeg -> jpg`, `image/png -> png`, and `image/webp -> webp`. User filename
+extensions are ignored.
 
-- team messages authored by the account;
-- web push subscriptions, notifications, notification preferences, consents,
-  application sessions, team rosters, and league memberships;
-- optional legacy `push_device_tokens` rows when that known table exists;
-- non-accepted sub invitations authored by, addressed to, or replacing the
-  account;
-- non-filled goalie marketplace requests authored by the account; and
-- goalie request notification/delivery-token rows for every authored request.
+Deletion lists only fixed server-side contracts with bounded pagination:
 
-Anonymized data:
+- `avatars/{user_id}/avatar.{jpg|jpeg|png|webp}`;
+- `player-avatars/{user_id}-{timestamp}.{jpg|jpeg|png|webp}`; and
+- `player-photos/{user_id}/{timestamp}.{jpg|jpeg|png|webp}`.
 
-- profile direct identifiers, security/admin state, payment customer ID,
-  avatar/photo URLs, and `push_token`;
-- a check-in's optional free-text note, while its status is retained as a
-  hockey/attendance fact;
-- messages on accepted sub invitations, while the accepted substitution remains;
-- notes/compensation text on filled goalie requests, while the filled request
-  and payment/status facts remain;
-- private notes on goalie ratings, while the rating score/tags remain;
-- optional audit-log and payment-history direct identifiers when those known
-  retention tables exist; and
-- direct identifiers in every retained deletion log for the account. Its email becomes
-  a random unlinkable `deleted_...@deleted.local` value; deletion reason and
-  Stripe customer ID are cleared.
+Foreign UUIDs, arbitrary buckets, malformed paths, slashes/backslashes, encoded
+traversal, and unknown extensions are filtered before removal. Missing objects
+are idempotent success; a partial removal failure stops before database deletion.
+Optional historical relation shape is validated before any storage mutation.
 
-Intentionally retained:
+## Database cleanup and retention
 
-- the anonymized profile UUID needed by historical references;
-- non-identifying hockey attributes on that profile;
-- games, events, scores, player/goalie statistics, badges, accepted
-  substitutions, filled goalie requests, rating facts, and other historical
-  hockey facts; and
-- typed financial/audit facts that the optional retention helpers preserve
-  after removing direct identifiers.
+The forward migration removes the `profiles.id -> auth.users` cascade and adds
+a deferred invariant: an active profile must have an auth row, while a deleted
+historical profile may remain after auth deletion. Database cleanup is one
+transaction and requires exactly one auth user deletion.
 
-The RPC is `SECURITY DEFINER`, has an empty `search_path`, schema-qualifies its
-objects, and is executable by `service_role` only. Organization owners are
-rejected before DB mutation and must transfer ownership first.
+Deleted or cleared data includes direct profile/contact data, login/recovery/
+reset records, sessions, push destinations, notifications, preferences,
+consents, current memberships/leadership, pending join/approval workflows,
+diagnostic bug reports, contact submissions linked by exact normalized email,
+future availability, unpaid/unsigned registration workflows, provider payment
+identifiers, metadata, idempotency keys, reminder state, and authored free text.
 
-## Contact submissions
+Historical hockey facts remain: an anonymized profile UUID/name, completed-game
+stats and appearances, inactive historical roster team/season/jersey/position,
+badges, completed attendance categories, accepted substitution facts, and
+filled goalie-marketplace facts. These rows confer no current membership,
+leadership, or authorization.
 
-The current mobile contact form writes name, email, subject, message, league ID,
-and read status. `contact_submissions` has no authenticated-user key and accepts
-guest submissions. A signed-in submission therefore cannot be safely proven to
-belong to that auth UUID, and matching by email could delete a guest's or shared
-address's message. Automatic account deletion does not delete these rows.
-A separate verified privacy request and league/support retention process is
-required for contact-form erasure.
+Signed waivers retain signature/name, signing IP, acceptance timestamps,
+document version/hash, and linkage needed as evidence. They are legally
+retained and are **not anonymous**. Financial rows retain minimum amount,
+currency, status, method/type, and timestamps needed for audit/tax purposes.
+They remain linked to the anonymized historical UUID and are **not anonymous**.
+The retention matrix identifies every classified table and cleared field.
 
-## Sign in with Apple blocker
+## Privilege boundary
 
-Native Apple sign-in obtains an identity token and one-time authorization code,
-then passes them to Supabase sign-in. The repository does not persist an Apple
-refresh token or authorization grant for later revocation. It also does not
-contain the server-side Apple team ID, key ID, private signing key, and correct
-client/service ID workflow required to mint a client secret and call Apple's
-token revocation endpoint.
+Privileged helpers are `SECURITY DEFINER`, owned by `postgres`, and use an empty
+`search_path`. Anonymous/authenticated execution is revoked, including inherited
+or pre-existing grants; a catalog pass removes unknown grantees. Only
+`clear_current_push_destination()` is granted to `authenticated`; it derives
+`auth.uid()` internally. Default public function execution is revoked for future
+Postgres-owned functions in `public`.
 
-Deleting only the local/auth row would falsely imply Apple access was revoked.
-Accordingly, the Edge Function detects Apple in verified Supabase provider data
-(`app_metadata.provider`, `app_metadata.providers`, or identities) and returns
-HTTP 409 `apple_revocation_unavailable` before Storage or database mutation.
+## Rollout and stop conditions
 
-To remove this blocker, a separate reviewed change must securely retain or
-freshly obtain the Apple authorization grant, exchange it server-side, provide
-the business-owned Apple signing credentials outside source control, revoke the
-Apple token successfully (with defined idempotent retry behavior), and only
-then continue account deletion. Apple login remains enabled.
+Apply prior lane migrations first, then
+`20260922120000_account_deletion_review_corrections.sql`; deploy server functions
+before the matching mobile client. Configure Apple secrets and external provider
+keys before allowing Apple deletion. Run the disposable SQL/live matrix and
+external-provider failure/retry cases before release.
 
-## Legacy scheduled processor
-
-The older web flow and `process-account-deletions` implement a deferred path.
-Its direct RPC benefits from the corrected transactional DB cleanup, but that
-processor does not execute the mobile Edge Function's Storage allowlist or
-Apple revocation guard. It is not evidence that iOS in-app deletion passed.
-Release acceptance for this lane uses the immediate mobile path and the live
-matrix in `docs/testing/account-deletion-live-test-matrix.md`.
-
-## Rollout and rollback
-
-Apply `20260921160000` first if absent, then `20260921170000`. Deploy the Edge
-Function and mobile client only after the migration and role-matrix checks pass.
-Run all disposable cases in the live matrix before accepting the release.
-
-Do not edit or reverse an applied migration. If rollout fails before any user
-deletion, roll back application traffic to the prior client/function and ship a
-new forward migration that restores the prior RPC definition. A completed
-deletion, anonymization, or Storage removal is intentionally irreversible and
-cannot be restored by SQL rollback; recovery would require an approved backup
-process and must not recreate revoked access silently.
+Stop if the migration/catalog checks fail, optional relation shape is
+incompatible, an unauthorized role can execute a privileged function, Apple
+revocation cannot be established, foreign/traversal storage paths reach remove,
+an organization owner can race deletion, DB cleanup loses historical facts, or
+overall completion occurs before Stripe and email steps. Applied migrations are
+forward-only; rollback requires another migration. Completed provider revocation,
+storage removal, and deletion are intentionally irreversible.

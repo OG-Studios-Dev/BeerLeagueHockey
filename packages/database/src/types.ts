@@ -86,6 +86,51 @@ export type Database = {
         }
         Relationships: []
       }
+      account_deletion_state: {
+        Row: {
+          apple_revoked_at: string | null
+          completed_at: string | null
+          completion_email: string | null
+          database_deleted_at: string | null
+          email_completed_at: string | null
+          last_error: string | null
+          started_at: string
+          storage_deleted_at: string | null
+          stripe_completed_at: string | null
+          stripe_customer_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          apple_revoked_at?: string | null
+          completed_at?: string | null
+          completion_email?: string | null
+          database_deleted_at?: string | null
+          email_completed_at?: string | null
+          last_error?: string | null
+          started_at?: string
+          storage_deleted_at?: string | null
+          stripe_completed_at?: string | null
+          stripe_customer_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          apple_revoked_at?: string | null
+          completed_at?: string | null
+          completion_email?: string | null
+          database_deleted_at?: string | null
+          email_completed_at?: string | null
+          last_error?: string | null
+          started_at?: string
+          storage_deleted_at?: string | null
+          stripe_completed_at?: string | null
+          stripe_customer_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       account_recovery_requests: {
         Row: {
           assigned_to: string | null
@@ -10974,6 +11019,7 @@ export type Database = {
           division_id: string | null
           end_date: string | null
           games_played_override: number | null
+          historical_retained: boolean
           id: string
           is_goalie: boolean | null
           jersey_number: number | null
@@ -10994,6 +11040,7 @@ export type Database = {
           division_id?: string | null
           end_date?: string | null
           games_played_override?: number | null
+          historical_retained?: boolean
           id?: string
           is_goalie?: boolean | null
           jersey_number?: number | null
@@ -11016,6 +11063,7 @@ export type Database = {
           division_id?: string | null
           end_date?: string | null
           games_played_override?: number | null
+          historical_retained?: boolean
           id?: string
           is_goalie?: boolean | null
           jersey_number?: number | null
@@ -12981,6 +13029,7 @@ export type Database = {
         Args: { p_batch_size?: number }
         Returns: string[]
       }
+      clear_current_push_destination: { Args: never; Returns: boolean }
       cleanup_expired_captain_tokens: { Args: never; Returns: undefined }
       cleanup_expired_notifications: { Args: never; Returns: number }
       cleanup_expired_sessions: { Args: never; Returns: number }
@@ -13020,6 +13069,13 @@ export type Database = {
       delete_user_sessions: { Args: { p_user_id: string }; Returns: number }
       exec_sql: { Args: { sql_text: string }; Returns: undefined }
       execute_account_deletion: { Args: { p_user_id: string }; Returns: Json }
+      mark_account_apple_revoked: { Args: { p_user_id: string }; Returns: undefined }
+      mark_account_storage_deleted: { Args: { p_user_id: string }; Returns: undefined }
+      prepare_account_deletion: { Args: { p_user_id: string }; Returns: Json }
+      record_account_deletion_external_step: {
+        Args: { p_step: string; p_user_id: string }
+        Returns: boolean
+      }
       generate_round_robin_matchups: {
         Args: { p_double_round_robin?: boolean; p_team_ids: string[] }
         Returns: {
