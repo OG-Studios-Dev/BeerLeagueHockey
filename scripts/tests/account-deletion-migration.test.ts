@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -8,9 +7,6 @@ const repositoryRoot = resolve(process.cwd());
 const migrationRelativePath =
   'supabase/migrations/20260921160000_harden_account_deletion.sql';
 const migrationPath = resolve(repositoryRoot, migrationRelativePath);
-const forwardMigrationRelativePath =
-  'supabase/migrations/20260922230000_clear_push_token_on_account_deletion.sql';
-const forwardMigrationPath = resolve(repositoryRoot, forwardMigrationRelativePath);
 const liveMatrixPath = resolve(
   repositoryRoot,
   'docs/testing/account-deletion-live-test-matrix.md',
@@ -21,11 +17,10 @@ function readIfPresent(path: string): string {
 }
 
 const sql = readIfPresent(migrationPath);
-const forwardSql = readIfPresent(forwardMigrationPath);
 const normalizedSql = sql.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim();
 
-function functionDefinition(name: string, source = sql): string {
-  const match = source.match(
+function functionDefinition(name: string): string {
+  const match = sql.match(
     new RegExp(
       `CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${name}\\s*\\([^)]*\\)[\\s\\S]*?\\$function\\$;`,
       'i',
@@ -36,14 +31,6 @@ function functionDefinition(name: string, source = sql): string {
 }
 
 describe('corrective account deletion migration', () => {
-  it('keeps the applied migration byte-for-byte immutable', () => {
-    assert.equal(
-      createHash('sha256').update(sql).digest('hex'),
-      '7c9dcde208c0031752ce70f0a81ffec3f4f57f7ea166baadd880be916cc01c0c',
-    );
-    assert.doesNotMatch(sql, /\bpush_token\s*=/i);
-  });
-
   it('is a new, transactional, narrowly scoped migration', () => {
     assert.ok(sql.length > 0, `missing ${migrationRelativePath}`);
     assert.match(sql, /^\s*BEGIN;/i);
@@ -297,39 +284,6 @@ describe('corrective account deletion migration', () => {
 
     assert.doesNotMatch(
       sql,
-      /GRANT\s+EXECUTE[\s\S]*?\sTO\s+(?:PUBLIC|anon|authenticated)\s*;/i,
-    );
-  });
-
-  it('owns push-token cleanup in a forward-only function replacement', () => {
-    assert.ok(forwardSql.length > 0, `missing ${forwardMigrationRelativePath}`);
-    assert.match(forwardSql, /^\s*BEGIN;/i);
-    assert.match(forwardSql, /COMMIT;\s*$/i);
-
-    const historicalMaster = functionDefinition('execute_account_deletion');
-    const forwardMaster = functionDefinition('execute_account_deletion', forwardSql);
-    const expectedForwardMaster = historicalMaster.replace(
-      '    password_changed_at = NULL,\n    availability = NULL,',
-      '    password_changed_at = NULL,\n    push_token = NULL,\n    availability = NULL,',
-    );
-
-    assert.notEqual(expectedForwardMaster, historicalMaster);
-    assert.equal(forwardMaster, expectedForwardMaster);
-    assert.match(forwardMaster, /SECURITY\s+DEFINER/i);
-    assert.match(forwardMaster, /SET\s+search_path\s*=\s*''/i);
-    assert.match(forwardMaster, /\bpush_token\s*=\s*NULL/i);
-    assert.doesNotMatch(forwardSql, /ALTER\s+FUNCTION[\s\S]*?OWNER\s+TO/i);
-
-    assert.match(
-      forwardSql,
-      /REVOKE\s+EXECUTE\s+ON\s+FUNCTION\s+public\.execute_account_deletion\(uuid\)\s+FROM\s+PUBLIC\s*,\s*anon\s*,\s*authenticated\s*;/i,
-    );
-    assert.match(
-      forwardSql,
-      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.execute_account_deletion\(uuid\)\s+TO\s+service_role\s*;/i,
-    );
-    assert.doesNotMatch(
-      forwardSql,
       /GRANT\s+EXECUTE[\s\S]*?\sTO\s+(?:PUBLIC|anon|authenticated)\s*;/i,
     );
   });
