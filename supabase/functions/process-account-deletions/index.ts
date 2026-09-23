@@ -5,7 +5,12 @@ import Stripe from 'npm:stripe@14';
 
 import { createAppleAuthorizationService } from '../delete-account/apple.ts';
 import { listOwnedProfileImageObjects } from '../delete-account/handler.ts';
-import { processExternalDeletionSteps, type ExternalDeletionState } from './processor.ts';
+import {
+  processExternalDeletionSteps,
+  processReminderClaim,
+  type ExternalDeletionState,
+  type ReminderClaim,
+} from './processor.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -68,12 +73,17 @@ async function sendCompletionEmail(userId: string, email: string): Promise<void>
   if (!response.ok) throw new Error('Completion email failed.');
 }
 
-async function sendReminderEmail(email: string, scheduledFor: string): Promise<void> {
+async function sendReminderEmail(
+  email: string,
+  scheduledFor: string,
+  idempotencyKey: string,
+): Promise<void> {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({
       from: 'HockeyLife <noreply@hockeylife.com>',
@@ -98,7 +108,14 @@ Deno.serve(async (request) => {
     });
   }
 
-  const results = { processed: 0, completed: 0, failed: 0 };
+  const results = {
+    processed: 0,
+    completed: 0,
+    failed: 0,
+    remindersClaimed: 0,
+    remindersSent: 0,
+    reminderFailures: 0,
+  };
   const now = new Date().toISOString();
   const { data: dueRows, error: dueError } = await supabase
     .from('account_deletion_log')
@@ -219,24 +236,43 @@ Deno.serve(async (request) => {
   }
 
   const reminderCutoff = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: reminders } = await supabase
-    .from('account_deletion_log')
-    .select('id,profile_email,scheduled_for')
-    .eq('status', 'pending')
-    .eq('reminder_7day_sent', false)
-    .gte('scheduled_for', now)
-    .lte('scheduled_for', reminderCutoff);
-  for (const reminder of reminders ?? []) {
+  const { data: reminders, error: reminderClaimError } = await supabase.rpc(
+    'claim_account_deletion_reminders',
+    { p_now: now, p_cutoff: reminderCutoff, p_limit: 50 },
+  );
+  if (reminderClaimError) {
+    return new Response(JSON.stringify({ error: 'Unable to claim deletion reminders.', results }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  for (const reminder of (reminders ?? []) as ReminderClaim[]) {
+    results.remindersClaimed += 1;
     try {
-      await sendReminderEmail(reminder.profile_email, reminder.scheduled_for);
-      await supabase.from('account_deletion_log').update({ reminder_7day_sent: true }).eq('id', reminder.id);
+      await processReminderClaim(reminder, {
+        sendReminderEmail,
+        markReminderSent: async (id) => {
+          const { data, error } = await supabase.rpc('mark_account_deletion_reminder_sent', {
+            p_deletion_id: id,
+          });
+          if (error || data !== true) throw new Error('Unable to record deletion reminder completion.');
+        },
+        releaseReminderClaim: async (id) => {
+          const { data, error } = await supabase.rpc('release_account_deletion_reminder_claim', {
+            p_deletion_id: id,
+          });
+          if (error || data !== true) throw new Error('Unable to release deletion reminder claim.');
+        },
+      });
+      results.remindersSent += 1;
     } catch {
-      // A future invocation retries while the flag remains false.
+      results.reminderFailures += 1;
     }
   }
 
   return new Response(JSON.stringify({ message: 'Account deletion work processed.', results }), {
-    status: 200,
+    status: results.reminderFailures === 0 ? 200 : 500,
     headers: { 'Content-Type': 'application/json' },
   });
 });

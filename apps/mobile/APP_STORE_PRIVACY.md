@@ -48,11 +48,15 @@ The deletion path:
 - deletes contact/profile, security, messaging, notification, current-access,
   and unfinished workflow data;
 - deletes or deactivates open/future check-ins, availability, invitations,
-  spare/draft pools, opt-ins, duties, assignments, scorekeeper swaps,
-  duty-rotation entries and lineup selections;
+  spare/draft pools, opt-ins, duties, assignments, scorekeeper/referee swaps,
+  referee bearer sessions, season-return outreach, duty-rotation entries and
+  lineup selections;
 - removes leadership/current authorization and keeps only roster rows tied to
   completed-game history, with jersey/position and completed stats linked to an
   anonymized historical profile;
+- retains only minimized completed-game referee role/payment facts and terminal
+  team-return status facts; referee names/contact/tokens/devices and return
+  captain identity/contact/tokens/notes are removed;
 - retains signed waivers with their minimum evidentiary fields; these records
   are legally retained and are **not anonymous**;
 - retains minimum payment/audit/tax facts while clearing Stripe handles,

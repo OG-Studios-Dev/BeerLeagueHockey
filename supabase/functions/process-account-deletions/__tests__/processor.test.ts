@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { processExternalDeletionSteps } from '../processor.ts';
+import {
+  processExternalDeletionSteps,
+  processReminderClaim,
+  reminderIdempotencyKey,
+} from '../processor.ts';
 
 describe('account deletion external-step retries', () => {
   it('retries Stripe after a first-attempt failure and never completes early', async () => {
@@ -101,5 +105,51 @@ describe('account deletion external-step retries', () => {
       'record:email',
       'record:complete',
     ]);
+  });
+});
+
+describe('scheduled deletion reminder retries', () => {
+  const claim = {
+    id: 'deletion-1',
+    user_id: 'user-1',
+    profile_email: 'player@example.test',
+    scheduled_for: '2026-10-01T12:00:00Z',
+  };
+
+  it('uses one stable provider key when provider success precedes a database failure', async () => {
+    const keys: string[] = [];
+    let markAttempts = 0;
+    const dependencies = {
+      sendReminderEmail: async (_email: string, _scheduledFor: string, key: string) => {
+        keys.push(key);
+      },
+      markReminderSent: async () => {
+        markAttempts += 1;
+        if (markAttempts === 1) throw new Error('database unavailable');
+      },
+      releaseReminderClaim: async () => {
+        throw new Error('a provider success must keep its claim until lease expiry');
+      },
+    };
+
+    await assert.rejects(processReminderClaim(claim, dependencies), /database unavailable/);
+    await processReminderClaim(claim, dependencies);
+
+    assert.deepEqual(keys, [reminderIdempotencyKey(claim), reminderIdempotencyKey(claim)]);
+    assert.equal(markAttempts, 2);
+  });
+
+  it('releases a claim after provider failure so another worker can retry', async () => {
+    const events: string[] = [];
+    await assert.rejects(processReminderClaim(claim, {
+      sendReminderEmail: async () => {
+        events.push('send');
+        throw new Error('provider unavailable');
+      },
+      markReminderSent: async () => { events.push('mark'); },
+      releaseReminderClaim: async (id) => { events.push(`release:${id}`); },
+    }), /provider unavailable/);
+
+    assert.deepEqual(events, ['send', 'release:deletion-1']);
   });
 });

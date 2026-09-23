@@ -14,6 +14,48 @@ export type ExternalDeletionDependencies = {
   recordStep: (step: 'stripe' | 'email' | 'complete') => Promise<void>;
 };
 
+export type ReminderClaim = {
+  id: string;
+  user_id: string;
+  profile_email: string;
+  scheduled_for: string;
+};
+
+export type ReminderDependencies = {
+  sendReminderEmail: (
+    email: string,
+    scheduledFor: string,
+    idempotencyKey: string,
+  ) => Promise<void>;
+  markReminderSent: (id: string) => Promise<void>;
+  releaseReminderClaim: (id: string) => Promise<void>;
+};
+
+export function reminderIdempotencyKey(claim: Pick<ReminderClaim, 'id' | 'user_id'>): string {
+  return `account-deletion-reminder-${claim.user_id}-${claim.id}`;
+}
+
+export async function processReminderClaim(
+  claim: ReminderClaim,
+  dependencies: ReminderDependencies,
+): Promise<void> {
+  try {
+    await dependencies.sendReminderEmail(
+      claim.profile_email,
+      claim.scheduled_for,
+      reminderIdempotencyKey(claim),
+    );
+  } catch (error) {
+    await dependencies.releaseReminderClaim(claim.id);
+    throw error;
+  }
+
+  // If this write fails, retain the claim until its lease expires. The next
+  // worker retries with the same provider idempotency key, so a provider
+  // success followed by a database failure cannot duplicate the email.
+  await dependencies.markReminderSent(claim.id);
+}
+
 export async function processExternalDeletionSteps(
   state: ExternalDeletionState,
   dependencies: ExternalDeletionDependencies,

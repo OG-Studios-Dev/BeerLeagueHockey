@@ -47,8 +47,9 @@ preflight rechecks ownership after locking and inserts deletion state before the
 lock is released. Writer triggers reject deleting, deleted, and authless
 profiles, closing the precheck/mutation race for `owner_user_id`, `owner_id`,
 the authorization-bearing `created_by` path, organization memberships, and
-explicit league-ownership rows. Promotions/updates on those rows recheck the
-same invariant after taking the lock.
+explicit league-ownership rows. `league_memberships` inserts, reassignments,
+status changes, and role promotions use the same lock and eligibility recheck;
+an active owner membership also blocks preflight/execution until transfer.
 
 ## Sign in with Apple
 
@@ -94,6 +95,9 @@ Foreign UUIDs, arbitrary buckets, malformed paths, slashes/backslashes, encoded
 traversal, and unknown extensions are filtered before removal. Missing objects
 are idempotent success; a partial removal failure stops before database deletion.
 Optional historical relation shape is validated before any storage mutation.
+The pass-3 validation includes migration-only referee, season-return,
+notification, migration-token, billing, QuickBooks, and imported-history
+relations, including exact UUID/text/JSON/nullability contracts.
 
 ## Database cleanup and retention
 
@@ -121,6 +125,13 @@ waiver-backed registrations are forced to `cancelled` and lose team/jersey
 assignments; non-terminal suspensions are deleted, while only minimized
 `served`/`denied` discipline facts may remain.
 
+Referee bearer sessions and availability are deleted. Open/future referee swaps
+and assignments are deleted; completed-game officiating retains only minimized
+role/payment/timing facts. Open season-return outreach is deleted. A terminal
+`confirmed`/`declined` response retains only league/season/team/status and its
+terminal timestamp; captain identity/contact, tokens, notes, flags, outreach
+timestamps, and metadata are cleared.
+
 Signed waivers retain signature/name, signing IP, acceptance timestamps,
 document version/hash, and linkage needed as evidence. They are legally
 retained and are **not anonymous**. Financial rows retain minimum amount,
@@ -141,7 +152,8 @@ Postgres-owned functions in `public`.
 
 Apply prior lane migrations first, then
 `20260922120000_account_deletion_review_corrections.sql` and
-`20260922170000_account_deletion_correction_pass_2.sql`; deploy server functions
+`20260922170000_account_deletion_correction_pass_2.sql`, then
+`20260923120000_account_deletion_correction_pass_3.sql`; deploy server functions
 before the matching mobile client. Configure Apple secrets and external provider
 keys before allowing Apple deletion. Run the disposable SQL/live matrix and
 external-provider failure/retry cases before release.

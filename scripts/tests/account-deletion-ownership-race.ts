@@ -15,6 +15,7 @@ const deletingUserId = 'a11ce000-0000-4000-8000-000000000071';
 const leagueId = 'a11ce000-0000-4000-8000-000000000072';
 const ownerUserId = 'a11ce000-0000-4000-8000-000000000073';
 const organizationId = 'a11ce000-0000-4000-8000-000000000074';
+const reminderId = 'a11ce000-0000-4000-8000-000000000075';
 const instanceId = '00000000-0000-0000-0000-000000000000';
 const sessionA = new Client({ connectionString, application_name: 'account-deletion-race-preflight' });
 const sessionB = new Client({ connectionString, application_name: 'account-deletion-race-owner-writer' });
@@ -24,6 +25,8 @@ async function cleanup() {
   try {
     await sessionA.query('DELETE FROM public.account_deletion_provider_secrets WHERE user_id = $1', [deletingUserId]);
     await sessionA.query('DELETE FROM public.account_deletion_state WHERE user_id = $1', [deletingUserId]);
+    await sessionA.query('DELETE FROM public.account_deletion_log WHERE id = $1', [reminderId]);
+    await sessionA.query('DELETE FROM public.league_memberships WHERE league_id = $1', [leagueId]);
     await sessionA.query('DELETE FROM public.league_ownerships WHERE league_id = $1', [leagueId]);
     await sessionA.query('DELETE FROM public.leagues WHERE id = $1', [leagueId]);
     await sessionA.query('DELETE FROM public.organization_members WHERE organization_id = $1', [organizationId]);
@@ -67,6 +70,31 @@ async function runRace(label: string, query: string, values: string[]) {
   await sessionA.query('DELETE FROM public.account_deletion_state WHERE user_id = $1', [deletingUserId]);
 }
 
+async function runReminderClaimRace() {
+  await sessionA.query(`
+    INSERT INTO public.account_deletion_log (
+      id, user_id, profile_email, requested_at, scheduled_for, status
+    ) VALUES ($1, $2, $3, now(), now() + interval '6 days', 'pending')
+  `, [reminderId, deletingUserId, 'ownership-race@example.invalid']);
+
+  await sessionA.query('BEGIN');
+  const firstClaim = await sessionA.query<{ id: string }>(`
+    SELECT id FROM public.claim_account_deletion_reminders(
+      now(), now() + interval '7 days', 1
+    )
+  `);
+  assert.equal(firstClaim.rows[0]?.id, reminderId, 'first worker did not claim reminder');
+
+  const secondClaim = await sessionB.query<{ id: string }>(`
+    SELECT id FROM public.claim_account_deletion_reminders(
+      now(), now() + interval '7 days', 1
+    )
+  `);
+  assert.equal(secondClaim.rowCount, 0, 'overlapping worker claimed the same reminder');
+  await sessionA.query('ROLLBACK');
+  await sessionA.query('DELETE FROM public.account_deletion_log WHERE id = $1', [reminderId]);
+}
+
 await sessionA.connect();
 await sessionB.connect();
 try {
@@ -74,10 +102,10 @@ try {
     SELECT EXISTS (
       SELECT 1
       FROM supabase_migrations.schema_migrations
-      WHERE version = '20260922170000'
+      WHERE version = '20260923120000'
     ) AS migration_present
   `);
-  assert.equal(sourceCheck.rows[0]?.migration_present, true, 'correction-pass-2 migration is not applied');
+  assert.equal(sourceCheck.rows[0]?.migration_present, true, 'correction-pass-3 migration is not applied');
 
   await cleanup();
   await sessionA.query('BEGIN');
@@ -138,6 +166,42 @@ try {
      VALUES ($2, $3, $1)`,
     [deletingUserId, leagueId, organizationId],
   );
+  await runRace(
+    'league membership owner insert',
+    `INSERT INTO public.league_memberships (league_id, user_id, role, status)
+     VALUES ($2, $1, 'owner', 'active')`,
+    [deletingUserId, leagueId],
+  );
+  await runRace(
+    'league membership admin insert',
+    `INSERT INTO public.league_memberships (league_id, user_id, role, status)
+     VALUES ($2, $1, 'admin', 'active')`,
+    [deletingUserId, leagueId],
+  );
+
+  await sessionA.query(`
+    INSERT INTO public.league_memberships (league_id, user_id, role, status)
+    VALUES ($1, $2, 'member', 'active')
+  `, [leagueId, ownerUserId]);
+  await runRace(
+    'league membership reassignment',
+    'UPDATE public.league_memberships SET user_id = $1 WHERE league_id = $2 AND user_id = $3',
+    [deletingUserId, leagueId, ownerUserId],
+  );
+  await sessionA.query('DELETE FROM public.league_memberships WHERE league_id = $1', [leagueId]);
+
+  await sessionA.query(`
+    INSERT INTO public.league_memberships (league_id, user_id, role, status)
+    VALUES ($1, $2, 'member', 'active')
+  `, [leagueId, deletingUserId]);
+  await runRace(
+    'league membership owner promotion',
+    "UPDATE public.league_memberships SET role = 'owner' WHERE league_id = $2 AND user_id = $1",
+    [deletingUserId, leagueId],
+  );
+  await sessionA.query('DELETE FROM public.league_memberships WHERE league_id = $1', [leagueId]);
+
+  await runReminderClaimRace();
 
   const owner = await sessionA.query<{ owner_id: string | null; created_by: string | null }>(
     'SELECT owner_id, created_by FROM public.leagues WHERE id = $1',
@@ -154,10 +218,11 @@ try {
     SELECT (
       (SELECT count(*) FROM public.organization_members WHERE user_id = $1)
       + (SELECT count(*) FROM public.league_ownerships WHERE user_id = $1)
+      + (SELECT count(*) FROM public.league_memberships WHERE user_id = $1)
     )::text AS count
   `, [deletingUserId]);
   assert.equal(accessRows.rows[0]?.count, '0', 'deleting user retained an access assignment');
-  console.log('PASS: preflight and all ownership assignment paths serialized across two PostgreSQL sessions.');
+  console.log('PASS: ownership writers and reminder claims serialized across two PostgreSQL sessions.');
 } finally {
   try {
     await sessionB.query('ROLLBACK');
