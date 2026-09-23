@@ -47,7 +47,7 @@ describe('security-review account deletion corrections', () => {
     assert.match(validation, /audit_logs[\s\S]*?user_id[\s\S]*?details[\s\S]*?ip_address[\s\S]*?user_agent/i);
     assert.match(validation, /stripe_payment_history[\s\S]*?stripe_customer_id[\s\S]*?metadata/i);
     assert.match(validation, /relkind[\s\S]*?'r'[\s\S]*?'p'/i);
-    assert.match(scheduledProcessor, /prepare_account_deletion[\s\S]*?removeOwnedStorage/i);
+    assert.doesNotMatch(scheduledProcessor, /removeOwnedStorage|execute_account_deletion/i);
   });
 
   it('retires active roster authority while preserving roster-only and stat-backed history', () => {
@@ -162,10 +162,9 @@ describe('security-review account deletion corrections', () => {
   });
 
   it('does not repeat database deletion after its durable state is complete', () => {
-    assert.match(
-      scheduledProcessor,
-      /account_deletion_state[\s\S]*?database_deleted_at[\s\S]*?if\s*\(.*database_deleted_at[\s\S]*?execute_account_deletion/i,
-    );
+    assert.match(scheduledProcessor, /workflow_state', 'database_deleted'/i);
+    assert.match(scheduledProcessor, /initiation_kind', 'immediate'/i);
+    assert.doesNotMatch(scheduledProcessor, /execute_account_deletion/i);
   });
 
   it('revokes unknown execute grantees and hardens default function ACLs', () => {

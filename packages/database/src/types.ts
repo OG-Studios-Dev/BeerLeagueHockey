@@ -25,7 +25,7 @@ export type Database = {
           id: string
           initial_notification_sent: boolean | null
           ip_address: string | null
-          profile_email: string
+          profile_email: string | null
           reminder_7day_attempts: number
           reminder_7day_claimed_at: string | null
           reminder_7day_sent: boolean | null
@@ -38,7 +38,7 @@ export type Database = {
           stripe_deletion_error: string | null
           updated_at: string | null
           user_agent: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           cancelled_at?: string | null
@@ -50,7 +50,7 @@ export type Database = {
           id?: string
           initial_notification_sent?: boolean | null
           ip_address?: string | null
-          profile_email: string
+          profile_email?: string | null
           reminder_7day_attempts?: number
           reminder_7day_claimed_at?: string | null
           reminder_7day_sent?: boolean | null
@@ -63,7 +63,7 @@ export type Database = {
           stripe_deletion_error?: string | null
           updated_at?: string | null
           user_agent?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           cancelled_at?: string | null
@@ -75,7 +75,7 @@ export type Database = {
           id?: string
           initial_notification_sent?: boolean | null
           ip_address?: string | null
-          profile_email?: string
+          profile_email?: string | null
           reminder_7day_attempts?: number
           reminder_7day_claimed_at?: string | null
           reminder_7day_sent?: boolean | null
@@ -88,7 +88,7 @@ export type Database = {
           stripe_deletion_error?: string | null
           updated_at?: string | null
           user_agent?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -101,10 +101,12 @@ export type Database = {
           database_deleted_at: string | null
           email_completed_at: string | null
           last_error: string | null
+          initiation_kind: string
           started_at: string
           storage_deleted_at: string | null
           stripe_completed_at: string | null
           stripe_customer_id: string | null
+          workflow_state: string
           updated_at: string
           user_id: string
         }
@@ -116,10 +118,12 @@ export type Database = {
           database_deleted_at?: string | null
           email_completed_at?: string | null
           last_error?: string | null
+          initiation_kind: string
           started_at?: string
           storage_deleted_at?: string | null
           stripe_completed_at?: string | null
           stripe_customer_id?: string | null
+          workflow_state: string
           updated_at?: string
           user_id: string
         }
@@ -131,10 +135,12 @@ export type Database = {
           database_deleted_at?: string | null
           email_completed_at?: string | null
           last_error?: string | null
+          initiation_kind?: string
           started_at?: string
           storage_deleted_at?: string | null
           stripe_completed_at?: string | null
           stripe_customer_id?: string | null
+          workflow_state?: string
           updated_at?: string
           user_id?: string
         }
@@ -13404,6 +13410,15 @@ export type Database = {
         }[]
       }
       delete_user_sessions: { Args: { p_user_id: string }; Returns: number }
+      begin_immediate_account_deletion: {
+        Args: {
+          p_apple_subject?: string | null
+          p_revocation_token?: string | null
+          p_token_type_hint?: string | null
+          p_user_id: string
+        }
+        Returns: Json
+      }
       exec_sql: { Args: { sql_text: string }; Returns: undefined }
       execute_account_deletion: { Args: { p_user_id: string }; Returns: Json }
       get_account_apple_revocation_retry: {
@@ -13429,6 +13444,10 @@ export type Database = {
       }
       record_account_deletion_external_step: {
         Args: { p_step: string; p_user_id: string }
+        Returns: boolean
+      }
+      record_account_deletion_retry_error: {
+        Args: { p_user_id: string }
         Returns: boolean
       }
       release_account_deletion_reminder_claim: {

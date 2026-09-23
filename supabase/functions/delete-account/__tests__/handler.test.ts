@@ -142,6 +142,14 @@ describe('delete-account Edge Function authorization', () => {
       name: 'prepare_account_deletion',
       args: { p_user_id: 'authenticated-user' },
     }, {
+      name: 'begin_immediate_account_deletion',
+      args: {
+        p_user_id: 'authenticated-user',
+        p_apple_subject: null,
+        p_revocation_token: null,
+        p_token_type_hint: null,
+      },
+    }, {
       name: 'mark_account_storage_deleted',
       args: { p_user_id: 'authenticated-user' },
     }, {
@@ -450,6 +458,7 @@ describe('delete-account profile image ownership', () => {
     assert.equal(response.status, 200);
     assert.deepEqual(events, [
       'rpc',
+      'rpc',
       `remove:avatars:${USER_ID}/avatar.jpg`,
       `remove:player-photos:${USER_ID}/1700000000000.jpg`,
       'rpc',
@@ -480,7 +489,7 @@ describe('delete-account profile image ownership', () => {
         body: JSON.stringify({ confirmation: 'DELETE' }),
       }));
       assert.equal(response.status, 200);
-      assert.equal(rpcCalls, 3);
+      assert.equal(rpcCalls, 4);
     }
   });
 
@@ -509,7 +518,7 @@ describe('delete-account profile image ownership', () => {
       error: 'Unable to remove your profile image. Your account was not deleted.',
       code: 'image_cleanup_failed',
     });
-    assert.equal(rpcCalls, 1);
+    assert.equal(rpcCalls, 2);
   });
 
   it('does not remove an image when organization ownership blocks deletion', async () => {
@@ -525,7 +534,12 @@ describe('delete-account profile image ownership', () => {
       }),
       auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
       rpc: async (name: string) => {
-        if (name !== 'prepare_account_deletion') lifecycleCalls += 1;
+        if (name === 'begin_immediate_account_deletion') {
+          return {
+            data: null,
+            error: { message: 'Cannot delete account: transfer organization ownership first.' },
+          };
+        }
         return { data: { success: true }, error: null };
       },
     }));
@@ -573,7 +587,7 @@ describe('delete-account Apple revocation guard', () => {
               error: null,
             };
           }
-          if (name === 'stage_account_apple_revocation') {
+          if (name === 'begin_immediate_account_deletion') {
             assert.deepEqual(args, {
               p_user_id: USER_ID,
               p_apple_subject: grant.subject,
@@ -608,7 +622,7 @@ describe('delete-account Apple revocation guard', () => {
     assert.deepEqual(events, [
       'rpc:prepare_account_deletion',
       `apple-exchange:fresh-one-time-code:${grant.subject}`,
-      'rpc:stage_account_apple_revocation',
+      'rpc:begin_immediate_account_deletion',
       'apple-revoke',
       'rpc:mark_account_apple_revoked',
       'rpc:mark_account_storage_deleted',
@@ -646,6 +660,41 @@ describe('delete-account Apple revocation guard', () => {
       code: 'apple_reauthentication_required',
     });
     assert.equal(lifecycleCalls, 0);
+  });
+
+  it('leaves the account unchanged when Apple grant verification fails', async () => {
+    const rpcNames: string[] = [];
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+      rpc: async (name: string) => {
+        rpcNames.push(name);
+        return {
+          data: name === 'prepare_account_deletion'
+            ? { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false }
+            : null,
+          error: null,
+        };
+      },
+    }), {
+      appleAuthorization: {
+        exchangeAuthorizationCode: async () => { throw new Error('native cancellation or mismatched grant'); },
+        revokeToken: async () => { throw new Error('must not revoke'); },
+      },
+    });
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE', appleAuthorizationCode: 'invalid-code' }),
+    }));
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), {
+      error: 'Unable to verify Sign in with Apple access. Your account was not deleted.',
+      code: 'apple_identity_verification_failed',
+    });
+    assert.deepEqual(rpcNames, ['prepare_account_deletion']);
   });
 
   it('retries revocation from durable server state without another client code', async () => {
@@ -701,7 +750,7 @@ describe('delete-account Apple revocation guard', () => {
       auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
       rpc: async (name: string) => {
         events.push(name);
-        if (!['prepare_account_deletion', 'stage_account_apple_revocation'].includes(name)) destructiveCalls += 1;
+        if (!['prepare_account_deletion', 'begin_immediate_account_deletion'].includes(name)) destructiveCalls += 1;
         return {
           data: name === 'prepare_account_deletion'
             ? { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false }
@@ -728,7 +777,7 @@ describe('delete-account Apple revocation guard', () => {
       code: 'apple_revocation_failed',
     });
     assert.equal(destructiveCalls, 0);
-    assert.deepEqual(events, ['prepare_account_deletion', 'stage_account_apple_revocation']);
+    assert.deepEqual(events, ['prepare_account_deletion', 'begin_immediate_account_deletion']);
   });
 
   it('does not revoke when staging the provider retry token fails', async () => {
@@ -741,7 +790,7 @@ describe('delete-account Apple revocation guard', () => {
             data: { apple_required: true, apple_revoked: false, apple_subject: grant.subject, apple_retry_ready: false },
             error: null,
           }
-        : name === 'stage_account_apple_revocation'
+        : name === 'begin_immediate_account_deletion'
           ? { data: null, error: { message: 'secret database detail' } }
           : { data: null, error: null },
     }), {
@@ -800,7 +849,7 @@ describe('delete-account Apple revocation guard', () => {
       error: 'Apple access was revoked, but deletion could not be recorded. Try again.',
       code: 'apple_revocation_marker_failed',
     });
-    assert.ok(events.indexOf('stage_account_apple_revocation') < events.indexOf('apple-provider-revoked'));
+    assert.ok(events.indexOf('begin_immediate_account_deletion') < events.indexOf('apple-provider-revoked'));
     assert.doesNotMatch(events.join(','), /execute_account_deletion/);
   });
 });

@@ -2,10 +2,30 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  isImmediateExternalRetryState,
   processExternalDeletionSteps,
-  processReminderClaim,
-  reminderIdempotencyKey,
 } from '../processor.ts';
+
+describe('immediate deletion retry eligibility', () => {
+  it('accepts only an immediate workflow whose destructive database step already completed', () => {
+    const base = {
+      user_id: 'user-1',
+      database_deleted_at: '2026-09-23T12:00:00Z',
+      stripe_customer_id: null,
+      stripe_completed_at: null,
+      completion_email: 'player@example.test',
+      email_completed_at: null,
+      completed_at: null,
+      initiation_kind: 'immediate',
+      workflow_state: 'database_deleted',
+    };
+    assert.equal(isImmediateExternalRetryState(base), true);
+    assert.equal(isImmediateExternalRetryState({ ...base, initiation_kind: 'scheduled' }), false);
+    assert.equal(isImmediateExternalRetryState({ ...base, workflow_state: 'irreversible' }), false);
+    assert.equal(isImmediateExternalRetryState({ ...base, database_deleted_at: null }), false);
+    assert.equal(isImmediateExternalRetryState({ ...base, completed_at: '2026-09-23T12:01:00Z' }), false);
+  });
+});
 
 describe('account deletion external-step retries', () => {
   it('retries Stripe after a first-attempt failure and never completes early', async () => {
@@ -17,6 +37,8 @@ describe('account deletion external-step retries', () => {
       completion_email: 'player@example.test',
       email_completed_at: null as string | null,
       completed_at: null as string | null,
+      initiation_kind: 'immediate',
+      workflow_state: 'database_deleted',
     };
     const events: string[] = [];
     let stripeAttempts = 0;
@@ -66,6 +88,8 @@ describe('account deletion external-step retries', () => {
       completion_email: 'retry@example.test',
       email_completed_at: null as string | null,
       completed_at: null as string | null,
+      initiation_kind: 'immediate',
+      workflow_state: 'database_deleted',
     };
     let emailAttempts = 0;
     let stripeAttempts = 0;
@@ -105,51 +129,5 @@ describe('account deletion external-step retries', () => {
       'record:email',
       'record:complete',
     ]);
-  });
-});
-
-describe('scheduled deletion reminder retries', () => {
-  const claim = {
-    id: 'deletion-1',
-    user_id: 'user-1',
-    profile_email: 'player@example.test',
-    scheduled_for: '2026-10-01T12:00:00Z',
-  };
-
-  it('uses one stable provider key when provider success precedes a database failure', async () => {
-    const keys: string[] = [];
-    let markAttempts = 0;
-    const dependencies = {
-      sendReminderEmail: async (_email: string, _scheduledFor: string, key: string) => {
-        keys.push(key);
-      },
-      markReminderSent: async () => {
-        markAttempts += 1;
-        if (markAttempts === 1) throw new Error('database unavailable');
-      },
-      releaseReminderClaim: async () => {
-        throw new Error('a provider success must keep its claim until lease expiry');
-      },
-    };
-
-    await assert.rejects(processReminderClaim(claim, dependencies), /database unavailable/);
-    await processReminderClaim(claim, dependencies);
-
-    assert.deepEqual(keys, [reminderIdempotencyKey(claim), reminderIdempotencyKey(claim)]);
-    assert.equal(markAttempts, 2);
-  });
-
-  it('releases a claim after provider failure so another worker can retry', async () => {
-    const events: string[] = [];
-    await assert.rejects(processReminderClaim(claim, {
-      sendReminderEmail: async () => {
-        events.push('send');
-        throw new Error('provider unavailable');
-      },
-      markReminderSent: async () => { events.push('mark'); },
-      releaseReminderClaim: async (id) => { events.push(`release:${id}`); },
-    }), /provider unavailable/);
-
-    assert.deepEqual(events, ['send', 'release:deletion-1']);
   });
 });

@@ -22,6 +22,10 @@ const acceptance = readFileSync(resolve(
   root,
   'supabase/tests/account_deletion_correction_pass_3_acceptance.sql',
 ), 'utf8');
+const v1Migration = readFileSync(resolve(
+  root,
+  'supabase/migrations/20260923130000_immediate_account_deletion_v1.sql',
+), 'utf8');
 
 function definition(name: string): string {
   const match = migration.match(new RegExp(
@@ -173,16 +177,15 @@ describe('account deletion correction pass 3', () => {
     }
   });
 
-  it('atomically claims reminders and uses stable provider idempotency', () => {
-    const claim = definition('claim_account_deletion_reminders');
-    assert.match(claim, /FOR\s+UPDATE\s+SKIP\s+LOCKED/i);
-    assert.match(claim, /reminder_7day_claimed_at/i);
-    assert.match(processor, /claim_account_deletion_reminders/i);
-    assert.match(processor, /Idempotency-Key/i);
-    assert.match(processor, /mark_account_deletion_reminder_sent/i);
-    assert.match(processor, /release_account_deletion_reminder_claim/i);
-    assert.match(processor, /reminderFailures\s*===\s*0\s*\?\s*200\s*:\s*500/i);
-    assert.match(race, /overlapping worker claimed the same reminder/i);
+  it('retires reminder claims and keeps only immediate external retries', () => {
+    assert.match(v1Migration, /Scheduled account deletion reminders are unavailable in v1/i);
+    assert.doesNotMatch(processor, /claim_account_deletion_reminders/i);
+    assert.doesNotMatch(processor, /mark_account_deletion_reminder_sent/i);
+    assert.doesNotMatch(processor, /release_account_deletion_reminder_claim/i);
+    assert.match(processor, /initiation_kind', 'immediate'/i);
+    assert.match(processor, /workflow_state', 'database_deleted'/i);
+    assert.match(processor, /results\.failed\s*===\s*0\s*\?\s*200\s*:\s*500/i);
+    assert.doesNotMatch(race, /reminder claim/i);
   });
 
   it('preserves the pinned service-role-only privilege boundary', () => {

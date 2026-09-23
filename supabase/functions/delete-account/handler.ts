@@ -200,18 +200,6 @@ type ProfileTable = {
   };
 };
 
-type OrganizationsTable = {
-  select: (
-    columns: string,
-    options: { count: 'exact'; head: true },
-  ) => {
-    eq: (
-      column: string,
-      value: string,
-    ) => PromiseLike<{ data: unknown; error: BackendError | null; count: number | null }>;
-  };
-};
-
 export function createDeleteAccountHandler(
   createBackendClient: BackendClientFactory,
   dependencies: DeleteAccountDependencies = {},
@@ -306,6 +294,7 @@ export function createDeleteAccountHandler(
         apple_subject?: unknown;
         apple_retry_ready?: unknown;
       };
+      let workflowStarted = prepared.apple_revoked === true;
       if (prepared.apple_required === true) {
         const appleAlreadyRevoked = prepared.apple_revoked === true;
         if (!appleAlreadyRevoked) {
@@ -369,18 +358,32 @@ export function createDeleteAccountHandler(
                 code: 'apple_identity_verification_failed',
               });
             }
-            const { error: stageError } = await backend.rpc('stage_account_apple_revocation', {
+            const { error: stageError } = await backend.rpc('begin_immediate_account_deletion', {
               p_user_id: authData.user.id,
               p_apple_subject: grant.subject,
               p_revocation_token: grant.revocationToken,
               p_token_type_hint: grant.tokenTypeHint,
             });
             if (stageError) {
+              const message = stageError.message.toLowerCase();
+              if (message.includes('league') && message.includes('ownership')) {
+                return json(409, {
+                  error: 'Transfer ownership of every league you own, then try again.',
+                  code: 'league_ownership',
+                });
+              }
+              if (message.includes('organization') && message.includes('ownership')) {
+                return json(409, {
+                  error: 'Transfer ownership of every organization you own, then try again.',
+                  code: 'organization_ownership',
+                });
+              }
               return json(500, {
                 error: 'Unable to save Sign in with Apple revocation for retry. Your account was not deleted.',
                 code: 'apple_revocation_stage_failed',
               });
             }
+            workflowStarted = true;
           }
 
           try {
@@ -403,18 +406,32 @@ export function createDeleteAccountHandler(
         }
       }
 
-      const organizationsTable = backend.from('organizations') as OrganizationsTable;
-      const { count: organizationCount, error: organizationError } = await organizationsTable
-        .select('id', { count: 'exact', head: true })
-        .eq('owner_user_id', authData.user.id);
-      if (organizationError) {
-        return json(500, { error: 'Unable to delete account.', code: 'deletion_failed' });
-      }
-      if ((organizationCount ?? 0) > 0) {
-        return json(409, {
-          error: 'Transfer ownership of every organization you own, then try again.',
-          code: 'organization_ownership',
+      if (!workflowStarted && prepared.apple_retry_ready !== true) {
+        const { error: beginError } = await backend.rpc('begin_immediate_account_deletion', {
+          p_user_id: authData.user.id,
+          p_apple_subject: null,
+          p_revocation_token: null,
+          p_token_type_hint: null,
         });
+        if (beginError) {
+          const message = beginError.message.toLowerCase();
+          if (message.includes('league') && message.includes('ownership')) {
+            return json(409, {
+              error: 'Transfer ownership of every league you own, then try again.',
+              code: 'league_ownership',
+            });
+          }
+          if (message.includes('organization') && message.includes('ownership')) {
+            return json(409, {
+              error: 'Transfer ownership of every organization you own, then try again.',
+              code: 'organization_ownership',
+            });
+          }
+          return json(500, {
+            error: 'Unable to begin immediate account deletion.',
+            code: 'deletion_preflight_failed',
+          });
+        }
       }
 
       const profilesTable = backend.from('profiles') as ProfileTable;

@@ -74,9 +74,10 @@ describe('contact submission write boundary', () => {
     assert.match(inventory, /purpose.*respond(?:ing)? to (?:a )?league or support inquir/i);
     assert.match(inventory, /not linked by an authenticated user UUID/i);
     assert.match(inventory, /Hockey Life league administrators/i);
-    assert.match(inventory, /retained until.*league administrator.*deletes/i);
-    assert.match(inventory, /manual erasure request.*identity verification/i);
     assert.match(inventory, /Supabase.*processor/i);
-    assert.match(inventory, /not automatically deleted.*account deletion/i);
+    assert.match(
+      inventory,
+      /exact normalized account-email matches are deleted; unattributable guest\/shared-email submissions may remain under disclosed support\/retention handling\./i,
+    );
   });
 });

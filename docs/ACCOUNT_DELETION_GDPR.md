@@ -1,6 +1,6 @@
 # Account and privacy lifecycle
 
-**Implementation reviewed:** 2026-09-22
+**Implementation reviewed:** 2026-09-23
 **Mobile path:** immediate authenticated deletion through `delete-account`
 
 This is a source-level implementation description, not production-deployment or
@@ -19,7 +19,7 @@ After server deletion, local sign-out failure is handled differently: the app
 purges its stored Supabase credential and clears in-memory state so credentials
 for the deleted profile are not reused.
 
-## Immediate and scheduled deletion state machine
+## Immediate-only deletion state machine
 
 The Edge Function validates the bearer token with Supabase and derives the
 target UUID only from that verified user. It never accepts a target user ID,
@@ -35,16 +35,21 @@ Durable state records these idempotent boundaries:
 5. Completion email sent and its destination erased.
 6. Overall completion, allowed only after steps 3-5.
 
-The scheduled processor resumes incomplete steps. Stripe `resource_missing` is
-idempotent success, and completion email uses a stable provider idempotency key.
-A first-attempt failure leaves only that step's minimum retry payload and never
-marks overall completion. Immediate mobile deletion creates the same state and
-can therefore be finished by the scheduled processor.
+User-scheduled deletion, cancellation, status display, and reminder delivery are
+disabled for v1. Compatibility server actions and reminder RPCs fail closed with
+explicit v1 guidance and do not mutate state. The background processor never
+starts storage or database deletion; it only resumes Stripe and completion-email
+steps after a server-verified immediate workflow has durably completed database
+deletion. Stripe `resource_missing` is idempotent success, and completion email
+uses a stable provider idempotency key.
 
 Organization and league ownership preflight and every organization/league
-ownership writer acquire the same per-user advisory transaction lock. The
-preflight rechecks ownership after locking and inserts deletion state before the
-lock is released. Writer triggers reject deleting, deleted, and authless
+ownership writer acquire the same per-user advisory transaction lock. Apple
+challenge discovery is read-only and acquires no deletion lock. Only after a
+matching Apple grant is verified—or after final non-Apple preflight—the atomic
+beginning RPC rechecks every ownership representation and inserts explicit
+`immediate`/`irreversible` state before the lock is released. Writer triggers
+reject active irreversible, deleted, and authless
 profiles, closing the precheck/mutation race for `owner_user_id`, `owner_id`,
 the authorization-bearing `created_by` path, organization memberships, and
 explicit league-ownership rows. `league_memberships` inserts, reassignments,
@@ -55,8 +60,10 @@ an active owner membership also blocks preflight/execution until transfer.
 
 The native app first invokes deletion without deciding provider linkage from
 client metadata. If server-derived `auth.identities` state requires Apple, the
-server requests deletion-time reauthentication and the app retries with only
-the one-time authorization code. The Edge Function mints an ES256 Apple client
+server returns a mutation-free reauthentication challenge and the app retries
+with only the one-time authorization code. Native cancellation or verification
+failure leaves no deletion state, log, provider secret, or ownership block. The
+Edge Function mints an ES256 Apple client
 secret using server configuration and
 exchanges the code. It verifies the Apple-signed identity token (`iss`, `aud`,
 expiry, signature, and subject) and requires that subject to equal the Apple
@@ -153,7 +160,8 @@ Postgres-owned functions in `public`.
 Apply prior lane migrations first, then
 `20260922120000_account_deletion_review_corrections.sql` and
 `20260922170000_account_deletion_correction_pass_2.sql`, then
-`20260923120000_account_deletion_correction_pass_3.sql`; deploy server functions
+`20260923120000_account_deletion_correction_pass_3.sql`, then
+`20260923130000_immediate_account_deletion_v1.sql`; deploy server functions
 before the matching mobile client. Configure Apple secrets and external provider
 keys before allowing Apple deletion. Run the disposable SQL/live matrix and
 external-provider failure/retry cases before release.

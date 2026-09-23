@@ -6,6 +6,8 @@ export type ExternalDeletionState = {
   completion_email: string | null;
   email_completed_at: string | null;
   completed_at: string | null;
+  initiation_kind: string;
+  workflow_state: string;
 };
 
 export type ExternalDeletionDependencies = {
@@ -14,53 +16,22 @@ export type ExternalDeletionDependencies = {
   recordStep: (step: 'stripe' | 'email' | 'complete') => Promise<void>;
 };
 
-export type ReminderClaim = {
-  id: string;
-  user_id: string;
-  profile_email: string;
-  scheduled_for: string;
-};
-
-export type ReminderDependencies = {
-  sendReminderEmail: (
-    email: string,
-    scheduledFor: string,
-    idempotencyKey: string,
-  ) => Promise<void>;
-  markReminderSent: (id: string) => Promise<void>;
-  releaseReminderClaim: (id: string) => Promise<void>;
-};
-
-export function reminderIdempotencyKey(claim: Pick<ReminderClaim, 'id' | 'user_id'>): string {
-  return `account-deletion-reminder-${claim.user_id}-${claim.id}`;
-}
-
-export async function processReminderClaim(
-  claim: ReminderClaim,
-  dependencies: ReminderDependencies,
-): Promise<void> {
-  try {
-    await dependencies.sendReminderEmail(
-      claim.profile_email,
-      claim.scheduled_for,
-      reminderIdempotencyKey(claim),
-    );
-  } catch (error) {
-    await dependencies.releaseReminderClaim(claim.id);
-    throw error;
-  }
-
-  // If this write fails, retain the claim until its lease expires. The next
-  // worker retries with the same provider idempotency key, so a provider
-  // success followed by a database failure cannot duplicate the email.
-  await dependencies.markReminderSent(claim.id);
+export function isImmediateExternalRetryState(
+  state: ExternalDeletionState,
+): boolean {
+  return state.initiation_kind === 'immediate'
+    && state.workflow_state === 'database_deleted'
+    && Boolean(state.database_deleted_at)
+    && !state.completed_at;
 }
 
 export async function processExternalDeletionSteps(
   state: ExternalDeletionState,
   dependencies: ExternalDeletionDependencies,
 ): Promise<void> {
-  if (!state.database_deleted_at) throw new Error('Database deletion is not complete.');
+  if (!isImmediateExternalRetryState(state)) {
+    throw new Error('State is not eligible for immediate-deletion external retry.');
+  }
   if (state.completed_at) return;
 
   if (!state.stripe_completed_at) {

@@ -3,63 +3,32 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
 
-import { createAppleAuthorizationService } from '../delete-account/apple.ts';
-import { listOwnedProfileImageObjects } from '../delete-account/handler.ts';
 import {
+  isImmediateExternalRetryState,
   processExternalDeletionSteps,
-  processReminderClaim,
   type ExternalDeletionState,
-  type ReminderClaim,
 } from './processor.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-const APPLE_TEAM_ID = Deno.env.get('APPLE_TEAM_ID');
-const APPLE_KEY_ID = Deno.env.get('APPLE_KEY_ID');
-const APPLE_CLIENT_ID = Deno.env.get('APPLE_CLIENT_ID');
-const APPLE_PRIVATE_KEY_P8 = Deno.env.get('APPLE_PRIVATE_KEY_P8');
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
-if (
-  !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY || !RESEND_API_KEY
-  || !APPLE_TEAM_ID || !APPLE_KEY_ID || !APPLE_CLIENT_ID || !APPLE_PRIVATE_KEY_P8
-) {
-  throw new Error('Missing required account-deletion processor configuration.');
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY || !RESEND_API_KEY) {
+  throw new Error('Missing required account-deletion retry processor configuration.');
 }
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-11-20.acacia' });
-const appleAuthorization = createAppleAuthorizationService({
-  teamId: APPLE_TEAM_ID,
-  keyId: APPLE_KEY_ID,
-  clientId: APPLE_CLIENT_ID,
-  privateKeyP8: APPLE_PRIVATE_KEY_P8,
-});
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
-
-function isMissingStorageObject(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { status?: unknown; statusCode?: unknown };
-  return String(candidate.status ?? candidate.statusCode ?? '') === '404';
-}
-
-async function removeOwnedStorage(userId: string): Promise<void> {
-  const objects = await listOwnedProfileImageObjects(userId, supabase.storage);
-  for (const object of objects) {
-    const { error } = await supabase.storage.from(object.bucket).remove([object.path]);
-    if (error && !isMissingStorageObject(error)) throw new Error('Storage cleanup failed.');
-  }
-  const { error } = await supabase.rpc('mark_account_storage_deleted', { p_user_id: userId });
-  if (error) throw new Error('Storage cleanup marker failed.');
-}
 
 async function sendCompletionEmail(userId: string, email: string): Promise<void> {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      ...JSON_HEADERS,
       Authorization: `Bearer ${RESEND_API_KEY}`,
       'Idempotency-Key': `account-deletion-${userId}`,
     },
@@ -73,28 +42,6 @@ async function sendCompletionEmail(userId: string, email: string): Promise<void>
   if (!response.ok) throw new Error('Completion email failed.');
 }
 
-async function sendReminderEmail(
-  email: string,
-  scheduledFor: string,
-  idempotencyKey: string,
-): Promise<void> {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      'Idempotency-Key': idempotencyKey,
-    },
-    body: JSON.stringify({
-      from: 'HockeyLife <noreply@hockeylife.com>',
-      to: email,
-      subject: 'Reminder: your account deletion is scheduled',
-      html: `<p>Your account is scheduled for deletion on ${new Date(scheduledFor).toLocaleDateString('en-US')}.</p>`,
-    }),
-  });
-  if (!response.ok) throw new Error('Reminder email failed.');
-}
-
 Deno.serve(async (request) => {
   const authHeader = request.headers.get('Authorization');
   const cronSecret = request.headers.get('X-Cron-Secret');
@@ -104,109 +51,32 @@ Deno.serve(async (request) => {
   if (!authorized) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
     });
   }
 
-  const results = {
-    processed: 0,
-    completed: 0,
-    failed: 0,
-    remindersClaimed: 0,
-    remindersSent: 0,
-    reminderFailures: 0,
-  };
-  const now = new Date().toISOString();
-  const { data: dueRows, error: dueError } = await supabase
-    .from('account_deletion_log')
-    .select('id,user_id')
-    .in('status', ['pending', 'processing', 'failed'])
-    .lte('scheduled_for', now)
-    .order('scheduled_for', { ascending: true })
-    .limit(50);
-  if (dueError) {
-    return new Response(JSON.stringify({ error: 'Unable to load deletion work.' }), { status: 500 });
-  }
-
-  for (const deletion of dueRows ?? []) {
-    results.processed += 1;
-    try {
-      await supabase.from('account_deletion_log').update({ status: 'processing', error_message: null }).eq('id', deletion.id);
-      const { data: durableState, error: durableStateError } = await supabase
-        .from('account_deletion_state')
-        .select('database_deleted_at')
-        .eq('user_id', deletion.user_id)
-        .maybeSingle();
-      if (durableStateError) throw new Error('Unable to read deletion state.');
-
-      if (!durableState?.database_deleted_at) {
-        const { data: preparation, error: prepareError } = await supabase.rpc('prepare_account_deletion', {
-          p_user_id: deletion.user_id,
-        });
-        if (prepareError) throw new Error('Deletion preflight failed.');
-        const prepared = preparation as {
-          apple_required?: boolean;
-          apple_revoked?: boolean;
-          apple_subject?: string;
-          apple_retry_ready?: boolean;
-        } | null;
-        if (prepared?.apple_required && !prepared.apple_revoked) {
-          if (!prepared.apple_retry_ready || !prepared.apple_subject) {
-            throw new Error('Apple reauthentication is required before scheduled deletion can continue.');
-          }
-          const { data: retry, error: retryError } = await supabase.rpc(
-            'get_account_apple_revocation_retry',
-            { p_user_id: deletion.user_id },
-          );
-          const retryState = retry as {
-            apple_subject?: unknown;
-            revocation_token?: unknown;
-            token_type_hint?: unknown;
-          } | null;
-          if (
-            retryError
-            || retryState?.apple_subject !== prepared.apple_subject
-            || typeof retryState.revocation_token !== 'string'
-            || (retryState.token_type_hint !== 'refresh_token'
-              && retryState.token_type_hint !== 'access_token')
-          ) {
-            throw new Error('Apple revocation retry state is unavailable.');
-          }
-          await appleAuthorization.revokeToken({
-            revocationToken: retryState.revocation_token,
-            tokenTypeHint: retryState.token_type_hint,
-          });
-          const { error: appleMarkerError } = await supabase.rpc('mark_account_apple_revoked', {
-            p_user_id: deletion.user_id,
-          });
-          if (appleMarkerError) throw new Error('Apple revocation marker failed.');
-        }
-        await removeOwnedStorage(deletion.user_id);
-        const { error: databaseError } = await supabase.rpc('execute_account_deletion', {
-          p_user_id: deletion.user_id,
-        });
-        if (databaseError) throw new Error('Database deletion failed.');
-      }
-    } catch {
-      results.failed += 1;
-      await supabase.from('account_deletion_log').update({
-        status: 'failed',
-        error_message: 'Deletion attempt failed; retry is required.',
-      }).eq('id', deletion.id);
-    }
-  }
-
+  const results = { processed: 0, completed: 0, failed: 0, retryMarkerFailures: 0 };
   const { data: externalRows, error: externalError } = await supabase
     .from('account_deletion_state')
-    .select('user_id,database_deleted_at,stripe_customer_id,stripe_completed_at,completion_email,email_completed_at,completed_at')
+    .select('user_id,database_deleted_at,stripe_customer_id,stripe_completed_at,completion_email,email_completed_at,completed_at,initiation_kind,workflow_state')
+    .eq('initiation_kind', 'immediate')
+    .eq('workflow_state', 'database_deleted')
     .not('database_deleted_at', 'is', null)
     .is('completed_at', null)
     .limit(50);
   if (externalError) {
-    return new Response(JSON.stringify({ error: 'Unable to load external deletion work.', results }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'Unable to load external deletion retry work.', results }), {
+      status: 500,
+      headers: JSON_HEADERS,
+    });
   }
 
   for (const state of (externalRows ?? []) as ExternalDeletionState[]) {
+    results.processed += 1;
+    if (!isImmediateExternalRetryState(state)) {
+      results.failed += 1;
+      continue;
+    }
     try {
       await processExternalDeletionSteps(state, {
         deleteStripeCustomer: async (customerId) => {
@@ -218,61 +88,34 @@ Deno.serve(async (request) => {
         },
         sendCompletionEmail: (email) => sendCompletionEmail(state.user_id, email),
         recordStep: async (step) => {
-          const { error } = await supabase.rpc('record_account_deletion_external_step', {
+          const { data, error } = await supabase.rpc('record_account_deletion_external_step', {
             p_user_id: state.user_id,
             p_step: step,
           });
-          if (error) throw new Error(`Unable to record ${step} deletion step.`);
+          if (error || data !== true) {
+            throw new Error(`Unable to record ${step} deletion step.`);
+          }
         },
       });
       results.completed += 1;
     } catch {
       results.failed += 1;
-      await supabase.from('account_deletion_state').update({
-        last_error: 'External deletion attempt failed; retry is required.',
-        updated_at: new Date().toISOString(),
-      }).eq('user_id', state.user_id);
-    }
-  }
-
-  const reminderCutoff = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: reminders, error: reminderClaimError } = await supabase.rpc(
-    'claim_account_deletion_reminders',
-    { p_now: now, p_cutoff: reminderCutoff, p_limit: 50 },
-  );
-  if (reminderClaimError) {
-    return new Response(JSON.stringify({ error: 'Unable to claim deletion reminders.', results }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  for (const reminder of (reminders ?? []) as ReminderClaim[]) {
-    results.remindersClaimed += 1;
-    try {
-      await processReminderClaim(reminder, {
-        sendReminderEmail,
-        markReminderSent: async (id) => {
-          const { data, error } = await supabase.rpc('mark_account_deletion_reminder_sent', {
-            p_deletion_id: id,
-          });
-          if (error || data !== true) throw new Error('Unable to record deletion reminder completion.');
-        },
-        releaseReminderClaim: async (id) => {
-          const { data, error } = await supabase.rpc('release_account_deletion_reminder_claim', {
-            p_deletion_id: id,
-          });
-          if (error || data !== true) throw new Error('Unable to release deletion reminder claim.');
-        },
+      const { data, error } = await supabase.rpc('record_account_deletion_retry_error', {
+        p_user_id: state.user_id,
       });
-      results.remindersSent += 1;
-    } catch {
-      results.reminderFailures += 1;
+      if (error || data !== true) {
+        results.retryMarkerFailures += 1;
+      }
     }
   }
 
-  return new Response(JSON.stringify({ message: 'Account deletion work processed.', results }), {
-    status: results.reminderFailures === 0 ? 200 : 500,
-    headers: { 'Content-Type': 'application/json' },
+  return new Response(JSON.stringify({
+    message: results.failed === 0
+      ? 'Immediate account-deletion retries processed.'
+      : 'One or more immediate account-deletion retries failed.',
+    results,
+  }), {
+    status: results.failed === 0 ? 200 : 500,
+    headers: JSON_HEADERS,
   });
 });

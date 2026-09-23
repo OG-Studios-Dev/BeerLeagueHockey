@@ -36,12 +36,7 @@ does not indicate completion or approval of App Store Connect privacy metadata.
   inquiry. The row is associated with the selected league but is not linked by
   an authenticated user UUID, even when submitted by a signed-in member. Hockey
   Life league administrators can access the league inbox; Supabase stores and
-  processes the row as the backend processor. The repository proves no automatic
-  retention schedule, so a submission is retained until a Hockey Life league
-  administrator deletes it under the business retention policy. A sender can
-  make a manual erasure request through Support, subject to identity verification
-  using the submitted contact details. Because the row has no user UUID, it is
-  not automatically deleted by authenticated account deletion.
+  processes the row as the backend processor. Exact normalized account-email matches are deleted; unattributable guest/shared-email submissions may remain under disclosed support/retention handling.
 
 The mobile source contains no advertising SDK and no PostHog or equivalent
 analytics integration. Team bulletin/chat and arbitrary captain notes are not
@@ -155,9 +150,7 @@ The deletion path:
 - deletes the Supabase auth user transactionally with database cleanup.
 
 The field-level contract is in
-`docs/account-deletion-retention-matrix.md`. An exact normalized account-email
-match is used to delete linked contact submissions. Unmatched guest/shared-email
-submissions follow their separate verified privacy process.
+`docs/account-deletion-retention-matrix.md`.
 
 Stripe customer cleanup and the completion email are explicit, idempotent
 post-database steps. Their minimum retry values are retained only until each

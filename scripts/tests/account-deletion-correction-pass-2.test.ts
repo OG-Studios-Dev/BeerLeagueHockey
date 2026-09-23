@@ -18,6 +18,10 @@ const scheduledProcessorPath = resolve(
   root,
   'supabase/functions/process-account-deletions/index.ts',
 );
+const immediateV1MigrationPath = resolve(
+  root,
+  'supabase/migrations/20260923130000_immediate_account_deletion_v1.sql',
+);
 const sql = existsSync(migrationPath) ? readFileSync(migrationPath, 'utf8') : '';
 
 function definition(name: string): string {
@@ -136,7 +140,7 @@ describe('account deletion correction pass 2', () => {
     assert.ok(existsSync(raceHarnessPath), 'missing ownership race harness');
     const harness = readFileSync(raceHarnessPath, 'utf8');
     assert.match(harness, /new Client/g);
-    assert.match(harness, /prepare_account_deletion/i);
+    assert.match(harness, /begin_immediate_account_deletion/i);
     assert.match(harness, /UPDATE public\.leagues SET owner_id/i);
     assert.match(harness, /account deletion/i);
   });
@@ -173,8 +177,10 @@ describe('account deletion correction pass 2', () => {
 
   it('does not persist raw provider or database exception messages', () => {
     const processor = readFileSync(scheduledProcessorPath, 'utf8');
+    const immediateV1Migration = readFileSync(immediateV1MigrationPath, 'utf8');
     assert.doesNotMatch(processor, /last_error:\s*error\s+instanceof\s+Error\s*\?\s*error\.message/i);
     assert.doesNotMatch(processor, /error_message:\s*error\s+instanceof\s+Error\s*\?\s*error\.message/i);
-    assert.match(processor, /last_error:\s*'External deletion attempt failed; retry is required\.'/i);
+    assert.match(processor, /record_account_deletion_retry_error/i);
+    assert.match(immediateV1Migration, /last_error\s*=\s*'External deletion attempt failed; retry is required\.'/i);
   });
 });
