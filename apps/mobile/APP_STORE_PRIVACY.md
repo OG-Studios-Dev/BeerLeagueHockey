@@ -53,8 +53,10 @@ reachable in this minimum-v1 route surface.
   Calendar. Hockey Life creates a game event in an available writable calendar.
 - **Push notifications (user initiated):** permission is requested when a
   signed-in user enables Game Reminders. The app stores the resulting Expo token
-  on that user's Supabase profile and schedules local alerts for the currently
-  listed upcoming team games. Users can disable the setting in the app or change
+  on that user's Supabase profile and schedules local alerts only for games
+  involving that player's active Hockey Life team assignments in the current
+  active or playoff season. If no such team membership can be verified, Game
+  Reminders remain off. Users can disable the setting in the app or change
   notification permission in operating-system settings.
 - **Secure/local storage:** Supabase stores authentication session material;
   Expo SecureStore stores the active Hockey Life selection; notification

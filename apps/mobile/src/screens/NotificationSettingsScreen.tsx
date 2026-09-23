@@ -16,11 +16,12 @@ import { useLeague } from '../context/LeagueContext';
 import {
   NOTIFICATION_PREFS_KEY,
   registerForPushNotifications,
-  scheduleGameReminder,
+  scheduleGameRemindersForTeams,
   unregisterPushNotifications,
 } from '../lib/notifications';
-import { getSchedule, getCurrentSeason, mapGameStatus } from '../lib/supabase/data';
+import { getSchedule, mapGameStatus } from '../lib/supabase/data';
 import { supabase } from '../lib/supabase/client';
+import { getActiveSeasonMembershipsForUser } from '../lib/supabase/team';
 import colors from '../theme/colors';
 
 type NotifPrefs = {
@@ -32,7 +33,7 @@ const DEFAULT_PREFS: NotifPrefs = {
 };
 
 export default function NotificationSettingsScreen({ navigation }: { navigation: any }) {
-  const { activeLeague } = useLeague();
+  const { availableLeagues } = useLeague();
   const [prefs, setPrefs] = React.useState<NotifPrefs>(DEFAULT_PREFS);
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
@@ -53,38 +54,67 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
   async function handleGameRemindersToggle(val: boolean) {
     setErrorMessage(null);
     if (val) {
-      const token = await registerForPushNotifications();
-      if (!token) {
-        setErrorMessage('Game Reminders were not enabled. Allow notifications and try again.');
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          setErrorMessage('Game Reminders were not enabled because your signed-in account could not be verified.');
+          return;
+        }
+
+        const memberships = await getActiveSeasonMembershipsForUser(user.id, availableLeagues);
+        if (memberships.error || memberships.data.length === 0) {
+          setErrorMessage('Game Reminders were not enabled because no active Hockey Life team membership is available.');
+          return;
+        }
+
+        const membershipsBySeason = new Map<string, {
+          leagueId: string;
+          seasonId: string;
+          teamIds: string[];
+        }>();
+        for (const membership of memberships.data) {
+          const key = `${membership.leagueId}:${membership.seasonId}`;
+          const group = membershipsBySeason.get(key) ?? {
+            leagueId: membership.leagueId,
+            seasonId: membership.seasonId,
+            teamIds: [],
+          };
+          if (!group.teamIds.includes(membership.teamId)) group.teamIds.push(membership.teamId);
+          membershipsBySeason.set(key, group);
+        }
+
+        const reminderBatches = await Promise.all(
+          Array.from(membershipsBySeason.values()).map(async (group) => {
+            const games = await getSchedule(group.leagueId, group.seasonId, null);
+            return {
+              teamIds: group.teamIds,
+              games: games
+                .filter((game) => mapGameStatus(game.status) === 'Upcoming')
+                .map((game) => ({
+                  id: game.id,
+                  scheduledAt: game.scheduled_at,
+                  homeTeam: game.home_team?.name ?? 'Home',
+                  awayTeam: game.away_team?.name ?? 'Away',
+                  homeTeamId: game.home_team_id,
+                  awayTeamId: game.away_team_id,
+                })),
+            };
+          }),
+        );
+
+        const token = await registerForPushNotifications();
+        if (!token) {
+          setErrorMessage('Game Reminders were not enabled. Allow notifications and try again.');
+          return;
+        }
+
+        for (const batch of reminderBatches) {
+          await scheduleGameRemindersForTeams(batch.games, batch.teamIds);
+        }
+      } catch {
+        await unregisterPushNotifications();
+        setErrorMessage('Game Reminders were not enabled because your active team schedule could not be loaded.');
         return;
-      }
-      // Schedule reminders for upcoming games
-      if (activeLeague) {
-        try {
-          const season = await getCurrentSeason(activeLeague.id);
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { data: rosterData } = await supabase
-              .from('team_rosters')
-              .select('team_id')
-              .eq('player_id', user.id)
-              .eq('league_id', activeLeague.id)
-              .eq('status', 'active')
-              .maybeSingle();
-            if (rosterData?.team_id) {
-              const games = await getSchedule(activeLeague.id, season?.id ?? null, null);
-              const upcomingGames = games.filter(g => mapGameStatus(g.status) === 'Upcoming');
-              for (const g of upcomingGames) {
-                await scheduleGameReminder({
-                  id: g.id,
-                  scheduledAt: g.scheduled_at,
-                  homeTeam: g.home_team?.name ?? 'Home',
-                  awayTeam: g.away_team?.name ?? 'Away',
-                });
-              }
-            }
-          }
-        } catch (_) {}
       }
     } else {
       const { error } = await unregisterPushNotifications();
@@ -100,7 +130,7 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
     {
       key: 'gameReminders',
       label: 'Game Reminders',
-      subtitle: 'Local alerts 2 hours before currently listed upcoming team games',
+      subtitle: 'Local alerts 2 hours before games involving your active Hockey Life teams',
       icon: 'notifications-outline',
       onToggle: handleGameRemindersToggle,
     },
@@ -129,7 +159,7 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
               </View>
               <Switch
                 accessibilityLabel={row.label}
-                accessibilityHint="Turns reminders for currently listed upcoming team games on or off"
+                accessibilityHint="Turns reminders for games involving your active Hockey Life teams on or off"
                 value={prefs[row.key]}
                 onValueChange={async (val) => {
                   await row.onToggle(val);

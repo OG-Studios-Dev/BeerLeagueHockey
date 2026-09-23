@@ -18,6 +18,13 @@
       "expo-secure-store",
       "expo-web-browser",
       "expo-notifications",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Hockey Life adds your hockey games to your calendar.",
+          "remindersPermission": false
+        }
+      ],
       "expo-font"
     ],
     "ios": {
@@ -42,6 +49,7 @@
       },
       "permissions": [],
       "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]

@@ -29,6 +29,18 @@ Notifications.setNotificationHandler({
 export async function registerForPushNotifications(): Promise<string | null> {
   if (!Device.isDevice) return null;
 
+  if (Platform.OS === 'android') {
+    try {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+      });
+    } catch {
+      return null;
+    }
+  }
+
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
 
@@ -51,14 +63,6 @@ export async function registerForPushNotifications(): Promise<string | null> {
     if (updateError) return null;
   } catch {
     return null;
-  }
-
-  if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-    });
   }
 
   return token;
@@ -113,6 +117,28 @@ export async function scheduleGameReminder(game: { id: string; scheduledAt: stri
     },
     trigger: { date: twoHoursBefore } as any,
   });
+}
+
+type TeamGameReminder = {
+  id: string;
+  scheduledAt: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeTeamId: string;
+  awayTeamId: string;
+};
+
+export async function scheduleGameRemindersForTeams(
+  games: TeamGameReminder[],
+  teamIds: string[],
+) {
+  const activeTeamIds = new Set(teamIds.filter(Boolean));
+  if (activeTeamIds.size === 0) return;
+
+  for (const game of games) {
+    if (!activeTeamIds.has(game.homeTeamId) && !activeTeamIds.has(game.awayTeamId)) continue;
+    await scheduleGameReminder(game);
+  }
 }
 
 export async function cancelAllGameReminders() {
