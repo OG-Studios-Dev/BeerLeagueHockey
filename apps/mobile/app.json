@@ -17,8 +17,14 @@
       "expo-asset",
       "expo-secure-store",
       "expo-web-browser",
-      "expo-image-picker",
       "expo-notifications",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Hockey Life adds your hockey games to your calendar.",
+          "remindersPermission": false
+        }
+      ],
       "expo-font"
     ],
     "ios": {
@@ -28,10 +34,7 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Hockey Life uses your location to find nearby hockey leagues.",
         "NSCalendarsUsageDescription": "Hockey Life adds your hockey games to your calendar.",
-        "NSPhotoLibraryUsageDescription": "Hockey Life needs photo access to update your profile picture.",
-        "NSCameraUsageDescription": "Hockey Life needs camera access to take a profile photo.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -44,13 +47,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#111717"
       },
-      "permissions": [
-        "android.permission.CAMERA",
+      "permissions": [],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "extra": {

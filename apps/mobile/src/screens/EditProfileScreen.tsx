@@ -1,4 +1,3 @@
-import * as ImagePicker from 'expo-image-picker';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -16,7 +15,6 @@ import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import Avatar from '../components/Avatar';
 import { supabase } from '../lib/supabase/client';
-import { profileImageExtension } from '../lib/profile-image-mime';
 import colors from '../theme/colors';
 
 // value = the short code stored in profiles.position (constrained to C/LW/RW/D/G);
@@ -46,7 +44,6 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
   const [selfAssessedSkill, setSelfAssessedSkill] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
 
   React.useEffect(() => {
     async function load() {
@@ -82,56 +79,11 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
     load();
   }, []);
 
-  async function handlePickPhoto() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow photo library access to change your profile picture.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
-    setUploadingPhoto(true);
-    try {
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      const mimeType = asset.mimeType || blob.type;
-      const canonicalExtension = profileImageExtension(mimeType);
-      if (!canonicalExtension || !userId) {
-        Alert.alert('Error', 'Please choose a JPG, PNG, or WebP image.');
-        return;
-      }
-      const storagePath = `${userId}/avatar.${canonicalExtension}`;
-
-      await supabase.storage
-        .from('avatars')
-        .upload(storagePath, blob, { upsert: true, contentType: mimeType });
-
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(storagePath);
-
-      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', userId!);
-      setAvatarUrl(publicUrl + '?t=' + Date.now()); // bust cache
-    } catch (e) {
-      Alert.alert('Error', 'Failed to upload photo. Please try again.');
-    } finally {
-      setUploadingPhoto(false);
-    }
-  }
-
   async function handleSave() {
     if (!userId) return;
     setSaving(true);
     try {
       await supabase.from('profiles').update({
-        full_name: fullName.trim() || null,
         position: position || null,
         self_assessed_skill: selfAssessedSkill || null,
       }).eq('id', userId);
@@ -154,30 +106,14 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
       <FocusScrollView contentContainerStyle={styles.content}>
-        {/* Avatar */}
+        {/* Public identity is read-only in the mobile minimum-v1 surface. */}
         <View style={styles.avatarSection}>
           <Avatar uri={avatarUrl} name={fullName || 'Player'} size={90} borderColor={colors.primary} />
-          <Pressable style={styles.changePhotoBtn} onPress={handlePickPhoto} disabled={uploadingPhoto}>
-            {uploadingPhoto
-              ? <ActivityIndicator size="small" color={colors.primary} />
-              : <Text style={styles.changePhotoText}>Change Photo</Text>
-            }
-          </Pressable>
+          <Text style={styles.identityName}>{fullName || 'Player'}</Text>
+          <Text style={styles.identityHint}>Public name and photo are managed by your league administrator.</Text>
         </View>
 
         {/* Fields */}
-        <FocusCard focusId="edit-profile:name" style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Full Name</Text>
-          <TextInput
-            style={styles.fieldInput}
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Your name"
-            placeholderTextColor={colors.textSecondary}
-            autoCorrect={false}
-          />
-        </FocusCard>
-
         <FocusCard focusId="edit-profile:position" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Position</Text>
           <View style={[styles.positionRow, isCompact && styles.positionRowCompact]}>
@@ -196,7 +132,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
         <FocusCard focusId="edit-profile:skill" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>League Match Level</Text>
           <Text style={styles.fieldHint}>
-            Used to recommend BLH leagues when we do not have enough game data to rate you yet.
+            Used to place you in the right Hockey Life division when we do not have enough game data to rate you yet.
           </Text>
           <View style={styles.skillRow}>
             {SKILL_LEVELS.map((skill) => (
@@ -256,14 +192,8 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 16, gap: 14, paddingBottom: 40 },
   avatarSection: { alignItems: 'center', paddingVertical: 16, gap: 12 },
-  changePhotoBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  changePhotoText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  identityName: { color: colors.textPrimary, fontSize: 18, fontWeight: '900' },
+  identityHint: { maxWidth: 310, color: colors.textSecondary, fontSize: 12, lineHeight: 18, textAlign: 'center' },
   fieldCard: {
     backgroundColor: colors.bgSurface,
     borderRadius: 14,

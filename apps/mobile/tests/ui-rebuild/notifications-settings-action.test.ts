@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
 
 function mountNotifications(getUser: () => Promise<unknown>) {
   const harness = createHookHarness();
@@ -40,6 +40,71 @@ function mountNotifications(getUser: () => Promise<unknown>) {
   return { harness, navigationCalls };
 }
 
+async function mountNotificationSettings(options: {
+  initialPrefs?: string | null;
+  registerToken?: string | null;
+  unregisterError?: Error | null;
+  membershipData?: Array<{ leagueId: string; seasonId: string; teamId: string }>;
+  membershipError?: string | null;
+} = {}) {
+  const harness = createHookHarness();
+  let unregisterCalls = 0;
+  let registerCalls = 0;
+  const reminderBatches: Array<{ gameIds: string[]; teamIds: string[] }> = [];
+  const storedPrefs: string[] = [];
+  const passthrough = ({ children, ...props }: Record<string, unknown>) => createElement('View', props, children);
+  const Screen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
+    new URL('../../src/screens/NotificationSettingsScreen.tsx', import.meta.url),
+    {
+      react: harness.react,
+      'react-native': {
+        ActivityIndicator: 'ActivityIndicator', StyleSheet: { create: <T>(styles: T) => styles },
+        Switch: 'Switch', Text: 'Text', View: 'View',
+      },
+      'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+      '@expo/vector-icons': { Ionicons: 'Ionicons' },
+      'expo-secure-store': {
+        getItemAsync: async () => options.initialPrefs ?? null,
+        setItemAsync: async (_key: string, value: string) => { storedPrefs.push(value); },
+      },
+      '../components/CardFocus': { FocusCard: passthrough, FocusScrollView: passthrough },
+      '../context/LeagueContext': { useLeague: () => ({
+        activeLeague: { id: 'hockey-life', name: 'Hockey Life', city: 'Toronto' },
+        availableLeagues: [{ id: 'hockey-life', name: 'Hockey Life', city: 'Toronto' }],
+      }) },
+      '../lib/notifications': {
+        NOTIFICATION_PREFS_KEY: 'blh_notification_prefs',
+        registerForPushNotifications: async () => { registerCalls += 1; return options.registerToken === undefined ? 'ExponentPushToken[test]' : options.registerToken; },
+        scheduleGameRemindersForTeams: async (
+          games: Array<{ id: string }>,
+          teamIds: string[],
+        ) => { reminderBatches.push({ gameIds: games.map((game) => game.id), teamIds }); },
+        unregisterPushNotifications: async () => { unregisterCalls += 1; return { error: options.unregisterError ?? null }; },
+      },
+      '../lib/supabase/data': { getSchedule: async () => [
+        { id: 'my-game', scheduled_at: '2099-10-01T20:00:00.000Z', status: 'scheduled', home_team_id: 'team-mine', away_team_id: 'team-other', home_team: { name: 'Mine' }, away_team: { name: 'Other' } },
+        { id: 'other-game', scheduled_at: '2099-10-02T20:00:00.000Z', status: 'scheduled', home_team_id: 'team-other', away_team_id: 'team-third', home_team: { name: 'Other' }, away_team: { name: 'Third' } },
+      ], mapGameStatus: () => 'Upcoming' },
+      '../lib/supabase/team': { getActiveSeasonMembershipsForUser: async () => ({
+        data: options.membershipData ?? [{ leagueId: 'hockey-life', seasonId: 'season-current', teamId: 'team-mine' }],
+        error: options.membershipError ?? null,
+      }) },
+      '../lib/supabase/client': { supabase: { auth: { getUser: async () => ({ data: { user: { id: 'player-1' } }, error: null }) } } },
+      '../theme/colors': { default: { primary: '#0ff', bgBase: '#000', textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333' } },
+    },
+  ).default;
+  harness.mount(() => Screen({ navigation: { goBack: () => undefined } }));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  harness.render();
+  return {
+    harness,
+    get registerCalls() { return registerCalls; },
+    reminderBatches,
+    storedPrefs,
+    get unregisterCalls() { return unregisterCalls; },
+  };
+}
+
 describe('Notifications settings action', () => {
   it('remains actionable while the independent feed request is pending', () => {
     const runtime = mountNotifications(() => new Promise(() => {}));
@@ -65,5 +130,93 @@ describe('Notifications settings action', () => {
       assert.equal(Boolean(findNode(runtime.harness.output, (node) => node.props.testID === 'notifications-feed-error')), scenario.error);
       runtime.harness.unmount();
     }
+  });
+
+  it('renders only the working local game-reminder setting with truthful scope', async () => {
+    const runtime = await mountNotificationSettings();
+    const copy = nodeText(runtime.harness.output);
+    assert.match(copy, /Game Reminders/);
+    assert.match(copy, /Local alerts 2 hours before games involving your active Hockey Life teams/);
+    assert.doesNotMatch(copy, /Check-in Reminders|Score Alerts|League Announcements/);
+
+    const switches: unknown[] = [];
+    const visit = (root: unknown) => {
+      if (Array.isArray(root)) return root.forEach(visit);
+      if (!root || typeof root !== 'object' || !('props' in root)) return;
+      const node = root as { type: unknown; props: Record<string, unknown> };
+      if (node.type === 'Switch') switches.push(node);
+      visit(node.props.children);
+    };
+    visit(runtime.harness.output);
+    assert.equal(switches.length, 1);
+  });
+
+  it('revokes the stored push destination when game reminders are disabled', async () => {
+    const runtime = await mountNotificationSettings({ initialPrefs: JSON.stringify({ gameReminders: true }) });
+    const toggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+    assert.ok(toggle);
+
+    await toggle.props.onValueChange(false);
+
+    assert.equal(runtime.unregisterCalls, 1);
+    assert.deepEqual(runtime.storedPrefs, [JSON.stringify({ gameReminders: false })]);
+  });
+
+  it('enables only after token registration succeeds and exposes a failed enable', async () => {
+    const success = await mountNotificationSettings();
+    const successToggle = findNode(success.harness.output, (node) => node.type === 'Switch');
+    assert.ok(successToggle);
+    await successToggle.props.onValueChange(true);
+    success.harness.render();
+    assert.equal(success.registerCalls, 1);
+    assert.deepEqual(success.storedPrefs, [JSON.stringify({ gameReminders: true })]);
+    assert.deepEqual(success.reminderBatches, [{
+      gameIds: ['my-game', 'other-game'],
+      teamIds: ['team-mine'],
+    }]);
+
+    const denied = await mountNotificationSettings({ registerToken: null });
+    const deniedToggle = findNode(denied.harness.output, (node) => node.type === 'Switch');
+    assert.ok(deniedToggle);
+    await deniedToggle.props.onValueChange(true);
+    denied.harness.render();
+    assert.deepEqual(denied.storedPrefs, []);
+    assert.ok(findNode(denied.harness.output, (node) => node.props.accessibilityRole === 'alert'));
+  });
+
+  it('fails closed without requesting notification access when active-team membership is empty or unavailable', async () => {
+    for (const options of [
+      { membershipData: [] },
+      { membershipData: [], membershipError: 'membership lookup failed' },
+    ]) {
+      const runtime = await mountNotificationSettings(options);
+      const toggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+      assert.ok(toggle);
+
+      await toggle.props.onValueChange(true);
+      runtime.harness.render();
+
+      assert.equal(runtime.registerCalls, 0);
+      assert.deepEqual(runtime.reminderBatches, []);
+      assert.deepEqual(runtime.storedPrefs, []);
+      assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityRole === 'alert'));
+    }
+  });
+
+  it('keeps the toggle on and exposes an error when revocation fails', async () => {
+    const runtime = await mountNotificationSettings({
+      initialPrefs: JSON.stringify({ gameReminders: true }),
+      unregisterError: new Error('profile update denied'),
+    });
+    const toggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+    assert.ok(toggle);
+
+    await toggle.props.onValueChange(false);
+    runtime.harness.render();
+
+    assert.deepEqual(runtime.storedPrefs, []);
+    const currentToggle = findNode(runtime.harness.output, (node) => node.type === 'Switch');
+    assert.equal(currentToggle?.props.value, true);
+    assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityRole === 'alert'));
   });
 });

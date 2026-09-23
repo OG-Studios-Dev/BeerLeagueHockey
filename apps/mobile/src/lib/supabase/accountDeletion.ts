@@ -1,3 +1,4 @@
+import { unregisterPushNotifications } from '../notifications';
 import { supabase } from './client';
 import { getAppleDeletionAuthorizationCode } from './auth';
 
@@ -49,8 +50,12 @@ async function responseErrorPayload(context: unknown): Promise<AccountDeletionRe
 
 export async function deleteCurrentAccount(
   client: AccountDeletionClient = supabase,
+  revokeNotifications: () => Promise<{ error: Error | null }> = unregisterPushNotifications,
 ): Promise<{ error: Error | null }> {
   try {
+    const { error: revocationError } = await revokeNotifications();
+    if (revocationError) return { error: revocationError };
+
     const invoke = (appleAuthorizationCode?: string) => client.functions.invoke('delete-account', {
       body: {
         confirmation: 'DELETE',

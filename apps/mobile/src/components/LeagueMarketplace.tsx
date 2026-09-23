@@ -210,7 +210,7 @@ export default function LeagueMarketplace({
   const [leagues, setLeagues] = React.useState<LeagueMatch[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [locationGranted, setLocationGranted] = React.useState(false);
-  const [locationLabel, setLocationLabel] = React.useState<string | null>(null);
+  const [locationLabel] = React.useState<string | null>(null);
   const [sortMode, setSortMode] = React.useState<SortMode>('nearest');
   const [search, setSearch] = React.useState('');
   const [userRating, setUserRating] = React.useState<string | null>(null);
@@ -242,18 +242,6 @@ export default function LeagueMarketplace({
       const hasDistance = results.some((r) => r.distanceKm !== null);
       setLocationGranted(hasDistance);
       setSortMode(hasDistance ? 'nearest' : 'fit');
-
-      // Try to get a city name for the location pill
-      if (hasDistance) {
-        try {
-          const Location = await import('expo-location');
-          const loc = await Location.default.getCurrentPositionAsync({});
-          const [geo] = await Location.default.reverseGeocodeAsync(loc.coords);
-          if (geo?.city) setLocationLabel(`${geo.city}, ${geo.region ?? 'ON'}`);
-        } catch {
-          setLocationLabel('Nearby');
-        }
-      }
 
       if (active) setLoading(false);
     })();

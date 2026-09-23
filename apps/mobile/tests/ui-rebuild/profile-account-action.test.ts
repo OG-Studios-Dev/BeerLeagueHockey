@@ -95,6 +95,7 @@ function renderProfile({
         membershipStatus: isGuest ? 'signed-out' : 'empty',
         membershipDiagnostics: { backendOrigin: null, appVersion: '1.0.0', appBuild: '14', entries: [] },
         retryMemberships: () => undefined,
+        exitGuestLeague: () => undefined,
       }),
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
@@ -163,6 +164,7 @@ function renderPendingProfile(signOutImpl: () => Promise<{ error: Error | null }
         membershipStatus: 'loading',
         membershipDiagnostics: { backendOrigin: null, appVersion: '1.0.0', appBuild: '14', entries: [] },
         retryMemberships: () => undefined,
+        exitGuestLeague: () => undefined,
       }),
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
@@ -237,7 +239,7 @@ describe('Profile account action', () => {
     await rendered.alerts[0]?.buttons?.[1]?.onPress();
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.at(-1)?.title, 'Unable to Log Out');
-    assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+    assert.deepEqual(rendered.stateUpdates[12], [true, false]);
   });
 
   it('finishes a confirmed successful logout without showing an error', async () => {
@@ -249,7 +251,7 @@ describe('Profile account action', () => {
     await rendered.alerts[0]?.buttons?.[1]?.onPress();
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.length, 1);
-    assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+    assert.deepEqual(rendered.stateUpdates[12], [true, false]);
   });
 
   it('requires two destructive confirmations, deletes the authenticated account, and signs out locally', async () => {
@@ -277,7 +279,7 @@ describe('Profile account action', () => {
     await rendered.alerts[1]?.buttons?.[1]?.onPress();
     assert.equal(rendered.deleteAccountCalls.length, 1);
     assert.equal(rendered.signOutCalls.length, 1);
-    assert.deepEqual(rendered.signOutCalls[0], { pushTokenAlreadyCleared: true });
+    assert.deepEqual(rendered.signOutCalls, [{ notificationDestinationAlreadyRevoked: true }]);
   });
 
   it('does not use client provider metadata to select the deletion flow', async () => {

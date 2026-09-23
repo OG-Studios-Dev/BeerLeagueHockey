@@ -18,7 +18,6 @@ const verticalScrollRoutes = [
   'screens/stats/CareerStatsScreen.tsx',
   'screens/captain/CaptainDashboardScreen.tsx',
   'screens/captain/GameAvailabilityScreen.tsx',
-  'screens/captain/InvitePlayersScreen.tsx',
   'screens/captain/LineupNotesScreen.tsx',
   'screens/discover/LeagueDetailScreen.tsx',
   'screens/league-pages/LeaguePageCommon.tsx',
@@ -51,7 +50,6 @@ const handBuiltCardRoutes = [
   'screens/stats/CareerStatsScreen.tsx',
   'screens/captain/CaptainDashboardScreen.tsx',
   'screens/captain/GameAvailabilityScreen.tsx',
-  'screens/captain/InvitePlayersScreen.tsx',
   'screens/captain/LineupNotesScreen.tsx',
   'screens/discover/LeagueDetailScreen.tsx',
   'screens/league-pages/TeamsDirectoryScreen.tsx',
@@ -128,7 +126,7 @@ describe('routed scroll surface wiring', () => {
     assert.match(marketplace, /marketplace:joined/);
     assert.match(gallery, /focusEnabled={photo === null}/);
     assert.match(gallery, /focusScopeKey={`gallery-viewer:/);
-    assert.match(team, /focusEnabled={!reminderModalVisible && !subModalVisible && !goalieModalVisible}/);
+    assert.match(team, /focusEnabled={!subModalVisible && !goalieModalVisible}/);
     assert.match(team, /focusScopeKey={`team-modal:/);
   });
 });

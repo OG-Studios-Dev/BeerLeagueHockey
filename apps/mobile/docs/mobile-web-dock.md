@@ -20,7 +20,7 @@ The native dock exposes exactly five controls, in the web layout order: Standing
 | Captain Dashboard | Existing native Captain stack, shown only for the current assignment's captain or alternate role. |
 | Teams, Players, Playoffs, News, Suspensions, History, Gallery, Events, Venues, About, Contact | Selected tenant's HTTPS website, filtered by its runtime page visibility and season phase. |
 | Register | Selected tenant's `/goalies/register`, shown only when registration is open and visible. |
-| Goalies | Selected tenant's `/captain/goalies`, captain-gated. |
+| Goalie requests | Structured native request controls on Team Detail; no external captain Goalies destination is exposed in minimum v1. |
 | Custom navigation | Validated HTTPS external URL or tenant-relative page; malformed schemes, credentials, traversal, and malformed metadata are rejected. |
 
 Tenant links require a validated league slug. Loading or failed website metadata never publishes stale tenant destinations; Home, Discover, and Account remain safe native fallbacks.

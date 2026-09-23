@@ -8,12 +8,14 @@ type Invocation = { name: string; options: { body: unknown } };
 type AccountDeletionModule = {
   deleteCurrentAccount: (
     client?: unknown,
+    revoke?: () => Promise<{ error: Error | null }>,
   ) => Promise<{ error: Error | null }>;
 };
 
 const { deleteCurrentAccount } = compileCommonJs<AccountDeletionModule>(
   new URL('../../src/lib/supabase/accountDeletion.ts', import.meta.url),
   {
+    '../notifications': { unregisterPushNotifications: async () => ({ error: null }) },
     './client': { supabase: {} },
     './auth': {
       getAppleDeletionAuthorizationCode: async () => ({
@@ -38,8 +40,18 @@ function clientReturning(result: { data: unknown; error: unknown }, invocations:
 describe('mobile account-deletion client', () => {
   it('invokes the authenticated delete-account function with an explicit confirmation and no user id', async () => {
     const invocations: Invocation[] = [];
+    const lifecycle: string[] = [];
     const result = await deleteCurrentAccount(
-      clientReturning({ data: { success: true }, error: null }, invocations),
+      {
+        functions: {
+          invoke: async (name: string, options: { body: unknown }) => {
+            lifecycle.push('invoke');
+            invocations.push({ name, options });
+            return { data: { success: true }, error: null };
+          },
+        },
+      },
+      async () => { lifecycle.push('revoke'); return { error: null }; },
     );
 
     assert.deepEqual(result, { error: null });
@@ -48,6 +60,18 @@ describe('mobile account-deletion client', () => {
       options: { body: { confirmation: 'DELETE' } },
     }]);
     assert.equal(JSON.stringify(invocations).includes('userId'), false);
+    assert.deepEqual(lifecycle, ['revoke', 'invoke']);
+  });
+
+  it('does not delete the account while its notification destination remains usable', async () => {
+    const invocations: Invocation[] = [];
+    const result = await deleteCurrentAccount(
+      clientReturning({ data: { success: true }, error: null }, invocations),
+      async () => ({ error: new Error('profile update denied') }),
+    );
+
+    assert.equal(result.error?.message, 'profile update denied');
+    assert.deepEqual(invocations, []);
   });
 
   it('uses server-derived Apple identity truth, then sends only a fresh authorization code', async () => {

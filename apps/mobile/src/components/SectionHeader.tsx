@@ -11,7 +11,7 @@ export default function SectionHeader({ title }: SectionHeaderProps) {
     <View style={styles.container}>
       <View style={styles.eyebrowRow}>
         <View style={styles.eyebrowDot} />
-        <Text style={styles.eyebrow}>BLH</Text>
+        <Text style={styles.eyebrow}>HOCKEY LIFE</Text>
       </View>
       <Text style={styles.title}>{title}</Text>
       <View style={styles.rule} />

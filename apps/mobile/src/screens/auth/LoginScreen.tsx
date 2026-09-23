@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   Platform,
@@ -15,6 +16,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import AuthShell from '../../components/AuthShell';
 import { useAuth } from '../../context/AuthContext';
+import { useLeague } from '../../context/LeagueContext';
+import {
+  HOCKEY_LIFE_SUPPORT_URL,
+  PRIVACY_URL,
+  TERMS_URL,
+  openPublicLink,
+} from '../../lib/publicLinks';
 import colors from '../../theme/colors';
 
 type AuthStackParamList = {
@@ -54,6 +62,7 @@ function getEmailErrorMessage(supabaseMessage: string): string {
 
 export default function LoginScreen() {
   const { signInWithApple, signInWithEmail, signInWithGoogle, continueAsGuest } = useAuth();
+  const { enterGuestLeague } = useLeague();
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -123,7 +132,13 @@ export default function LoginScreen() {
   };
 
   const handleGuestMode = () => {
+    enterGuestLeague();
     continueAsGuest();
+  };
+
+  const handlePublicLink = async (url: string) => {
+    const result = await openPublicLink(url, Linking.openURL);
+    if (!result.success) Alert.alert('Unable to Open Link', result.error);
   };
 
   return (
@@ -223,12 +238,34 @@ export default function LoginScreen() {
           </Pressable>
 
           <View style={styles.legalLinks}>
-            <Pressable onPress={() => Linking.openURL('https://beerleaguehockey.ca/privacy')}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open Privacy Policy"
+              accessibilityHint="Opens the Hockey Life privacy policy in your browser"
+              style={styles.legalLink}
+              onPress={() => void handlePublicLink(PRIVACY_URL)}
+            >
               <Text style={styles.legalText}>Privacy Policy</Text>
             </Pressable>
             <Text style={styles.legalSeparator}>|</Text>
-            <Pressable onPress={() => Linking.openURL('https://beerleaguehockey.ca/terms')}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open Terms of Service"
+              accessibilityHint="Opens the Hockey Life terms of service in your browser"
+              style={styles.legalLink}
+              onPress={() => void handlePublicLink(TERMS_URL)}
+            >
               <Text style={styles.legalText}>Terms of Service</Text>
+            </Pressable>
+            <Text style={styles.legalSeparator}>|</Text>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open Support"
+              accessibilityHint="Opens Hockey Life support in your browser"
+              style={styles.legalLink}
+              onPress={() => void handlePublicLink(HOCKEY_LIFE_SUPPORT_URL)}
+            >
+              <Text style={styles.legalText}>Support</Text>
             </Pressable>
           </View>
     </AuthShell>
@@ -369,6 +406,10 @@ const styles = StyleSheet.create({
   legalText: {
     color: colors.textSecondary,
     fontSize: 12,
+  },
+  legalLink: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   legalSeparator: {
     color: colors.textSecondary,

@@ -68,4 +68,16 @@ describe('Hockey Life single-league selection', () => {
       assert.match(source, /Hockey Life access/);
     }
   });
+
+  it('does not fall through to cross-league Profile data without Hockey Life access', () => {
+    const profile = readFileSync(
+      fileURLToPath(new URL('../../src/screens/ProfileScreen.tsx', import.meta.url).toString()),
+      'utf8',
+    );
+    const hockeyLifeGate = profile.indexOf('if (!activeLeague) {');
+    const statsQuery = profile.indexOf(".from('player_season_stats')");
+
+    assert.ok(hockeyLifeGate >= 0 && hockeyLifeGate < statsQuery, 'Hockey Life access must gate private league-data queries');
+    assert.doesNotMatch(profile, /leagueBreakdown|cross-league/i);
+  });
 });
