@@ -1,332 +1,278 @@
-/**
- * Supabase Edge Function: Process Scheduled Account Deletions
- *
- * Runs daily (via cron trigger) to:
- * 1. Find accounts past their grace period
- * 2. Execute permanent deletion
- * 3. Delete Stripe customers
- * 4. Send completion emails
- * 5. Retry failed Stripe deletions
- *
- * Cron schedule: 0 2 * * * (2am UTC daily)
- */
+/// <reference lib="deno.ns" />
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY')!;
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
+import { createAppleAuthorizationService } from '../delete-account/apple.ts';
+import { listOwnedProfileImageObjects } from '../delete-account/handler.ts';
+import {
+  processExternalDeletionSteps,
+  processReminderClaim,
+  type ExternalDeletionState,
+  type ReminderClaim,
+} from './processor.ts';
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, {
-  apiVersion: '2024-11-20.acacia',
-});
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+const APPLE_TEAM_ID = Deno.env.get('APPLE_TEAM_ID');
+const APPLE_KEY_ID = Deno.env.get('APPLE_KEY_ID');
+const APPLE_CLIENT_ID = Deno.env.get('APPLE_CLIENT_ID');
+const APPLE_PRIVATE_KEY_P8 = Deno.env.get('APPLE_PRIVATE_KEY_P8');
 
-interface DeletionLogEntry {
-  id: string;
-  user_id: string;
-  profile_email: string;
-  scheduled_for: string;
-  stripe_customer_id: string | null;
-  stripe_deleted: boolean;
-  stripe_deletion_attempted_at: string | null;
-  stripe_deletion_error: string | null;
+if (
+  !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY || !RESEND_API_KEY
+  || !APPLE_TEAM_ID || !APPLE_KEY_ID || !APPLE_CLIENT_ID || !APPLE_PRIVATE_KEY_P8
+) {
+  throw new Error('Missing required account-deletion processor configuration.');
 }
 
-Deno.serve(async (req) => {
-  // Verify authorization (cron secret or service role token)
-  const authHeader = req.headers.get('Authorization');
-  const cronSecret = req.headers.get('X-Cron-Secret');
-  const configuredCronSecret = Deno.env.get('CRON_SECRET');
-  const isValidCron = Boolean(configuredCronSecret) && cronSecret === configuredCronSecret;
-  const isValidServiceRole =
-    Boolean(SUPABASE_SERVICE_ROLE_KEY) &&
-    authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-11-20.acacia' });
+const appleAuthorization = createAppleAuthorizationService({
+  teamId: APPLE_TEAM_ID,
+  keyId: APPLE_KEY_ID,
+  clientId: APPLE_CLIENT_ID,
+  privateKeyP8: APPLE_PRIVATE_KEY_P8,
+});
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
 
-  if (!isValidCron && !isValidServiceRole) {
+function isMissingStorageObject(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  return String(candidate.status ?? candidate.statusCode ?? '') === '404';
+}
+
+async function removeOwnedStorage(userId: string): Promise<void> {
+  const objects = await listOwnedProfileImageObjects(userId, supabase.storage);
+  for (const object of objects) {
+    const { error } = await supabase.storage.from(object.bucket).remove([object.path]);
+    if (error && !isMissingStorageObject(error)) throw new Error('Storage cleanup failed.');
+  }
+  const { error } = await supabase.rpc('mark_account_storage_deleted', { p_user_id: userId });
+  if (error) throw new Error('Storage cleanup marker failed.');
+}
+
+async function sendCompletionEmail(userId: string, email: string): Promise<void> {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Idempotency-Key': `account-deletion-${userId}`,
+    },
+    body: JSON.stringify({
+      from: 'HockeyLife <noreply@hockeylife.com>',
+      to: email,
+      subject: 'Your account deletion is complete',
+      html: '<p>Your sign-in and active account data were deleted. Historical hockey facts and legally required payment and signed-waiver records are retained as described in our privacy notice.</p>',
+    }),
+  });
+  if (!response.ok) throw new Error('Completion email failed.');
+}
+
+async function sendReminderEmail(
+  email: string,
+  scheduledFor: string,
+  idempotencyKey: string,
+): Promise<void> {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify({
+      from: 'HockeyLife <noreply@hockeylife.com>',
+      to: email,
+      subject: 'Reminder: your account deletion is scheduled',
+      html: `<p>Your account is scheduled for deletion on ${new Date(scheduledFor).toLocaleDateString('en-US')}.</p>`,
+    }),
+  });
+  if (!response.ok) throw new Error('Reminder email failed.');
+}
+
+Deno.serve(async (request) => {
+  const authHeader = request.headers.get('Authorization');
+  const cronSecret = request.headers.get('X-Cron-Secret');
+  const configuredCronSecret = Deno.env.get('CRON_SECRET');
+  const authorized = (Boolean(configuredCronSecret) && cronSecret === configuredCronSecret)
+    || authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  if (!authorized) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
   const results = {
     processed: 0,
-    succeeded: 0,
+    completed: 0,
     failed: 0,
-    stripe_retries: 0,
-    errors: [] as Array<{ user_id: string; error: string }>,
+    remindersClaimed: 0,
+    remindersSent: 0,
+    reminderFailures: 0,
   };
+  const now = new Date().toISOString();
+  const { data: dueRows, error: dueError } = await supabase
+    .from('account_deletion_log')
+    .select('id,user_id')
+    .in('status', ['pending', 'processing', 'failed'])
+    .lte('scheduled_for', now)
+    .order('scheduled_for', { ascending: true })
+    .limit(50);
+  if (dueError) {
+    return new Response(JSON.stringify({ error: 'Unable to load deletion work.' }), { status: 500 });
+  }
 
-  try {
-    // 1. Find accounts scheduled for deletion (grace period expired)
-    const { data: pendingDeletions, error: fetchError } = await supabase
-      .from('account_deletion_log')
-      .select('*')
-      .eq('status', 'pending')
-      .lte('scheduled_for', new Date().toISOString())
-      .order('scheduled_for', { ascending: true })
-      .limit(50); // Process max 50 per run to avoid timeout
+  for (const deletion of dueRows ?? []) {
+    results.processed += 1;
+    try {
+      await supabase.from('account_deletion_log').update({ status: 'processing', error_message: null }).eq('id', deletion.id);
+      const { data: durableState, error: durableStateError } = await supabase
+        .from('account_deletion_state')
+        .select('database_deleted_at')
+        .eq('user_id', deletion.user_id)
+        .maybeSingle();
+      if (durableStateError) throw new Error('Unable to read deletion state.');
 
-    if (fetchError) {
-      throw new Error(`Failed to fetch pending deletions: ${fetchError.message}`);
-    }
-
-    if (!pendingDeletions || pendingDeletions.length === 0) {
-      console.log('No pending deletions found');
-      return new Response(JSON.stringify({ message: 'No pending deletions', results }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log(`Found ${pendingDeletions.length} accounts to delete`);
-
-    // 2. Process each deletion
-    for (const deletion of pendingDeletions as DeletionLogEntry[]) {
-      results.processed++;
-
-      try {
-        // 2a. Update status to 'processing'
-        await supabase
-          .from('account_deletion_log')
-          .update({ status: 'processing' })
-          .eq('id', deletion.id);
-
-        // 2b. Execute database deletion (calls Postgres function)
-        const { data: deletionResult, error: deleteError } = await supabase.rpc('execute_account_deletion', {
+      if (!durableState?.database_deleted_at) {
+        const { data: preparation, error: prepareError } = await supabase.rpc('prepare_account_deletion', {
           p_user_id: deletion.user_id,
         });
-
-        if (deleteError) {
-          throw new Error(`Database deletion failed: ${deleteError.message}`);
-        }
-
-        console.log(`Account deleted in database:`, deletionResult);
-
-        // 2c. Delete Stripe customer (if exists)
-        if (deletion.stripe_customer_id && !deletion.stripe_deleted) {
-          try {
-            await stripe.customers.del(deletion.stripe_customer_id);
-            console.log(`Stripe customer deleted: ${deletion.stripe_customer_id}`);
-
-            // Mark Stripe deletion as successful
-            await supabase
-              .from('account_deletion_log')
-              .update({
-                stripe_deleted: true,
-                stripe_deletion_attempted_at: new Date().toISOString(),
-                stripe_deletion_error: null,
-              })
-              .eq('id', deletion.id);
-          } catch (stripeError: unknown) {
-            const errorMessage = stripeError instanceof Error ? stripeError.message : String(stripeError);
-            console.error(`Stripe deletion failed for ${deletion.stripe_customer_id}:`, errorMessage);
-
-            // Log Stripe error but don't fail the whole deletion
-            await supabase
-              .from('account_deletion_log')
-              .update({
-                stripe_deletion_attempted_at: new Date().toISOString(),
-                stripe_deletion_error: errorMessage,
-              })
-              .eq('id', deletion.id);
+        if (prepareError) throw new Error('Deletion preflight failed.');
+        const prepared = preparation as {
+          apple_required?: boolean;
+          apple_revoked?: boolean;
+          apple_subject?: string;
+          apple_retry_ready?: boolean;
+        } | null;
+        if (prepared?.apple_required && !prepared.apple_revoked) {
+          if (!prepared.apple_retry_ready || !prepared.apple_subject) {
+            throw new Error('Apple reauthentication is required before scheduled deletion can continue.');
           }
+          const { data: retry, error: retryError } = await supabase.rpc(
+            'get_account_apple_revocation_retry',
+            { p_user_id: deletion.user_id },
+          );
+          const retryState = retry as {
+            apple_subject?: unknown;
+            revocation_token?: unknown;
+            token_type_hint?: unknown;
+          } | null;
+          if (
+            retryError
+            || retryState?.apple_subject !== prepared.apple_subject
+            || typeof retryState.revocation_token !== 'string'
+            || (retryState.token_type_hint !== 'refresh_token'
+              && retryState.token_type_hint !== 'access_token')
+          ) {
+            throw new Error('Apple revocation retry state is unavailable.');
+          }
+          await appleAuthorization.revokeToken({
+            revocationToken: retryState.revocation_token,
+            tokenTypeHint: retryState.token_type_hint,
+          });
+          const { error: appleMarkerError } = await supabase.rpc('mark_account_apple_revoked', {
+            p_user_id: deletion.user_id,
+          });
+          if (appleMarkerError) throw new Error('Apple revocation marker failed.');
         }
-
-        // 2d. Send completion email
-        await sendDeletionCompletionEmail(deletion.profile_email);
-
-        // Mark email as sent
-        await supabase
-          .from('account_deletion_log')
-          .update({ completion_notification_sent: true })
-          .eq('id', deletion.id);
-
-        results.succeeded++;
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Failed to delete account ${deletion.user_id}:`, errorMessage);
-
-        results.failed++;
-        results.errors.push({
-          user_id: deletion.user_id,
-          error: errorMessage,
+        await removeOwnedStorage(deletion.user_id);
+        const { error: databaseError } = await supabase.rpc('execute_account_deletion', {
+          p_user_id: deletion.user_id,
         });
-
-        // Status already set to 'failed' by execute_account_deletion function
+        if (databaseError) throw new Error('Database deletion failed.');
       }
+    } catch {
+      results.failed += 1;
+      await supabase.from('account_deletion_log').update({
+        status: 'failed',
+        error_message: 'Deletion attempt failed; retry is required.',
+      }).eq('id', deletion.id);
     }
-
-    // 3. Retry failed Stripe deletions (from previous runs)
-    const { data: failedStripeDeletions } = await supabase
-      .from('account_deletion_log')
-      .select('*')
-      .eq('status', 'completed')
-      .eq('stripe_deleted', false)
-      .not('stripe_customer_id', 'is', null)
-      .not('stripe_deletion_attempted_at', 'is', null)
-      .limit(10);
-
-    if (failedStripeDeletions && failedStripeDeletions.length > 0) {
-      console.log(`Retrying ${failedStripeDeletions.length} failed Stripe deletions`);
-
-      for (const deletion of failedStripeDeletions as DeletionLogEntry[]) {
-        // Only retry if less than 7 days old
-        const attemptedAt = new Date(deletion.stripe_deletion_attempted_at!);
-        const daysSinceAttempt = (Date.now() - attemptedAt.getTime()) / (1000 * 60 * 60 * 24);
-
-        if (daysSinceAttempt > 7) {
-          console.log(`Skipping Stripe deletion retry for ${deletion.stripe_customer_id} (too old)`);
-          continue;
-        }
-
-        try {
-          await stripe.customers.del(deletion.stripe_customer_id!);
-          console.log(`Stripe customer deleted on retry: ${deletion.stripe_customer_id}`);
-
-          await supabase
-            .from('account_deletion_log')
-            .update({
-              stripe_deleted: true,
-              stripe_deletion_attempted_at: new Date().toISOString(),
-              stripe_deletion_error: null,
-            })
-            .eq('id', deletion.id);
-
-          results.stripe_retries++;
-        } catch (stripeError: unknown) {
-          const errorMessage = stripeError instanceof Error ? stripeError.message : String(stripeError);
-          console.error(`Stripe retry failed for ${deletion.stripe_customer_id}:`, errorMessage);
-        }
-      }
-    }
-
-    // 4. Send 7-day reminder emails (7 days before scheduled deletion)
-    const reminderDate = new Date();
-    reminderDate.setDate(reminderDate.getDate() + 7);
-
-    const { data: upcomingDeletions } = await supabase
-      .from('account_deletion_log')
-      .select('*')
-      .eq('status', 'pending')
-      .eq('reminder_7day_sent', false)
-      .gte('scheduled_for', new Date().toISOString())
-      .lte('scheduled_for', reminderDate.toISOString());
-
-    if (upcomingDeletions && upcomingDeletions.length > 0) {
-      console.log(`Sending ${upcomingDeletions.length} reminder emails`);
-
-      for (const deletion of upcomingDeletions as DeletionLogEntry[]) {
-        try {
-          await sendDeletionReminderEmail(deletion.profile_email, deletion.scheduled_for);
-
-          await supabase
-            .from('account_deletion_log')
-            .update({ reminder_7day_sent: true })
-            .eq('id', deletion.id);
-        } catch (emailError: unknown) {
-          console.error(`Failed to send reminder email:`, emailError);
-        }
-      }
-    }
-
-    console.log('Deletion processing complete:', results);
-
-    return new Response(
-      JSON.stringify({
-        message: 'Account deletions processed',
-        results,
-      }),
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('Fatal error in deletion processor:', errorMessage);
-
-    return new Response(
-      JSON.stringify({
-        error: 'Failed to process deletions',
-        details: errorMessage,
-        results,
-      }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
   }
+
+  const { data: externalRows, error: externalError } = await supabase
+    .from('account_deletion_state')
+    .select('user_id,database_deleted_at,stripe_customer_id,stripe_completed_at,completion_email,email_completed_at,completed_at')
+    .not('database_deleted_at', 'is', null)
+    .is('completed_at', null)
+    .limit(50);
+  if (externalError) {
+    return new Response(JSON.stringify({ error: 'Unable to load external deletion work.', results }), { status: 500 });
+  }
+
+  for (const state of (externalRows ?? []) as ExternalDeletionState[]) {
+    try {
+      await processExternalDeletionSteps(state, {
+        deleteStripeCustomer: async (customerId) => {
+          try {
+            await stripe.customers.del(customerId);
+          } catch (error) {
+            if ((error as { code?: string }).code !== 'resource_missing') throw error;
+          }
+        },
+        sendCompletionEmail: (email) => sendCompletionEmail(state.user_id, email),
+        recordStep: async (step) => {
+          const { error } = await supabase.rpc('record_account_deletion_external_step', {
+            p_user_id: state.user_id,
+            p_step: step,
+          });
+          if (error) throw new Error(`Unable to record ${step} deletion step.`);
+        },
+      });
+      results.completed += 1;
+    } catch {
+      results.failed += 1;
+      await supabase.from('account_deletion_state').update({
+        last_error: 'External deletion attempt failed; retry is required.',
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', state.user_id);
+    }
+  }
+
+  const reminderCutoff = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: reminders, error: reminderClaimError } = await supabase.rpc(
+    'claim_account_deletion_reminders',
+    { p_now: now, p_cutoff: reminderCutoff, p_limit: 50 },
+  );
+  if (reminderClaimError) {
+    return new Response(JSON.stringify({ error: 'Unable to claim deletion reminders.', results }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  for (const reminder of (reminders ?? []) as ReminderClaim[]) {
+    results.remindersClaimed += 1;
+    try {
+      await processReminderClaim(reminder, {
+        sendReminderEmail,
+        markReminderSent: async (id) => {
+          const { data, error } = await supabase.rpc('mark_account_deletion_reminder_sent', {
+            p_deletion_id: id,
+          });
+          if (error || data !== true) throw new Error('Unable to record deletion reminder completion.');
+        },
+        releaseReminderClaim: async (id) => {
+          const { data, error } = await supabase.rpc('release_account_deletion_reminder_claim', {
+            p_deletion_id: id,
+          });
+          if (error || data !== true) throw new Error('Unable to release deletion reminder claim.');
+        },
+      });
+      results.remindersSent += 1;
+    } catch {
+      results.reminderFailures += 1;
+    }
+  }
+
+  return new Response(JSON.stringify({ message: 'Account deletion work processed.', results }), {
+    status: results.reminderFailures === 0 ? 200 : 500,
+    headers: { 'Content-Type': 'application/json' },
+  });
 });
-
-/**
- * Send deletion completion email via Resend
- */
-async function sendDeletionCompletionEmail(email: string): Promise<void> {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-    },
-    body: JSON.stringify({
-      from: 'HockeyLife <noreply@hockeylife.com>',
-      to: email,
-      subject: 'Your account has been deleted',
-      html: `
-        <h2>Account Deletion Complete</h2>
-        <p>Your account has been permanently deleted as requested.</p>
-        <p>All your personal data has been removed from our systems in compliance with GDPR Article 17.</p>
-        <p>If you did not request this deletion or believe this was done in error, please contact support immediately.</p>
-        <p>Thank you for using HockeyLife.</p>
-      `,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to send completion email: ${error}`);
-  }
-}
-
-/**
- * Send 7-day reminder email
- */
-async function sendDeletionReminderEmail(email: string, scheduledFor: string): Promise<void> {
-  const deletionDate = new Date(scheduledFor).toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-    },
-    body: JSON.stringify({
-      from: 'HockeyLife <noreply@hockeylife.com>',
-      to: email,
-      subject: 'Reminder: Your account will be deleted in 7 days',
-      html: `
-        <h2>Account Deletion Reminder</h2>
-        <p>This is a reminder that your account is scheduled for permanent deletion on <strong>${deletionDate}</strong>.</p>
-        <p>You have <strong>7 days</strong> remaining to cancel this request if you change your mind.</p>
-        <p>To cancel, log in to your account and visit your account settings.</p>
-        <p>If you take no action, your account and all data will be permanently deleted.</p>
-      `,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to send reminder email: ${error}`);
-  }
-}

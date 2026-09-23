@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import { getAppleDeletionAuthorizationCode } from './auth';
 
 type FunctionError = {
   message?: string;
@@ -8,20 +9,26 @@ type FunctionError = {
 type AccountDeletionResponse = {
   success?: boolean;
   error?: string;
+  code?: string;
 };
 
 type AccountDeletionClient = {
   functions: {
     invoke: (
       name: string,
-      options: { body: { confirmation: 'DELETE' } },
+      options: {
+        body: {
+          confirmation: 'DELETE';
+          appleAuthorizationCode?: string;
+        };
+      },
     ) => Promise<{ data: unknown; error: unknown }>;
   };
 };
 
 const DEFAULT_ERROR = 'Unable to delete your account. Please try again.';
 
-async function responseErrorMessage(context: unknown): Promise<string | null> {
+async function responseErrorPayload(context: unknown): Promise<AccountDeletionResponse | null> {
   if (!context || typeof context !== 'object') return null;
 
   const response = context as { clone?: () => unknown; json?: () => Promise<unknown> };
@@ -31,8 +38,7 @@ async function responseErrorMessage(context: unknown): Promise<string | null> {
   try {
     const payload = await (candidate as { json: () => Promise<unknown> }).json();
     if (payload && typeof payload === 'object') {
-      const message = (payload as AccountDeletionResponse).error;
-      return typeof message === 'string' && message.trim() ? message : null;
+      return payload as AccountDeletionResponse;
     }
   } catch {
     return null;
@@ -45,17 +51,37 @@ export async function deleteCurrentAccount(
   client: AccountDeletionClient = supabase,
 ): Promise<{ error: Error | null }> {
   try {
-    const { data, error } = await client.functions.invoke('delete-account', {
-      body: { confirmation: 'DELETE' },
+    const invoke = (appleAuthorizationCode?: string) => client.functions.invoke('delete-account', {
+      body: {
+        confirmation: 'DELETE',
+        ...(appleAuthorizationCode ? { appleAuthorizationCode } : {}),
+      },
     });
 
-    if (error) {
-      const functionError = error as FunctionError;
-      const backendMessage = await responseErrorMessage(functionError.context);
-      return { error: new Error(backendMessage ?? functionError.message ?? DEFAULT_ERROR) };
+    let result = await invoke();
+    let functionPayload = result.error
+      ? await responseErrorPayload((result.error as FunctionError).context)
+      : null;
+
+    if (functionPayload?.code === 'apple_reauthentication_required') {
+      const reauthentication = await getAppleDeletionAuthorizationCode();
+      if (reauthentication.error || !reauthentication.authorizationCode) {
+        return {
+          error: reauthentication.error ?? new Error('Apple reauthentication is required.'),
+        };
+      }
+      result = await invoke(reauthentication.authorizationCode);
+      functionPayload = result.error
+        ? await responseErrorPayload((result.error as FunctionError).context)
+        : null;
     }
 
-    const payload = data as AccountDeletionResponse | null;
+    if (result.error) {
+      const functionError = result.error as FunctionError;
+      return { error: new Error(functionPayload?.error ?? functionError.message ?? DEFAULT_ERROR) };
+    }
+
+    const payload = result.data as AccountDeletionResponse | null;
     if (!payload?.success) {
       return { error: new Error(payload?.error ?? DEFAULT_ERROR) };
     }

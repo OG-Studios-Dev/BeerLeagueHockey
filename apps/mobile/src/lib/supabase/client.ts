@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 const SECURE_STORE_CHUNK_SIZE = 1800;
+const AUTH_STORAGE_KEY = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
 
 function getChunkMetaKey(key: string) {
   return `${key}.chunks`;
@@ -89,6 +90,10 @@ const ExpoSecureStoreAdapter = {
     await removeChunkedValue(key);
   },
 };
+
+export async function purgeStoredSession(): Promise<void> {
+  await ExpoSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
+}
 
 /**
  * Supabase client for React Native

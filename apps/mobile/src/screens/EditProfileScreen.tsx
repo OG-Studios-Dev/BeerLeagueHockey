@@ -16,6 +16,7 @@ import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import Avatar from '../components/Avatar';
 import { supabase } from '../lib/supabase/client';
+import { profileImageExtension } from '../lib/profile-image-mime';
 import colors from '../theme/colors';
 
 // value = the short code stored in profiles.position (constrained to C/LW/RW/D/G);
@@ -102,12 +103,19 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
     try {
       const response = await fetch(asset.uri);
       const blob = await response.blob();
+      const mimeType = asset.mimeType || blob.type;
+      const canonicalExtension = profileImageExtension(mimeType);
+      if (!canonicalExtension || !userId) {
+        Alert.alert('Error', 'Please choose a JPG, PNG, or WebP image.');
+        return;
+      }
+      const storagePath = `${userId}/avatar.${canonicalExtension}`;
 
       await supabase.storage
         .from('avatars')
-        .upload(`${userId}/avatar.jpg`, blob, { upsert: true, contentType: 'image/jpeg' });
+        .upload(storagePath, blob, { upsert: true, contentType: mimeType });
 
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(`${userId}/avatar.jpg`);
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(storagePath);
 
       await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', userId!);
       setAvatarUrl(publicUrl + '?t=' + Date.now()); // bust cache

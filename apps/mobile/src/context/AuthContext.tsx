@@ -2,7 +2,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 import { signInWithOAuth } from '../lib/supabase/auth';
-import { supabase } from '../lib/supabase/client';
+import { purgeStoredSession, supabase } from '../lib/supabase/client';
 
 interface AuthContextType {
   session: Session | null;
@@ -15,10 +15,13 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   continueAsGuest: () => void;
   exitGuest: () => void;
-  signOut: () => Promise<{ error: Error | null }>;
+  signOut: (options?: { pushTokenAlreadyCleared?: boolean }) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const PUSH_TOKEN_CLEAR_ERROR =
+  'Unable to turn off notifications for this account. Check your connection and try logging out again.';
+const STALE_SESSION_ERROR = 'Your session is missing or stale. Sign in again before logging out.';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -89,16 +92,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuest(false);
   };
 
-  const signOut = async () => {
+  const signOut = async (options?: { pushTokenAlreadyCleared?: boolean }) => {
+    const userId = session?.user.id;
+    if (!userId && !options?.pushTokenAlreadyCleared) {
+      return { error: new Error(STALE_SESSION_ERROR) };
+    }
+    if (userId && !options?.pushTokenAlreadyCleared) {
+      try {
+        const { data: verifiedAuth, error: verificationError } = await supabase.auth.getUser();
+        if (verificationError || !verifiedAuth.user || verifiedAuth.user.id !== userId) {
+          return { error: new Error(STALE_SESSION_ERROR) };
+        }
+
+        const { data: clearedExactlyOne, error: pushTokenError } = await supabase.rpc(
+          'clear_current_push_destination',
+          {},
+        );
+        if (pushTokenError || clearedExactlyOne !== true) {
+          return { error: new Error(PUSH_TOKEN_CLEAR_ERROR) };
+        }
+      } catch {
+        return { error: new Error(PUSH_TOKEN_CLEAR_ERROR) };
+      }
+    }
+
     try {
       const { error } = await supabase.auth.signOut({ scope: 'local' });
       if (error) {
+        if (options?.pushTokenAlreadyCleared) {
+          await purgeStoredSession();
+          setSession(null);
+          setIsGuest(false);
+        }
         return { error: new Error(error.message) };
       }
 
       setIsGuest(false);
       return { error: null };
     } catch (error) {
+      if (options?.pushTokenAlreadyCleared) {
+        await purgeStoredSession().catch(() => undefined);
+        setSession(null);
+        setIsGuest(false);
+      }
       return {
         error: error instanceof Error ? error : new Error('Unable to log out on this device'),
       };

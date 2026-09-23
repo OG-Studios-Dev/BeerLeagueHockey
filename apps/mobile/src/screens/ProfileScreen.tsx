@@ -701,7 +701,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         return;
       }
 
-      const { error: signOutError } = await signOut();
+      const { error: signOutError } = await signOut({ pushTokenAlreadyCleared: true });
       if (signOutError) {
         Alert.alert(
           'Account Deleted',
@@ -719,7 +719,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
     Alert.alert(
       'Delete Account?',
-      'This permanently deletes your sign-in, profile, memberships, and personal account data. Legally required records may be retained only in anonymized form.',
+      'This deletes your sign-in, contact/profile data, active memberships, and security/notification data. An anonymized hockey identity and completed-game history remain. Signed waivers and payment audit records retain minimum legal identifiers and are not anonymous.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
