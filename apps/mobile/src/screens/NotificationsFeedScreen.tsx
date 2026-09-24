@@ -505,7 +505,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
                     style={[styles.scopePill, scope === 'all' && styles.scopePillActive]}
                     onPress={() => setScope('all')}
                   >
-                    <Text style={[styles.scopePillText, scope === 'all' && styles.scopePillTextActive]}>All BLH</Text>
+                    <Text style={[styles.scopePillText, scope === 'all' && styles.scopePillTextActive]}>All Updates</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -555,7 +555,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
               <Ionicons name="checkmark-circle-outline" size={20} color={colors.accentGreen} />
               <View style={styles.emptyTextWrap}>
                 <Text style={styles.emptyTitle}>No open actions</Text>
-                <Text style={styles.emptySubtitle}>You’re caught up on availability across your BLH teams.</Text>
+                <Text style={styles.emptySubtitle}>You’re caught up on Hockey Life availability.</Text>
               </View>
             </View>
           )}

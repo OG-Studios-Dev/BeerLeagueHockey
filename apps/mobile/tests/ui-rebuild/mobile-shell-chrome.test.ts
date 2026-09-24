@@ -54,7 +54,6 @@ describe('mobile shell chrome contract', () => {
       'src/screens/TeamScreen/TeamDetailScreen.tsx',
       'src/screens/captain/CaptainDashboardScreen.tsx',
       'src/screens/captain/GameAvailabilityScreen.tsx',
-      'src/screens/captain/InvitePlayersScreen.tsx',
       'src/screens/captain/LineupNotesScreen.tsx',
       'src/screens/discover/LeagueDetailScreen.tsx',
       'src/screens/games/GameRecapScreen.tsx',

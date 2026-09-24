@@ -126,7 +126,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
 
     try {
       await Share.share({
-        message: `Game Result (${date})\n${score}\n\nPowered by Beer League Hockey`,
+        message: `Hockey Life game result (${date})\n${score}`,
         title: 'Game Result',
       });
     } catch {

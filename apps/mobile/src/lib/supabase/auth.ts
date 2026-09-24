@@ -11,6 +11,35 @@ WebBrowser.maybeCompleteAuthSession();
 
 type OAuthProvider = 'apple' | 'google';
 
+export async function getAppleDeletionAuthorizationCode(): Promise<{
+  authorizationCode: string | null;
+  error: Error | null;
+}> {
+  try {
+    if (Platform.OS !== 'ios' || !(await AppleAuthentication.isAvailableAsync())) {
+      return {
+        authorizationCode: null,
+        error: new Error('Sign in with Apple reauthentication is not available on this device.'),
+      };
+    }
+
+    const credential = await AppleAuthentication.signInAsync({ requestedScopes: [] });
+    if (!credential.authorizationCode) {
+      return {
+        authorizationCode: null,
+        error: new Error('Apple did not return an authorization code. Please try again.'),
+      };
+    }
+
+    return { authorizationCode: credential.authorizationCode, error: null };
+  } catch (error) {
+    return {
+      authorizationCode: null,
+      error: error instanceof Error ? error : new Error('Apple reauthentication failed.'),
+    };
+  }
+}
+
 async function signInWithNativeApple(): Promise<{ error: Error | null }> {
   const isAppleAuthAvailable = await AppleAuthentication.isAvailableAsync();
 

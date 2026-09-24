@@ -16,12 +16,11 @@ import colors from '../../theme/colors';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type FocusedField = 'fullName' | 'email' | 'password' | 'confirmPassword' | null;
+type FocusedField = 'email' | 'password' | 'confirmPassword' | null;
 
 export default function SignUpScreen() {
   const { signUpWithEmail } = useAuth();
   const navigation = useNavigation();
-  const [fullName, setFullName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -35,7 +34,6 @@ export default function SignUpScreen() {
   };
 
   const validate = (): string | null => {
-    if (!fullName.trim()) return 'Please enter your full name';
     if (!email.trim()) return 'Please enter your email address';
     if (!EMAIL_REGEX.test(email.trim())) return 'Please enter a valid email address';
     if (!password) return 'Please enter a password';
@@ -54,7 +52,7 @@ export default function SignUpScreen() {
     setErrorMessage(null);
     setIsLoading(true);
 
-    const { error } = await signUpWithEmail(email.trim(), password, fullName.trim());
+    const { error } = await signUpWithEmail(email.trim(), password);
 
     setIsLoading(false);
 
@@ -86,17 +84,6 @@ export default function SignUpScreen() {
             </View>
           ) : (
             <>
-              <TextInput
-                autoCapitalize="words"
-                placeholder="Full Name"
-                placeholderTextColor={colors.textSecondary}
-                style={[styles.input, focusedInput === 'fullName' ? styles.inputFocused : undefined]}
-                value={fullName}
-                onChangeText={(t) => { setFullName(t); clearError(); }}
-                onFocus={() => setFocusedInput('fullName')}
-                onBlur={() => setFocusedInput(null)}
-              />
-
               <TextInput
                 autoCapitalize="none"
                 keyboardType="email-address"

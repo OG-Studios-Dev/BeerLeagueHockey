@@ -1,51 +1,66 @@
 # Account deletion post-apply live test matrix
 
-This matrix is the required verification plan for migration
-`20260921160000_harden_account_deletion.sql`. It is not permission to deploy the
-migration. Use only dedicated disposable users and the approved project. Never
-run the successful-deletion case against a real account.
+This is a release verification plan for migrations
+`20260921160000_harden_account_deletion.sql`,
+`20260921170000_complete_account_lifecycle_cleanup.sql`, and
+`20260922120000_account_deletion_review_corrections.sql`, and
+`20260922170000_account_deletion_correction_pass_2.sql`, and
+`20260923120000_account_deletion_correction_pass_3.sql`, and
+`20260923130000_immediate_account_deletion_v1.sql`, and
+`20260923140000_account_deletion_apple_identity_fail_closed.sql`, plus the deployed
+`delete-account` Edge Function. It is not permission to deploy or to use a real
+account. All successful-deletion cases require dedicated disposable fixtures.
 
-## Fixed preconditions
+## Preconditions
 
-1. Record the approved project ref, current source commit, applied migration
-   version, and SHA-256 of the reviewed migration file.
-2. Confirm `public.audit_logs` and `public.stripe_payment_history` are absent in
-   production, while `public.profiles`, `public.organizations`,
-   `public.account_deletion_log`, and every explicitly deleted account-facing
-   table are present.
-3. Create three disposable users through Supabase Auth: a non-owner Edge
-   Function fixture with zero processing deletion-log rows, a non-owner
-   processor fixture with one processing deletion-log row, and an
-   organization-owner rejection fixture. Do not reuse a human account.
-4. For each non-owner fixture, create one row in each of these exact paths:
-   `user_consents.user_id`, `league_memberships.user_id`,
-   `team_rosters.player_id`, `notifications.user_id`,
-   `push_subscriptions.user_id`, `user_notification_preferences.user_id`,
-   `team_messages.sent_by`, and `user_sessions.user_id`.
-5. Populate every profile PII/security field covered by the migration. Also set
-   hockey fields such as position, jersey number, shot hand, and skill level.
-6. Create or attach synthetic historical game/stat sentinel rows through normal
-   application fixtures. Save their primary keys and a deterministic before
-   snapshot/hash. These sentinels must not be real player history.
-7. Save before counts and row snapshots for both disposable users. A failed
-   case is not cleanup; compare exact rows after each call.
+1. Record the approved project, source commit, all seven applied migration versions,
+   and SHA-256 hashes of the reviewed migrations and Edge Function bundle.
+2. Confirm the expected tables and columns exist. In particular, verify
+   `profiles.push_token`, `team_rosters.historical_retained`,
+   `sub_invitations.replaced_player_id`, and `game_checkins.note`. The migration
+   must reject an optional historical table with an incompatible relation kind,
+   column type/nullability, or primary key before any storage operation.
+3. Create separate disposable email, Google, Apple, organization-owner,
+   league-owner, and
+   atomic-rollback fixtures. Do not reuse a human account.
+   The immediate Edge Function fixture must start with zero processing deletion-log rows;
+   the processor fixture must start with one `immediate`/`database_deleted` state.
+4. Seed each applicable fixture with rows for `user_consents`,
+   `league_memberships`, `team_rosters`, `notifications`,
+   `push_subscriptions`, `user_notification_preferences`, `team_messages`,
+   `user_sessions`, authored/received `sub_invitations`, authored
+   `goalie_requests`, authored `goalie_ratings`, and `game_checkins` with a
+   synthetic note.
+5. Seed `profiles.push_token`; if `push_device_tokens` exists, seed a token
+   there too. Save exact before snapshots.
+6. Upload disposable image fixtures using each repository-proven contract:
+   `avatars/{user_id}/avatar.jpg`,
+   `player-avatars/{user_id}-{timestamp}.{jpg|jpeg|png|webp}`, and
+   `player-photos/{user_id}/{timestamp}.{jpg|jpeg|png|webp}`. Store the public
+   URLs only in that fixture's `avatar_url`/`photo_url`.
+7. Create synthetic historical game, event, stat, badge, and attendance
+   sentinels and save deterministic hashes. These are not real player records.
 
 ## Matrix
 
-| ID | Environment and caller | Action | Required result |
-|---|---|---|---|
-| **LIVE-01** | Approved production, read-only SQL | Read `pg_proc`, `pg_namespace`, `pg_roles`, migration history, and the exact FK from `public.profiles.id` to `auth.users.id` after apply. | Version `20260921160000` is applied once; all four function definitions have `prosecdef = true` and an empty configured `search_path`; `audit_logs` and `stripe_payment_history` remain absent; no FK definition changed; deleting `auth.users` must not delete the retained profile. Stop if that final FK precondition is false. |
-| **LIVE-02** | Approved production, role matrix | Evaluate `has_function_privilege` for `anon`, `authenticated`, and `service_role` against `anonymize_audit_logs(uuid)`, `anonymize_payment_history(uuid,text)`, `delete_user_sessions(uuid)`, and `execute_account_deletion(uuid)`. Also attempt the master RPC with disposable fixtures. | `anon` denied, `authenticated` denied, and `service_role` allowed for every signature. Direct anon/authenticated RPC calls fail with permission denied and make zero row changes. Service role reaches business logic. |
-| **LIVE-03** | Approved production, authenticated owner fixture through the deployed `delete-account` Edge Function | POST `{ "confirmation": "DELETE" }` using the owner fixture's bearer token. | HTTP 409 `organization_ownership`; auth user, profile, organization, all account-facing rows, historical sentinels, and profile PII are byte-for-byte unchanged. This proves owner rejection happens before mutation. |
-| **LIVE-04** | Approved production, authenticated non-owner Edge fixture through the deployed `delete-account` Edge Function; optional `audit_logs` and `stripe_payment_history` absent; zero processing deletion-log rows | POST `{ "confirmation": "DELETE" }` once. | HTTP 200; no deletion-log row is required or synthesized; all eight explicit account-facing row sets are empty; `auth.users` has no fixture row; the retained profile exists with all listed PII cleared/anonymized and all admin/security state removed; hockey fields and every historical sentinel are unchanged. A second authenticated call is impossible because Auth is gone. |
-| **LIVE-04B** | Approved production, processor fixture with one processing deletion-log row, direct service-role RPC through the existing processor path | Execute the master RPC once and record its JSON result. | Success result reports `audit_logs_anonymized = 0`, `payment_history_anonymized = 0`, and `deletion_logs_completed = 1`; the processing log is completed; all LIVE-04 deletion, profile, auth, and historical assertions also hold. |
-| **LIVE-05** | Isolated approved staging database, direct service-role RPC | Before the call, add a test-only `NO ACTION` blocker that references the fixture's `auth.users.id`, then invoke the master RPC so failure occurs at the auth deletion step. Remove the blocker after verification. | RPC fails on the blocker; atomic rollback restores optional retention rows, all eight account-facing row sets, the original profile PII/security fields, auth user, deletion-log state, and historical sentinels exactly. No partial delete or anonymization remains. |
-| **LIVE-06** | Isolated approved staging database with disposable compatible `public.audit_logs` and `public.stripe_payment_history` tables | Seed one matching row in each optional table, execute the two helpers as `service_role`, and repeat privilege attempts as `anon` and `authenticated`. | Service role receives count `1` from each helper; direct PII in audit details/IP/user-agent and Stripe customer metadata is removed; metadata JSON is intentionally discarded rather than retained; typed action, amount, currency, and date columns remain unchanged; anon/authenticated are denied; dropping the disposable optional tables returns the environment to its prior shape. |
+| ID | Caller and action | Required result |
+|---|---|---|
+| **LIVE-01** | Read migration history, `pg_proc`, `pg_namespace`, profile/auth FK, and exact function definitions after apply. | All seven listed migration versions are applied once. Every entrypoint and transitive helper is `SECURITY DEFINER`, owned by `postgres`, with empty `search_path`. The auth cascade is absent and the active-profile deferred invariant exists; a deleted historical profile survives auth deletion. |
+| **LIVE-02** | Check effective and catalog EXECUTE privileges for every deletion helper, including an unknown test grantee and default ACLs. | `service_role` is allowed to call privileged helpers. Only `authenticated` can call the no-argument logout RPC. `anon`, unexpected roles, and authenticated direct deletion calls are denied. |
+| **LIVE-03** | Invoke the deployed Edge Function as the organization-owner and league-owner fixtures. Run `scripts/tests/account-deletion-ownership-race.ts` against disposable loopback PostgreSQL so preflight holds session A while session B assigns authority; repeat for organization ownership, league `owner_id`/`created_by`, organization membership, explicit `league_ownerships`, and `league_memberships` owner/admin insert, reassignment, and promotion. | HTTP 409 with the applicable ownership code. Session B blocks on the same per-user advisory lock and then fails after session A inserts deletion state. Assignments/promotions to deleted/authless profiles also fail. No external side effect begins while reassignment can still commit. |
+| **LIVE-04** | Invoke the deployed Edge Function as the non-Apple, non-owner fixture with `{ "confirmation": "DELETE" }`. | HTTP 200. All fixed-prefix owned image pages are absent. Auth is absent. Operational/PII rows follow the retention matrix; roster-only and stat-backed completed-game history remain, inactive and non-authorizing. External state is pending until Stripe and email complete. |
+| **LIVE-04B** | Run the retry processor with forced first-attempt Stripe failure and then forced first-attempt email failure. Retry each. | The processor selects only `immediate`/`database_deleted` state and never invokes storage or database deletion. Stripe retry does not repeat database deletion; email retry does not repeat Stripe. Each retry payload is erased only after its step succeeds. Any failed item or retry-marker failure returns non-200. |
+| **LIVE-05** | In isolated staging, add a test-only `NO ACTION` auth blocker and invoke the RPC. Remove the blocker afterward. | RPC failure causes atomic rollback of every DB delete/anonymization, including push and authored rows. Historical sentinels are unchanged. Storage is an external pre-step and is not transactionally restored; verify and document that separately. |
+| **LIVE-06** | In isolated staging with disposable compatible `audit_logs` and `stripe_payment_history` tables, invoke the retention helpers as each API role. | Service role minimizes network/provider identifiers. Metadata JSON is intentionally discarded; typed payment facts remain and are not called anonymous. Client roles are denied. The absent-table case returns zero. |
+| **LIVE-07** | Log in as account A, register a disposable push token, log out, then log in as account B on the same device. Repeat for zero rows, RLS denial, missing/stale session, and post-deletion sign-out failure. | The authenticated RPC derives account A from `auth.uid()` and proves exactly one cleanup before normal sign-out. Every failure is fail-closed. Post-deletion local failure purges local credentials/state. Account B never inherits account A's destination. |
+| **LIVE-08** | Run `supabase/tests/account_deletion_operational_authority_acceptance.sql`, then delete a fixture with completed and future check-ins/availability/substitutions, captain invites, spare/draft pools, opt-ins, duties, duty rotations, scorekeeper assignments/swaps, organization/league access rows, team invitations, paid pending registration, active suspension, roster rows, and lineup JSON. | The anonymized UUID is absent from every open/future selection or authorization query. Spare rows are inactive, retained paid/waiver registrations are cancelled and unassigned, and non-terminal suspensions are absent. Only completed-game check-in/availability/substitution/duty/assignment and roster facts remain under their explicit predicates, with free text minimized. |
+| **LIVE-09** | Upload every accepted MIME type with weird/missing/traversal filename extensions. Delete fixtures spanning multiple list pages, missing objects, legacy/current paths, foreign names, and a forced partial remove failure. | This is the storage allowlist case. Upload extensions come only from validated MIME. Server-fixed buckets/prefixes are listed with bounded pagination. Foreign/traversal input never reaches remove. Missing objects proceed; partial failure stops before DB/auth deletion. |
+| **LIVE-10** | Invoke deletion for an Apple-linked fixture with a fresh code belonging to that identity; repeat with a valid code for another Apple identity. Force (a) network failure after token staging, (b) provider success followed by marker DB failure, and (c) retry without a code. Also submit exact-email and unrelated contact forms. | Apple signature/issuer/audience/expiry and the server-derived subject are verified; the other identity is rejected. Apple revocation keeps account deletion blocked until it succeeds. The server-returned token is durable before revocation, invisible to client roles, and retained on provider/marker failure. Retry uses only server state, then atomically records revocation and deletes the token. No provider token or secret is accepted from the client. `contact_submissions` has no authenticated-user key, so only exact normalized account-email matches are deleted. |
+| **LIVE-11** | Seed the retention matrix, including security logs, paid/unpaid registrations, signed waiver, payment/provider metadata, completed/future availability, roster-only completed games, and stat-backed completed games. | Every field matches its delete/clear/retain classification. Waiver and financial records are reported as legally retained, not anonymous. Historical jersey/position/appearance/stat results remain reproducible. |
+| **LIVE-12** | Run `supabase/tests/account_deletion_correction_pass_3_acceptance.sql` with completed/future referee assignments/swaps, referee tokens/availability, terminal/open season-return rows, notification send logs, backup tokens, migration requests, team billing actors, imported history and QuickBooks actors. | Tokens and open/future authority are absent; completed referee and terminal return facts are minimized exactly; every newly classified migration-only table matches the retention matrix. |
+| **LIVE-13** | Call delayed request/cancel/status compatibility actions and reminder RPCs; seed pending/failed/cancelled legacy rows before applying the v1 migration. | Every compatibility call returns explicit unavailable-for-v1 guidance without mutation. Legacy work is cancelled, profile/request PII is scrubbed, completed audit timestamps/outcomes remain, and no reminder is sent. |
 
-## Exact ACL query shape
-
-Run this as a read-only verification query after apply and require the expected
-booleans from LIVE-02:
+## ACL query shape
 
 ```sql
 SELECT
@@ -58,20 +73,22 @@ CROSS JOIN (
     ('public.anonymize_audit_logs(uuid)'),
     ('public.anonymize_payment_history(uuid,text)'),
     ('public.delete_user_sessions(uuid)'),
+    ('public.delete_push_device_tokens(uuid)'),
+    ('public.prepare_account_deletion(uuid)'),
+    ('public.stage_account_apple_revocation(uuid,text,text,text)'),
+    ('public.get_account_apple_revocation_retry(uuid)'),
+    ('public.mark_account_apple_revoked(uuid)'),
     ('public.execute_account_deletion(uuid)')
 ) AS f(signature)
 WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
 ORDER BY f.signature, r.rolname;
 ```
 
-Expected for each signature: `anon = false`, `authenticated = false`,
-`service_role = true`.
-
 ## Stop conditions
 
-Stop and roll back the release if any function is executable by an API client
-role other than `service_role`, any required production table/column is absent,
-auth deletion removes the retained profile, any historical snapshot changes,
-or LIVE-04 leaves any explicit account-facing rows. Do not repair FK behavior
-inside this migration and do not broaden deletion by discovering FK targets at
-runtime.
+Stop rollout if any unexpected role can execute a privileged helper, a required
+column/relation shape is incompatible, an organization owner loses an image,
+arbitrary storage paths reach `remove`, Apple deletion continues without proven
+revocation, auth disappears while required DB cleanup failed, external failure
+is marked complete, or a historical sentinel changes. Do not repair a live
+mismatch by editing an applied migration.

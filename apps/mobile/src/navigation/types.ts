@@ -33,8 +33,6 @@ export type StatsStackParamList = {
 export type CaptainStackParamList = {
   CaptainDashboard: undefined;
   GameAvailability: { gameId: string; teamId: string; leagueId: string };
-  InvitePlayers: { teamId: string; leagueId: string; teamName: string };
-  LineupNotes: { gameId: string; teamId: string; opponentName?: string };
 };
 
 export type LeaguePageScopeParams = { leagueId: string; leagueSlug: string };

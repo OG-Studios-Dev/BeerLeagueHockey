@@ -1,4 +1,6 @@
+import { unregisterPushNotifications } from '../notifications';
 import { supabase } from './client';
+import { getAppleDeletionAuthorizationCode } from './auth';
 
 type FunctionError = {
   message?: string;
@@ -7,21 +9,29 @@ type FunctionError = {
 
 type AccountDeletionResponse = {
   success?: boolean;
+  preflight?: boolean;
   error?: string;
+  code?: string;
 };
 
 type AccountDeletionClient = {
   functions: {
     invoke: (
       name: string,
-      options: { body: { confirmation: 'DELETE' } },
+      options: {
+        body: {
+          confirmation: 'DELETE';
+          appleAuthorizationCode?: string;
+          preflightOnly?: true;
+        };
+      },
     ) => Promise<{ data: unknown; error: unknown }>;
   };
 };
 
 const DEFAULT_ERROR = 'Unable to delete your account. Please try again.';
 
-async function responseErrorMessage(context: unknown): Promise<string | null> {
+async function responseErrorPayload(context: unknown): Promise<AccountDeletionResponse | null> {
   if (!context || typeof context !== 'object') return null;
 
   const response = context as { clone?: () => unknown; json?: () => Promise<unknown> };
@@ -31,8 +41,7 @@ async function responseErrorMessage(context: unknown): Promise<string | null> {
   try {
     const payload = await (candidate as { json: () => Promise<unknown> }).json();
     if (payload && typeof payload === 'object') {
-      const message = (payload as AccountDeletionResponse).error;
-      return typeof message === 'string' && message.trim() ? message : null;
+      return payload as AccountDeletionResponse;
     }
   } catch {
     return null;
@@ -43,21 +52,70 @@ async function responseErrorMessage(context: unknown): Promise<string | null> {
 
 export async function deleteCurrentAccount(
   client: AccountDeletionClient = supabase,
-): Promise<{ error: Error | null }> {
+  revokeNotifications: (
+    options?: { notificationDestinationAlreadyRevoked?: boolean },
+  ) => Promise<{ error: Error | null }> = unregisterPushNotifications,
+): Promise<{ error: Error | null; localCleanupError?: Error }> {
   try {
-    const { data, error } = await client.functions.invoke('delete-account', {
-      body: { confirmation: 'DELETE' },
+    const invoke = (appleAuthorizationCode?: string, preflightOnly = false) => client.functions.invoke('delete-account', {
+      body: {
+        confirmation: 'DELETE',
+        ...(appleAuthorizationCode ? { appleAuthorizationCode } : {}),
+        ...(preflightOnly ? { preflightOnly: true as const } : {}),
+      },
     });
 
-    if (error) {
-      const functionError = error as FunctionError;
-      const backendMessage = await responseErrorMessage(functionError.context);
-      return { error: new Error(backendMessage ?? functionError.message ?? DEFAULT_ERROR) };
+    const preflightResult = await invoke(undefined, true);
+    const preflightPayload = preflightResult.error
+      ? await responseErrorPayload((preflightResult.error as FunctionError).context)
+      : null;
+
+    let appleAuthorizationCode: string | undefined;
+    if (preflightPayload?.code === 'apple_reauthentication_required') {
+      const reauthentication = await getAppleDeletionAuthorizationCode();
+      if (reauthentication.error || !reauthentication.authorizationCode) {
+        return {
+          error: reauthentication.error ?? new Error('Apple reauthentication is required.'),
+        };
+      }
+      appleAuthorizationCode = reauthentication.authorizationCode;
+    } else if (preflightResult.error) {
+      const functionError = preflightResult.error as FunctionError;
+      return { error: new Error(preflightPayload?.error ?? functionError.message ?? DEFAULT_ERROR) };
+    } else {
+      const payload = preflightResult.data as AccountDeletionResponse | null;
+      if (!payload?.success || payload.preflight !== true) {
+        return { error: new Error(payload?.error ?? DEFAULT_ERROR) };
+      }
     }
 
-    const payload = data as AccountDeletionResponse | null;
+    const result = await invoke(appleAuthorizationCode);
+    const functionPayload = result.error
+      ? await responseErrorPayload((result.error as FunctionError).context)
+      : null;
+
+    if (result.error) {
+      const functionError = result.error as FunctionError;
+      return { error: new Error(functionPayload?.error ?? functionError.message ?? DEFAULT_ERROR) };
+    }
+
+    const payload = result.data as AccountDeletionResponse | null;
     if (!payload?.success) {
       return { error: new Error(payload?.error ?? DEFAULT_ERROR) };
+    }
+
+    try {
+      const { error: localCleanupError } = await revokeNotifications({
+        notificationDestinationAlreadyRevoked: true,
+      });
+      if (localCleanupError) return { error: null, localCleanupError };
+    } catch (error) {
+      return {
+        error: null,
+        localCleanupError: error instanceof Error
+          ? error
+          : new Error('Unable to clear notification data on this device.'),
+      };
     }
 
     return { error: null };

@@ -90,13 +90,6 @@ type BadgeRow = {
   league: { name: string; primary_color: string | null } | null;
 };
 
-type LeagueInfo = {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  primary_color: string | null;
-};
-
 type ActiveTeamCard = {
   teamId: string;
   teamName: string;
@@ -195,6 +188,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     membershipStatus,
     membershipDiagnostics,
     retryMemberships,
+    exitGuestLeague,
   } = useLeague();
   const { width } = useWindowDimensions();
   const isCompact = width < 390;
@@ -208,8 +202,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = React.useState(true);
   const [playerRating, setPlayerRating] = React.useState<string | null>(null);
   const [badges, setBadges] = React.useState<BadgeRow[]>([]);
-  const [leagueMap, setLeagueMap] = React.useState<Record<string, LeagueInfo>>({});
-  const [teamLeagueMap, setTeamLeagueMap] = React.useState<Record<string, string>>({});
   const [activeTeams, setActiveTeams] = React.useState<ActiveTeamCard[]>([]);
   const [teamStandings, setTeamStandings] = React.useState<TeamStanding[]>([]);
   const [isCaptain, setIsCaptain] = React.useState(false);
@@ -227,6 +219,29 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user || cancelled) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, position, self_assessed_skill')
+        .eq('id', user.id)
+        .single();
+      if (cancelled) return;
+      setProfile(profileData as Profile | null);
+
+      if (!activeLeague) {
+        setStats([]);
+        setRoster(null);
+        setRecentGames([]);
+        setRecentResults([]);
+        setUserTeamId(null);
+        setPlayerRating(null);
+        setBadges([]);
+        setActiveTeams([]);
+        setTeamStandings([]);
+        setIsCaptain(false);
         setLoading(false);
         return;
       }
@@ -250,17 +265,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
       }
 
       const [
-        { data: profileData },
         { data: rawStatsData },
         { data: ratingData },
         { data: badgesData },
         { data: rosterRows },
       ] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, position, self_assessed_skill')
-          .eq('id', user.id)
-          .single(),
         statsQuery,
         ratingQuery,
         supabase
@@ -293,8 +302,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         .in('leadership_role', ['captain', 'alternate_captain'])
         .limit(1);
       setIsCaptain((captainData ?? []).length > 0);
-
-      setProfile(profileData as Profile | null);
 
       const ratings =
         (ratingData as Array<{ rating: string; league_id: string | null; points_per_game: number | null }>) ?? [];
@@ -341,15 +348,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
       const leagueIds = [...new Set(rosterCards.map((card) => card.leagueId))];
       const teamCardMap = new Map(rosterCards.map((card) => [card.teamId, card]));
 
-      const rosterLeagueMap: Record<string, LeagueInfo> = {};
       const rosterTeamLeagueMap: Record<string, string> = {};
       for (const card of rosterCards) {
-        rosterLeagueMap[card.leagueId] = {
-          id: card.leagueId,
-          name: card.leagueName,
-          logo_url: card.leagueLogoUrl,
-          primary_color: card.leaguePrimaryColor,
-        };
         rosterTeamLeagueMap[card.teamId] = card.leagueId;
       }
 
@@ -377,8 +377,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
       const allStats = (rawStatsData as SeasonStat[] | null) ?? [];
 
       if (allStats.length === 0) {
-        setLeagueMap(rosterLeagueMap);
-        setTeamLeagueMap(rosterTeamLeagueMap);
         setStats(
           rosterCards.map((card) => ({
             goals: 0,
@@ -401,18 +399,14 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
         if (cancelled) return;
 
-        const nextLeagueMap = { ...rosterLeagueMap };
         const nextTeamLeagueMap = { ...rosterTeamLeagueMap };
 
         for (const team of (teamsData as any[]) ?? []) {
           const league = Array.isArray(team.league) ? team.league[0] : team.league;
           if (!league) continue;
-          nextLeagueMap[league.id] = league as LeagueInfo;
           nextTeamLeagueMap[team.id] = league.id;
         }
 
-        setLeagueMap(nextLeagueMap);
-        setTeamLeagueMap(nextTeamLeagueMap);
 
         if (activeLeague) {
           const leagueTeamIds = Object.entries(nextTeamLeagueMap)
@@ -550,36 +544,13 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const teamName = roster?.team?.name ?? null;
   const totals = sumStats(stats);
 
-  const leagueBreakdown = React.useMemo(() => {
-    if (activeLeague) return [];
-
-    const grouped: Record<string, SeasonStat[]> = {};
-    for (const row of stats) {
-      const leagueId = row.team_id ? teamLeagueMap[row.team_id] : null;
-      if (!leagueId) continue;
-      if (!grouped[leagueId]) grouped[leagueId] = [];
-      grouped[leagueId].push(row);
-    }
-
-    return Object.entries(grouped).map(([leagueId, rows]) => ({
-      league:
-        leagueMap[leagueId] ?? {
-          id: leagueId,
-          name: 'Unknown League',
-          logo_url: null,
-          primary_color: null,
-        },
-      totals: sumStats(rows),
-    }));
-  }, [activeLeague, leagueMap, stats, teamLeagueMap]);
-
-  const statsSectionTitle = activeLeague ? `${activeLeague.name} Stats` : 'Career Stats';
+  const statsSectionTitle = `${activeLeague?.name ?? 'Hockey Life'} Stats`;
   const careerPpg = totals.gp > 0 ? (totals.pts / totals.gp).toFixed(2) : '--';
   const fitProfile = playerRating ? `${playerRating} rating` : skillLabel(profile?.self_assessed_skill ?? null) ?? 'Set your skill';
 
   const passportMetrics = React.useMemo(
     () => [
-      { label: 'Active Leagues', value: String(new Set(activeTeams.map((team) => team.leagueId)).size) },
+      { label: 'Active Seasons', value: String(new Set(activeTeams.map((team) => team.leagueId)).size) },
       { label: 'Active Teams', value: String(activeTeams.length) },
       { label: 'Career PPG', value: careerPpg },
       { label: 'Badges', value: String(badges.length) },
@@ -587,14 +558,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     [activeTeams, badges.length, careerPpg],
   );
 
-  const scopedStandings = React.useMemo(
-    () => (activeLeague ? teamStandings.filter((standing) => standing.leagueId === activeLeague.id) : teamStandings),
-    [activeLeague, teamStandings],
-  );
+  const scopedStandings = teamStandings;
 
   const recentFormGames = React.useMemo(
     () =>
-      (activeLeague ? recentResults.filter((game) => game.leagueId === activeLeague.id) : recentResults).slice(0, 5),
+      recentResults.filter((game) => game.leagueId === activeLeague?.id).slice(0, 5),
     [activeLeague, recentResults],
   );
 
@@ -624,11 +592,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const playerCardMessage = React.useMemo(() => {
     const activeTeamNames = activeTeams.map((team) => `${team.teamName} (${team.leagueName})`).slice(0, 3);
     const lines = [
-      `${displayName} on Beer League Hockey`,
-      activeTeamNames.length > 0 ? `Playing for ${activeTeamNames.join(', ')}` : 'BLH player account',
+      `${displayName} on Hockey Life`,
+      activeTeamNames.length > 0 ? `Playing for ${activeTeamNames.join(', ')}` : 'Hockey Life player account',
       totals.gp > 0 ? `${totals.pts} points in ${totals.gp} games` : null,
-      playerRating ? `BLH rating: ${playerRating}` : skillLabel(profile?.self_assessed_skill ?? null) ? `League match level: ${skillLabel(profile?.self_assessed_skill ?? null)}` : null,
-      badges.length > 0 ? `${badges.length} BLH achievements earned` : null,
+      playerRating ? `Hockey Life rating: ${playerRating}` : skillLabel(profile?.self_assessed_skill ?? null) ? `League match level: ${skillLabel(profile?.self_assessed_skill ?? null)}` : null,
+      badges.length > 0 ? `${badges.length} Hockey Life achievements earned` : null,
       'Track Hockey Life games, teams, and stats in the app.',
     ].filter(Boolean);
 
@@ -637,7 +605,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
   const handleSharePlayerCard = async () => {
     await Share.share({
-      title: `${displayName} · BLH Player Card`,
+      title: `${displayName} · Hockey Life Player Card`,
       message: playerCardMessage,
     });
   };
@@ -658,6 +626,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     if (isSigningOutRef.current || isDeletingAccountRef.current) return;
 
     if (isGuest) {
+      exitGuestLeague();
       exitGuest();
       return;
     }
@@ -701,7 +670,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         return;
       }
 
-      const { error: signOutError } = await signOut();
+      const { error: signOutError } = await signOut({ notificationDestinationAlreadyRevoked: true });
       if (signOutError) {
         Alert.alert(
           'Account Deleted',
@@ -719,7 +688,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
     Alert.alert(
       'Delete Account?',
-      'This permanently deletes your sign-in, profile, memberships, and personal account data. Legally required records may be retained only in anonymized form.',
+      'This deletes your sign-in, contact/profile data, active memberships, and security/notification data. An anonymized hockey identity and completed-game history remain. Signed waivers and payment audit records retain minimum legal identifiers and are not anonymous.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -835,7 +804,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                     <Text style={styles.teamName}>{teamName}</Text>
                   </View>
                 ) : (
-                  <Text style={styles.teamName}>BLH player account</Text>
+                  <Text style={styles.teamName}>Hockey Life player account</Text>
                 )}
               </View>
             </FocusCard>
@@ -850,10 +819,10 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                 end={{ x: 1, y: 1 }}
                 style={styles.passportGlow}
               />
-              <Text style={styles.passportEyebrow}>BLH IDENTITY</Text>
-              <Text style={styles.passportTitle}>Your cross-league player snapshot.</Text>
+              <Text style={styles.passportEyebrow}>HOCKEY LIFE PLAYER</Text>
+              <Text style={styles.passportTitle}>Your current player snapshot.</Text>
               <Text style={styles.passportSub}>
-                Track where you play, how your career is trending, and the signal used to match you with other BLH leagues.
+                Track your team, career trend, and Hockey Life player rating.
               </Text>
 
               <View style={[styles.passportGrid, isCompact && styles.passportGridCompact]}>
@@ -1078,52 +1047,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             </>
           ) : null}
 
-          {!activeLeague && leagueBreakdown.length > 0 ? (
-            <>
-              <SectionHeader title="By League" />
-              <FocusCard focusId="profile:league-breakdown" accentColor={primaryColor} style={[styles.leagueBreakdownCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
-                {leagueBreakdown.map((row, index) => {
-                  const leagueColor = row.league.primary_color ?? colors.primary;
-
-                  return (
-                    <View
-                      key={row.league.id}
-                      style={[styles.leagueRow, isCompact && styles.leagueRowCompact, index < leagueBreakdown.length - 1 && styles.leagueRowBorder]}
-                    >
-                      <View style={styles.leagueRowLeft}>
-                        <TeamLogo
-                          logoUrl={row.league.logo_url}
-                          teamName={row.league.name}
-                          primaryColor={leagueColor}
-                          size={24}
-                        />
-                        <Text style={[styles.leagueName, { color: leagueColor }]} numberOfLines={1}>
-                          {row.league.name}
-                        </Text>
-                      </View>
-
-                      <View style={[styles.leagueRowStats, isCompact && styles.leagueRowStatsCompact]}>
-                        {(
-                          [
-                            { label: 'GP', val: row.totals.gp },
-                            { label: 'G', val: row.totals.g },
-                            { label: 'A', val: row.totals.a },
-                            { label: 'PTS', val: row.totals.pts },
-                          ] as Array<{ label: string; val: number }>
-                        ).map(({ label, val }) => (
-                          <View key={label} style={styles.leagueStatCell}>
-                            <Text style={[styles.leagueStatVal, label === 'PTS' && { color: leagueColor }]}>{val}</Text>
-                            <Text style={styles.leagueStatLabel}>{label}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  );
-                })}
-              </FocusCard>
-            </>
-          ) : null}
-
           {badges.length > 0 ? (
             <>
               <SectionHeader title="Achievements" />
@@ -1226,19 +1149,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
               <Text style={styles.settingLabel}>Notification Preferences</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
-            <Pressable
-              style={styles.settingRow}
-              onPress={() => {
-                const url = activeLeague?.slug
-                  ? `https://beerleaguehockey.ca/${activeLeague.slug}/register`
-                  : 'https://beerleaguehockey.ca';
-                Linking.openURL(url);
-              }}
-            >
-              <Ionicons name="card-outline" size={18} color={primaryColor} />
-              <Text style={styles.settingLabel}>Registration &amp; Payments</Text>
-              <Ionicons name="open-outline" size={16} color={colors.textSecondary} />
-            </Pressable>
             <Pressable style={styles.settingRow} onPress={() => navigation.navigate('CareerStats')}>
               <Ionicons name="trophy-outline" size={18} color={primaryColor} />
               <Text style={styles.settingLabel}>Career Stats</Text>
@@ -1262,7 +1172,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
             )}
             <Pressable style={[styles.settingRow, { borderBottomWidth: 0 }]} onPress={() => navigation.navigate('EditProfile')}>
               <Ionicons name="create-outline" size={18} color={primaryColor} />
-              <Text style={styles.settingLabel}>Edit Profile</Text>
+              <Text style={styles.settingLabel}>Player Preferences</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             {!isGuest ? (
@@ -1598,27 +1508,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currentTeamSecondaryButtonText: { fontSize: 13, fontWeight: '800', color: colors.primary },
-
-  leagueBreakdownCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
-  leagueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  leagueRowCompact: {
-    alignItems: 'flex-start',
-    flexDirection: 'column',
-  },
-  leagueRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderCard },
-  leagueRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
-  leagueName: { fontSize: 13, fontWeight: '800', flexShrink: 1 },
-  leagueRowStats: { flexDirection: 'row', gap: 12 },
-  leagueRowStatsCompact: { flexWrap: 'wrap' },
-  leagueStatCell: { alignItems: 'center' },
-  leagueStatVal: { fontSize: 15, fontWeight: '900', color: colors.textPrimary },
-  leagueStatLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, marginTop: 1 },
 
   badgesScroll: { paddingHorizontal: 16, paddingBottom: 12, gap: 12, flexDirection: 'row' },
   badgeChip: { alignItems: 'center', width: 88, gap: 6 },

@@ -1,8 +1,9 @@
 import type { Session, User } from '@supabase/supabase-js';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
+import { unregisterPushNotifications } from '../lib/notifications';
 import { signInWithOAuth } from '../lib/supabase/auth';
-import { supabase } from '../lib/supabase/client';
+import { purgeStoredSession, supabase } from '../lib/supabase/client';
 
 interface AuthContextType {
   session: Session | null;
@@ -10,33 +11,38 @@ interface AuthContextType {
   isLoading: boolean;
   isGuest: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUpWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithApple: () => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   continueAsGuest: () => void;
   exitGuest: () => void;
-  signOut: () => Promise<{ error: Error | null }>;
+  signOut: (options?: { notificationDestinationAlreadyRevoked?: boolean }) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const PUSH_TOKEN_CLEAR_ERROR =
+  'Unable to turn off notifications for this account. Check your connection and try logging out again.';
+const STALE_SESSION_ERROR = 'Your session is missing or stale. Sign in again before logging out.';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
+  const authGeneration = useRef(0);
+  const isGuestRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
-    let isBootstrapCurrent = true;
+    const bootstrapGeneration = ++authGeneration.current;
 
     void supabase.auth.getSession()
       .then(({ data: { session } }) => {
-        if (!isMounted || !isBootstrapCurrent) return;
+        if (!isMounted || bootstrapGeneration !== authGeneration.current) return;
         setSession(session);
         setIsLoading(false);
       })
       .catch(() => {
-        if (!isMounted || !isBootstrapCurrent) return;
+        if (!isMounted || bootstrapGeneration !== authGeneration.current) return;
         setIsLoading(false);
       });
 
@@ -44,14 +50,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!isMounted) return;
-      isBootstrapCurrent = false;
+      if (!nextSession && isGuestRef.current) return;
+      authGeneration.current += 1;
       setSession(nextSession);
+      isGuestRef.current = false;
+      setIsGuest(false);
       setIsLoading(false);
     });
 
     return () => {
       isMounted = false;
-      isBootstrapCurrent = false;
+      authGeneration.current += 1;
       subscription.unsubscribe();
     };
   }, []);
@@ -65,13 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error ? new Error(error.message) : null };
   };
 
-  const signUpWithEmail = async (email: string, password: string, fullName: string) => {
+  const signUpWithEmail = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: fullName },
-      },
     });
 
     return { error: error ? new Error(error.message) : null };
@@ -82,23 +88,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => signInWithOAuth('google');
 
   const continueAsGuest = () => {
+    authGeneration.current += 1;
+    isGuestRef.current = true;
+    setSession(null);
+    setIsLoading(false);
     setIsGuest(true);
   };
 
   const exitGuest = () => {
+    isGuestRef.current = false;
     setIsGuest(false);
   };
 
-  const signOut = async () => {
+  const signOut = async (options?: { notificationDestinationAlreadyRevoked?: boolean }) => {
+    const userId = session?.user.id;
+    if (!userId && !options?.notificationDestinationAlreadyRevoked) {
+      return { error: new Error(STALE_SESSION_ERROR) };
+    }
+    if (userId && !options?.notificationDestinationAlreadyRevoked) {
+      try {
+        const { data: verifiedAuth, error: verificationError } = await supabase.auth.getUser();
+        if (verificationError || !verifiedAuth.user || verifiedAuth.user.id !== userId) {
+          return { error: new Error(STALE_SESSION_ERROR) };
+        }
+
+        const { data: clearedExactlyOne, error: pushTokenError } = await supabase.rpc(
+          'clear_current_push_destination',
+          {},
+        );
+        if (pushTokenError || clearedExactlyOne !== true) {
+          return { error: new Error(PUSH_TOKEN_CLEAR_ERROR) };
+        }
+      } catch {
+        return { error: new Error(PUSH_TOKEN_CLEAR_ERROR) };
+      }
+    }
+
     try {
+      if (!options?.notificationDestinationAlreadyRevoked) {
+        const { error: unregisterError } = await unregisterPushNotifications({
+          notificationDestinationAlreadyRevoked: true,
+        });
+        if (unregisterError) return { error: unregisterError };
+      }
+
       const { error } = await supabase.auth.signOut({ scope: 'local' });
       if (error) {
+        if (options?.notificationDestinationAlreadyRevoked) {
+          await purgeStoredSession();
+          setSession(null);
+          setIsGuest(false);
+        }
         return { error: new Error(error.message) };
       }
 
+      isGuestRef.current = false;
       setIsGuest(false);
       return { error: null };
     } catch (error) {
+      if (options?.notificationDestinationAlreadyRevoked) {
+        await purgeStoredSession().catch(() => undefined);
+        setSession(null);
+        setIsGuest(false);
+      }
       return {
         error: error instanceof Error ? error : new Error('Unable to log out on this device'),
       };

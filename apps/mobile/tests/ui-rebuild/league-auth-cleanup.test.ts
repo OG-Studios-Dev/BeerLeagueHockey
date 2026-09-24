@@ -64,6 +64,8 @@ type LeagueValue = {
   retryMemberships: () => void;
   setActiveLeague: (league: LeagueSelection | null) => Promise<void>;
   previewLeague: (league: LeagueSelection) => void;
+  enterGuestLeague: () => void;
+  exitGuestLeague: () => void;
 };
 
 type LookupFixture = {
@@ -510,6 +512,69 @@ describe('LeagueProvider persisted selection ordering', () => {
 });
 
 describe('LeagueProvider auth bootstrap freshness', () => {
+  it('selects Hockey Life public data for fresh guest entry without membership', async () => {
+    const fixture = createLeagueFixture({
+      getSession: async () => ({ data: { session: null }, error: null }),
+      getUserLeagues: async () => [],
+    });
+    await fixture.settle();
+
+    fixture.value.enterGuestLeague();
+    await fixture.settle();
+
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(fixture.value.activeLeague?.slug, 'hockey-life');
+    assert.equal(fixture.value.isGuestLeague, true);
+    assert.deepEqual(fixture.value.availableLeagues.map(({ id }) => id), [HOCKEY_LIFE_ID]);
+  });
+
+  it('clears the public league when a guest exits to sign in', async () => {
+    const fixture = createLeagueFixture({
+      getSession: async () => ({ data: { session: null }, error: null }),
+    });
+    await fixture.settle();
+
+    fixture.value.enterGuestLeague();
+    fixture.value.exitGuestLeague();
+    await fixture.settle();
+
+    assert.equal(fixture.value.activeLeague, null);
+    assert.deepEqual(fixture.value.availableLeagues, []);
+    assert.equal(fixture.value.isGuestLeague, false);
+  });
+
+  it('replaces stale account league state when guest mode begins', async () => {
+    const fixture = createLeagueFixture({
+      getSession: async () => ({ data: { session: null }, error: null }),
+      getUserLeagues: async () => [leagueRow('account')],
+    });
+
+    fixture.emit('SIGNED_IN', { user: { id: 'account-a' } });
+    await fixture.settle();
+    assert.equal(fixture.value.isGuestLeague, false);
+
+    fixture.value.enterGuestLeague();
+    await fixture.settle();
+
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(fixture.value.activeLeague?.name, 'Hockey Life');
+    assert.equal(fixture.value.isGuestLeague, true);
+  });
+
+  it('keeps the public league when a stale signed-out event follows guest entry', async () => {
+    const fixture = createLeagueFixture({
+      getSession: async () => ({ data: { session: null }, error: null }),
+    });
+    await fixture.settle();
+
+    fixture.value.enterGuestLeague();
+    fixture.emit('INITIAL_SESSION', null);
+    await fixture.settle();
+
+    assert.equal(fixture.value.activeLeague?.id, HOCKEY_LIFE_ID);
+    assert.equal(fixture.value.isGuestLeague, true);
+  });
+
   it('treats a successful real null getSession result as signed out', async () => {
     const fixture = createLeagueFixture({
       getSession: async () => ({ data: { session: null }, error: null }),

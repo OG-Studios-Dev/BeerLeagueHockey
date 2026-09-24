@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
 
 const colors = {
   primary: '#0ff', textPrimary: '#fff', textSecondary: '#aaa', textOnPrimary: '#000',
@@ -108,7 +108,6 @@ describe('shell form exits', () => {
           StyleSheet: { create: <T>(styles: T) => styles }, useWindowDimensions: () => ({ width: 390 }),
         },
         'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-        'expo-image-picker': {},
         '../components/Avatar': () => null,
         '../lib/supabase/client': { supabase },
         '../theme/colors': { default: { ...colors, bgBase: '#000', bgInteractive: '#222' } },
@@ -117,12 +116,15 @@ describe('shell form exits', () => {
     harness.mount(() => Screen({ navigation: { goBack: () => { backs += 1; } } }));
     await new Promise<void>((resolve) => setImmediate(resolve));
     harness.render();
+    assert.match(nodeText(harness.output), /Public name and photo are managed by your league administrator/);
+    assert.doesNotMatch(nodeText(harness.output), /Change Photo/);
+    assert.equal(findNode(harness.output, (node) => node.type === 'TextInput' && node.props.value === 'Synthetic Player'), undefined);
     const cancel = findNode(harness.output, (node) => node.props.accessibilityLabel === 'Cancel profile editing');
     assert.ok(cancel);
     cancel.props.onPress();
     await findNode(harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
     assert.equal(backs, 2);
-    assert.deepEqual(updates, [{ full_name: 'Synthetic Player', position: 'C', self_assessed_skill: 'beginner' }]);
+    assert.deepEqual(updates, [{ position: 'C', self_assessed_skill: 'beginner' }]);
   });
 
   it('executes the real player-card Share callback with the loaded synthetic identity', async () => {

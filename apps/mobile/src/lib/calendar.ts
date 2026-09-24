@@ -14,20 +14,23 @@ export async function addGameToCalendar(game: {
   }
 
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-  // Use default calendar or first writable one
-  const defaultCalendar =
-    calendars.find((c) => c.allowsModifications && c.type === 'local') ?? calendars[0];
-  if (!defaultCalendar) return false;
+  const writableCalendar =
+    calendars.find((calendar) => calendar.allowsModifications && calendar.type === 'local')
+    ?? calendars.find((calendar) => calendar.allowsModifications);
+  if (!writableCalendar) {
+    Alert.alert('No Writable Calendar', 'Add or enable a writable calendar on this device, then try again.');
+    return false;
+  }
 
   const startDate = new Date(game.scheduledAt);
   const endDate = new Date(startDate.getTime() + 90 * 60 * 1000); // 90 min game
 
-  await Calendar.createEventAsync(defaultCalendar.id, {
+  await Calendar.createEventAsync(writableCalendar.id, {
     title: `${game.awayTeam} @ ${game.homeTeam}`,
     startDate,
     endDate,
     location: game.location ?? undefined,
-    notes: 'BLH Hockey Game',
+    notes: 'Hockey Life game',
     alarms: [{ relativeOffset: -120 }, { relativeOffset: -30 }], // 2h and 30min reminders
   });
 

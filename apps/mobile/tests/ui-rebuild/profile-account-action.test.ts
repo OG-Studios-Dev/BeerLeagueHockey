@@ -5,16 +5,18 @@ import { compileCommonJs, createElement, createHookHarness, findNode, nodeText }
 
 type RenderOptions = {
   isGuest?: boolean;
+  appleLinked?: boolean;
   loading?: boolean;
   profile?: { id: string; full_name: string } | null;
   signOutResult?: { error: Error | null };
-  deleteResult?: { error: Error | null };
+  deleteResult?: { error: Error | null; localCleanupError?: Error };
   signOutImpl?: () => Promise<{ error: Error | null }>;
-  deleteImpl?: () => Promise<{ error: Error | null }>;
+  deleteImpl?: () => Promise<{ error: Error | null; localCleanupError?: Error }>;
 };
 
 function renderProfile({
   isGuest = false,
+  appleLinked = false,
   loading = true,
   profile = null,
   signOutResult = { error: null },
@@ -75,8 +77,12 @@ function renderProfile({
     '../context/AuthContext': {
       useAuth: () => ({
         isGuest,
+        user: isGuest ? null : {
+          id: 'user-1',
+          app_metadata: { providers: appleLinked ? ['email', 'apple'] : ['email'] },
+        },
         session: isGuest ? null : { user: { id: 'user-1' } },
-        signOut: async () => { signOutCalls.push(true); return signOutImpl ? signOutImpl() : signOutResult; },
+        signOut: async (options?: unknown) => { signOutCalls.push(options); return signOutImpl ? signOutImpl() : signOutResult; },
         exitGuest: () => exitGuestCalls.push(true),
       }),
     },
@@ -89,6 +95,7 @@ function renderProfile({
         membershipStatus: isGuest ? 'signed-out' : 'empty',
         membershipDiagnostics: { backendOrigin: null, appVersion: '1.0.0', appBuild: '14', entries: [] },
         retryMemberships: () => undefined,
+        exitGuestLeague: () => undefined,
       }),
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
@@ -157,6 +164,7 @@ function renderPendingProfile(signOutImpl: () => Promise<{ error: Error | null }
         membershipStatus: 'loading',
         membershipDiagnostics: { backendOrigin: null, appVersion: '1.0.0', appBuild: '14', entries: [] },
         retryMemberships: () => undefined,
+        exitGuestLeague: () => undefined,
       }),
     },
     '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
@@ -231,7 +239,7 @@ describe('Profile account action', () => {
     await rendered.alerts[0]?.buttons?.[1]?.onPress();
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.at(-1)?.title, 'Unable to Log Out');
-    assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+    assert.deepEqual(rendered.stateUpdates[12], [true, false]);
   });
 
   it('finishes a confirmed successful logout without showing an error', async () => {
@@ -243,7 +251,7 @@ describe('Profile account action', () => {
     await rendered.alerts[0]?.buttons?.[1]?.onPress();
     assert.equal(rendered.signOutCalls.length, 1);
     assert.equal(rendered.alerts.length, 1);
-    assert.deepEqual(rendered.stateUpdates[14], [true, false]);
+    assert.deepEqual(rendered.stateUpdates[12], [true, false]);
   });
 
   it('requires two destructive confirmations, deletes the authenticated account, and signs out locally', async () => {
@@ -254,6 +262,10 @@ describe('Profile account action', () => {
     button.props.onPress();
     assert.equal(rendered.deleteAccountCalls.length, 0);
     assert.equal(rendered.alerts[0]?.title, 'Delete Account?');
+    assert.match(rendered.alerts[0]?.message ?? '', /signed waivers/i);
+    assert.match(rendered.alerts[0]?.message ?? '', /payment audit/i);
+    assert.match(rendered.alerts[0]?.message ?? '', /not anonymous/i);
+    assert.match(rendered.alerts[0]?.message ?? '', /completed-game/i);
     assert.equal(rendered.alerts[0]?.buttons?.[0]?.text, 'Cancel');
     assert.equal(rendered.alerts[0]?.buttons?.[1]?.text, 'Continue');
     assert.equal(rendered.alerts[0]?.buttons?.[1]?.style, 'destructive');
@@ -267,6 +279,34 @@ describe('Profile account action', () => {
     await rendered.alerts[1]?.buttons?.[1]?.onPress();
     assert.equal(rendered.deleteAccountCalls.length, 1);
     assert.equal(rendered.signOutCalls.length, 1);
+    assert.deepEqual(rendered.signOutCalls, [{ notificationDestinationAlreadyRevoked: true }]);
+  });
+
+  it('still signs out after server deletion when device notification cleanup reports an error', async () => {
+    const rendered = renderProfile({
+      loading: false,
+      deleteResult: {
+        error: null,
+        localCleanupError: new Error('Unable to clear reminders on this device'),
+      },
+    });
+
+    accountButton(rendered.tree, 'Delete account')?.props.onPress();
+    rendered.alerts[0]?.buttons?.[1]?.onPress();
+    await rendered.alerts[1]?.buttons?.[1]?.onPress();
+
+    assert.equal(rendered.deleteAccountCalls.length, 1);
+    assert.deepEqual(rendered.signOutCalls, [{ notificationDestinationAlreadyRevoked: true }]);
+    assert.notEqual(rendered.alerts.at(-1)?.title, 'Unable to Delete Account');
+  });
+
+  it('does not use client provider metadata to select the deletion flow', async () => {
+    const rendered = renderProfile({ loading: false, appleLinked: true });
+    accountButton(rendered.tree, 'Delete account')?.props.onPress();
+    rendered.alerts[0]?.buttons?.[1]?.onPress();
+    await rendered.alerts[1]?.buttons?.[1]?.onPress();
+
+    assert.deepEqual(rendered.deleteAccountCalls, [true]);
   });
 
   it('keeps deletion unavailable to guests and reports organization ownership without signing out', async () => {
