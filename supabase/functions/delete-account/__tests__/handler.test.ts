@@ -188,6 +188,35 @@ describe('delete-account Edge Function authorization', () => {
     assert.equal(rpcCalls, 0);
   });
 
+  it('returns a mutation-free non-Apple preflight before destructive initiation', async () => {
+    const rpcNames: string[] = [];
+    let storageCalls = 0;
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend({ remove: async () => { storageCalls += 1; return { error: null }; } }),
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+      rpc: async (name: string) => {
+        rpcNames.push(name);
+        return {
+          data: name === 'prepare_account_deletion'
+            ? { apple_required: false, apple_revoked: false, apple_retry_ready: false }
+            : { success: true },
+          error: null,
+        };
+      },
+    }));
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE', preflightOnly: true }),
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { success: true, preflight: true });
+    assert.deepEqual(rpcNames, ['prepare_account_deletion']);
+    assert.equal(storageCalls, 0);
+  });
+
   it('rejects provider metadata, refresh tokens, and client secrets from the client', async () => {
     let rpcCalls = 0;
     const handler = createDeleteAccountHandler(() => ({
@@ -566,6 +595,68 @@ describe('delete-account Apple revocation guard', () => {
     tokenTypeHint: 'refresh_token' as const,
   };
 
+  it('returns sanitized support guidance when malformed Apple identity data fails preflight', async () => {
+    const rpcNames: string[] = [];
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+      rpc: async (name: string) => {
+        rpcNames.push(name);
+        return {
+          data: null,
+          error: { message: 'Cannot verify Sign in with Apple account. Contact Hockey Life support before deleting your account.' },
+        };
+      },
+    }));
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE' }),
+    }));
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: 'We could not verify your Sign in with Apple account. Contact Hockey Life support before deleting your account.',
+      code: 'apple_identity_binding_failed',
+    });
+    assert.deepEqual(rpcNames, ['prepare_account_deletion']);
+  });
+
+  it('returns the same sanitized support guidance if identity data becomes malformed at atomic begin', async () => {
+    const rpcNames: string[] = [];
+    const handler = createDeleteAccountHandler(() => ({
+      ...lifecycleBackend(),
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+      rpc: async (name: string) => {
+        rpcNames.push(name);
+        if (name === 'prepare_account_deletion') {
+          return {
+            data: { apple_required: false, apple_revoked: false, apple_retry_ready: false },
+            error: null,
+          };
+        }
+        return {
+          data: null,
+          error: { message: 'Cannot verify Sign in with Apple account. Contact Hockey Life support before deleting your account.' },
+        };
+      },
+    }));
+
+    const response = await handler(new Request('https://example.test/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE' }),
+    }));
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: 'We could not verify your Sign in with Apple account. Contact Hockey Life support before deleting your account.',
+      code: 'apple_identity_binding_failed',
+    });
+    assert.deepEqual(rpcNames, ['prepare_account_deletion', 'begin_immediate_account_deletion']);
+  });
+
   it('binds, stages, and revokes a fresh Apple grant before destructive work', async () => {
     const events: string[] = [];
     const handler = createDeleteAccountHandler(
@@ -651,7 +742,7 @@ describe('delete-account Apple revocation guard', () => {
     const response = await handler(new Request('https://example.test/delete-account', {
       method: 'POST',
       headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmation: 'DELETE' }),
+      body: JSON.stringify({ confirmation: 'DELETE', preflightOnly: true }),
     }));
 
     assert.equal(response.status, 409);

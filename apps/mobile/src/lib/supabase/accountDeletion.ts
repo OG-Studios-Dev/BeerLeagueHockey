@@ -9,6 +9,7 @@ type FunctionError = {
 
 type AccountDeletionResponse = {
   success?: boolean;
+  preflight?: boolean;
   error?: string;
   code?: string;
 };
@@ -21,6 +22,7 @@ type AccountDeletionClient = {
         body: {
           confirmation: 'DELETE';
           appleAuthorizationCode?: string;
+          preflightOnly?: true;
         };
       },
     ) => Promise<{ data: unknown; error: unknown }>;
@@ -50,36 +52,47 @@ async function responseErrorPayload(context: unknown): Promise<AccountDeletionRe
 
 export async function deleteCurrentAccount(
   client: AccountDeletionClient = supabase,
-  revokeNotifications: () => Promise<{ error: Error | null }> = unregisterPushNotifications,
-): Promise<{ error: Error | null }> {
+  revokeNotifications: (
+    options?: { notificationDestinationAlreadyRevoked?: boolean },
+  ) => Promise<{ error: Error | null }> = unregisterPushNotifications,
+): Promise<{ error: Error | null; localCleanupError?: Error }> {
   try {
-    const { error: revocationError } = await revokeNotifications();
-    if (revocationError) return { error: revocationError };
-
-    const invoke = (appleAuthorizationCode?: string) => client.functions.invoke('delete-account', {
+    const invoke = (appleAuthorizationCode?: string, preflightOnly = false) => client.functions.invoke('delete-account', {
       body: {
         confirmation: 'DELETE',
         ...(appleAuthorizationCode ? { appleAuthorizationCode } : {}),
+        ...(preflightOnly ? { preflightOnly: true as const } : {}),
       },
     });
 
-    let result = await invoke();
-    let functionPayload = result.error
-      ? await responseErrorPayload((result.error as FunctionError).context)
+    const preflightResult = await invoke(undefined, true);
+    const preflightPayload = preflightResult.error
+      ? await responseErrorPayload((preflightResult.error as FunctionError).context)
       : null;
 
-    if (functionPayload?.code === 'apple_reauthentication_required') {
+    let appleAuthorizationCode: string | undefined;
+    if (preflightPayload?.code === 'apple_reauthentication_required') {
       const reauthentication = await getAppleDeletionAuthorizationCode();
       if (reauthentication.error || !reauthentication.authorizationCode) {
         return {
           error: reauthentication.error ?? new Error('Apple reauthentication is required.'),
         };
       }
-      result = await invoke(reauthentication.authorizationCode);
-      functionPayload = result.error
-        ? await responseErrorPayload((result.error as FunctionError).context)
-        : null;
+      appleAuthorizationCode = reauthentication.authorizationCode;
+    } else if (preflightResult.error) {
+      const functionError = preflightResult.error as FunctionError;
+      return { error: new Error(preflightPayload?.error ?? functionError.message ?? DEFAULT_ERROR) };
+    } else {
+      const payload = preflightResult.data as AccountDeletionResponse | null;
+      if (!payload?.success || payload.preflight !== true) {
+        return { error: new Error(payload?.error ?? DEFAULT_ERROR) };
+      }
     }
+
+    const result = await invoke(appleAuthorizationCode);
+    const functionPayload = result.error
+      ? await responseErrorPayload((result.error as FunctionError).context)
+      : null;
 
     if (result.error) {
       const functionError = result.error as FunctionError;
@@ -89,6 +102,20 @@ export async function deleteCurrentAccount(
     const payload = result.data as AccountDeletionResponse | null;
     if (!payload?.success) {
       return { error: new Error(payload?.error ?? DEFAULT_ERROR) };
+    }
+
+    try {
+      const { error: localCleanupError } = await revokeNotifications({
+        notificationDestinationAlreadyRevoked: true,
+      });
+      if (localCleanupError) return { error: null, localCleanupError };
+    } catch (error) {
+      return {
+        error: null,
+        localCleanupError: error instanceof Error
+          ? error
+          : new Error('Unable to clear notification data on this device.'),
+      };
     }
 
     return { error: null };

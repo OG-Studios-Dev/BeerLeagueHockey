@@ -8,23 +8,27 @@ type Invocation = { name: string; options: { body: unknown } };
 type AccountDeletionModule = {
   deleteCurrentAccount: (
     client?: unknown,
-    revoke?: () => Promise<{ error: Error | null }>,
-  ) => Promise<{ error: Error | null }>;
+    revoke?: (options?: { notificationDestinationAlreadyRevoked?: boolean }) => Promise<{ error: Error | null }>,
+  ) => Promise<{ error: Error | null; localCleanupError?: Error }>;
 };
 
-const { deleteCurrentAccount } = compileCommonJs<AccountDeletionModule>(
-  new URL('../../src/lib/supabase/accountDeletion.ts', import.meta.url),
-  {
+function loadAccountDeletion(
+  authorize: () => Promise<{ authorizationCode: string | null; error: Error | null }> = async () => ({
+    authorizationCode: 'fresh-delete-code',
+    error: null,
+  }),
+) {
+  return compileCommonJs<AccountDeletionModule>(
+    new URL('../../src/lib/supabase/accountDeletion.ts', import.meta.url),
+    {
     '../notifications': { unregisterPushNotifications: async () => ({ error: null }) },
     './client': { supabase: {} },
-    './auth': {
-      getAppleDeletionAuthorizationCode: async () => ({
-        authorizationCode: 'fresh-delete-code',
-        error: null,
-      }),
+      './auth': { getAppleDeletionAuthorizationCode: authorize },
     },
-  },
-);
+  ).deleteCurrentAccount;
+}
+
+const deleteCurrentAccount = loadAccountDeletion();
 
 function clientReturning(result: { data: unknown; error: unknown }, invocations: Invocation[]) {
   return {
@@ -38,49 +42,119 @@ function clientReturning(result: { data: unknown; error: unknown }, invocations:
 }
 
 describe('mobile account-deletion client', () => {
-  it('invokes the authenticated delete-account function with an explicit confirmation and no user id', async () => {
+  it('performs non-Apple deletion before local notification cleanup', async () => {
     const invocations: Invocation[] = [];
     const lifecycle: string[] = [];
+    let call = 0;
     const result = await deleteCurrentAccount(
       {
         functions: {
           invoke: async (name: string, options: { body: unknown }) => {
             lifecycle.push('invoke');
             invocations.push({ name, options });
-            return { data: { success: true }, error: null };
+            call += 1;
+            return {
+              data: call === 1 ? { success: true, preflight: true } : { success: true },
+              error: null,
+            };
           },
         },
       },
-      async () => { lifecycle.push('revoke'); return { error: null }; },
+      async (options) => {
+        lifecycle.push(`cleanup:${JSON.stringify(options)}`);
+        return { error: null };
+      },
     );
 
     assert.deepEqual(result, { error: null });
     assert.deepEqual(invocations, [{
       name: 'delete-account',
+      options: { body: { confirmation: 'DELETE', preflightOnly: true } },
+    }, {
+      name: 'delete-account',
       options: { body: { confirmation: 'DELETE' } },
     }]);
     assert.equal(JSON.stringify(invocations).includes('userId'), false);
-    assert.deepEqual(lifecycle, ['revoke', 'invoke']);
+    assert.deepEqual(lifecycle, [
+      'invoke',
+      'invoke',
+      'cleanup:{"notificationDestinationAlreadyRevoked":true}',
+    ]);
   });
 
-  it('does not delete the account while its notification destination remains usable', async () => {
+  it('leaves notification state unchanged when the backend deletion fails', async () => {
     const invocations: Invocation[] = [];
+    let cleanupCalls = 0;
     const result = await deleteCurrentAccount(
-      clientReturning({ data: { success: true }, error: null }, invocations),
-      async () => ({ error: new Error('profile update denied') }),
+      clientReturning({ data: null, error: { message: 'database unavailable' } }, invocations),
+      async () => { cleanupCalls += 1; return { error: null }; },
     );
 
-    assert.equal(result.error?.message, 'profile update denied');
-    assert.deepEqual(invocations, []);
+    assert.equal(result.error?.message, 'database unavailable');
+    assert.equal(cleanupCalls, 0);
+    assert.equal(invocations.length, 1);
   });
 
-  it('uses server-derived Apple identity truth, then sends only a fresh authorization code', async () => {
+  it('leaves notification state unchanged when the Apple sheet is cancelled', async () => {
+    const cancellation = new Error('The Apple authorization request was cancelled.');
+    const cancelDeletion = loadAccountDeletion(async () => ({ authorizationCode: null, error: cancellation }));
     const invocations: Invocation[] = [];
+    let cleanupCalls = 0;
+    const context = new Response(JSON.stringify({
+      error: 'Sign in with Apple again to authorize account deletion.',
+      code: 'apple_reauthentication_required',
+    }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+
+    const result = await cancelDeletion(
+      clientReturning({ data: null, error: { message: 'non-2xx', context } }, invocations),
+      async () => { cleanupCalls += 1; return { error: null }; },
+    );
+
+    assert.equal(result.error, cancellation);
+    assert.equal(cleanupCalls, 0);
+    assert.equal(invocations.length, 1);
+  });
+
+  it('leaves notification state unchanged when Apple authorization verification fails', async () => {
+    const invocations: Invocation[] = [];
+    let cleanupCalls = 0;
+    let call = 0;
+    const result = await deleteCurrentAccount({
+      functions: {
+        invoke: async (name: string, options: { body: unknown }) => {
+          invocations.push({ name, options });
+          call += 1;
+          const payload = call === 1
+            ? { error: 'Sign in with Apple again.', code: 'apple_reauthentication_required' }
+            : { error: 'Unable to verify Sign in with Apple access.', code: 'apple_identity_verification_failed' };
+          return {
+            data: null,
+            error: {
+              message: 'non-2xx',
+              context: new Response(JSON.stringify(payload), {
+                status: call === 1 ? 409 : 502,
+                headers: { 'Content-Type': 'application/json' },
+              }),
+            },
+          };
+        },
+      },
+    }, async () => { cleanupCalls += 1; return { error: null }; });
+
+    assert.equal(result.error?.message, 'Unable to verify Sign in with Apple access.');
+    assert.equal(cleanupCalls, 0);
+    assert.equal(invocations.length, 2);
+  });
+
+  it('uses server-derived Apple identity truth, then cleans locally only after Apple deletion succeeds', async () => {
+    const invocations: Invocation[] = [];
+    const lifecycle: string[] = [];
     let call = 0;
     const result = await deleteCurrentAccount(
       {
         functions: {
           invoke: async (name: string, options: { body: unknown }) => {
+            lifecycle.push(`invoke:${call + 1}`);
             invocations.push({ name, options });
             call += 1;
             if (call === 1) {
@@ -94,13 +168,17 @@ describe('mobile account-deletion client', () => {
           },
         },
       },
+      async (options) => {
+        lifecycle.push(`cleanup:${JSON.stringify(options)}`);
+        return { error: null };
+      },
     );
 
     assert.deepEqual(result, { error: null });
     assert.deepEqual(invocations, [
       {
         name: 'delete-account',
-        options: { body: { confirmation: 'DELETE' } },
+        options: { body: { confirmation: 'DELETE', preflightOnly: true } },
       },
       {
         name: 'delete-account',
@@ -113,6 +191,39 @@ describe('mobile account-deletion client', () => {
       },
     ]);
     assert.doesNotMatch(JSON.stringify(invocations), /refresh|clientSecret|identityToken/i);
+    assert.deepEqual(lifecycle, [
+      'invoke:1',
+      'invoke:2',
+      'cleanup:{"notificationDestinationAlreadyRevoked":true}',
+    ]);
+  });
+
+  it('reports local cleanup separately after irreversible server deletion succeeds', async () => {
+    const invocations: Invocation[] = [];
+    const cleanupError = new Error('Unable to clear reminders on this device');
+    let call = 0;
+    const result = await deleteCurrentAccount(
+      {
+        functions: {
+          invoke: async (name: string, options: { body: unknown }) => {
+            invocations.push({ name, options });
+            call += 1;
+            return {
+              data: call === 1 ? { success: true, preflight: true } : { success: true },
+              error: null,
+            };
+          },
+        },
+      },
+      async (options) => {
+        assert.deepEqual(options, { notificationDestinationAlreadyRevoked: true });
+        return { error: cleanupError };
+      },
+    );
+
+    assert.equal(result.error, null);
+    assert.equal(result.localCleanupError, cleanupError);
+    assert.equal(invocations.length, 2);
   });
 
   it('returns the backend organization-ownership guidance from a failed function response', async () => {

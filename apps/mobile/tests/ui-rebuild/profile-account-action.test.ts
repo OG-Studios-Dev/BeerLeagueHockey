@@ -9,9 +9,9 @@ type RenderOptions = {
   loading?: boolean;
   profile?: { id: string; full_name: string } | null;
   signOutResult?: { error: Error | null };
-  deleteResult?: { error: Error | null };
+  deleteResult?: { error: Error | null; localCleanupError?: Error };
   signOutImpl?: () => Promise<{ error: Error | null }>;
-  deleteImpl?: () => Promise<{ error: Error | null }>;
+  deleteImpl?: () => Promise<{ error: Error | null; localCleanupError?: Error }>;
 };
 
 function renderProfile({
@@ -280,6 +280,24 @@ describe('Profile account action', () => {
     assert.equal(rendered.deleteAccountCalls.length, 1);
     assert.equal(rendered.signOutCalls.length, 1);
     assert.deepEqual(rendered.signOutCalls, [{ notificationDestinationAlreadyRevoked: true }]);
+  });
+
+  it('still signs out after server deletion when device notification cleanup reports an error', async () => {
+    const rendered = renderProfile({
+      loading: false,
+      deleteResult: {
+        error: null,
+        localCleanupError: new Error('Unable to clear reminders on this device'),
+      },
+    });
+
+    accountButton(rendered.tree, 'Delete account')?.props.onPress();
+    rendered.alerts[0]?.buttons?.[1]?.onPress();
+    await rendered.alerts[1]?.buttons?.[1]?.onPress();
+
+    assert.equal(rendered.deleteAccountCalls.length, 1);
+    assert.deepEqual(rendered.signOutCalls, [{ notificationDestinationAlreadyRevoked: true }]);
+    assert.notEqual(rendered.alerts.at(-1)?.title, 'Unable to Delete Account');
   });
 
   it('does not use client provider metadata to select the deletion flow', async () => {

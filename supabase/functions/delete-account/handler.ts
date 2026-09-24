@@ -46,11 +46,22 @@ type DeleteAccountDependencies = {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const PROFILE_IMAGE_ERROR = 'Unable to remove your profile image. Your account was not deleted.';
+const APPLE_IDENTITY_SUPPORT_ERROR =
+  'We could not verify your Sign in with Apple account. Contact Hockey Life support before deleting your account.';
 
 function json(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...JSON_HEADERS, ...headers },
+  });
+}
+
+function appleIdentityBindingFailure(message: string): Response | null {
+  const normalized = message.toLowerCase();
+  if (!normalized.includes('sign in with apple') || !normalized.includes('support')) return null;
+  return json(409, {
+    error: APPLE_IDENTITY_SUPPORT_ERROR,
+    code: 'apple_identity_binding_failed',
   });
 }
 
@@ -273,6 +284,8 @@ export function createDeleteAccountHandler(
       );
       if (preparationError || !preparation || typeof preparation !== 'object') {
         const message = preparationError?.message.toLowerCase() ?? '';
+        const appleIdentityFailure = appleIdentityBindingFailure(message);
+        if (appleIdentityFailure) return appleIdentityFailure;
         if (message.includes('league') && message.includes('ownership')) {
           return json(409, {
             error: 'Transfer ownership of every league you own, then try again.',
@@ -294,6 +307,21 @@ export function createDeleteAccountHandler(
         apple_subject?: unknown;
         apple_retry_ready?: unknown;
       };
+      const preflightOnly = (payload as { preflightOnly?: unknown }).preflightOnly === true;
+      if (preflightOnly) {
+        if (
+          prepared.apple_required === true
+          && prepared.apple_revoked !== true
+          && prepared.apple_retry_ready !== true
+        ) {
+          return json(409, {
+            error: 'Sign in with Apple again to authorize account deletion.',
+            code: 'apple_reauthentication_required',
+          });
+        }
+        return json(200, { success: true, preflight: true });
+      }
+
       let workflowStarted = prepared.apple_revoked === true;
       if (prepared.apple_required === true) {
         const appleAlreadyRevoked = prepared.apple_revoked === true;
@@ -366,6 +394,8 @@ export function createDeleteAccountHandler(
             });
             if (stageError) {
               const message = stageError.message.toLowerCase();
+              const appleIdentityFailure = appleIdentityBindingFailure(message);
+              if (appleIdentityFailure) return appleIdentityFailure;
               if (message.includes('league') && message.includes('ownership')) {
                 return json(409, {
                   error: 'Transfer ownership of every league you own, then try again.',
@@ -415,6 +445,8 @@ export function createDeleteAccountHandler(
         });
         if (beginError) {
           const message = beginError.message.toLowerCase();
+          const appleIdentityFailure = appleIdentityBindingFailure(message);
+          if (appleIdentityFailure) return appleIdentityFailure;
           if (message.includes('league') && message.includes('ownership')) {
             return json(409, {
               error: 'Transfer ownership of every league you own, then try again.',

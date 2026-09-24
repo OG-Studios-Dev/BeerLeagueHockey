@@ -13,6 +13,8 @@ import {
 const root = resolve(process.cwd());
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const migrationPath = 'supabase/migrations/20260923130000_immediate_account_deletion_v1.sql';
+const appleFailClosedMigrationPath =
+  'supabase/migrations/20260923140000_account_deletion_apple_identity_fail_closed.sql';
 
 describe('immediate-only account deletion v1', () => {
   it('ships a forward-only migration after correction pass 3', () => {
@@ -38,6 +40,47 @@ describe('immediate-only account deletion v1', () => {
     assert.match(begin, /INSERT INTO public\.account_deletion_state/i);
     assert.match(begin, /workflow_state[\s\S]*?'irreversible'/i);
     assert.match(begin, /initiation_kind[\s\S]*?'immediate'/i);
+  });
+
+  it('uses one fail-closed Apple identity rule in prepare and begin from a new forward-only migration', () => {
+    const migration = read(appleFailClosedMigrationPath);
+    assert.match(migration, /^BEGIN;/);
+    assert.match(migration, /COMMIT;\s*$/);
+    assert.match(migration, /count\(\*\).*apple_identity_row_count/is);
+    assert.match(migration, /valid_apple_subject_count/is);
+    assert.match(migration, /distinct_apple_subject_count/is);
+    assert.match(migration, /btrim/is);
+    assert.match(migration, /contact Hockey Life support/i);
+
+    const prepare = migration.match(/CREATE OR REPLACE FUNCTION public\.prepare_account_deletion[\s\S]*?\$function\$;/i)?.[0] ?? '';
+    const begin = migration.match(/CREATE OR REPLACE FUNCTION public\.begin_immediate_account_deletion[\s\S]*?\$function\$;/i)?.[0] ?? '';
+    assert.ok(prepare);
+    assert.ok(begin);
+    assert.match(prepare, /resolve_account_apple_identity_binding\(p_user_id\)/i);
+    assert.match(begin, /resolve_account_apple_identity_binding\(p_user_id\)/i);
+    assert.doesNotMatch(prepare, /\bINSERT\s+INTO\b|\bUPDATE\s+public\.|\bDELETE\s+FROM\b/i);
+  });
+
+  it('ships a loopback adversarial probe for malformed and valid Apple identities', () => {
+    const probe = read('scripts/tests/account-deletion-apple-identity-probe.ts');
+    assert.match(probe, /blank subject/i);
+    assert.match(probe, /null subject/i);
+    assert.match(probe, /duplicate conflicting/i);
+    assert.match(probe, /one valid subject/i);
+    assert.match(probe, /account_deletion_state/i);
+    assert.match(probe, /account_deletion_provider_secrets/i);
+    assert.match(probe, /account_deletion_log/i);
+    assert.match(probe, /localhost.*127\.0\.0\.1.*::1/s);
+  });
+
+  it('keeps the live-test migration count aligned with its explicit filenames', () => {
+    const matrix = read('docs/testing/account-deletion-live-test-matrix.md');
+    const listed = matrix.match(/`202609\d+_[^`]+\.sql`/g) ?? [];
+    assert.equal(new Set(listed).size, 7);
+    assert.match(matrix, /all seven applied migration versions/i);
+    assert.match(matrix, /all seven listed migration versions/i);
+    assert.doesNotMatch(matrix, /all four applied migration versions/i);
+    assert.doesNotMatch(matrix, /all five corrective versions/i);
   });
 
   it('blocks assignments only for explicit irreversible states and keeps deleted/authless guards', () => {

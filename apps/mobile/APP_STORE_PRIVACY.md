@@ -15,11 +15,12 @@ does not indicate completion or approval of App Store Connect privacy metadata.
   captain role, sub invitations, and structured goalie requests are read or
   updated as required by the signed-in user's role.
 - **Account deletion:** the authenticated delete-account operation sends the
-  current session to the configured Supabase function only after the client has
-  cleared `profiles.push_token`, cancelled this device's scheduled reminders,
-  and removed its local notification preference. The backend deletion repeats
-  the profile-token clear, deletes push subscriptions and notification data, and
-  removes authentication access; the app then signs out locally without another
+  current session to the configured Supabase function before changing notification
+  state. An Apple challenge or failed deletion leaves the server push token,
+  scheduled reminders, and local preference unchanged. Successful destructive
+  deletion atomically clears server push destinations with the account data;
+  only after that confirmation does the app cancel this device's reminders,
+  remove its local notification preference, and sign out locally without another
   server profile lookup.
 - **Push notifications:** notification permission and an Expo push token may be
   requested only when a signed-in user enables Game Reminders. After permission
@@ -114,17 +115,22 @@ writes.
 
 ## In-app deletion and retention contract
 
-Profile includes a two-confirmation permanent deletion action. The client first
-revokes its notification destination and local reminder state. The server
-derives the user only from the verified bearer JWT. The app first asks the
-server whether Apple reauthentication is required and does not decide from
-client provider metadata. For an Apple-linked account, it then asks Apple for a
-fresh authorization code; the server exchanges it and verifies the
-Apple-signed subject against the account's server-side Apple identity, durably
-stages the server-returned revocation token, and then revokes it before storage
-or database mutation. Provider/network and marker failures retain server-only
-retry state. The client never sends a refresh/access/provider token or Apple
-secret.
+Profile includes a two-confirmation permanent deletion action. The server
+derives the user only from the verified bearer JWT. The first server call is a
+mutation-free preflight that discovers any Apple challenge; the app does not
+decide from client provider metadata.
+Cancellation or authorization failure leaves the server push destination and
+this device's reminder/preference state unchanged. For an Apple-linked account,
+the app asks Apple for a fresh authorization code; the server exchanges it and
+verifies the Apple-signed subject against the account's server-side Apple
+identity, durably stages the server-returned revocation token, and then revokes
+it before storage or database mutation. Provider/network and marker failures
+retain server-only retry state. The client never sends a refresh/access/provider
+token or Apple secret. For Apple and non-Apple accounts, destructive database
+deletion atomically clears server push destinations. After confirmed success,
+the app performs only local reminder and preference cleanup in already-revoked
+mode, then signs out or purges local credentials; a local cleanup failure is not
+reported as a failed server deletion.
 
 The deletion path:
 

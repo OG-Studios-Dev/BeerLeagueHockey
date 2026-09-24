@@ -6,13 +6,14 @@ This is a release verification plan for migrations
 `20260922120000_account_deletion_review_corrections.sql`, and
 `20260922170000_account_deletion_correction_pass_2.sql`, and
 `20260923120000_account_deletion_correction_pass_3.sql`, and
-`20260923130000_immediate_account_deletion_v1.sql`, plus the deployed
+`20260923130000_immediate_account_deletion_v1.sql`, and
+`20260923140000_account_deletion_apple_identity_fail_closed.sql`, plus the deployed
 `delete-account` Edge Function. It is not permission to deploy or to use a real
 account. All successful-deletion cases require dedicated disposable fixtures.
 
 ## Preconditions
 
-1. Record the approved project, source commit, all four applied migration versions,
+1. Record the approved project, source commit, all seven applied migration versions,
    and SHA-256 hashes of the reviewed migrations and Edge Function bundle.
 2. Confirm the expected tables and columns exist. In particular, verify
    `profiles.push_token`, `team_rosters.historical_retained`,
@@ -44,7 +45,7 @@ account. All successful-deletion cases require dedicated disposable fixtures.
 
 | ID | Caller and action | Required result |
 |---|---|---|
-| **LIVE-01** | Read migration history, `pg_proc`, `pg_namespace`, profile/auth FK, and exact function definitions after apply. | All five corrective versions are applied once. Every entrypoint and transitive helper is `SECURITY DEFINER`, owned by `postgres`, with empty `search_path`. The auth cascade is absent and the active-profile deferred invariant exists; a deleted historical profile survives auth deletion. |
+| **LIVE-01** | Read migration history, `pg_proc`, `pg_namespace`, profile/auth FK, and exact function definitions after apply. | All seven listed migration versions are applied once. Every entrypoint and transitive helper is `SECURITY DEFINER`, owned by `postgres`, with empty `search_path`. The auth cascade is absent and the active-profile deferred invariant exists; a deleted historical profile survives auth deletion. |
 | **LIVE-02** | Check effective and catalog EXECUTE privileges for every deletion helper, including an unknown test grantee and default ACLs. | `service_role` is allowed to call privileged helpers. Only `authenticated` can call the no-argument logout RPC. `anon`, unexpected roles, and authenticated direct deletion calls are denied. |
 | **LIVE-03** | Invoke the deployed Edge Function as the organization-owner and league-owner fixtures. Run `scripts/tests/account-deletion-ownership-race.ts` against disposable loopback PostgreSQL so preflight holds session A while session B assigns authority; repeat for organization ownership, league `owner_id`/`created_by`, organization membership, explicit `league_ownerships`, and `league_memberships` owner/admin insert, reassignment, and promotion. | HTTP 409 with the applicable ownership code. Session B blocks on the same per-user advisory lock and then fails after session A inserts deletion state. Assignments/promotions to deleted/authless profiles also fail. No external side effect begins while reassignment can still commit. |
 | **LIVE-04** | Invoke the deployed Edge Function as the non-Apple, non-owner fixture with `{ "confirmation": "DELETE" }`. | HTTP 200. All fixed-prefix owned image pages are absent. Auth is absent. Operational/PII rows follow the retention matrix; roster-only and stat-backed completed-game history remain, inactive and non-authorizing. External state is pending until Stripe and email complete. |
