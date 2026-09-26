@@ -147,6 +147,13 @@ INSERT INTO public.team_invoices (
   'a11ce300-0000-4000-8000-000000000001', 'in_fixture', 'private invoice note'
 );
 
+INSERT INTO public.legacy_players (
+  id, first_name, last_name, matched_to_profile_id, matched_at, imported_from
+) VALUES (
+  'a11ce300-0000-4000-8000-000000000030', 'Private', 'Legacy',
+  'a11ce300-0000-4000-8000-000000000001', now(), 'private-import-source'
+);
+
 SELECT public.cleanup_account_deletion_pass3(
   'a11ce300-0000-4000-8000-000000000001',
   'pass3-delete@example.invalid',
@@ -160,6 +167,16 @@ DECLARE
   v_token_column text;
   v_token_survived boolean;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.legacy_players
+    WHERE id = 'a11ce300-0000-4000-8000-000000000030'
+      AND first_name = 'Deleted' AND last_name = 'User'
+      AND full_name = 'Deleted User'
+      AND matched_to_profile_id IS NULL AND matched_at IS NULL
+      AND imported_from IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Historical legacy player was not retained and anonymized exactly';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.referee_sessions WHERE referee_id = v_user_id)
      OR EXISTS (SELECT 1 FROM public.referee_availability WHERE referee_id = v_referee_id)
      OR EXISTS (SELECT 1 FROM public.referee_swap_requests WHERE game_id = 'a11ce300-0000-4000-8000-000000000015')

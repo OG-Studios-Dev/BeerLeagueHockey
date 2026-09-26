@@ -176,7 +176,7 @@ INSERT INTO public.duty_rotation_settings (
 ) VALUES (
   'a11ce000-0000-4000-8000-000000000084',
   'a11ce000-0000-4000-8000-000000000090', TRUE,
-  ARRAY['a11ce000-0000-4000-8000-000000000081'], 0
+  ARRAY['a11ce000-0000-4000-8000-000000000081']::uuid[], 0
 );
 
 INSERT INTO public.league_scorekeepers (id, league_id, scorekeeper_id, status, is_active)
@@ -278,7 +278,7 @@ BEGIN
            WHERE entry ->> 'playerId' = v_user_id::text
          ))
     + (SELECT count(*) FROM public.duty_rotation_settings
-       WHERE player_order @> ARRAY[v_user_id::text])
+       WHERE player_order @> ARRAY[v_user_id]::uuid[])
     + (SELECT count(*) FROM public.scorekeeper_swap_requests AS ssr
        JOIN public.league_scorekeepers AS ls
          ON ls.id IN (ssr.requesting_scorekeeper_id, ssr.accepting_scorekeeper_id)

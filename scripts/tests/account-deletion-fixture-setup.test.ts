@@ -28,6 +28,15 @@ describe('account deletion acceptance fixture setup', () => {
     assert.doesNotMatch(checkins + availability, /'in'/);
   });
 
+  it('uses the deployed uuid array contract for duty rotation setup and assertions', () => {
+    const sql = fixture('operational_authority');
+    const rotation = sql.match(/INSERT INTO public\.duty_rotation_settings[\s\S]*?;/)?.[0];
+    assert.ok(rotation, 'missing duty rotation setup');
+    assert.match(rotation, /ARRAY\[[^\]]+\]::uuid\[\]/i);
+    assert.match(sql, /player_order\s*@>\s*ARRAY\[v_user_id\]::uuid\[\]/i);
+    assert.doesNotMatch(sql, /ARRAY\[v_user_id::text\]/i);
+  });
+
   for (const name of ['operational_authority', 'correction_pass_3']) {
     it(`${name} reuses only profiles created by this transaction's auth trigger`, () => {
       const sql = fixture(name);
