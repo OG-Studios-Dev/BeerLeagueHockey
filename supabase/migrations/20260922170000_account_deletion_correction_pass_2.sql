@@ -533,16 +533,22 @@ BEGIN
         (
           s.apple_revoked_at IS NOT NULL
           AND s.apple_revoked_subject = (
-            SELECT pg_catalog.min(COALESCE(
-              NULLIF(i.identity_data ->> 'sub', ''), NULLIF(i.identity_id, '')
-            ))
+            SELECT pg_catalog.min(CASE
+              WHEN NULLIF(pg_catalog.btrim(i.provider_id), '') IS NOT NULL
+               AND NULLIF(pg_catalog.btrim(i.provider_id), '')
+                   = NULLIF(pg_catalog.btrim(i.identity_data ->> 'sub'), '')
+                THEN NULLIF(pg_catalog.btrim(i.provider_id), '')
+            END)
             FROM auth.identities AS i
             WHERE i.user_id = p_user_id AND i.provider = 'apple'
           )
           AND 1 = (
-            SELECT pg_catalog.count(DISTINCT COALESCE(
-              NULLIF(i.identity_data ->> 'sub', ''), NULLIF(i.identity_id, '')
-            ))
+            SELECT pg_catalog.count(DISTINCT CASE
+              WHEN NULLIF(pg_catalog.btrim(i.provider_id), '') IS NOT NULL
+               AND NULLIF(pg_catalog.btrim(i.provider_id), '')
+                   = NULLIF(pg_catalog.btrim(i.identity_data ->> 'sub'), '')
+                THEN NULLIF(pg_catalog.btrim(i.provider_id), '')
+            END)
             FROM auth.identities AS i
             WHERE i.user_id = p_user_id AND i.provider = 'apple'
           )
@@ -666,15 +672,15 @@ BEGIN
   UPDATE public.drafts SET created_by = NULL WHERE created_by = p_user_id;
   DELETE FROM public.season_opt_ins WHERE player_id = p_user_id;
   UPDATE public.duty_rotation_settings
-  SET player_order = pg_catalog.array_remove(player_order, p_user_id::text),
+  SET player_order = pg_catalog.array_remove(player_order, p_user_id),
       current_player_index = 0,
       rotation_enabled = CASE
-        WHEN pg_catalog.cardinality(pg_catalog.array_remove(player_order, p_user_id::text)) = 0
+        WHEN pg_catalog.cardinality(pg_catalog.array_remove(player_order, p_user_id)) = 0
           THEN FALSE
         ELSE rotation_enabled
       END,
       updated_at = pg_catalog.statement_timestamp()
-  WHERE player_order @> ARRAY[p_user_id::text];
+  WHERE player_order @> ARRAY[p_user_id]::uuid[];
 
   DELETE FROM public.game_duties AS gd
   WHERE gd.assigned_player_id = p_user_id

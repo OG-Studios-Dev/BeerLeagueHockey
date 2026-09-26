@@ -100,7 +100,9 @@ describe('account deletion correction pass 2', () => {
     assert.match(deletion, /game_duties[\s\S]*?gd\.status\s*=\s*'completed'[\s\S]*?g\.status\s*=\s*'completed'/i);
     assert.match(deletion, /league_spare_pool[\s\S]*?active\s*=\s*FALSE/i);
     assert.match(deletion, /draft_pool[\s\S]*?DELETE/i);
-    assert.match(deletion, /array_remove\(player_order\s*,\s*p_user_id::text\)/i);
+    assert.match(deletion, /array_remove\(player_order\s*,\s*p_user_id\)/i);
+    assert.match(deletion, /player_order\s+@>\s+ARRAY\[p_user_id\]::uuid\[\]/i);
+    assert.doesNotMatch(deletion, /array_remove\(player_order\s*,\s*p_user_id::text\)/i);
     assert.match(deletion, /registration_submissions[\s\S]*?status\s*=\s*'cancelled'/i);
     assert.match(deletion, /DELETE\s+FROM\s+public\.suspensions[\s\S]*?NOT\s+IN\s*\(\s*'served'\s*,\s*'denied'\s*\)/i);
     assert.match(deletion, /team_rosters[\s\S]*?end_date\s*=\s*COALESCE[\s\S]*?max\([\s\S]*?g\.status\s*=\s*'completed'/i);

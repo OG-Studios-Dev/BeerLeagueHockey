@@ -50,15 +50,15 @@ async function expectFailClosed(label: string, sql: string, values: unknown[]) {
 
 async function insertIdentity(
   id: string,
-  identityId: string,
+  providerId: string,
   identityData: Record<string, unknown>,
 ) {
   await client.query(`
     INSERT INTO auth.identities (
-      id, user_id, provider, identity_id, identity_data,
+      id, user_id, provider, provider_id, identity_data,
       last_sign_in_at, created_at, updated_at
     ) VALUES ($1, $2, 'apple', $3, $4::jsonb, now(), now(), now())
-  `, [id, userId, identityId, JSON.stringify(identityData)]);
+  `, [id, userId, providerId, JSON.stringify(identityData)]);
 }
 
 async function clearCase() {
@@ -109,9 +109,14 @@ async function main() {
     await assertMalformedCase('blank subject');
     await clearCase();
 
-    // null subject
-    await insertIdentity('a11ce000-0000-4000-8000-000000000093', '', { sub: null });
-    await assertMalformedCase('null subject');
+    // null subject / missing subject metadata
+    await insertIdentity('a11ce000-0000-4000-8000-000000000093', 'apple-subject-missing', {});
+    await assertMalformedCase('missing subject');
+    await clearCase();
+
+    // provider and metadata mismatch
+    await insertIdentity('a11ce000-0000-4000-8000-000000000097', 'apple-provider-subject', { sub: 'apple-metadata-subject' });
+    await assertMalformedCase('mismatched subject');
     await clearCase();
 
     // duplicate conflicting subjects

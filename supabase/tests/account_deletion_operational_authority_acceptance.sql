@@ -43,6 +43,79 @@ ON CONFLICT (id) DO UPDATE SET
   email = EXCLUDED.email, full_name = EXCLUDED.full_name,
   jersey_number = EXCLUDED.jersey_number, position = EXCLUDED.position;
 
+-- Flush the fixture profile-insert constraint while its auth rows exist. The
+-- later deletion must validate the executor's deleted profile state, not the
+-- deferred NEW row image from this same-transaction setup insert.
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+
+-- The auth.identities row UUID is never an Apple subject. A normal Apple
+-- provider subject is accepted only when provider_id and identity_data.sub
+-- agree; mismatched or missing provider subjects must fail closed.
+INSERT INTO auth.identities (
+  id, user_id, provider_id, identity_data, provider,
+  last_sign_in_at, created_at, updated_at
+) VALUES (
+  'a11ce000-0000-4000-8000-000000000096',
+  'a11ce000-0000-4000-8000-000000000091',
+  'apple-provider-subject',
+  '{"sub":"apple-provider-subject"}'::jsonb,
+  'apple', now(), now(), now()
+);
+
+DO $apple_provider_subject_contract$
+DECLARE
+  v_subject text;
+  v_rejected boolean;
+BEGIN
+  SELECT binding.apple_subject
+  INTO v_subject
+  FROM public.resolve_account_apple_identity_binding(
+    'a11ce000-0000-4000-8000-000000000091'
+  ) AS binding;
+
+  IF v_subject IS DISTINCT FROM 'apple-provider-subject'
+     OR v_subject = 'a11ce000-0000-4000-8000-000000000096' THEN
+    RAISE EXCEPTION 'normal Apple provider subject was not resolved safely';
+  END IF;
+
+  UPDATE auth.identities
+  SET identity_data = '{"sub":"different-apple-subject"}'::jsonb
+  WHERE id = 'a11ce000-0000-4000-8000-000000000096';
+
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.resolve_account_apple_identity_binding(
+      'a11ce000-0000-4000-8000-000000000091'
+    );
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'mismatched Apple provider subject was accepted';
+  END IF;
+
+  UPDATE auth.identities
+  SET identity_data = '{}'::jsonb
+  WHERE id = 'a11ce000-0000-4000-8000-000000000096';
+
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.resolve_account_apple_identity_binding(
+      'a11ce000-0000-4000-8000-000000000091'
+    );
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'missing Apple provider subject was accepted';
+  END IF;
+END;
+$apple_provider_subject_contract$;
+
+DELETE FROM auth.identities
+WHERE id = 'a11ce000-0000-4000-8000-000000000096';
+
 INSERT INTO public.organizations (id, name, slug, owner_user_id)
 VALUES (
   'a11ce000-0000-4000-8000-000000000092',
@@ -249,6 +322,7 @@ INSERT INTO public.game_team_lineups (
 );
 
 SELECT public.prepare_account_deletion('a11ce000-0000-4000-8000-000000000081');
+SELECT public.begin_immediate_account_deletion('a11ce000-0000-4000-8000-000000000081');
 SELECT public.mark_account_storage_deleted('a11ce000-0000-4000-8000-000000000081');
 SELECT public.execute_account_deletion('a11ce000-0000-4000-8000-000000000081');
 
