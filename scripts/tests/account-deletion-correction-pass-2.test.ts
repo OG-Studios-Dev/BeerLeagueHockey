@@ -136,6 +136,54 @@ describe('account deletion correction pass 2', () => {
     assert.match(sql, /has_function_privilege\('authenticated'\s*,\s*expected\.signature\s*,\s*'EXECUTE'\)/i);
   });
 
+  // Hosted default privileges grant service_role EXECUTE independently of PUBLIC.
+  // These internal helpers must be revoked before the migration's own ACL check.
+  for (const signature of [
+    'require_auth_for_active_profile()',
+    'preserve_auth_for_active_profile()',
+    'lock_account_deletion_user(uuid)',
+    'validate_optional_deletion_relations()',
+    'block_deleting_organization_owner()',
+    'block_deleting_league_owner()',
+    'block_deleting_organization_member()',
+    'block_deleting_league_ownership()',
+  ]) {
+    it(`explicitly revokes service_role from internal helper ${signature}`, () => {
+      const beforeAssertion = sql.split('DO $catalog$')[0];
+      const revoke = beforeAssertion.split('\n').find((line) => line.startsWith(
+        `REVOKE ALL ON FUNCTION public.${signature} FROM `,
+      ));
+      assert.ok(revoke, `missing explicit revoke for ${signature}`);
+      assert.match(revoke, /FROM PUBLIC, anon, authenticated, service_role;/);
+      assert.ok(!beforeAssertion.includes(
+        `GRANT EXECUTE ON FUNCTION public.${signature} TO service_role;`,
+      ), `${signature} must not be re-granted to service_role`);
+    });
+  }
+
+  it('preserves explicit service_role grants for the intended callable entrypoints', () => {
+    const beforeAssertion = sql.split('DO $catalog$')[0];
+    for (const signature of [
+      'anonymize_audit_logs(uuid)',
+      'anonymize_payment_history(uuid, text)',
+      'delete_user_sessions(uuid)',
+      'delete_push_device_tokens(uuid)',
+      'prepare_account_deletion(uuid)',
+      'stage_account_apple_revocation(uuid, text, text, text)',
+      'get_account_apple_revocation_retry(uuid)',
+      'mark_account_apple_revoked(uuid)',
+      'mark_account_storage_deleted(uuid)',
+      'record_account_deletion_external_step(uuid, text)',
+      'execute_account_deletion(uuid)',
+    ]) {
+      const revoke = `REVOKE ALL ON FUNCTION public.${signature} FROM PUBLIC, anon, authenticated;`;
+      const grant = `GRANT EXECUTE ON FUNCTION public.${signature} TO service_role;`;
+      assert.ok(beforeAssertion.includes(revoke), `missing client revoke for ${signature}`);
+      assert.ok(beforeAssertion.indexOf(grant) > beforeAssertion.indexOf(revoke),
+        `missing service_role grant after client revoke for ${signature}`);
+    }
+  });
+
   it('ships a source-bound two-session PostgreSQL ownership race harness', () => {
     assert.ok(existsSync(raceHarnessPath), 'missing ownership race harness');
     const harness = readFileSync(raceHarnessPath, 'utf8');

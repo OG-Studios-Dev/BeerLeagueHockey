@@ -1128,12 +1128,12 @@ ALTER TABLE public.account_deletion_provider_secrets OWNER TO postgres;
 ALTER FUNCTION public.require_auth_for_active_profile() SECURITY DEFINER;
 ALTER FUNCTION public.require_auth_for_active_profile() SET search_path = '';
 ALTER FUNCTION public.require_auth_for_active_profile() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.require_auth_for_active_profile() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.require_auth_for_active_profile() FROM PUBLIC, anon, authenticated, service_role;
 
 ALTER FUNCTION public.preserve_auth_for_active_profile() SECURITY DEFINER;
 ALTER FUNCTION public.preserve_auth_for_active_profile() SET search_path = '';
 ALTER FUNCTION public.preserve_auth_for_active_profile() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.preserve_auth_for_active_profile() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.preserve_auth_for_active_profile() FROM PUBLIC, anon, authenticated, service_role;
 
 ALTER FUNCTION public.anonymize_audit_logs(uuid) SECURITY DEFINER;
 ALTER FUNCTION public.anonymize_audit_logs(uuid) SET search_path = '';
@@ -1159,18 +1159,18 @@ ALTER FUNCTION public.anonymize_payment_history(uuid, text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.anonymize_payment_history(uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.anonymize_payment_history(uuid, text) TO service_role;
 
-REVOKE ALL ON FUNCTION public.lock_account_deletion_user(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.validate_optional_deletion_relations() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.lock_account_deletion_user(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.validate_optional_deletion_relations() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.prepare_account_deletion(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.stage_account_apple_revocation(uuid, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.get_account_apple_revocation_retry(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.mark_account_apple_revoked(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.mark_account_storage_deleted(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.record_account_deletion_external_step(uuid, text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.block_deleting_organization_owner() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.block_deleting_league_owner() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.block_deleting_organization_member() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.block_deleting_league_ownership() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.block_deleting_organization_owner() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.block_deleting_league_owner() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.block_deleting_organization_member() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.block_deleting_league_ownership() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.execute_account_deletion(uuid) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.prepare_account_deletion(uuid) TO service_role;
