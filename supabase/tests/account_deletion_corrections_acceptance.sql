@@ -153,8 +153,8 @@ $acceptance$;
 
 INSERT INTO public.profiles (id, email, full_name, deleted_at, jersey_number, position)
 VALUES
-  ('a11ce000-0000-4000-8000-000000000001', 'deleted_roster@deleted.local', 'Deleted User', now(), 1, 'Forward'),
-  ('a11ce000-0000-4000-8000-000000000002', 'deleted_stats@deleted.local', 'Deleted User', now(), 2, 'Defense');
+  ('a11ce000-0000-4000-8000-000000000001', 'deleted_roster@deleted.local', 'Deleted User', now(), 1, 'C'),
+  ('a11ce000-0000-4000-8000-000000000002', 'deleted_stats@deleted.local', 'Deleted User', now(), 2, 'D');
 
 INSERT INTO public.leagues (id, name, slug)
 VALUES ('a11ce000-0000-4000-8000-000000000010', 'Deletion Acceptance League', 'deletion-acceptance-league');

@@ -4,6 +4,16 @@
 BEGIN;
 SET CONSTRAINTS ALL DEFERRED;
 
+-- Never reuse an identity from outside this rollback-only fixture.
+DO $fixture_identity$
+BEGIN
+  IF EXISTS (SELECT 1 FROM auth.users WHERE id IN ('a11ce000-0000-4000-8000-000000000081', 'a11ce000-0000-4000-8000-000000000091'))
+     OR EXISTS (SELECT 1 FROM public.profiles WHERE id IN ('a11ce000-0000-4000-8000-000000000081', 'a11ce000-0000-4000-8000-000000000091')) THEN
+    RAISE EXCEPTION 'Acceptance fixture identity already exists';
+  END IF;
+END;
+$fixture_identity$;
+
 INSERT INTO auth.users (
   instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at
@@ -23,12 +33,15 @@ INSERT INTO public.profiles (id, email, full_name, jersey_number, position)
 VALUES (
   'a11ce000-0000-4000-8000-000000000081',
   'operational-delete@example.invalid',
-  'Operational Delete Fixture', 81, 'Forward'
+  'Operational Delete Fixture', 81, 'C'
 ), (
   'a11ce000-0000-4000-8000-000000000091',
   'operational-owner@example.invalid',
-  'Operational Owner Fixture', 91, 'Defense'
-);
+  'Operational Owner Fixture', 91, 'D'
+)
+ON CONFLICT (id) DO UPDATE SET
+  email = EXCLUDED.email, full_name = EXCLUDED.full_name,
+  jersey_number = EXCLUDED.jersey_number, position = EXCLUDED.position;
 
 INSERT INTO public.organizations (id, name, slug, owner_user_id)
 VALUES (
@@ -99,13 +112,13 @@ INSERT INTO public.team_rosters (
 
 INSERT INTO public.game_checkins (game_id, team_id, player_id, status, note)
 VALUES
-  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'in', 'historical note'),
-  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'in', 'future note');
+  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'confirmed', 'historical note'),
+  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'confirmed', 'future note');
 
 INSERT INTO public.player_availability (game_id, team_id, season_id, player_id, status, reason)
 VALUES
-  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'in', 'historical reason'),
-  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'in', 'future reason');
+  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'available', 'historical reason'),
+  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'available', 'future reason');
 
 INSERT INTO public.sub_invitations (game_id, team_id, invited_by, invited_player_id, status, message)
 VALUES
