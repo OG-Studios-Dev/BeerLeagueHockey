@@ -4,6 +4,16 @@
 BEGIN;
 SET CONSTRAINTS ALL DEFERRED;
 
+-- Never reuse an identity from outside this rollback-only fixture.
+DO $fixture_identity$
+BEGIN
+  IF EXISTS (SELECT 1 FROM auth.users WHERE id IN ('a11ce000-0000-4000-8000-000000000081', 'a11ce000-0000-4000-8000-000000000091'))
+     OR EXISTS (SELECT 1 FROM public.profiles WHERE id IN ('a11ce000-0000-4000-8000-000000000081', 'a11ce000-0000-4000-8000-000000000091')) THEN
+    RAISE EXCEPTION 'Acceptance fixture identity already exists';
+  END IF;
+END;
+$fixture_identity$;
+
 INSERT INTO auth.users (
   instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at
@@ -23,12 +33,88 @@ INSERT INTO public.profiles (id, email, full_name, jersey_number, position)
 VALUES (
   'a11ce000-0000-4000-8000-000000000081',
   'operational-delete@example.invalid',
-  'Operational Delete Fixture', 81, 'Forward'
+  'Operational Delete Fixture', 81, 'C'
 ), (
   'a11ce000-0000-4000-8000-000000000091',
   'operational-owner@example.invalid',
-  'Operational Owner Fixture', 91, 'Defense'
+  'Operational Owner Fixture', 91, 'D'
+)
+ON CONFLICT (id) DO UPDATE SET
+  email = EXCLUDED.email, full_name = EXCLUDED.full_name,
+  jersey_number = EXCLUDED.jersey_number, position = EXCLUDED.position;
+
+-- Flush the fixture profile-insert constraint while its auth rows exist. The
+-- later deletion must validate the executor's deleted profile state, not the
+-- deferred NEW row image from this same-transaction setup insert.
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+
+-- The auth.identities row UUID is never an Apple subject. A normal Apple
+-- provider subject is accepted only when provider_id and identity_data.sub
+-- agree; mismatched or missing provider subjects must fail closed.
+INSERT INTO auth.identities (
+  id, user_id, provider_id, identity_data, provider,
+  last_sign_in_at, created_at, updated_at
+) VALUES (
+  'a11ce000-0000-4000-8000-000000000096',
+  'a11ce000-0000-4000-8000-000000000091',
+  'apple-provider-subject',
+  '{"sub":"apple-provider-subject"}'::jsonb,
+  'apple', now(), now(), now()
 );
+
+DO $apple_provider_subject_contract$
+DECLARE
+  v_subject text;
+  v_rejected boolean;
+BEGIN
+  SELECT binding.apple_subject
+  INTO v_subject
+  FROM public.resolve_account_apple_identity_binding(
+    'a11ce000-0000-4000-8000-000000000091'
+  ) AS binding;
+
+  IF v_subject IS DISTINCT FROM 'apple-provider-subject'
+     OR v_subject = 'a11ce000-0000-4000-8000-000000000096' THEN
+    RAISE EXCEPTION 'normal Apple provider subject was not resolved safely';
+  END IF;
+
+  UPDATE auth.identities
+  SET identity_data = '{"sub":"different-apple-subject"}'::jsonb
+  WHERE id = 'a11ce000-0000-4000-8000-000000000096';
+
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.resolve_account_apple_identity_binding(
+      'a11ce000-0000-4000-8000-000000000091'
+    );
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'mismatched Apple provider subject was accepted';
+  END IF;
+
+  UPDATE auth.identities
+  SET identity_data = '{}'::jsonb
+  WHERE id = 'a11ce000-0000-4000-8000-000000000096';
+
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.resolve_account_apple_identity_binding(
+      'a11ce000-0000-4000-8000-000000000091'
+    );
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'missing Apple provider subject was accepted';
+  END IF;
+END;
+$apple_provider_subject_contract$;
+
+DELETE FROM auth.identities
+WHERE id = 'a11ce000-0000-4000-8000-000000000096';
 
 INSERT INTO public.organizations (id, name, slug, owner_user_id)
 VALUES (
@@ -99,13 +185,13 @@ INSERT INTO public.team_rosters (
 
 INSERT INTO public.game_checkins (game_id, team_id, player_id, status, note)
 VALUES
-  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'in', 'historical note'),
-  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'in', 'future note');
+  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'confirmed', 'historical note'),
+  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000081', 'confirmed', 'future note');
 
 INSERT INTO public.player_availability (game_id, team_id, season_id, player_id, status, reason)
 VALUES
-  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'in', 'historical reason'),
-  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'in', 'future reason');
+  ('a11ce000-0000-4000-8000-000000000086', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'available', 'historical reason'),
+  ('a11ce000-0000-4000-8000-000000000087', 'a11ce000-0000-4000-8000-000000000084', 'a11ce000-0000-4000-8000-000000000083', 'a11ce000-0000-4000-8000-000000000081', 'available', 'future reason');
 
 INSERT INTO public.sub_invitations (game_id, team_id, invited_by, invited_player_id, status, message)
 VALUES
@@ -163,7 +249,7 @@ INSERT INTO public.duty_rotation_settings (
 ) VALUES (
   'a11ce000-0000-4000-8000-000000000084',
   'a11ce000-0000-4000-8000-000000000090', TRUE,
-  ARRAY['a11ce000-0000-4000-8000-000000000081'], 0
+  ARRAY['a11ce000-0000-4000-8000-000000000081']::uuid[], 0
 );
 
 INSERT INTO public.league_scorekeepers (id, league_id, scorekeeper_id, status, is_active)
@@ -236,6 +322,7 @@ INSERT INTO public.game_team_lineups (
 );
 
 SELECT public.prepare_account_deletion('a11ce000-0000-4000-8000-000000000081');
+SELECT public.begin_immediate_account_deletion('a11ce000-0000-4000-8000-000000000081');
 SELECT public.mark_account_storage_deleted('a11ce000-0000-4000-8000-000000000081');
 SELECT public.execute_account_deletion('a11ce000-0000-4000-8000-000000000081');
 
@@ -265,7 +352,7 @@ BEGIN
            WHERE entry ->> 'playerId' = v_user_id::text
          ))
     + (SELECT count(*) FROM public.duty_rotation_settings
-       WHERE player_order @> ARRAY[v_user_id::text])
+       WHERE player_order @> ARRAY[v_user_id]::uuid[])
     + (SELECT count(*) FROM public.scorekeeper_swap_requests AS ssr
        JOIN public.league_scorekeepers AS ls
          ON ls.id IN (ssr.requesting_scorekeeper_id, ssr.accepting_scorekeeper_id)
