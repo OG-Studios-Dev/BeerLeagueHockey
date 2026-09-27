@@ -2,17 +2,24 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useMobileShellData } from '../navigation/MobileShellDataContext';
 import { resolveCutIcePalette, splitCutIceTitle } from './cutIceTitleModel';
 
 export default function CutIceTitle({ title, onBack }: { title: string; onBack?: () => void }) {
+  const { top } = useSafeAreaInsets();
   const { titleAccent } = useMobileShellData();
   const palette = resolveCutIcePalette(titleAccent);
   const parts = splitCutIceTitle(title);
 
   return (
-    <View testID="cut-ice-title" accessibilityRole="header" accessibilityLabel={title} style={styles.frame}>
+    <View
+      testID="cut-ice-title"
+      accessibilityRole="header"
+      accessibilityLabel={title}
+      style={[styles.frame, { height: 62 + top, paddingTop: top }]}
+    >
       <LinearGradient
         colors={['rgba(12,32,43,0.98)', 'rgba(6,19,28,0.96)']}
         start={{ x: 0, y: 0 }}
