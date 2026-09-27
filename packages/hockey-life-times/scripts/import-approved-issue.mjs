@@ -144,8 +144,14 @@ export function expectedPublishBodyDigest(sql) {
 }
 
 export function parsePublishBodyDigestReceipt(stdout) {
-  let rows;
-  try { rows = JSON.parse(stdout); } catch { fail('PUBLICATION_CONTRACT_RECEIPT_INVALID'); }
+  let receipt;
+  try { receipt = JSON.parse(stdout); } catch { fail('PUBLICATION_CONTRACT_RECEIPT_INVALID'); }
+  let rows = receipt;
+  if (!Array.isArray(receipt)) {
+    assertExactKeys(receipt, ['boundary', 'rows', 'warning'], 'PUBLICATION_CONTRACT_RECEIPT_INVALID');
+    if (!/^[0-9a-f]{32}$/.test(receipt.boundary) || typeof receipt.warning !== 'string') fail('PUBLICATION_CONTRACT_RECEIPT_INVALID');
+    rows = receipt.rows;
+  }
   if (!Array.isArray(rows) || rows.length !== 1) fail('PUBLICATION_CONTRACT_RECEIPT_INVALID');
   assertExactKeys(rows[0], ['body_sha256'], 'PUBLICATION_CONTRACT_RECEIPT_INVALID');
   if (!SHA256.test(rows[0].body_sha256)) fail('PUBLICATION_CONTRACT_RECEIPT_INVALID');
