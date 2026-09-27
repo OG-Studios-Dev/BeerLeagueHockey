@@ -1,5 +1,8 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 // Allowed origins for iframe embedding (website editor preview)
 // These are the PARENT origins (league-builder) that may embed league-sites in an iframe.
@@ -14,6 +17,10 @@ const FRAME_ANCESTORS = [
 ].filter(Boolean).join(' ');
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: repoRoot,
+  turbopack: {
+    root: repoRoot,
+  },
   // Enable experimental features for multi-tenant subdomain routing
   experimental: {
     // Allow reading from workspace packages
