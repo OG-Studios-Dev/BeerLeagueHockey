@@ -6,6 +6,16 @@ SET CONSTRAINTS ALL DEFERRED;
 
 SELECT public.validate_optional_deletion_relations();
 
+-- Never reuse an identity from outside this rollback-only fixture.
+DO $fixture_identity$
+BEGIN
+  IF EXISTS (SELECT 1 FROM auth.users WHERE id IN ('a11ce300-0000-4000-8000-000000000001', 'a11ce300-0000-4000-8000-000000000002'))
+     OR EXISTS (SELECT 1 FROM public.profiles WHERE id IN ('a11ce300-0000-4000-8000-000000000001', 'a11ce300-0000-4000-8000-000000000002')) THEN
+    RAISE EXCEPTION 'Acceptance fixture identity already exists';
+  END IF;
+END;
+$fixture_identity$;
+
 INSERT INTO auth.users (
   instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at
@@ -18,7 +28,9 @@ INSERT INTO auth.users (
 INSERT INTO public.profiles (id, email, full_name, phone)
 VALUES
   ('a11ce300-0000-4000-8000-000000000001', 'pass3-delete@example.invalid', 'Pass Three Delete', '+14165550101'),
-  ('a11ce300-0000-4000-8000-000000000002', 'pass3-owner@example.invalid', 'Pass Three Owner', '+14165550102');
+  ('a11ce300-0000-4000-8000-000000000002', 'pass3-owner@example.invalid', 'Pass Three Owner', '+14165550102')
+ON CONFLICT (id) DO UPDATE SET
+  email = EXCLUDED.email, full_name = EXCLUDED.full_name, phone = EXCLUDED.phone;
 
 INSERT INTO public.leagues (id, name, slug)
 VALUES ('a11ce300-0000-4000-8000-000000000010', 'Pass Three League', 'pass-three-league');
@@ -135,6 +147,13 @@ INSERT INTO public.team_invoices (
   'a11ce300-0000-4000-8000-000000000001', 'in_fixture', 'private invoice note'
 );
 
+INSERT INTO public.legacy_players (
+  id, first_name, last_name, matched_to_profile_id, matched_at, imported_from
+) VALUES (
+  'a11ce300-0000-4000-8000-000000000030', 'Private', 'Legacy',
+  'a11ce300-0000-4000-8000-000000000001', now(), 'private-import-source'
+);
+
 SELECT public.cleanup_account_deletion_pass3(
   'a11ce300-0000-4000-8000-000000000001',
   'pass3-delete@example.invalid',
@@ -148,6 +167,16 @@ DECLARE
   v_token_column text;
   v_token_survived boolean;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.legacy_players
+    WHERE id = 'a11ce300-0000-4000-8000-000000000030'
+      AND first_name = 'Deleted' AND last_name = 'User'
+      AND full_name = 'Deleted User'
+      AND matched_to_profile_id IS NULL AND matched_at IS NULL
+      AND imported_from IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Historical legacy player was not retained and anonymized exactly';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.referee_sessions WHERE referee_id = v_user_id)
      OR EXISTS (SELECT 1 FROM public.referee_availability WHERE referee_id = v_referee_id)
      OR EXISTS (SELECT 1 FROM public.referee_swap_requests WHERE game_id = 'a11ce300-0000-4000-8000-000000000015')

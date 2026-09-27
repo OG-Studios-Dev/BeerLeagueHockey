@@ -459,11 +459,25 @@ BEGIN
   IF pg_catalog.to_regclass('public.stat_definitions') IS NOT NULL THEN
     UPDATE public.stat_definitions SET created_by = NULL WHERE created_by = p_user_id;
   END IF;
-  UPDATE public.legacy_players
-  SET first_name = 'Deleted', last_name = 'User', full_name = 'Deleted User',
-      matched_to_profile_id = NULL, matched_at = NULL, imported_from = NULL,
-      updated_at = pg_catalog.statement_timestamp()
-  WHERE matched_to_profile_id = p_user_id;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute AS a
+    WHERE a.attrelid = 'public.legacy_players'::pg_catalog.regclass
+      AND a.attname = 'full_name' AND NOT a.attisdropped
+      AND a.attgenerated <> ''
+  ) THEN
+    UPDATE public.legacy_players
+    SET first_name = 'Deleted', last_name = 'User',
+        matched_to_profile_id = NULL, matched_at = NULL, imported_from = NULL,
+        updated_at = pg_catalog.statement_timestamp()
+    WHERE matched_to_profile_id = p_user_id;
+  ELSE
+    UPDATE public.legacy_players
+    SET first_name = 'Deleted', last_name = 'User', full_name = 'Deleted User',
+        matched_to_profile_id = NULL, matched_at = NULL, imported_from = NULL,
+        updated_at = pg_catalog.statement_timestamp()
+    WHERE matched_to_profile_id = p_user_id;
+  END IF;
 END;
 $function$;
 

@@ -100,7 +100,9 @@ describe('account deletion correction pass 2', () => {
     assert.match(deletion, /game_duties[\s\S]*?gd\.status\s*=\s*'completed'[\s\S]*?g\.status\s*=\s*'completed'/i);
     assert.match(deletion, /league_spare_pool[\s\S]*?active\s*=\s*FALSE/i);
     assert.match(deletion, /draft_pool[\s\S]*?DELETE/i);
-    assert.match(deletion, /array_remove\(player_order\s*,\s*p_user_id::text\)/i);
+    assert.match(deletion, /array_remove\(player_order\s*,\s*p_user_id\)/i);
+    assert.match(deletion, /player_order\s+@>\s+ARRAY\[p_user_id\]::uuid\[\]/i);
+    assert.doesNotMatch(deletion, /array_remove\(player_order\s*,\s*p_user_id::text\)/i);
     assert.match(deletion, /registration_submissions[\s\S]*?status\s*=\s*'cancelled'/i);
     assert.match(deletion, /DELETE\s+FROM\s+public\.suspensions[\s\S]*?NOT\s+IN\s*\(\s*'served'\s*,\s*'denied'\s*\)/i);
     assert.match(deletion, /team_rosters[\s\S]*?end_date\s*=\s*COALESCE[\s\S]*?max\([\s\S]*?g\.status\s*=\s*'completed'/i);
@@ -134,6 +136,54 @@ describe('account deletion correction pass 2', () => {
     }
     assert.match(sql, /prosecdef[\s\S]*?proowner[\s\S]*?proacl/i);
     assert.match(sql, /has_function_privilege\('authenticated'\s*,\s*expected\.signature\s*,\s*'EXECUTE'\)/i);
+  });
+
+  // Hosted default privileges grant service_role EXECUTE independently of PUBLIC.
+  // These internal helpers must be revoked before the migration's own ACL check.
+  for (const signature of [
+    'require_auth_for_active_profile()',
+    'preserve_auth_for_active_profile()',
+    'lock_account_deletion_user(uuid)',
+    'validate_optional_deletion_relations()',
+    'block_deleting_organization_owner()',
+    'block_deleting_league_owner()',
+    'block_deleting_organization_member()',
+    'block_deleting_league_ownership()',
+  ]) {
+    it(`explicitly revokes service_role from internal helper ${signature}`, () => {
+      const beforeAssertion = sql.split('DO $catalog$')[0];
+      const revoke = beforeAssertion.split('\n').find((line) => line.startsWith(
+        `REVOKE ALL ON FUNCTION public.${signature} FROM `,
+      ));
+      assert.ok(revoke, `missing explicit revoke for ${signature}`);
+      assert.match(revoke, /FROM PUBLIC, anon, authenticated, service_role;/);
+      assert.ok(!beforeAssertion.includes(
+        `GRANT EXECUTE ON FUNCTION public.${signature} TO service_role;`,
+      ), `${signature} must not be re-granted to service_role`);
+    });
+  }
+
+  it('preserves explicit service_role grants for the intended callable entrypoints', () => {
+    const beforeAssertion = sql.split('DO $catalog$')[0];
+    for (const signature of [
+      'anonymize_audit_logs(uuid)',
+      'anonymize_payment_history(uuid, text)',
+      'delete_user_sessions(uuid)',
+      'delete_push_device_tokens(uuid)',
+      'prepare_account_deletion(uuid)',
+      'stage_account_apple_revocation(uuid, text, text, text)',
+      'get_account_apple_revocation_retry(uuid)',
+      'mark_account_apple_revoked(uuid)',
+      'mark_account_storage_deleted(uuid)',
+      'record_account_deletion_external_step(uuid, text)',
+      'execute_account_deletion(uuid)',
+    ]) {
+      const revoke = `REVOKE ALL ON FUNCTION public.${signature} FROM PUBLIC, anon, authenticated;`;
+      const grant = `GRANT EXECUTE ON FUNCTION public.${signature} TO service_role;`;
+      assert.ok(beforeAssertion.includes(revoke), `missing client revoke for ${signature}`);
+      assert.ok(beforeAssertion.indexOf(grant) > beforeAssertion.indexOf(revoke),
+        `missing service_role grant after client revoke for ${signature}`);
+    }
   });
 
   it('ships a source-bound two-session PostgreSQL ownership race harness', () => {

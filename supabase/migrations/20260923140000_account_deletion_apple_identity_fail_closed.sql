@@ -20,10 +20,13 @@ DECLARE
   v_apple_subject text;
 BEGIN
   WITH canonical_apple_identities AS (
-    SELECT COALESCE(
-      NULLIF(pg_catalog.btrim(i.identity_data ->> 'sub'), ''),
-      NULLIF(pg_catalog.btrim(i.identity_id), '')
-    ) AS canonical_subject
+    SELECT CASE
+      WHEN NULLIF(pg_catalog.btrim(i.provider_id), '') IS NOT NULL
+       AND NULLIF(pg_catalog.btrim(i.provider_id), '')
+           = NULLIF(pg_catalog.btrim(i.identity_data ->> 'sub'), '')
+        THEN NULLIF(pg_catalog.btrim(i.provider_id), '')
+      ELSE NULL
+    END AS canonical_subject
     FROM auth.identities AS i
     WHERE i.user_id = p_user_id
       AND i.provider = 'apple'

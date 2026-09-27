@@ -51,6 +51,10 @@ describe('immediate-only account deletion v1', () => {
     assert.match(migration, /distinct_apple_subject_count/is);
     assert.match(migration, /btrim/is);
     assert.match(migration, /contact Hockey Life support/i);
+    assert.match(migration, /i\.provider_id/i);
+    assert.match(migration, /i\.identity_data\s*->>\s*'sub'/i);
+    assert.doesNotMatch(migration, /i\.identity_id/i);
+    assert.doesNotMatch(migration, /COALESCE\s*\(\s*NULLIF\s*\(\s*pg_catalog\.btrim\s*\(\s*i\.identity_data\s*->>\s*'sub'/i);
 
     const prepare = migration.match(/CREATE OR REPLACE FUNCTION public\.prepare_account_deletion[\s\S]*?\$function\$;/i)?.[0] ?? '';
     const begin = migration.match(/CREATE OR REPLACE FUNCTION public\.begin_immediate_account_deletion[\s\S]*?\$function\$;/i)?.[0] ?? '';
@@ -59,6 +63,38 @@ describe('immediate-only account deletion v1', () => {
     assert.match(prepare, /resolve_account_apple_identity_binding\(p_user_id\)/i);
     assert.match(begin, /resolve_account_apple_identity_binding\(p_user_id\)/i);
     assert.doesNotMatch(prepare, /\bINSERT\s+INTO\b|\bUPDATE\s+public\.|\bDELETE\s+FROM\b/i);
+
+    const correctionPass2 = read('supabase/migrations/20260922170000_account_deletion_correction_pass_2.sql');
+    const pass2Execute = correctionPass2.match(
+      /CREATE OR REPLACE FUNCTION public\.execute_account_deletion\(p_user_id uuid\)[\s\S]*?\$function\$;/i,
+    )?.[0] ?? '';
+    assert.ok(pass2Execute);
+    assert.match(pass2Execute, /i\.provider_id/i);
+    assert.doesNotMatch(pass2Execute, /i\.identity_id/i);
+    assert.match(pass2Execute, /array_remove\(player_order, p_user_id\)/i);
+    assert.match(pass2Execute, /player_order\s+@>\s+ARRAY\[p_user_id\]::uuid\[\]/i);
+    assert.doesNotMatch(pass2Execute, /array_remove\(player_order, p_user_id::text\)/i);
+  });
+
+  it('covers normal, mismatched, and missing Apple provider subjects in rollback acceptance', () => {
+    const fixture = read('supabase/tests/account_deletion_operational_authority_acceptance.sql');
+    assert.match(fixture, /normal Apple provider subject/i);
+    assert.match(fixture, /mismatched Apple provider subject/i);
+    assert.match(fixture, /missing Apple provider subject/i);
+    assert.match(fixture, /provider_id/i);
+    assert.match(fixture, /identity_data/i);
+    assert.match(fixture, /SQLSTATE\s+'22023'/i);
+  });
+
+  it('starts the immediate workflow before operational storage and deletion acceptance', () => {
+    const fixture = read('supabase/tests/account_deletion_operational_authority_acceptance.sql');
+    const begin = fixture.indexOf("begin_immediate_account_deletion('a11ce000-0000-4000-8000-000000000081')");
+    const storage = fixture.indexOf("mark_account_storage_deleted('a11ce000-0000-4000-8000-000000000081')");
+    const execute = fixture.indexOf("execute_account_deletion('a11ce000-0000-4000-8000-000000000081')");
+    assert.ok(begin >= 0);
+    assert.ok(storage > begin);
+    assert.ok(execute > storage);
+    assert.match(fixture, /SET CONSTRAINTS ALL IMMEDIATE;\s*SET CONSTRAINTS ALL DEFERRED;/i);
   });
 
   it('ships a loopback adversarial probe for malformed and valid Apple identities', () => {
