@@ -43,14 +43,15 @@ describe('resolved Expo native permissions', () => {
     );
   });
 
-  it('keeps the calendar descriptions needed by createEventAsync without unused Reminders descriptions', () => {
+  it('keeps every iOS description required when the Expo Calendar native module registers', () => {
     const config = resolvedIntrospection();
     const infoPlist = config._internal?.modResults?.ios?.infoPlist ?? {};
 
     assert.equal(infoPlist.NSCalendarsUsageDescription, 'Hockey Life adds your hockey games to your calendar.');
     assert.equal(infoPlist.NSCalendarsFullAccessUsageDescription, 'Hockey Life adds your hockey games to your calendar.');
-    assert.equal(infoPlist.NSRemindersUsageDescription, undefined);
-    assert.equal(infoPlist.NSRemindersFullAccessUsageDescription, undefined);
+    const remindersDescription = 'Hockey Life accesses reminders only when you choose to add hockey reminders.';
+    assert.equal(infoPlist.NSRemindersUsageDescription, remindersDescription);
+    assert.equal(infoPlist.NSRemindersFullAccessUsageDescription, remindersDescription);
   });
 
   it('does not resolve photo-library access after public avatar editing is removed', () => {
