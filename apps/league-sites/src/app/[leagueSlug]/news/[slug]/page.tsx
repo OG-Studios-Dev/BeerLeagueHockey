@@ -8,8 +8,9 @@ import { LeagueNewsFallbackArtwork } from '@/components/news/LeagueNewsFallbackA
 import { RichArticleContent } from '@/components/news/RichArticleContent';
 import { EditorialHeroImage } from '@/components/news/EditorialHeroImage';
 import { ArticleHeroTitle } from '@/components/news/ArticleHeroTitle';
+import { NewspaperEditionViewer } from '@/components/news/NewspaperEditionViewer';
 import { buildArticleMentions } from '@/lib/articles/linkify';
-import { getArticleLinkContext, getArticlePlayerTags, getGamePreview, getLeagueBySlug, getNewsArticleBySlug } from '@/lib/data';
+import { getArticleLinkContext, getArticlePlayerTags, getGamePreview, getLeagueBySlug, getNewsArticleBySlug, getPublishedNewspaperEdition } from '@/lib/data';
 import { getArticleTextSnippet } from '@/lib/news/rich-text';
 import { resolveArticleAppearance } from '@hockey-life/ui/news-article-format';
 
@@ -64,6 +65,30 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
   const article = await getNewsArticleBySlug(league.id, slug);
   if (!article) return notFound();
+
+  const newspaperEdition = await getPublishedNewspaperEdition(article.id, league.id);
+  if (newspaperEdition) {
+    return (
+      <SubscriptionWall>
+        <div className="container mx-auto px-2 py-6 sm:px-4 sm:py-8">
+          <div className="mx-auto max-w-[1200px]">
+            <Link
+              href={`/${leagueSlug}/news`}
+              className="mb-5 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] transition-colors hover:text-[var(--league-primary)]"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to News
+            </Link>
+            <NewspaperEditionViewer edition={newspaperEdition} />
+            <noscript>
+              <div className="mt-6 whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-[var(--color-text-primary)]">
+                {article.content}
+              </div>
+            </noscript>
+          </div>
+        </div>
+      </SubscriptionWall>
+    );
+  }
 
   const articleLinkContext = await getArticleLinkContext(article.id, league.id, article.game_id);
   const primaryGameId = articleLinkContext.primaryGame?.id || article.game_id || null;

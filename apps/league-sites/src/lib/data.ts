@@ -82,12 +82,37 @@ import { pickOperationalSeason } from './seasons/operational';
 import { resolveSeasonParticipationTeamIds } from './season-team-participation';
 import { filterPublicStandings, filterPublicTeams, isPublicFacingTeam } from './publicSiteVisibility';
 import { resolvePlayerPhotoUrl } from './player-photo';
+import {
+  validateNewspaperEdition,
+  type NewspaperEdition,
+} from '../../../../packages/hockey-life-times/src/index';
 
 // Default brand colors – platinum/silver fallback instead of gold
 const DEFAULT_PRIMARY = '#C0C0C0';
 const DEFAULT_SECONDARY = '#1a1a1a';
 const DEFAULT_ACCENT = '#C0C0C0';
 const DEFAULT_FONT_FAMILY = '"Rajdhani", "Sora", "Inter", system-ui, -apple-system, sans-serif';
+
+export async function getPublishedNewspaperEdition(
+  articleId: string,
+  leagueId: string,
+): Promise<NewspaperEdition | null> {
+  const supabase = await createClient();
+  const { data, error } = await (supabase.from('newspaper_editions' as any) as any)
+    .select('edition_json')
+    .eq('article_id', articleId)
+    .eq('league_id', leagueId)
+    .eq('status', 'published')
+    .maybeSingle();
+  if (error || !data?.edition_json) return null;
+  try {
+    validateNewspaperEdition(data.edition_json);
+    if (data.edition_json.status !== 'published' || data.edition_json.leagueId !== leagueId) return null;
+    return data.edition_json;
+  } catch {
+    return null;
+  }
+}
 const LEGACY_ALL_TIME_LEAGUE_SLUGS = new Set(['hockey-life', 'hockeylifehl', 'hockeylifehl-original', 'pilot']);
 const AGGREGATE_STATS_GAME_LOCATION_PREFIX = '[aggregate-only]';
 const FREE_AGENT_DISPLAY_TEAM_NAME = 'Free Agent';

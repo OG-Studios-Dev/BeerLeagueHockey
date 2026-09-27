@@ -12,6 +12,7 @@ const config = {
   testMatch: ['**/__tests__/**/*.test.ts', '**/*.spec.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^server-only$': '<rootDir>/test/fixtures/server-only.cjs',
   },
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

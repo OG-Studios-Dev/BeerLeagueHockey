@@ -1,0 +1,101 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Minus, Plus } from 'lucide-react';
+import {
+  renderNewspaperHtml,
+  validateNewspaperEdition,
+  type NewspaperEdition,
+} from '../../../../../packages/hockey-life-times/src/index';
+
+const NEWSPAPER_PAGE_WIDTH = 853;
+const FIT_HORIZONTAL_PADDING = 24;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.25;
+
+export function clampNewspaperZoom(value: number) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+}
+
+export function calculateNewspaperFitScale(viewportWidth: number) {
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return 1;
+  if (viewportWidth > 900) return 1;
+  return Math.min(1, Math.max(0, viewportWidth - FIT_HORIZONTAL_PADDING) / NEWSPAPER_PAGE_WIDTH);
+}
+
+export function adjustNewspaperZoom(current: number | null, fitScale: number, direction: -1 | 1) {
+  return clampNewspaperZoom((current ?? fitScale) + direction * ZOOM_STEP);
+}
+
+export function getNewspaperViewerStyle(manualZoom: number | null) {
+  if (manualZoom === null) {
+    return `<style data-newspaper-viewer-fit>
+      body{padding:12px!important;overflow-x:hidden}
+      .newspaper-edition{--viewer-scale:min(1,calc((100vw - 24px) / 853px));gap:calc(28px * var(--viewer-scale))!important}
+      .newspaper-page{zoom:var(--viewer-scale)!important}
+    </style>`;
+  }
+  const scale = clampNewspaperZoom(manualZoom);
+  return `<style data-newspaper-viewer-zoom>
+    body{padding:12px!important}
+    .newspaper-edition{--viewer-scale:${scale};align-items:flex-start!important;gap:calc(28px * var(--viewer-scale))!important;width:max-content;min-width:100%}
+    .newspaper-page{zoom:var(--viewer-scale)!important}
+  </style>`;
+}
+
+export function NewspaperEditionViewer({ edition }: { edition: NewspaperEdition }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [manualZoom, setManualZoom] = useState<number | null>(null);
+  const [fitScale, setFitScale] = useState(1);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const updateFitScale = () => setFitScale(calculateNewspaperFitScale(iframe.clientWidth));
+    updateFitScale();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateFitScale);
+    observer.observe(iframe);
+    return () => observer.disconnect();
+  }, []);
+
+  const adjustZoom = useCallback((direction: -1 | 1) => {
+    setManualZoom((current) => adjustNewspaperZoom(current, fitScale, direction));
+  }, [fitScale]);
+
+  const html = useMemo(() => {
+    validateNewspaperEdition(edition);
+    return renderNewspaperHtml(edition).replace('</head>', `${getNewspaperViewerStyle(manualZoom)}</head>`);
+  }, [edition, manualZoom]);
+
+  const displayedScale = manualZoom ?? fitScale;
+
+  return (
+    <section aria-label={`${edition.title} issue ${edition.issueNumber}`}>
+      <div className="sticky top-3 z-20 mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-3 shadow-lg backdrop-blur">
+        <div>
+          <p className="text-sm font-black text-[var(--color-text-primary)]">Hockey Life Times · Issue {edition.issueNumber}</p>
+          <p className="text-xs text-[var(--color-text-secondary)]">{edition.periodStart} to {edition.periodEnd} · Published edition</p>
+        </div>
+        <div className="flex items-center gap-2" role="group" aria-label="Newspaper zoom controls">
+          <button type="button" onClick={() => adjustZoom(-1)} disabled={manualZoom !== null && manualZoom <= MIN_ZOOM} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--color-border)] p-2 disabled:opacity-50" aria-label="Zoom out"><Minus className="h-4 w-4" aria-hidden="true" /></button>
+          <output className="min-w-16 text-center text-xs font-bold" aria-live="polite">{manualZoom === null ? 'Fit · ' : ''}{Math.round(displayedScale * 100)}%</output>
+          <button type="button" onClick={() => setManualZoom(null)} aria-pressed={manualZoom === null} className="min-h-11 rounded-lg border border-[var(--color-border)] px-3 text-xs font-bold">Fit</button>
+          <button type="button" onClick={() => adjustZoom(1)} disabled={manualZoom !== null && manualZoom >= MAX_ZOOM} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--color-border)] p-2 disabled:opacity-50" aria-label="Zoom in"><Plus className="h-4 w-4" aria-hidden="true" /></button>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-neutral-800 p-2 sm:p-4">
+        <iframe
+          ref={iframeRef}
+          title={`${edition.title} issue ${edition.issueNumber}`}
+          srcDoc={html}
+          sandbox=""
+          className="block h-[82vh] w-full border-0 bg-neutral-800"
+        />
+      </div>
+    </section>
+  );
+}

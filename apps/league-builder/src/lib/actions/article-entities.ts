@@ -4,7 +4,6 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { verifyLeagueOwnerAccess } from './permissions';
 import { articleContentToPlainText } from '@hockey-life/ui/news-article-format';
 import type {
-  ArticleEditorSeasonOption,
   ArticleEntityEditorContext,
   ArticleEntityGameOption,
   ArticleEntityPlayerOption,
@@ -344,65 +343,4 @@ export async function suggestArticleEntities(
     linkedGameIds,
     primaryGameId,
   };
-}
-
-export async function syncArticleEntityTags(args: {
-  articleId: string;
-  linkedPlayerIds?: string[];
-  linkedTeamIds?: string[];
-  linkedGameIds?: string[];
-  primaryGameId?: string | null;
-}): Promise<void> {
-  const service = createServiceRoleClient();
-  const linkedPlayerIds = [...new Set((args.linkedPlayerIds || []).filter(Boolean))];
-  const linkedTeamIds = [...new Set((args.linkedTeamIds || []).filter(Boolean))];
-  const linkedGameIds = [...new Set((args.linkedGameIds || []).filter(Boolean))];
-  const primaryGameId = args.primaryGameId || linkedGameIds[0] || null;
-
-  if (primaryGameId && !linkedGameIds.includes(primaryGameId)) {
-    linkedGameIds.unshift(primaryGameId);
-  }
-
-  await Promise.all([
-    service.from('article_player_tags').delete().eq('article_id', args.articleId),
-    service.from('article_team_tags').delete().eq('article_id', args.articleId),
-    service.from('article_game_tags').delete().eq('article_id', args.articleId),
-  ]);
-
-  if (linkedPlayerIds.length > 0) {
-    await service.from('article_player_tags').insert(
-      linkedPlayerIds.map((playerId) => ({
-        article_id: args.articleId,
-        player_id: playerId,
-        mention_type: 'mentioned',
-      })),
-    );
-  }
-
-  if (linkedTeamIds.length > 0) {
-    await service.from('article_team_tags').insert(
-      linkedTeamIds.map((teamId) => ({
-        article_id: args.articleId,
-        team_id: teamId,
-      })),
-    );
-  }
-
-  if (linkedGameIds.length > 0) {
-    await service.from('article_game_tags').insert(
-      linkedGameIds.map((gameId) => ({
-        article_id: args.articleId,
-        game_id: gameId,
-        is_primary: gameId === primaryGameId,
-      })),
-    );
-  }
-
-  await service
-    .from('articles')
-    .update({
-      game_id: primaryGameId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', args.articleId);
 }

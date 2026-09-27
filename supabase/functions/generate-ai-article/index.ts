@@ -11,6 +11,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const MANUAL_NEWSPAPER_LEAGUE_SLUGS = new Set([
+  'hockey-life',
+  'hockeylifehl',
+  'hockeylifehl-original',
+]);
+
+export function usesManualNewspaperWorkflow(slug: string | null | undefined): boolean {
+  return MANUAL_NEWSPAPER_LEAGUE_SLUGS.has(String(slug || '').toLowerCase());
+}
+
 function generateSlug(title: string): string {
   return title
     .toLowerCase()
@@ -134,7 +144,7 @@ async function handleWeeklyWrapAll(supabase: any) {
   // Get leagues for these orgs
   const { data: leagues } = await supabase
     .from('leagues')
-    .select('id, organization_id')
+    .select('id, organization_id, slug')
     .in('organization_id', orgIds)
     .eq('status', 'active');
 
@@ -150,6 +160,14 @@ async function handleWeeklyWrapAll(supabase: any) {
   const results = [];
 
   for (const league of leagues) {
+    if (usesManualNewspaperWorkflow(league.slug)) {
+      results.push({
+        league_id: league.id,
+        skipped: true,
+        reason: 'manual Hockey Life Times workflow',
+      });
+      continue;
+    }
     // Get divisions for this league
     const { data: divisions } = await supabase
       .from('divisions')
@@ -342,6 +360,25 @@ Deno.serve(async (req) => {
             JSON.stringify({ success: false, error: 'game_id is required' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
+        }
+        const { data: recapGame, error: recapGameError } = await supabase
+          .from('games')
+          .select('league_id, leagues!inner(slug)')
+          .eq('id', game_id)
+          .single();
+        if (recapGameError || !recapGame) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Game not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+        const recapLeague = Array.isArray(recapGame.leagues) ? recapGame.leagues[0] : recapGame.leagues;
+        if (usesManualNewspaperWorkflow(recapLeague?.slug)) {
+          result = {
+            success: false,
+            error: 'Hockey Life recaps are consolidated into the manual Hockey Life Times edition.',
+          };
+          break;
         }
         result = await handleGameRecap(supabase, game_id, force === true, {
           gatherGameRecapData,
