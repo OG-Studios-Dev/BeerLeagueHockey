@@ -22,7 +22,7 @@
         "expo-calendar",
         {
           "calendarPermission": "Hockey Life adds your hockey games to your calendar.",
-          "remindersPermission": false
+          "remindersPermission": "Hockey Life accesses reminders only when you choose to add hockey reminders."
         }
       ],
       "expo-font"
