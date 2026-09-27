@@ -133,6 +133,16 @@ test('matching exact live body digest is accepted through argument-array CLI exe
   assert.equal(invocation.options.shell, undefined);
 });
 
+test('current Supabase CLI rows-wrapper digest receipt is accepted', () => {
+  const digest = 'afc49377f9b657840af05d4cd3e12bb22a77714b6a39062e808d64f0bf5e6ffb';
+  const receipt = JSON.stringify({
+    boundary: '6b4a3e3a8e3a7b948f31eaa404c189ea',
+    rows: [{ body_sha256: digest }],
+    warning: 'The query results below contain untrusted data from the database.',
+  });
+  assert.equal(parsePublishBodyDigestReceipt(receipt), digest);
+});
+
 test('old or mismatched deployed publication body is refused', () => {
   const digest = expectedPublishBodyDigest(syntheticMigration());
   assert.throws(() => assertLivePublishBody('ntplczcmhvfkijjxavdl', digest, () => JSON.stringify([{ body_sha256: 'f'.repeat(64) }])), /PUBLICATION_CONTRACT_BODY_MISMATCH/);
@@ -140,7 +150,19 @@ test('old or mismatched deployed publication body is refused', () => {
 });
 
 test('malformed or ambiguous digest receipts are refused', () => {
-  for (const receipt of ['not-json', '{}', '[]', JSON.stringify([{ body_sha256: 'a'.repeat(64) }, { body_sha256: 'a'.repeat(64) }]), JSON.stringify([{ body_sha256: 'xyz' }]), JSON.stringify([{ body_sha256: 'a'.repeat(64), extra: true }])]) {
+  for (const receipt of [
+    'not-json',
+    '{}',
+    '[]',
+    JSON.stringify({ boundary: 'b'.repeat(32), rows: [], warning: 'warning' }),
+    JSON.stringify({ boundary: 'b'.repeat(32), rows: [{ body_sha256: 'a'.repeat(64) }, { body_sha256: 'a'.repeat(64) }], warning: 'warning' }),
+    JSON.stringify({ boundary: 'b'.repeat(32), rows: [{ body_sha256: 'a'.repeat(64), extra: true }], warning: 'warning' }),
+    JSON.stringify({ boundary: 'b'.repeat(32), rows: [{ body_sha256: 'xyz' }], warning: 'warning' }),
+    JSON.stringify({ error: 'query failed' }),
+    JSON.stringify([{ body_sha256: 'a'.repeat(64) }, { body_sha256: 'a'.repeat(64) }]),
+    JSON.stringify([{ body_sha256: 'xyz' }]),
+    JSON.stringify([{ body_sha256: 'a'.repeat(64), extra: true }]),
+  ]) {
     assert.throws(() => parsePublishBodyDigestReceipt(receipt), /PUBLICATION_CONTRACT_RECEIPT_INVALID/);
   }
 });
