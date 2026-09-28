@@ -1,6 +1,6 @@
 # Header safe-area coverage
 
-The app has one root `SafeAreaProvider` in `App.tsx`. Standard stack routes render the shared `CutIceTitle`; that masthead owns the device top inset and keeps its original 62-point content area below it. `CutIceScreenBoundary` then supplies `top: 0` only to the titled route's screen content, preventing the screen's own `SafeAreaView edges={['top']}` from applying the inset a second time.
+The app has one root `SafeAreaProvider` in `App.tsx`. Standard stack routes render the shared `CutIceTitle`; that masthead owns the device top inset and keeps its original 62-point content area below it. Their screen frames use the centralized `cutIceContentEdges` policy to turn off only the native top edge. `CutIceScreenBoundary` no longer rewrites safe-area context, so the physical JavaScript inset remains available to the shared header and full-screen modal content.
 
 ## Registered route inventory
 
@@ -30,8 +30,9 @@ This covers all 38 native stack/tab registrations in `App.tsx` and `src/navigati
 
 - Shared masthead total height: `62 + topInset`.
 - Shared masthead top padding: `topInset`.
-- Titled route content receives a zero top inset from `CutIceScreenBoundary`.
+- Titled route screen frames omit `top` through `cutIceContentEdges`, causing the installed native safe-area consumer to emit `top: 'off'`.
 - Custom/headerless routes bypass that boundary and retain the provider's top inset.
 - Bottom, left, and right insets are preserved for every route.
+- Full-screen modal roots continue to use the physical safe-area provider rather than the titled-content policy.
 
-The contract test exercises `CutIceTitle` itself at top insets 0 (landscape/no unsafe top), 20 (flat-status-bar device), 47 (notched device), and 59 (Dynamic Island device), plus root, pushed, and headerless screen-boundary behavior.
+The contract test exercises `CutIceTitle` itself at top insets 0 (landscape/no unsafe top), 20 (flat-status-bar device), 47 (notched device), and 59 (Dynamic Island device). It also compiles the installed native `SafeAreaView` wrapper to verify `top: 'off'` for root and pushed titled routes, `top: 'additive'` for headerless exclusions, and preservation of the physical JavaScript inset.

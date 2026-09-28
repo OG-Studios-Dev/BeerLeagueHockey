@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
@@ -415,7 +416,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere intensity="medium" />
       <View style={styles.updatesActions}>
         <Text accessibilityRole="header" style={styles.updatesContext}>League changes, game-day actions, and team pulse</Text>

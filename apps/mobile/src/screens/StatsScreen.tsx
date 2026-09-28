@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusFlatList } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
@@ -112,7 +113,7 @@ export default function StatsScreen() {
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Hockey Life access required</Text>
           <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>
@@ -132,7 +133,7 @@ export default function StatsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <FocusFlatList
         focusScopeKey={`stats:${seasonScope}:${selectedTab}`}
         testID="stats-page-list"

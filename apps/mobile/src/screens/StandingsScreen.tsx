@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { useLeague } from '../context/LeagueContext';
 import ScheduleScreen from './ScheduleScreen';
@@ -10,7 +11,7 @@ export default function StandingsScreen(props: { navigation: { navigate: (screen
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Hockey Life access required</Text>
           <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>

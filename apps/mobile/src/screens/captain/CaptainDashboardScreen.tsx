@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
@@ -152,7 +153,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -162,7 +163,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 
   if (captainTeams.length === 0) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <MaterialCommunityIcons name="shield-crown-outline" size={40} color={colors.textSecondary} />
           <Text style={styles.emptyTitle}>No captain duties</Text>
@@ -173,7 +174,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere accentColor={colors.brandGold} intensity="low" />
       <FocusScrollView
         contentContainerStyle={styles.content}

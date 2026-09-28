@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusScrollView } from '../../components/CardFocus';
 
@@ -66,7 +67,7 @@ export function useLeaguePage<P extends LeaguePageKind>(scope: Scope, page: P) {
 
 export function LeaguePageFrame({ children, scrollable = true, onAccessibilityEscape }: { children: React.ReactNode; scrollable?: boolean; onAccessibilityEscape?: () => void }) {
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe} onAccessibilityEscape={onAccessibilityEscape}>
+    <SafeAreaView edges={cutIceContentEdges(['top', 'left', 'right'])} style={styles.safe} onAccessibilityEscape={onAccessibilityEscape}>
       {scrollable ? (
         <FocusScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {children}
