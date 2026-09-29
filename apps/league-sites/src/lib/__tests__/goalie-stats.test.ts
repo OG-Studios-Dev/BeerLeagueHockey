@@ -5,6 +5,7 @@ describe('aggregateNativeGoalieStatsRows', () => {
     const rows = aggregateNativeGoalieStatsRows(
       [
         {
+          game_id: 'game-1',
           player_id: 'goalie-1',
           team_id: 'team-1',
           season_id: 'season-1',
@@ -29,6 +30,7 @@ describe('aggregateNativeGoalieStatsRows', () => {
           },
         },
         {
+          game_id: 'game-2',
           player_id: 'goalie-1',
           team_id: 'team-1',
           season_id: 'season-1',
@@ -81,5 +83,20 @@ describe('aggregateNativeGoalieStatsRows', () => {
       goals_against_average: 2.5,
       shutouts: 0,
     });
+  });
+
+  it('counts distinct games when joined rows repeat a game', () => {
+    const rows = aggregateNativeGoalieStatsRows(
+      [
+        { game_id: 'game-1', player_id: 'goalie-1', team_id: 'team-1', season_id: 'season-1' },
+        { game_id: 'game-1', player_id: 'goalie-1', team_id: 'team-1', season_id: 'season-1' },
+        { game_id: 'game-2', player_id: 'goalie-1', team_id: 'team-1', season_id: 'season-1' },
+      ],
+      [],
+      'season-1',
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].games_played).toBe(2);
   });
 });

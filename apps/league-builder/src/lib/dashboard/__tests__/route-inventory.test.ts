@@ -7,7 +7,7 @@ import {
 } from '@/lib/dashboard/route-inventory';
 
 function discoverDashboardPageRoutes() {
-  const dashboardRoot = path.resolve(process.cwd(), 'src/app/[locale]/dashboard');
+  const dashboardRoot = path.resolve(__dirname, '../../../app/[locale]/dashboard');
 
   return fs
     .readdirSync(dashboardRoot, { recursive: true, withFileTypes: true })
@@ -100,12 +100,12 @@ describe('dashboard route inventory', () => {
   });
 
   it('reports the expected classification totals', () => {
-    expect(DASHBOARD_ROUTE_INVENTORY).toHaveLength(91);
+    expect(DASHBOARD_ROUTE_INVENTORY).toHaveLength(93);
     expect(DASHBOARD_ROUTE_CLASSIFICATION_COUNTS).toEqual({
       'canonical-workspace': 21,
       'canonical-settings': 17,
       'detail-route': 14,
-      'public-supporting': 24,
+      'public-supporting': 26,
       'redirect-shim': 15,
       'candidate-delete': 0,
     });
