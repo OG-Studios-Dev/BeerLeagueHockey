@@ -41,7 +41,7 @@ jobs:
         run: node scripts/check-repository-hygiene.mjs
 
       - name: Test repository hygiene guard
-        run: node --test scripts/tests/check-repository-hygiene.test.mjs scripts/tests/ci-hygiene-workflow.test.mjs scripts/tests/ci-hygiene-workflow.test.mjs
+        run: node --test scripts/tests/check-repository-hygiene.test.mjs scripts/tests/ci-hygiene-workflow.test.mjs
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
