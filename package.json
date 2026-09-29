@@ -16,7 +16,7 @@
     "test": "jest --config jest.config.cjs",
     "test:watch": "jest --config jest.config.cjs --watch",
     "check:repo-hygiene": "node scripts/check-repository-hygiene.mjs",
-    "test:repo-hygiene": "node --test scripts/tests/check-repository-hygiene.test.mjs",
+    "test:repo-hygiene": "node --test scripts/tests/check-repository-hygiene.test.mjs scripts/tests/ci-hygiene-workflow.test.mjs",
     "type-check": "turbo type-check",
     "audit:tenant-queries": "tsx scripts/platform/audit-tenant-query-scoping.ts",
     "verify:legacy-baseline-stats": "node scripts/verify-legacy-baseline-stats.ts",
