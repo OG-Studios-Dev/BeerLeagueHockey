@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import colors from '../theme/colors';
 import { ui } from '../theme/ui';
 import BrandAtmosphere from './BrandAtmosphere';
@@ -25,7 +26,7 @@ export default function AuthShell({
   contentStyle,
 }: AuthShellProps) {
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'bottom'])}>
       <BrandAtmosphere intensity="medium" />
       <FocusScrollView
         style={styles.scrollView}

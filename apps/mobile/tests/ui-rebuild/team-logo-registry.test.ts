@@ -16,6 +16,26 @@ const expected = [
   ['093f611c-0cdc-4509-afde-9c661b5833c9', 'london-eco-metal.png', '3de073cd6427d4c87445a89ff514631f48d498cc390397d44b0610ffba138d11'],
 ] as const;
 
+const approvedRemoteLogos = [
+  ['453d62d9-80b4-4f26-a2ee-861f0c063402', 'https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-first-general-approved-20260928.webp'],
+  ['e4be829d-952c-4531-8376-215907fab3b7', 'https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-flyers-approved-20260928.webp'],
+  ['346833e0-2780-492d-86db-94df0b0cb3e1', 'https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/346833e0-2780-492d-86db-94df0b0cb3e1-liuna-approved-20260928.webp'],
+  ['093f611c-0cdc-4509-afde-9c661b5833c9', 'https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp'],
+] as const;
+
+const legacyFirstGeneralUrl = 'https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-manual-flat.png';
+
+function loadRegistry() {
+  return compileCommonJs<{
+    getBundledTeamLogoSource: (teamId?: string | null, logoUrl?: string | null) => unknown;
+  }>(new URL('../../src/lib/teamLogoSources.ts', import.meta.url), {
+    '../../assets/team-logos/first-general-london.png': { bundled: 'first-general' },
+    '../../assets/team-logos/fitzrays-flyers.png': { bundled: 'flyers' },
+    '../../assets/team-logos/fitzrays-premier.png': { bundled: 'liuna' },
+    '../../assets/team-logos/london-eco-metal.png': { bundled: 'bad-bunny' },
+  });
+}
+
 describe('Hockey Life native artwork registry', () => {
   it('preserves the exact four public PNG payloads', () => {
     for (const [, filename, digest] of expected) {
@@ -29,6 +49,71 @@ describe('Hockey Life native artwork registry', () => {
       assert.match(registrySource, new RegExp(`['"]${teamId}['"]\\s*:\\s*require\\(['"]\\.\\.\\/\\.\\.\\/assets/team-logos/${filename.replace('.', '\\.')}['"]\\)`));
     }
     assert.doesNotMatch(registrySource, /teamName|toLowerCase\(\)/);
+  });
+
+  it('uses all four approved current URLs instead of stale bundled artwork', () => {
+    const { getBundledTeamLogoSource } = loadRegistry();
+    for (const [teamId, logoUrl] of approvedRemoteLogos) {
+      assert.equal(getBundledTeamLogoSource(teamId, logoUrl), null, `${teamId} must use its current remote URL`);
+    }
+  });
+
+  it('only substitutes bundled artwork for an absent URL or the same team verified legacy URL', () => {
+    const { getBundledTeamLogoSource } = loadRegistry();
+    const firstGeneralId = '453d62d9-80b4-4f26-a2ee-861f0c063402';
+
+    assert.deepEqual(getBundledTeamLogoSource(firstGeneralId, null), { bundled: 'first-general' });
+    assert.deepEqual(getBundledTeamLogoSource(firstGeneralId, legacyFirstGeneralUrl), { bundled: 'first-general' });
+    assert.deepEqual(getBundledTeamLogoSource(null, legacyFirstGeneralUrl), { bundled: 'first-general' });
+    assert.equal(getBundledTeamLogoSource('unknown-team', 'https://example.test/unknown.png'), null);
+    assert.equal(getBundledTeamLogoSource(firstGeneralId, 'https://example.test/current.png'), null);
+    assert.equal(
+      getBundledTeamLogoSource('e4be829d-952c-4531-8376-215907fab3b7', legacyFirstGeneralUrl),
+      null,
+      'a verified legacy URL must never substitute another team\'s artwork',
+    );
+  });
+
+  it('renders a same-team current URL immediately after bundled legacy artwork and after an error', () => {
+    const harness = createHookHarness();
+    const currentUrl = approvedRemoteLogos[0][1];
+    const props = {
+      teamId: approvedRemoteLogos[0][0] as string,
+      logoUrl: legacyFirstGeneralUrl as string,
+      teamName: 'First General',
+    };
+    const TeamLogo = compileCommonJs<{ default: (value: typeof props) => unknown }>(
+      new URL('../../src/components/TeamLogo.tsx', import.meta.url),
+      {
+        react: harness.react,
+        'react-native': {
+          Image: 'Image', Text: 'Text', View: 'View',
+          StyleSheet: { create: <T>(value: T) => value },
+        },
+        '../lib/imagePlaceholders': { BLH_DEFAULT_TEAM_LOGO_URL: 'https://example.test/fallback.png' },
+        '../lib/teamLogoSources': {
+          getBundledTeamLogoSource: (teamId: string | null, logoUrl: string | null) =>
+            teamId === props.teamId && logoUrl === legacyFirstGeneralUrl ? { bundled: 'first-general' } : null,
+        },
+      },
+    ).default;
+
+    harness.mount(() => TeamLogo(props));
+    assert.deepEqual(findNode(harness.output, (node) => node.type === 'Image')!.props.source, { bundled: 'first-general' });
+
+    props.logoUrl = currentUrl;
+    harness.render();
+    let image = findNode(harness.output, (node) => node.type === 'Image')!;
+    assert.deepEqual(image.props.source, { uri: currentUrl });
+
+    image.props.onError();
+    harness.render();
+    assert.deepEqual(findNode(harness.output, (node) => node.type === 'Image')!.props.source, { uri: 'https://example.test/fallback.png' });
+
+    props.logoUrl = 'https://example.test/first-general-replacement.webp';
+    harness.render();
+    image = findNode(harness.output, (node) => node.type === 'Image')!;
+    assert.deepEqual(image.props.source, { uri: props.logoUrl });
   });
 
   it('clears an error fallback immediately when the team identity changes', () => {

@@ -77,6 +77,7 @@ describe('mounted native content navigation', () => {
       '../../components/Avatar': { __esModule: true, default: (props: any) => createElement('Avatar', props) },
       '../../components/TeamLogo': { __esModule: true, default: (props: any) => createElement('TeamLogo', props) },
       '../../lib/leagueContentModel': leagueContentModel,
+      '../../lib/newspaperReader': { loadPublishedNewspaperReaderTarget: async () => null, openNewspaperReader: async () => undefined },
       '../../theme/colors': colors,
       './LeaguePageCommon': {
         useLeaguePageScope: (scope: unknown) => scope,
@@ -93,7 +94,7 @@ describe('mounted native content navigation', () => {
         },
       } }) },
     }).default;
-    const navigation = { goBack() {}, navigate: (...args: unknown[]) => calls.push(args), push: (...args: unknown[]) => calls.push(args) };
+    const navigation = { isFocused: () => true, addListener: () => () => {}, goBack() {}, navigate: (...args: unknown[]) => calls.push(args), push: (...args: unknown[]) => calls.push(args) };
     const output = harness.mount(() => Screen({ route: { params: { leagueId: 'league-1', leagueSlug: 'hockey-life', articleSlug: 'synthetic-story' } }, navigation }));
     const text = nodeText(output);
     assert.match(text, /Recorded Result/);

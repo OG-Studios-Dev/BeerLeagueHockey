@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
@@ -100,7 +101,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
 
   if (viewStatus === 'loading') {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -110,7 +111,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
 
   if (!user || viewStatus === 'error') {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <Text style={styles.emptyTitle}>{user ? 'Unable to load career stats' : 'Sign in to view career stats'}</Text>
           {user ? <Pressable testID="career-retry" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></Pressable> : null}
@@ -120,7 +121,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <BrandAtmosphere intensity="low" />
       <FocusScrollView
         contentContainerStyle={styles.content}

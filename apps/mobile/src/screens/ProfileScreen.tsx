@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
@@ -714,7 +715,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="medium" />
       <View style={styles.accountActionBar}>
         <Pressable

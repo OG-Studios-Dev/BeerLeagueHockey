@@ -1,10 +1,28 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle } from './component-harness.ts';
+import { compileCommonJs, createElement, createHookHarness, findNode } from './component-harness.ts';
 
 function mountBoundary(routeName: string) {
   const harness = createHookHarness();
+  const nativeReact = {
+    createElement,
+    forwardRef: (render: (props: Record<string, unknown>, ref: null) => unknown) =>
+      (props: Record<string, unknown>) => render(props, null),
+    useMemo: (factory: () => unknown) => factory(),
+  };
+  const nativeSafeAreaView = compileCommonJs<{ SafeAreaView: (props: Record<string, unknown>) => unknown }>(
+    new URL('../../node_modules/react-native-safe-area-context/src/SafeAreaView.tsx', import.meta.url),
+    {
+      react: nativeReact,
+      './specs/NativeSafeAreaView': 'NativeSafeAreaView',
+    },
+  ).SafeAreaView;
+  const policy = compileCommonJs<{ cutIceContentEdges: (edges: string[]) => string[] }>(
+    new URL('../../src/navigation/cutIceSafeAreaPolicy.ts', import.meta.url),
+    {},
+  );
+  const excludedRoutes = ['Home', 'TeamDetail', 'LeagueTeamDetail'];
   const insetsContext: { current?: { top: number; right: number; bottom: number; left: number }; Provider?: (props: Record<string, unknown>) => unknown } = {
     current: { top: 47, right: 3, bottom: 34, left: 4 },
   };
@@ -22,14 +40,17 @@ function mountBoundary(routeName: string) {
     react: harness.react,
     'react-native-safe-area-context': {
       SafeAreaInsetsContext: insetsContext,
+      SafeAreaView: nativeSafeAreaView,
       useSafeAreaInsets: () => insetsContext.current,
     },
-    '../components/cutIceTitleModel': { CUT_ICE_EXCLUDED_ROUTES: ['Home', 'TeamDetail', 'LeagueTeamDetail'] },
+    '../components/cutIceTitleModel': { CUT_ICE_EXCLUDED_ROUTES: excludedRoutes },
   });
 
   function Screen() {
-    const insets = insetsContext.current!;
-    return createElement('View', { testID: 'screen-content', style: { paddingTop: insets.top, paddingRight: insets.right, paddingBottom: insets.bottom, paddingLeft: insets.left } });
+    const edges = excludedRoutes.includes(routeName)
+      ? ['top', 'left', 'right']
+      : policy.cutIceContentEdges(['top', 'left', 'right']);
+    return nativeSafeAreaView({ testID: 'screen-content', edges });
   }
 
   harness.mount(() => boundary.cutIceScreenLayout({ route: { name: routeName }, children: createElement(Screen, null) }));
@@ -41,24 +62,24 @@ function mountBoundary(routeName: string) {
 }
 
 describe('Cut Ice centralized safe-area geometry', () => {
-  it('consumes the device top inset once for a root titled route and preserves the other edges', () => {
-    const { output } = mountBoundary('ScheduleList');
+  it('turns off the actual native top edge for a root titled route while preserving physical JS insets', () => {
+    const { output, insetsContext } = mountBoundary('ScheduleList');
     const content = findNode(output, (node) => node.props.testID === 'screen-content');
-    assert.deepEqual(flattenStyle(content?.props.style), { paddingTop: 0, paddingRight: 3, paddingBottom: 34, paddingLeft: 4 });
-    assert.equal(47 + 62 + flattenStyle(content?.props.style).paddingTop, 109);
+    assert.deepEqual(insetsContext.current, { top: 47, right: 3, bottom: 34, left: 4 });
+    assert.deepEqual(content?.props.edges, { top: 'off', right: 'additive', bottom: 'off', left: 'additive' });
   });
 
   it('uses the same one-inset boundary for pushed detail routes', () => {
     const { output } = mountBoundary('GamePreview');
     const content = findNode(output, (node) => node.props.testID === 'screen-content');
-    assert.equal(flattenStyle(content?.props.style).paddingTop, 0);
+    assert.equal(content?.props.edges.top, 'off');
   });
 
   it('does not suppress the top inset for Home or active Team detail exclusions', () => {
     for (const routeName of ['Home', 'TeamDetail', 'LeagueTeamDetail']) {
       const { output } = mountBoundary(routeName);
       const content = findNode(output, (node) => node.props.testID === 'screen-content');
-      assert.equal(flattenStyle(content?.props.style).paddingTop, 47, routeName);
+      assert.equal(content?.props.edges.top, 'additive', routeName);
     }
   });
 });

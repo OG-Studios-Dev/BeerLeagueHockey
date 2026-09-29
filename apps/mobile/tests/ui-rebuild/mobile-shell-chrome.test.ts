@@ -10,7 +10,7 @@ function source(relativePath: string) {
 }
 
 describe('mobile shell chrome contract', () => {
-  it('removes the tab league header and lets every main page own the top safe area', () => {
+  it('keeps custom pages on the physical top inset and gives shared mastheads sole top ownership', () => {
     const navigation = source('src/navigation/index.tsx');
     assert.match(navigation, /screenOptions=\{\(\) => \(\{[\s\S]*?headerShown:\s*false,/);
     assert.doesNotMatch(navigation, /LeagueSwitcher|AppHeaderBackground|headerTitle:/);
@@ -25,22 +25,24 @@ describe('mobile shell chrome contract', () => {
     assert.match(app, /<NavigationContainer theme=\{APP_NAVIGATION_THEME\}>/);
     assert.doesNotMatch(app, /tabBarBackground|dockShadow|dockOuter/);
 
-    const mainPageSources = [
-      'src/screens/HomeScreen.tsx',
+    const titledPageSources = [
       'src/screens/StandingsScreen.tsx',
       'src/screens/ScheduleScreen.tsx',
       'src/screens/StatsScreen.tsx',
       'src/screens/TeamScreen.tsx',
       'src/screens/ProfileScreen.tsx',
-      'src/screens/discover/LeagueDiscoveryScreen.tsx',
     ].map(source);
-    for (const page of mainPageSources) {
+    for (const page of titledPageSources) {
+      assert.match(page, /edges=\{cutIceContentEdges\(\['top', 'left', 'right'\]\)\}/);
+      assert.doesNotMatch(page, /edges=\{\['top', 'left', 'right'\]\}/);
+    }
+    for (const page of ['src/screens/HomeScreen.tsx', 'src/screens/discover/LeagueDiscoveryScreen.tsx'].map(source)) {
       assert.match(page, /edges=\{\['top', 'left', 'right'\]\}/);
-      assert.doesNotMatch(page, /edges=\{\['left', 'right'\]\}/);
+      assert.doesNotMatch(page, /cutIceContentEdges/);
     }
 
     const common = source('src/screens/league-pages/LeaguePageCommon.tsx');
-    assert.match(common, /<SafeAreaView edges=\{\['top', 'left', 'right'\]\}/);
+    assert.match(common, /<SafeAreaView edges=\{cutIceContentEdges\(\['top', 'left', 'right'\]\)\}/);
     assert.match(common, /<Text accessibilityRole="header" style=\{styles\.title\}>\{title\}<\/Text>/);
   });
 

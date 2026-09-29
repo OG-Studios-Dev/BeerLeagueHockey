@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import Avatar from '../../components/Avatar';
 import { FocusFlatList } from '../../components/CardFocus';
@@ -135,7 +136,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <Text style={styles.emptyText}>Select a league to view leaderboards</Text>
         </View>
@@ -144,7 +145,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <View style={styles.filterWrap}>
         <PillToggle options={categories} selected={category} onChange={setCategory} />
       </View>

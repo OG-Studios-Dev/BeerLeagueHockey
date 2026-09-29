@@ -19,7 +19,11 @@ export function getBundledTeamLogoSource(
   teamId?: string | null,
   logoUrl?: string | null,
 ): ImageSourcePropType | null {
-  if (teamId && TEAM_LOGO_BY_ID[teamId]) return TEAM_LOGO_BY_ID[teamId];
-  const verifiedId = logoUrl ? TEAM_ID_BY_VERIFIED_LEGACY_URL[logoUrl] : undefined;
-  return verifiedId ? TEAM_LOGO_BY_ID[verifiedId] ?? null : null;
+  if (logoUrl) {
+    const verifiedId = TEAM_ID_BY_VERIFIED_LEGACY_URL[logoUrl];
+    if (!verifiedId || (teamId && teamId !== verifiedId)) return null;
+    return TEAM_LOGO_BY_ID[verifiedId] ?? null;
+  }
+
+  return teamId ? TEAM_LOGO_BY_ID[teamId] ?? null : null;
 }

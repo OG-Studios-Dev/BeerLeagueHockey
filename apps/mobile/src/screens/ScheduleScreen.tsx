@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusFlatList, FocusScrollView } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
@@ -189,7 +190,7 @@ export default function ScheduleScreen({
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Hockey Life access required</Text>
           <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>
@@ -199,7 +200,7 @@ export default function ScheduleScreen({
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <GuestBanner />
       <DivisionFilter
         divisions={divisions}
