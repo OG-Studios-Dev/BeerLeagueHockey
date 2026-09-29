@@ -13,6 +13,7 @@ const FIT_HORIZONTAL_PADDING = 24;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2;
 const ZOOM_STEP = 0.25;
+const VIEWER_STYLE_RE = /<style\s+data-newspaper-viewer-(?:fit|zoom)\b[^>]*>[\s\S]*?<\/style>/gi;
 
 export function clampNewspaperZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
@@ -32,16 +33,48 @@ export function getNewspaperViewerStyle(manualZoom: number | null) {
   if (manualZoom === null) {
     return `<style data-newspaper-viewer-fit>
       body{padding:12px!important;overflow-x:hidden}
-      .newspaper-edition{--viewer-scale:min(1,calc((100vw - 24px) / 853px));gap:calc(28px * var(--viewer-scale))!important}
-      .newspaper-page{zoom:var(--viewer-scale)!important}
+      .newspaper-edition{--viewer-scale:min(1,calc((100vw - 24px) / 853px));align-items:center!important;gap:calc(28px * var(--viewer-scale))!important}
+      .newspaper-page-wrap{position:relative;flex:0 0 auto;width:calc(853px * var(--viewer-scale));height:calc(1280px * var(--viewer-scale));overflow:visible}
+      .newspaper-page-wrap>.newspaper-page{zoom:1!important;transform:scale(var(--viewer-scale))!important;transform-origin:top left!important;margin:0!important}
     </style>`;
   }
   const scale = clampNewspaperZoom(manualZoom);
   return `<style data-newspaper-viewer-zoom>
     body{padding:12px!important}
     .newspaper-edition{--viewer-scale:${scale};align-items:flex-start!important;gap:calc(28px * var(--viewer-scale))!important;width:max-content;min-width:100%}
-    .newspaper-page{zoom:var(--viewer-scale)!important}
+    .newspaper-page-wrap{position:relative;flex:0 0 auto;width:calc(853px * var(--viewer-scale));height:calc(1280px * var(--viewer-scale));overflow:visible}
+    .newspaper-page-wrap>.newspaper-page{zoom:1!important;transform:scale(var(--viewer-scale))!important;transform-origin:top left!important;margin:0!important}
   </style>`;
+}
+
+export function wrapNewspaperPages(html: string) {
+  if (html.includes('class="newspaper-page-wrap"')) return html;
+
+  const pages: Array<{ start: number; end: number }> = [];
+  const starts = /<section\b[^>]*class=["'][^"']*\bnewspaper-page\b[^"']*["'][^>]*>/gi;
+  for (const match of html.matchAll(starts)) {
+    let depth = 1;
+    const sections = /<section\b[^>]*>|<\/section\s*>/gi;
+    sections.lastIndex = (match.index ?? 0) + match[0].length;
+    let token: RegExpExecArray | null;
+    while ((token = sections.exec(html))) {
+      depth += /^<section\b/i.test(token[0]) ? 1 : -1;
+      if (depth === 0) {
+        pages.push({ start: match.index ?? 0, end: sections.lastIndex });
+        break;
+      }
+    }
+  }
+
+  return pages.reduceRight(
+    (output, page) => `${output.slice(0, page.start)}<div class="newspaper-page-wrap">${output.slice(page.start, page.end)}</div>${output.slice(page.end)}`,
+    html,
+  );
+}
+
+export function buildNewspaperViewerHtml(renderedHtml: string, manualZoom: number | null) {
+  const html = wrapNewspaperPages(renderedHtml.replace(VIEWER_STYLE_RE, ''));
+  return html.replace('</head>', `${getNewspaperViewerStyle(manualZoom)}</head>`);
 }
 
 export function NewspaperEditionViewer({ edition }: { edition: NewspaperEdition }) {
@@ -68,7 +101,7 @@ export function NewspaperEditionViewer({ edition }: { edition: NewspaperEdition 
 
   const html = useMemo(() => {
     validateNewspaperEdition(edition);
-    return renderNewspaperHtml(edition).replace('</head>', `${getNewspaperViewerStyle(manualZoom)}</head>`);
+    return buildNewspaperViewerHtml(renderNewspaperHtml(edition), manualZoom);
   }, [edition, manualZoom]);
 
   const displayedScale = manualZoom ?? fitScale;
