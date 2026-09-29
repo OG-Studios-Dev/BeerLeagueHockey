@@ -23,8 +23,11 @@ node_modules/
 # turbo
 .turbo/
 
-# worktrees
+# worktrees and local agent state
 hockey-life-worktrees/
+/.claude/worktrees/
+/.claude/orchestration.log
+/.hermes/
 
 # misc
 .DS_Store
@@ -64,6 +67,11 @@ tools/orchestrator/dist/
 # E2E auth state (contains session tokens)
 e2e/**/.auth/
 **/playwright-report/
+/e2e/test-results/
+/e2e/screenshots/
+
+# Local test-script backups
+/scripts/tests/*.bak
 
 # Installed skills (local only)
 .agents/

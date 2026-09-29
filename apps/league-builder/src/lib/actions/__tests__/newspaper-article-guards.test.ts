@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs';
+import path from 'node:path';
 
 jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
@@ -110,14 +111,17 @@ describe('newspaper-linked generic article guards', () => {
   });
 
   it('keeps privileged tag synchronization out of the server-action export surface', () => {
-    const source = fs.readFileSync('src/lib/actions/article-entities.ts', 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../article-entities.ts'), 'utf8');
     expect(source).not.toMatch(/export async function syncArticleEntityTags/);
   });
 });
 
 describe('admin busy cleanup contract', () => {
   it('clears busy state in finally for every awaited workflow handler', () => {
-    const source = fs.readFileSync('src/components/news/HockeyLifeTimesGenerator.tsx', 'utf8');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../../components/news/HockeyLifeTimesGenerator.tsx'),
+      'utf8',
+    );
     for (const handler of ['checkReadiness', 'generateDraft', 'publishEdition', 'saveNarrative']) {
       const body = source.match(new RegExp(`async function ${handler}\\(\\) \\{([\\s\\S]*?)\\n  \\}`, 'm'))?.[1] || '';
       expect(body).toMatch(/try\s*\{/);
