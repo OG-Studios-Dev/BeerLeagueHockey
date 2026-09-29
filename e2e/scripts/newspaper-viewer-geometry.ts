@@ -4,7 +4,7 @@ import { chromium, webkit, type BrowserType } from '@playwright/test';
 import { buildNewspaperViewerHtml } from '../../apps/league-sites/src/components/news/NewspaperEditionViewer';
 
 const input = process.argv[2];
-if (!input) throw new Error('Usage: tsx e2e/tests/newspaper-viewer-geometry.test.ts <frozen-srcdoc.html>');
+if (!input) throw new Error('Usage: tsx e2e/scripts/newspaper-viewer-geometry.ts <frozen-srcdoc.html>');
 
 async function verify(browserType: BrowserType, name: string, frozen: string) {
   const browser = await browserType.launch();
