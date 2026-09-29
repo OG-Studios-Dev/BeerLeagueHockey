@@ -269,7 +269,7 @@ async function ensureAssumedGoalieStatsForGame(
 
 // Cleanup every 5 minutes
 if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
+  const cleanupInterval = setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of ipRateLimitStore) {
       if (entry.resetTime < now) ipRateLimitStore.delete(key);
@@ -278,6 +278,7 @@ if (typeof setInterval !== 'undefined') {
       if (entry.lockedUntil && entry.lockedUntil < now) tokenFailureStore.delete(key);
     }
   }, 5 * 60 * 1000);
+  cleanupInterval.unref?.();
 }
 
 // =============================================================================

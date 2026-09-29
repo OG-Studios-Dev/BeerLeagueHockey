@@ -5,7 +5,7 @@ Purpose: define the current dashboard route inventory and the canonical links th
 ## Coverage snapshot
 
 - Inventory source of truth: `src/lib/dashboard/route-inventory.ts`
-- Dashboard page routes classified: 91 / 91
+- Dashboard page routes classified: 93 / 93
 - Coverage is enforced by `src/lib/dashboard/__tests__/route-inventory.test.ts`
 
 ## Menu and tab ownership
@@ -69,8 +69,8 @@ Purpose: define the current dashboard route inventory and the canonical links th
 
 These stay reachable, but they are not the primary path for core workflows:
 
-- League support and ops: `/billing`, `/website`, `/integrations`, `/news`, `/pages`, `/sponsors`, `/gallery`, `/events`, `/awards`, `/staff`, `/contact-inbox`, `/bugs`, `/migration-center`
-- Admin support: `/dashboard/admin`, `/dashboard/admin/migrations`, `/dashboard/admin/owner-view`
+- League support and ops: `/billing`, `/website`, `/integrations`, `/news`, `/pages`, `/sponsors`, `/gallery`, `/events`, `/awards`, `/staff`, `/contact-inbox`, `/bugs`, `/migration-center`, `/spares`
+- Admin support: `/dashboard/admin`, `/dashboard/admin/migrations`, `/dashboard/admin/player-merge`, `/dashboard/admin/owner-view`
 - Detail routes: captain, team detail, division detail, gallery album, game detail, article detail, registration detail, and similar drill-in pages
 
 ## Rebuild rule of thumb

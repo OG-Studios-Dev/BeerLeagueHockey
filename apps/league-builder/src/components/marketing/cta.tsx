@@ -69,7 +69,7 @@ export function CallToAction() {
           <p className="mt-5 text-lg leading-8 text-neutral-300">
             That is the cleanest public version of the model. The website is included, the public
             league experience is included, and the software cost does not need to sit entirely on
-            the commissioner's budget.
+            the commissioner&apos;s budget.
           </p>
         </div>
 

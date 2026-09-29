@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useUser } from '@/hooks/useUser';
 
@@ -16,16 +16,16 @@ export function AuthRedirect() {
   const router = useRouter();
   const params = useParams();
   const leagueSlug = params.leagueSlug as string;
-  const [hasChecked, setHasChecked] = useState(false);
+  const hasChecked = useRef(false);
 
   useEffect(() => {
-    if (isLoading || hasChecked) return;
-    setHasChecked(true);
+    if (isLoading || hasChecked.current) return;
+    hasChecked.current = true;
 
     if (user && leagueSlug) {
       router.replace(`/${leagueSlug}/me`);
     }
-  }, [user, isLoading, hasChecked, leagueSlug, router]);
+  }, [user, isLoading, leagueSlug, router]);
 
   return null;
 }

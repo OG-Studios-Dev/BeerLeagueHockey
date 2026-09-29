@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, BarChart3, TrendingUp, Target, Trophy, Zap, Users, Percent, Flame } from 'lucide-react';
 
 interface PointInsight {
@@ -9,18 +9,25 @@ interface PointInsight {
   text: string;
 }
 
-const ICON_MAP: Record<string, typeof BarChart3> = {
-  ppg: TrendingUp,
-  pace: Zap,
-  rank: Trophy,
-  streak: Flame,
-  goal_diff: Target,
-  roster_depth: Users,
-  win_pct: Percent,
-};
-
-function getIcon(key: string) {
-  return ICON_MAP[key] || BarChart3;
+function InsightIcon({ insightKey }: { insightKey: string }) {
+  switch (insightKey) {
+    case 'ppg':
+      return <TrendingUp className="h-5 w-5 text-[var(--league-primary)]" />;
+    case 'pace':
+      return <Zap className="h-5 w-5 text-[var(--league-primary)]" />;
+    case 'rank':
+      return <Trophy className="h-5 w-5 text-[var(--league-primary)]" />;
+    case 'streak':
+      return <Flame className="h-5 w-5 text-[var(--league-primary)]" />;
+    case 'goal_diff':
+      return <Target className="h-5 w-5 text-[var(--league-primary)]" />;
+    case 'roster_depth':
+      return <Users className="h-5 w-5 text-[var(--league-primary)]" />;
+    case 'win_pct':
+      return <Percent className="h-5 w-5 text-[var(--league-primary)]" />;
+    default:
+      return <BarChart3 className="h-5 w-5 text-[var(--league-primary)]" />;
+  }
 }
 
 export function PointInsightsCarousel({ insights, asBanner = false }: { insights: PointInsight[]; asBanner?: boolean }) {
@@ -43,8 +50,6 @@ export function PointInsightsCarousel({ insights, asBanner = false }: { insights
   if (insights.length === 0) return null;
 
   const insight = insights[index];
-  const Icon = getIcon(insight.key);
-
   return (
     <div className={asBanner ? 'mt-6' : 'mt-8 border-t border-[var(--color-border)]/50 pt-6'}>
       {!asBanner && (
@@ -61,7 +66,7 @@ export function PointInsightsCarousel({ insights, asBanner = false }: { insights
       }`}>
         <div className="flex items-start gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--league-primary)]/12">
-            <Icon className="h-5 w-5 text-[var(--league-primary)]" />
+            <InsightIcon insightKey={insight.key} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--league-primary)]">
