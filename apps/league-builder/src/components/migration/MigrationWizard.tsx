@@ -447,7 +447,7 @@ function WizardForm({
               </label>
               <label className="block">
                 <span className="text-sm font-semibold text-white">Old website URL</span>
-                <p className="mt-1 text-xs text-neutral-500">If there's a public site we can reference, paste the link.</p>
+                <p className="mt-1 text-xs text-neutral-500">If there&apos;s a public site we can reference, paste the link.</p>
                 <Input
                   value={sourceUrl}
                   onChange={(e) => setSourceUrl(e.target.value)}
@@ -463,7 +463,7 @@ function WizardForm({
           <div className="space-y-5">
             <p className="text-sm text-neutral-300">
               Upload exports, spreadsheets, SQL dumps, or anything you have.
-              You can also paste a URL to a publicly accessible file and we'll fetch it.
+              You can also paste a URL to a publicly accessible file and we&apos;ll fetch it.
             </p>
 
             {/* Upload zone */}
@@ -574,7 +574,7 @@ function WizardForm({
         {step === 'review' && (
           <div className="space-y-5">
             <p className="text-sm text-neutral-300">
-              Review everything below and hit send. We'll reach out once we've looked at your data.
+              Review everything below and hit send. We&apos;ll reach out once we&apos;ve looked at your data.
             </p>
 
             {/* Summary */}

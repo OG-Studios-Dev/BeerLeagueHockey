@@ -30,18 +30,6 @@ export function FeeSplitSlider({
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Don't render for small tier (flat fee, no percentage)
-  if (pricingTier === 'small') return null;
-
-  const feePercent = (platformFeeBps / 100).toFixed(2);
-
-  // Preview calculation for a $100 registration (10000 cents)
-  const baseAmountCents = 10000;
-  const totalFeeCents = Math.round((baseAmountCents * platformFeeBps) / 10000);
-  const playerShareCents = Math.round(totalFeeCents * sharePercent / 100);
-  const playerPaysCents = baseAmountCents + playerShareCents;
-  const leagueReceivesCents = baseAmountCents - (totalFeeCents - playerShareCents);
-
   const debouncedSave = useCallback(
     (value: number) => {
       if (debounceRef.current) {
@@ -60,6 +48,18 @@ export function FeeSplitSlider({
     },
     [leagueId, t]
   );
+
+  // Don't render for small tier (flat fee, no percentage)
+  if (pricingTier === 'small') return null;
+
+  const feePercent = (platformFeeBps / 100).toFixed(2);
+
+  // Preview calculation for a $100 registration (10000 cents)
+  const baseAmountCents = 10000;
+  const totalFeeCents = Math.round((baseAmountCents * platformFeeBps) / 10000);
+  const playerShareCents = Math.round(totalFeeCents * sharePercent / 100);
+  const playerPaysCents = baseAmountCents + playerShareCents;
+  const leagueReceivesCents = baseAmountCents - (totalFeeCents - playerShareCents);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = Number(e.target.value);
