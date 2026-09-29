@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { resolve } from 'node:path';
 import { AnnouncementBanner } from '@/components/AnnouncementBanner';
 import { deriveSnippet } from '@/components/home/HomepageStoryHero';
 import type { NewsArticle } from '@/lib/types';
@@ -57,11 +57,11 @@ describe('structured article snippets', () => {
 
   it('uses readable content fallbacks for metadata and homepage feature copy', () => {
     const articlePage = readFileSync(
-      join(process.cwd(), 'src/app/[leagueSlug]/news/[slug]/page.tsx'),
+      resolve(__dirname, '../../../app/[leagueSlug]/news/[slug]/page.tsx'),
       'utf8',
     );
     const aliveBand = readFileSync(
-      join(process.cwd(), 'src/components/home/LeagueAliveBand.tsx'),
+      resolve(__dirname, '../LeagueAliveBand.tsx'),
       'utf8',
     );
 

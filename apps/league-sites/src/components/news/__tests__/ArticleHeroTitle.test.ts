@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { resolve } from 'node:path';
 import { ArticleHeroTitle } from '@/components/news/ArticleHeroTitle';
 import {
   ARTICLE_DOCUMENT_PREFIX,
@@ -59,7 +59,7 @@ describe('ArticleHeroTitle', () => {
 
   it('drives the public hero layout from validated article appearance metadata', () => {
     const page = readFileSync(
-      join(process.cwd(), 'src/app/[leagueSlug]/news/[slug]/page.tsx'),
+      resolve(__dirname, '../../../app/[leagueSlug]/news/[slug]/page.tsx'),
       'utf8',
     );
 

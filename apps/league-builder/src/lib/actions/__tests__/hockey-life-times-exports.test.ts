@@ -4,7 +4,7 @@ import ts from 'typescript';
 
 describe('Hockey Life Times server action exports', () => {
   it('exports only async runtime values from the use-server module', () => {
-    const filename = path.resolve(process.cwd(), 'src/lib/actions/hockey-life-times.ts');
+    const filename = path.resolve(__dirname, '../hockey-life-times.ts');
     const sourceText = fs.readFileSync(filename, 'utf8');
     const source = ts.createSourceFile(filename, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const violations: string[] = [];

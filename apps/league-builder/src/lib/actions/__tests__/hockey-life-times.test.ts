@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs';
+import path from 'node:path';
 
 jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
@@ -71,7 +72,7 @@ describe('Hockey Life Times action authorization', () => {
 
 describe('Hockey Life Times artwork integration', () => {
   it('wires the real function between claim and completion and fails the claimed lease on errors', () => {
-    const source = fs.readFileSync('src/lib/actions/hockey-life-times.ts', 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../hockey-life-times.ts'), 'utf8');
     const invokeAt = source.indexOf("functions.invoke('generate-newspaper-illustrations'");
     const completeAt = source.indexOf("'complete_newspaper_generation'", invokeAt);
     const failAt = source.indexOf("'fail_newspaper_generation'", completeAt);
@@ -135,7 +136,7 @@ describe('Hockey Life Times artwork integration', () => {
   });
 
   it('re-reads and validates the semantic fact snapshot after media promotion and immediately before publish', () => {
-    const source = fs.readFileSync('src/lib/actions/hockey-life-times.ts', 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../hockey-life-times.ts'), 'utf8');
     const publishAction = source.slice(source.indexOf('export async function publishHockeyLifeTimesEdition'));
     const promoteAt = publishAction.indexOf('await promoteApprovedMedia');
     const reloadAt = publishAction.indexOf('await loadPeriodGames', promoteAt);

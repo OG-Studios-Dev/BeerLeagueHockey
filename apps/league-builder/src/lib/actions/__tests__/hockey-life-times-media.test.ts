@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 
 jest.mock('server-only', () => ({}), { virtual: true });
 
@@ -54,7 +55,7 @@ function storage(overrides: Partial<MediaStorageAdapter> = {}): MediaStorageAdap
 
 describe('Hockey Life Times immutable media contract', () => {
   it('keeps promotion inside Publish after full validation/version binding and before the atomic RPC', () => {
-    const source = fs.readFileSync('src/lib/actions/hockey-life-times.ts', 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../hockey-life-times.ts'), 'utf8');
     const publishStart = source.indexOf('export async function publishHockeyLifeTimesEdition');
     const fullValidation = source.indexOf('validateNewspaperEdition(edition)', publishStart);
     const versionBinding = source.indexOf('input.expectedVersion !== row.version', publishStart);

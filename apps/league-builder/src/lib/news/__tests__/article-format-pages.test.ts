@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { resolve } from 'node:path';
+
+const leagueBuilderRoot = resolve(__dirname, '../../../..');
 
 function source(relativePath: string) {
-  return readFileSync(join(process.cwd(), relativePath), 'utf8');
+  return readFileSync(resolve(leagueBuilderRoot, relativePath), 'utf8');
 }
 
 describe('news editor page integration', () => {
