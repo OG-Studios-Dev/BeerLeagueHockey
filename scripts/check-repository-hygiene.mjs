@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const forbidden = [
   {
@@ -36,7 +38,12 @@ export function findForbiddenPaths(paths) {
 }
 
 export function trackedPaths(cwd = process.cwd()) {
-  return execFileSync('git', ['ls-files', '-z'], { cwd, encoding: 'utf8' })
+  const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd,
+    encoding: 'utf8',
+  }).trim();
+
+  return execFileSync('git', ['ls-files', '-z', '--full-name'], { cwd: root, encoding: 'utf8' })
     .split('\0')
     .filter(Boolean);
 }
@@ -55,6 +62,6 @@ function main() {
   process.exitCode = 1;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === fileURLToPath(new URL(`file://${process.argv[1]}`))) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href) {
   main();
 }
