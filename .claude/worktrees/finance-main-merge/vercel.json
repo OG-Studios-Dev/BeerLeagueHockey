@@ -1,6 +1,0 @@
-{
-  "framework": "nextjs",
-  "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "pnpm turbo build --filter=@hockey-life/league-builder",
-  "outputDirectory": "apps/league-builder/.next"
-}
