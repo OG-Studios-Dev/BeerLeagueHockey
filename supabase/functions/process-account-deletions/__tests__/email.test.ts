@@ -9,7 +9,7 @@ import {
 const USER_ID = '72d37220-497b-422e-ba6c-2cd1de56a697';
 
 describe('account deletion completion email', () => {
-  it('uses the verified-domain default and preserves the stable idempotency key', async () => {
+  it('uses the configured default and preserves the stable idempotency key', async () => {
     let captured: RequestInit | undefined;
     await sendAccountDeletionCompletionEmail({
       apiKey: 'test-api-key',

@@ -47,7 +47,7 @@ async function loadEligibleStates(selection: DeletionSelection) {
 
 const processAccountDeletionsHandler = createProcessAccountDeletionsHandler({
   serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
-  cronSecret: Deno.env.get('CRON_SECRET'),
+  cronSecret: Deno.env.get('ACCOUNT_DELETION_CRON_SECRET') ?? Deno.env.get('CRON_SECRET'),
   loadEligibleStates,
   deleteStripeCustomer: async (customerId) => {
     try {

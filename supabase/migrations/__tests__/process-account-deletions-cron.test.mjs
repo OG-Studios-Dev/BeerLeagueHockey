@@ -38,16 +38,35 @@ test('scheduler replaces only the exact named job and leaves fixture peers uncha
   assert.equal(after.filter((job) => job.jobname === 'process-account-deletions').length, 1);
 });
 
-test('scheduler uses the production endpoint, five-minute cadence, explicit batch payload, and runtime Vault lookup', () => {
+test('scheduler uses the production endpoint, five-minute cadence, explicit batch payload, and dedicated runtime Vault lookup', () => {
   const sql = migrationSource();
   assert.match(sql, /cron\.schedule\(\s*'process-account-deletions'\s*,\s*'\*\/5 \* \* \* \*'/s);
   assert.match(sql, /https:\/\/ntplczcmhvfkijjxavdl\.supabase\.co\/functions\/v1\/process-account-deletions/);
   assert.match(sql, /jsonb_build_object\(\s*'mode'\s*,\s*'batch'\s*\)/s);
   assert.match(sql, /vault\.decrypted_secrets/);
-  assert.match(sql, /name\s*=\s*'service_role_key'/);
+  assert.match(sql, /name\s*=\s*'account_deletion_cron_secret'/);
   assert.match(sql, /NULLIF\s*\(\s*btrim\s*\(/i);
-  assert.match(sql, /RAISE EXCEPTION 'Vault secret service_role_key is missing or blank\.'/);
+  assert.match(sql, /X-Cron-Secret/);
+  assert.doesNotMatch(sql, /Authorization/);
+  assert.doesNotMatch(sql, /service_role_key/);
   assert.doesNotMatch(sql, /eyJ[A-Za-z0-9_-]{20,}/);
+});
+
+test('scheduler fails closed for missing, blank, or duplicate exact named secrets before HTTP', () => {
+  const sql = migrationSource();
+  assert.match(sql, /count\(\*\)/i);
+  assert.match(sql, /secret_count\s*=\s*0/i);
+  assert.match(sql, /secret_count\s*>\s*1/i);
+  assert.match(sql, /cron_secret\s+IS NULL/i);
+  assert.match(sql, /Vault secret account_deletion_cron_secret is missing or blank\./);
+  assert.match(sql, /Vault secret account_deletion_cron_secret is ambiguous\./);
+
+  const guardEnd = sql.indexOf('SELECT net.http_post');
+  assert.ok(guardEnd > 0);
+  const beforeHttp = sql.slice(0, guardEnd);
+  assert.match(beforeHttp, /secret_count\s*=\s*0/i);
+  assert.match(beforeHttp, /secret_count\s*>\s*1/i);
+  assert.match(beforeHttp, /cron_secret\s+IS NULL/i);
 });
 
 test('runtime helper is locked down and has an empty search path', () => {

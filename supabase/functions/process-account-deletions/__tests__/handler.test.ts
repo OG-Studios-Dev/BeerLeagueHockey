@@ -92,7 +92,7 @@ describe('process-account-deletions handler boundary', () => {
     assert.deepEqual(events, []);
   });
 
-  it('retains the configured cron-secret authorization path', async () => {
+  it('accepts the configured dedicated cron secret when the service-role bearer is wrong', async () => {
     const events: string[] = [];
     const handler = createProcessAccountDeletionsHandler(dependencies({ events }));
     const response = await handler(request(JSON.stringify({ mode: 'batch' }), {
@@ -102,6 +102,32 @@ describe('process-account-deletions handler boundary', () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(events, ['query:batch:50']);
+  });
+
+  it('rejects a wrong dedicated cron secret before parsing or querying', async () => {
+    const events: string[] = [];
+    const handler = createProcessAccountDeletionsHandler(dependencies({ events }));
+    const response = await handler(request('{', {
+      Authorization: 'Bearer wrong-token',
+      'X-Cron-Secret': 'wrong-cron-secret',
+    }));
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(events, []);
+  });
+
+  it('fails the cron path closed when no cron secret is configured', async () => {
+    const events: string[] = [];
+    const configured = dependencies({ events });
+    configured.cronSecret = undefined;
+    const handler = createProcessAccountDeletionsHandler(configured);
+    const response = await handler(request('{', {
+      Authorization: 'Bearer wrong-token',
+      'X-Cron-Secret': 'any-value',
+    }));
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(events, []);
   });
 
   it('rejects an empty body, unknown mode, malformed target, and extra keys before querying', async () => {
