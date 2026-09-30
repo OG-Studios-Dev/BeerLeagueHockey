@@ -5,12 +5,14 @@ import { createClient } from '@/lib/supabase/client';
 import { cn } from '@hockey-life/ui/lib/utils';
 import { Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { buildOAuthCallbackUrl, type AuthLocale } from '@/lib/auth/oauth-redirect';
 
 type OAuthProvider = 'google' | 'apple';
 
 interface OAuthProviderButtonProps {
   provider: OAuthProvider;
   label: string;
+  locale: AuthLocale;
   redirectTo?: string;
   className?: string;
 }
@@ -54,6 +56,7 @@ const PROVIDER_ICONS: Record<OAuthProvider, React.FC<{ className?: string }>> = 
 export function OAuthProviderButton({
   provider,
   label,
+  locale,
   redirectTo,
   className,
 }: OAuthProviderButtonProps) {
@@ -71,10 +74,7 @@ export function OAuthProviderButton({
     // configured in Supabase's redirect allowlist. Falls back to the
     // current origin for local dev or preview deployments.
     const origin = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-    const callbackUrl = new URL('/api/auth/callback', origin);
-    if (redirectTo) {
-      callbackUrl.searchParams.set('next', redirectTo);
-    }
+    const callbackUrl = buildOAuthCallbackUrl(origin, locale, redirectTo);
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider,

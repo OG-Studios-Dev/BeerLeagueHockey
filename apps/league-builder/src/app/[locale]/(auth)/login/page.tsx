@@ -1,7 +1,7 @@
 'use client';
 
 import { signIn } from '@/lib/actions/auth';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -11,6 +11,7 @@ import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { posthog } from '@/lib/posthog-client';
 import { OAuthProviderButton } from '@/components/auth/OAuthProviderButton';
 import { oauthRecoveryCode } from '@/lib/auth/oauth-errors';
+import { validatedAuthLocale } from '@/lib/auth/oauth-redirect';
 
 export default function LoginPage() {
   return (
@@ -32,6 +33,7 @@ export default function LoginPage() {
 
 function LoginForm() {
   const t = useTranslations();
+  const locale = validatedAuthLocale(useLocale());
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -92,11 +94,13 @@ function LoginForm() {
         <OAuthProviderButton
           provider="google"
           label={t('auth.continueWithGoogle')}
+          locale={locale}
           redirectTo={redirectTo || undefined}
         />
         <OAuthProviderButton
           provider="apple"
           label={t('auth.continueWithApple')}
+          locale={locale}
           redirectTo={redirectTo || undefined}
         />
       </div>

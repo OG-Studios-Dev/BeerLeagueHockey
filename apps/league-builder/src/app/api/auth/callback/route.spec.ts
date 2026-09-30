@@ -14,6 +14,7 @@ const mockCreateServerClient = jest.mocked(createServerClient);
 
 function authClient(options?: {
   exchangeError?: string;
+  exchangeErrorCode?: string;
   setCookieDuringExchange?: boolean;
 }) {
   return {
@@ -31,7 +32,7 @@ function authClient(options?: {
         return {
           data: { session: null, user: null },
           error: options?.exchangeError
-            ? { message: options.exchangeError }
+            ? { message: options.exchangeError, code: options.exchangeErrorCode }
             : null,
         };
       }),
@@ -127,6 +128,140 @@ describe('OAuth callback recovery', () => {
     expect(response.headers.get('location')).toBe(
       'https://app.example.test/en/dashboard'
     );
+  });
+
+  it.each(['\t', '\n', '\r'])(
+    'rejects a control-character open redirect on provider failure: %p',
+    async (control) => {
+      const response = await GET(request({
+        flow: 'link',
+        next: `/${control}/evil.example.test/path`,
+        error: 'access_denied',
+      }));
+
+      expect(response.headers.get('location')).toBe(
+        'https://app.example.test/en/dashboard/settings?oauth_error=consent_canceled'
+      );
+    }
+  );
+
+  it.each(['\t', '\n', '\r'])(
+    'rejects a control-character open redirect after successful exchange: %p',
+    async (control) => {
+      const response = await GET(request({
+        code: 'valid-code',
+        next: `/${control}/evil.example.test/path`,
+      }));
+
+      expect(response.headers.get('location')).toBe(
+        'https://app.example.test/en/dashboard'
+      );
+    }
+  );
+
+  it('rejects a redirect that normalizes to a cross-origin destination', async () => {
+    const response = await GET(request({
+      flow: 'link',
+      next: '/%2e%2e//evil.example.test/path',
+      error: 'access_denied',
+    }));
+
+    expect(response.headers.get('location')).toBe(
+      'https://app.example.test/en/dashboard/settings?oauth_error=consent_canceled'
+    );
+  });
+
+  it('uses an explicit validated French locale for a direct sign-in failure', async () => {
+    const response = await GET(request({
+      locale: 'fr',
+      error: 'access_denied',
+    }));
+
+    expect(response.headers.get('location')).toBe(
+      'https://app.example.test/fr/login?oauth_error=consent_canceled'
+    );
+  });
+
+  it('preserves a sanitized nested continuation for retry after exchange failure', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockCreateServerClient.mockReturnValue(authClient({
+      exchangeError: 'expired exchange',
+      exchangeErrorCode: 'flow_state_expired',
+    }) as never);
+
+    const response = await GET(request({
+      code: 'bad-code',
+      locale: 'fr',
+      next: '/fr/dashboard?tab=billing&panel=invoices',
+    }));
+    const location = new URL(response.headers.get('location')!);
+
+    expect(location.origin).toBe('https://app.example.test');
+    expect(location.pathname).toBe('/fr/login');
+    expect(location.searchParams.get('oauth_error')).toBe('oauth_failed');
+    expect(location.searchParams.get('redirect')).toBe(
+      '/fr/dashboard?tab=billing&panel=invoices'
+    );
+    consoleError.mockRestore();
+  });
+
+  it('shows an allowlisted failure for a bare incomplete linking callback', async () => {
+    const response = await GET(request({
+      flow: 'link',
+      locale: 'fr',
+      next: '/fr/dashboard/settings?tab=connections',
+    }));
+
+    expect(response.headers.get('location')).toBe(
+      'https://app.example.test/fr/dashboard/settings?tab=connections&oauth_error=oauth_failed'
+    );
+  });
+
+  it('classifies an error-code-only identity conflict', async () => {
+    const response = await GET(request({
+      flow: 'link',
+      locale: 'fr',
+      next: '/fr/dashboard/settings',
+      error_code: 'identity_already_exists',
+    }));
+
+    expect(response.headers.get('location')).toBe(
+      'https://app.example.test/fr/dashboard/settings?oauth_error=identity_conflict'
+    );
+  });
+
+  it('gives a structured identity code precedence over a conflicting denial', async () => {
+    const response = await GET(request({
+      flow: 'link',
+      next: '/en/dashboard/settings',
+      error: 'access_denied',
+      error_code: 'email_exists',
+      error_description: 'The user canceled',
+    }));
+
+    expect(response.headers.get('location')).toBe(
+      'https://app.example.test/en/dashboard/settings?oauth_error=identity_conflict'
+    );
+  });
+
+  it('maps a structured SDK exchange conflict without exposing provider details', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockCreateServerClient.mockReturnValue(authClient({
+      exchangeError: 'private@example.test already exists',
+      exchangeErrorCode: 'email_exists',
+    }) as never);
+
+    const response = await GET(request({
+      code: 'bad-code',
+      flow: 'link',
+      next: '/en/dashboard/settings',
+    }));
+
+    expect(response.headers.get('location')).toBe(
+      'https://app.example.test/en/dashboard/settings?oauth_error=identity_conflict'
+    );
+    expect(response.headers.get('location')).not.toContain('private');
+    consoleError.mockRestore();
   });
 
   it.each(['google', 'apple'])('keeps normal %s OAuth success behavior', async (provider) => {

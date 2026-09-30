@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { safeRedirectPath } from '@/lib/auth/safe-redirect';
 import { classifyOAuthFailure, type OAuthRecoveryCode } from '@/lib/auth/oauth-errors';
+import { validatedAuthLocale } from '@/lib/auth/oauth-redirect';
 
 /**
  * Auth Callback Route
@@ -27,27 +28,33 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type');
   const isAccountLink = searchParams.get('flow') === 'link';
   const providerError = searchParams.get('error');
+  const providerErrorCode = searchParams.get('error_code');
   const providerErrorDescription = searchParams.get('error_description');
+  const locale = validatedAuthLocale(searchParams.get('locale'), next);
 
   function oauthFailureRedirect(code: OAuthRecoveryCode): NextResponse {
     const fallback = isAccountLink
-      ? '/en/dashboard/settings'
-      : next.startsWith('/fr/')
-        ? '/fr/login'
-        : '/en/login';
+      ? `/${locale}/dashboard/settings`
+      : `/${locale}/login`;
     const returnPath = isAccountLink
       ? safeRedirectPath(requestedNext, fallback)
       : fallback;
     const url = new URL(returnPath, request.url);
     url.searchParams.set('oauth_error', code);
+    if (!isAccountLink && requestedNext) {
+      url.searchParams.set(
+        'redirect',
+        safeRedirectPath(requestedNext, `/${locale}/dashboard`)
+      );
+    }
     return NextResponse.redirect(url);
   }
 
   // Providers can return a denial or failure without an authorization code.
   // Never forward their free-form text: it may contain an email or HTML.
-  if (!code && (providerError || providerErrorDescription)) {
+  if (!code && (providerError || providerErrorCode || providerErrorDescription)) {
     return oauthFailureRedirect(
-      classifyOAuthFailure(providerError, providerErrorDescription)
+      classifyOAuthFailure(providerError, providerErrorCode, providerErrorDescription)
     );
   }
 
@@ -101,7 +108,9 @@ export async function GET(request: NextRequest) {
       }
       // A failed link exchange must not overwrite the already authenticated
       // account's cookies with partial/clearing exchange cookies.
-      return oauthFailureRedirect('oauth_failed');
+      return oauthFailureRedirect(
+        classifyOAuthFailure(null, error.code ?? null, null)
+      );
     }
 
     // For recovery type, redirect to reset-password page
@@ -192,6 +201,6 @@ export async function GET(request: NextRequest) {
     return redirectWithCookies(new URL(next, request.url));
   }
 
-  // No code or token_hash provided
-  return redirectWithCookies(new URL('/en/login', request.url));
+  // Incomplete callbacks still need a visible, allowlisted recovery result.
+  return oauthFailureRedirect('oauth_failed');
 }

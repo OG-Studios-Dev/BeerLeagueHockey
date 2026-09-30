@@ -417,6 +417,9 @@
     "signUpWithGoogle": "S'inscrire avec Google",
     "signUpWithApple": "S'inscrire avec Apple",
     "orContinueWithEmail": "ou continuer avec courriel",
+    "oauthConsentCanceled": "La connexion a ete annulee. Vous pouvez reessayer lorsque vous etes pret.",
+    "oauthIdentityConflict": "Cette methode de connexion n'a pas pu etre associee a ce compte. Connectez-vous avec votre methode habituelle, puis gerez les comptes connectes dans les parametres.",
+    "oauthFailed": "Nous n'avons pas pu terminer la connexion. Veuillez reessayer.",
     "setupOrganization": "Configurez votre organisation",
     "setupOrganizationDescription": "Une derniere etape! Parlez-nous de votre organisation pour commencer.",
     "completeSetup": "Terminer la configuration",
@@ -1361,10 +1364,7 @@
     "formErrors": "Veuillez corriger les erreurs ci-dessous",
     "saveFailed": "Echec de l'enregistrement. Veuillez reessayer.",
     "deleteFailed": "Echec de la suppression. Veuillez reessayer.",
-    "loadFailed": "Echec du chargement. Veuillez actualiser la page.",
-    "oauthConsentCanceled": "La connexion a ete annulee. Vous pouvez reessayer lorsque vous etes pret.",
-    "oauthIdentityConflict": "Cette methode de connexion n'a pas pu etre associee a ce compte. Connectez-vous avec votre methode habituelle, puis gerez les comptes connectes dans les parametres.",
-    "oauthFailed": "Nous n'avons pas pu terminer la connexion. Veuillez reessayer."
+    "loadFailed": "Echec du chargement. Veuillez actualiser la page."
   },
   "errorPages": {
     "somethingWentWrong": "Une erreur est survenue",
