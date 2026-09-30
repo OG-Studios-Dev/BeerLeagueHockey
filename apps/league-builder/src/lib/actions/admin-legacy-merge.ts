@@ -204,8 +204,14 @@ export async function executeAdminMerge(
   }
 
   const result = data as any;
-  if (!result?.success) {
+  if (result?.success !== true) {
     return { success: false, error: result?.error || 'Merge RPC returned failure' };
+  }
+
+  if (typeof result.total_reassigned !== 'number'
+    || !Number.isFinite(result.total_reassigned)
+    || result.total_reassigned < 0) {
+    return { success: false, error: 'Merge RPC returned invalid response' };
   }
 
   if (isDevelopment) {
@@ -219,7 +225,7 @@ export async function executeAdminMerge(
 
   revalidatePath('/dashboard/admin/player-merge');
 
-  return { success: true, data: { totalReassigned: result.total_reassigned || 0 } };
+  return { success: true, data: { totalReassigned: result.total_reassigned } };
 }
 
 // ============================================================================

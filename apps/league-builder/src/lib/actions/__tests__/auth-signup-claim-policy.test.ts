@@ -4,9 +4,19 @@ jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
 }));
-jest.mock('@/i18n/navigation', () => ({ redirect: jest.fn() }));
+jest.mock('@/i18n/navigation', () => ({
+  redirect: jest.fn((target: unknown) => {
+    const error = new Error('NEXT_REDIRECT');
+    Object.assign(error, { digest: 'NEXT_REDIRECT', target });
+    throw error;
+  }),
+}));
 jest.mock('next/navigation', () => ({ redirect: jest.fn() }));
-jest.mock('next/dist/client/components/redirect-error', () => ({ isRedirectError: jest.fn(() => false) }));
+jest.mock('next/dist/client/components/redirect-error', () => ({
+  isRedirectError: jest.fn((error: unknown) => (
+    error instanceof Error && (error as Error & { digest?: string }).digest === 'NEXT_REDIRECT'
+  )),
+}));
 jest.mock('next-intl/server', () => ({ getLocale: jest.fn().mockResolvedValue('en') }));
 jest.mock('../legacy-merge', () => ({
   checkLegacyMergeStatus: jest.fn().mockResolvedValue({
@@ -30,11 +40,12 @@ describe('signup pending player-history policy', () => {
       error: null,
     });
     const rpc = jest.fn();
+    const deleteUser = jest.fn();
     const upsert = jest.fn().mockResolvedValue({ error: null });
     const insert = jest.fn().mockResolvedValue({ error: null });
 
     (createServiceRoleClient as jest.MockedFunction<typeof createServiceRoleClient>).mockReturnValue({
-      auth: { admin: { createUser, deleteUser: jest.fn() } },
+      auth: { admin: { createUser, deleteUser } },
       rpc,
       from: jest.fn((table: string) => {
         if (table === 'profiles') return { upsert };
@@ -60,9 +71,13 @@ describe('signup pending player-history policy', () => {
     form.set('acceptTerms', 'true');
     form.set('acceptPrivacy', 'true');
 
-    await expect(signUp(form)).resolves.toBeUndefined();
+    await expect(signUp(form)).rejects.toMatchObject({
+      digest: 'NEXT_REDIRECT',
+      target: { href: '/claim-history', locale: 'en' },
+    });
     expect(createUser).toHaveBeenCalledTimes(1);
     expect(rpc).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'new-user',
@@ -72,5 +87,6 @@ describe('signup pending player-history policy', () => {
       { onConflict: 'id' }
     );
     expect(redirect).toHaveBeenCalledWith({ href: '/claim-history', locale: 'en' });
+    expect(redirect).toHaveBeenCalledTimes(1);
   });
 });

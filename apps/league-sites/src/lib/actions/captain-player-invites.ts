@@ -56,10 +56,28 @@ function legacyInviteEmail(id: string) {
   return `captaininvite_${id}@${LEGACY_EMAIL_DOMAIN}`;
 }
 
-function isAuthUserNotFound(error: any) {
-  return error?.status === 404
-    || error?.code === 'user_not_found'
-    || /not found/i.test(String(error?.message || ''));
+function isAuthoritativeAuthUserNotFound(response: unknown) {
+  if (!response || typeof response !== 'object') return false;
+
+  const { data, error } = response as {
+    data?: { user?: unknown } | null;
+    error?: {
+      __isAuthError?: unknown;
+      name?: unknown;
+      status?: unknown;
+      code?: unknown;
+    } | null;
+  };
+
+  // This mirrors the installed SDK's isAuthApiError brand check and the
+  // getUserById not-found response. Message text is never authoritative.
+  return !!data
+    && data.user === null
+    && !!error
+    && error.__isAuthError === true
+    && error.name === 'AuthApiError'
+    && error.status === 404
+    && error.code === 'user_not_found';
 }
 
 export async function getCaptainInviteWizardData(teamId: string, seasonId: string) {
@@ -112,9 +130,9 @@ export async function getCaptainInviteWizardData(teamId: string, seasonId: strin
       let hasAuthAccount = true;
       try {
         const authLookup = await (serviceSupabase as any).auth.admin.getUserById(row.player_id);
-        if (!authLookup?.error) {
+        if (!authLookup?.error && authLookup?.data?.user) {
           hasAuthAccount = !!authLookup?.data?.user;
-        } else if (isAuthUserNotFound(authLookup.error)) {
+        } else if (isAuthoritativeAuthUserNotFound(authLookup)) {
           hasAuthAccount = false;
         }
       } catch {
@@ -224,7 +242,7 @@ export async function createCaptainPlayerInvite(input: {
       if (!authLookup?.error && authLookup?.data?.user) {
         return { success: false as const, error: 'Existing player already has an account' };
       }
-      if (authLookup?.error && !isAuthUserNotFound(authLookup.error)) {
+      if (!isAuthoritativeAuthUserNotFound(authLookup)) {
         return { success: false as const, error: 'Could not verify existing player eligibility' };
       }
     } catch {
