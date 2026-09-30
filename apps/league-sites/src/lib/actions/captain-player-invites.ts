@@ -5,6 +5,7 @@ export type { CaptainInvitePreview } from '@/lib/captain/invite-preview';
 import { createAuthClient as createClient, createServiceRoleClient } from '@/lib/supabase/server';
 
 const LEGACY_EMAIL_DOMAIN = 'captaininvite.hockeylifehl.com';
+const INVITE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface ExistingInviteCandidate {
   rosterId: string;
@@ -55,6 +56,30 @@ function legacyInviteEmail(id: string) {
   return `captaininvite_${id}@${LEGACY_EMAIL_DOMAIN}`;
 }
 
+function isAuthoritativeAuthUserNotFound(response: unknown) {
+  if (!response || typeof response !== 'object') return false;
+
+  const { data, error } = response as {
+    data?: { user?: unknown } | null;
+    error?: {
+      __isAuthError?: unknown;
+      name?: unknown;
+      status?: unknown;
+      code?: unknown;
+    } | null;
+  };
+
+  // This mirrors the installed SDK's isAuthApiError brand check and the
+  // getUserById not-found response. Message text is never authoritative.
+  return !!data
+    && data.user === null
+    && !!error
+    && error.__isAuthError === true
+    && error.name === 'AuthApiError'
+    && error.status === 404
+    && error.code === 'user_not_found';
+}
+
 export async function getCaptainInviteWizardData(teamId: string, seasonId: string) {
   const auth = await verifyCaptain(teamId);
   if (!auth.ok) return { success: false as const, error: auth.error };
@@ -102,12 +127,16 @@ export async function getCaptainInviteWizardData(teamId: string, seasonId: strin
         || normalizedEmail.includes(LEGACY_EMAIL_DOMAIN)
         || normalizedEmail.startsWith('legacy_');
 
-      let hasAuthAccount = false;
+      let hasAuthAccount = true;
       try {
         const authLookup = await (serviceSupabase as any).auth.admin.getUserById(row.player_id);
-        hasAuthAccount = !authLookup?.error && !!authLookup?.data?.user;
+        if (!authLookup?.error && authLookup?.data?.user) {
+          hasAuthAccount = !!authLookup?.data?.user;
+        } else if (isAuthoritativeAuthUserNotFound(authLookup)) {
+          hasAuthAccount = false;
+        }
       } catch {
-        hasAuthAccount = false;
+        hasAuthAccount = true;
       }
 
       return {
@@ -157,6 +186,16 @@ export async function createCaptainPlayerInvite(input: {
     return { success: false as const, error: 'Team not found' };
   }
 
+  const { data: season, error: seasonError } = await (serviceSupabase as any)
+    .from('seasons')
+    .select('id, league_id')
+    .eq('id', input.seasonId)
+    .eq('league_id', team.league_id)
+    .maybeSingle();
+  if (seasonError || !season) {
+    return { success: false as const, error: 'Season does not belong to this league' };
+  }
+
   const league = Array.isArray(team.leagues) ? team.leagues[0] : team.leagues;
   const brandScope = 'team';
   const playerType = input.isSpare ? 'part_time' : 'regular';
@@ -168,15 +207,46 @@ export async function createCaptainPlayerInvite(input: {
   let inviteePhone = normalizedPhone;
   const invitePosition = input.position || null;
 
-  if (playerId) {
+  if (Boolean(playerId) !== Boolean(rosterId)) {
+    return { success: false as const, error: 'Existing player and roster must be selected together' };
+  }
+
+  if (playerId && rosterId) {
+    const { data: roster, error: rosterError } = await (serviceSupabase as any)
+      .from('team_rosters')
+      .select('id, player_id, team_id, season_id, league_id')
+      .eq('id', rosterId)
+      .eq('player_id', playerId)
+      .eq('team_id', input.teamId)
+      .eq('season_id', input.seasonId)
+      .eq('league_id', team.league_id)
+      .eq('status', 'active')
+      .is('end_date', null)
+      .maybeSingle();
+    if (rosterError || !roster) {
+      return { success: false as const, error: 'Existing player is not on this team roster' };
+    }
+
     const { data: existing } = await (serviceSupabase as any)
       .from('profiles')
-      .select('id, full_name, phone')
+      .select('id, full_name, phone, deleted_at, legacy_merge_completed_at')
       .eq('id', playerId)
-      .single();
+      .maybeSingle();
 
-    if (!existing) {
+    if (!existing || existing.deleted_at || existing.legacy_merge_completed_at) {
       return { success: false as const, error: 'Existing player not found' };
+    }
+
+    try {
+      const authLookup = await (serviceSupabase as any).auth.admin.getUserById(playerId);
+      if (!authLookup?.error && authLookup?.data?.user) {
+        return { success: false as const, error: 'Existing player already has an account' };
+      }
+      if (!isAuthoritativeAuthUserNotFound(authLookup)) {
+        return { success: false as const, error: 'Could not verify existing player eligibility' };
+      }
+    } catch {
+      return { success: false as const, error: 'Could not verify existing player eligibility' };
     }
 
     inviteeName = inviteeName || existing.full_name || 'Player';
@@ -280,11 +350,12 @@ export async function getCaptainInvitePrefill(inviteId: string) {
   const serviceSupabase = createServiceRoleClient();
   const { data: invite } = await (serviceSupabase as any)
     .from('captain_player_invites')
-    .select('id, league_id, season_id, team_id, invitee_name, share_phone, position')
+    .select('id, league_id, season_id, team_id, invitee_name, share_phone, position, created_at, consumed_at')
     .eq('id', inviteId)
+    .is('consumed_at', null)
     .maybeSingle();
 
-  if (!invite) {
+  if (!invite || (invite.created_at && Date.now() - new Date(invite.created_at).getTime() > INVITE_EXPIRY_MS)) {
     return { success: false as const, error: 'Invite not found' };
   }
 
@@ -304,7 +375,13 @@ export async function getCaptainInvitePrefill(inviteId: string) {
   };
 }
 
-export async function consumeCaptainInvite(inviteId: string, authUserId: string) {
+export async function consumeCaptainInvite(inviteId: string) {
+  const authClient = await createClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) {
+    return { success: false as const, error: 'Not authenticated' };
+  }
+
   const serviceSupabase = createServiceRoleClient();
   const { data: invite } = await (serviceSupabase as any)
     .from('captain_player_invites')
@@ -312,44 +389,15 @@ export async function consumeCaptainInvite(inviteId: string, authUserId: string)
     .eq('id', inviteId)
     .maybeSingle();
 
-  if (!invite || invite.consumed_at) return;
+  if (!invite || invite.consumed_at) {
+    return { success: false as const, error: 'Invite is invalid or no longer available' };
+  }
 
-  // SECURITY: the invite id travels in a shareable registration link. Without the
-  // checks below, anyone who opens a leaked/forwarded link and then authenticates
-  // would have the target player's stub (roster/stats/payments) merged into their
-  // account and the stub deleted. So: (1) reject expired invites, and (2) only
-  // merge when the authenticating user's verified phone matches the phone the
-  // captain addressed the invite to.
-  const INVITE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
   if (invite.created_at && Date.now() - new Date(invite.created_at).getTime() > INVITE_EXPIRY_MS) {
-    console.warn('[captain-player-invites] invite expired; not consuming', inviteId);
-    return;
+    return { success: false as const, error: 'Invite is invalid or no longer available' };
   }
 
-  const invitedPhone = normalizePhone(invite.share_phone);
-  const { data: consumer } = await (serviceSupabase as any)
-    .from('profiles')
-    .select('phone')
-    .eq('id', authUserId)
-    .maybeSingle();
-  const consumerPhone = normalizePhone(consumer?.phone);
-  if (!invitedPhone || !consumerPhone || invitedPhone !== consumerPhone) {
-    // Not the intended invitee (or no phone to verify against) — do not merge.
-    console.warn('[captain-player-invites] invitee phone mismatch; not consuming', inviteId);
-    return;
-  }
-
-  try {
-    await serviceSupabase.rpc('merge_legacy_profile', {
-      p_new_profile_id: authUserId,
-      p_legacy_profile_id: invite.target_player_id,
-    });
-  } catch (error) {
-    console.error('[captain-player-invites] merge failed', error);
-  }
-
-  await (serviceSupabase as any)
-    .from('captain_player_invites')
-    .update({ consumed_at: new Date().toISOString(), consumed_by: authUserId })
-    .eq('id', inviteId);
+  // Link possession, mutable phone, and a signed-in account are not identity
+  // proof. Keep the invite and source intact for platform-admin review.
+  return { success: false as const, pendingApproval: true as const };
 }

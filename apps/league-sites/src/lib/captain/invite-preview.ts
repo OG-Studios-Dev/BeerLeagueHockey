@@ -25,6 +25,7 @@ const DEFAULT_PRIMARY = '#153A6B';
 const DEFAULT_SECONDARY = '#081A33';
 const DEFAULT_ACCENT = '#D4AF66';
 const PLATFORM_BRAND_NAME = 'Beer League Hockey';
+const INVITE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
 
 function resolveBaseUrl(league: any) {
   if (league?.custom_domain && league?.custom_domain_verified) {
@@ -83,6 +84,7 @@ export async function getPublicCaptainInvitePreview(inviteId: string): Promise<C
       invitee_name,
       registration_path,
       created_at,
+      consumed_at,
       updated_at,
       brand_scope,
       player_type,
@@ -101,9 +103,10 @@ export async function getPublicCaptainInvitePreview(inviteId: string): Promise<C
       )
     `)
     .eq('id', inviteId)
+    .is('consumed_at', null)
     .maybeSingle();
 
-  if (!invite) {
+  if (!invite || (invite.created_at && Date.now() - new Date(invite.created_at).getTime() > INVITE_EXPIRY_MS)) {
     return null;
   }
 

@@ -55,8 +55,10 @@ export async function GET(request: NextRequest) {
       if (authUser) {
         const captainInviteId = cookieStore.get('captain_player_invite')?.value;
         if (captainInviteId) {
-          await consumeCaptainInvite(captainInviteId, authUser.id);
-          cookieStore.delete('captain_player_invite');
+          const inviteResult = await consumeCaptainInvite(captainInviteId);
+          if (inviteResult.success) {
+            cookieStore.delete('captain_player_invite');
+          }
         }
 
         const { data: profile } = await serviceSupabase

@@ -308,6 +308,12 @@
     "companyNamePlaceholder": "Toronto Adult Hockey Inc.",
     "companyNameDescription": "Your company or business name. You can create multiple leagues under your company.",
     "companyNameExample": "Example: \"Toronto Adult Hockey Inc.\" or just your name if you're an individual",
+    "requestPlayerHistoryReview": "Request player history review",
+    "playerHistoryReviewDescription": "Already on a roster? Select a possible match for platform-admin review. Your account will be created now; no history moves until approval.",
+    "playerHistoryPendingFor": "Requesting review for {name}",
+    "noPlayerHistorySelected": "No player history review selected.",
+    "leagueTeamName": "League / team name",
+    "pendingReviewAccountDescription": "Your player account is created independently while the selected history remains pending admin review.",
     "acceptTerms": "I accept the <link>Terms of Service</link>",
     "acceptPrivacy": "I accept the <link>Privacy Policy</link>",
     "requiredField": "Required to create an account",
@@ -3580,6 +3586,13 @@
       "suggestion": "Suggestion",
       "other": "Other"
     }
+  },
+  "claimHistory": {
+    "title": "Player history review pending",
+    "subtitle": "These possible matches remain unchanged until a platform administrator verifies and approves your request.",
+    "teamsPlayed": "Teams",
+    "pendingApproval": "Pending admin approval",
+    "continue": "Continue to dashboard"
   },
   "goalieMarketplace": {
     "settingsTitle": "Goalie Pool",
