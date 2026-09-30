@@ -30,16 +30,11 @@ import { HOCKEY_LIFE_ID } from '../config/hockeyLife';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { deleteCurrentAccount } from '../lib/supabase/accountDeletion';
 import { supabase } from '../lib/supabase/client';
+import { PROFILE_IDENTITY_SELECT, subscribeToProfilePreferencesChanges, type ProfileRow } from '../lib/profileContract';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
 
-type Profile = {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  position: string | null;
-  self_assessed_skill: string | null;
-};
+type Profile = Pick<ProfileRow, 'id' | 'full_name' | 'avatar_url' | 'position' | 'skill_level'>;
 
 type SeasonStat = {
   goals: number;
@@ -182,7 +177,7 @@ function formatRecord(wins: number, losses: number, ties: number) {
 }
 
 export default function ProfileScreen({ navigation }: { navigation: any }) {
-  const { isGuest, exitGuest, signOut } = useAuth();
+  const { user, isGuest, exitGuest, signOut } = useAuth();
   const {
     activeLeague,
     activeTheme,
@@ -210,27 +205,50 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const isSigningOutRef = React.useRef(false);
   const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
   const isDeletingAccountRef = React.useRef(false);
+  const [profileError, setProfileError] = React.useState<string | null>(null);
+  const [profileRefreshKey, setProfileRefreshKey] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!user?.id) return undefined;
+    return subscribeToProfilePreferencesChanges(user.id, () => {
+      setProfileRefreshKey((current) => current + 1);
+    });
+  }, [user?.id]);
 
   React.useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
+      setProfileError(null);
+      setProfile(null);
+      if (isGuest) {
+        setLoading(false);
+        return;
+      }
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser();
-      if (!user || cancelled) {
+      if (cancelled) return;
+      if (authError || !user) {
+        setProfileError("We couldn't load your player profile. Your team and stats may still be available.");
         setLoading(false);
         return;
       }
 
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileLoadError } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, position, self_assessed_skill')
+        .select(PROFILE_IDENTITY_SELECT)
         .eq('id', user.id)
         .single();
       if (cancelled) return;
-      setProfile(profileData as Profile | null);
+      if (profileLoadError || !profileData) {
+        setProfile(null);
+        setProfileError("We couldn't load your player profile. Your team and stats may still be available.");
+      } else {
+        setProfile(profileData as Profile | null);
+      }
 
       if (!activeLeague) {
         setStats([]);
@@ -531,6 +549,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
     void load().catch(() => {
       if (!cancelled) {
+        setProfile(null);
+        setProfileError("We couldn't load your player profile. Your team and stats may still be available.");
         setLoading(false);
       }
     });
@@ -538,7 +558,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     return () => {
       cancelled = true;
     };
-  }, [activeLeague?.id]);
+  }, [activeLeague?.id, isGuest, profileRefreshKey]);
 
   const displayName = profile?.full_name ?? 'Player';
   const primaryColor = roster?.team?.primary_color ?? activeTheme.primaryColor;
@@ -547,7 +567,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
   const statsSectionTitle = `${activeLeague?.name ?? 'Hockey Life'} Stats`;
   const careerPpg = totals.gp > 0 ? (totals.pts / totals.gp).toFixed(2) : '--';
-  const fitProfile = playerRating ? `${playerRating} rating` : skillLabel(profile?.self_assessed_skill ?? null) ?? 'Set your skill';
+  const fitProfile = playerRating ? `${playerRating} rating` : skillLabel(profile?.skill_level ?? null) ?? 'Set your skill';
 
   const passportMetrics = React.useMemo(
     () => [
@@ -596,13 +616,13 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
       `${displayName} on Hockey Life`,
       activeTeamNames.length > 0 ? `Playing for ${activeTeamNames.join(', ')}` : 'Hockey Life player account',
       totals.gp > 0 ? `${totals.pts} points in ${totals.gp} games` : null,
-      playerRating ? `Hockey Life rating: ${playerRating}` : skillLabel(profile?.self_assessed_skill ?? null) ? `League match level: ${skillLabel(profile?.self_assessed_skill ?? null)}` : null,
+      playerRating ? `Hockey Life rating: ${playerRating}` : skillLabel(profile?.skill_level ?? null) ? `League match level: ${skillLabel(profile?.skill_level ?? null)}` : null,
       badges.length > 0 ? `${badges.length} Hockey Life achievements earned` : null,
       'Track Hockey Life games, teams, and stats in the app.',
     ].filter(Boolean);
 
     return lines.join('\n');
-  }, [activeTeams, badges.length, displayName, playerRating, profile?.self_assessed_skill, totals.gp, totals.pts]);
+  }, [activeTeams, badges.length, displayName, playerRating, profile?.skill_level, totals.gp, totals.pts]);
 
   const handleSharePlayerCard = async () => {
     await Share.share({
@@ -745,6 +765,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         status={membershipStatus}
         onRetry={retryMemberships}
       />
+      {profileError ? (
+        <View accessibilityRole="alert" style={styles.profileError}>
+          <Text style={styles.profileErrorText}>{profileError}</Text>
+        </View>
+      ) : null}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={activeTheme.primaryColor} />
@@ -786,10 +811,10 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                       <Text style={[styles.ratingBadgeText, { color: primaryColor }]}>{playerRating}</Text>
                     </View>
                   ) : null}
-                  {playerRating == null && profile?.self_assessed_skill ? (
+                  {playerRating == null && profile?.skill_level ? (
                     <View style={styles.skillBadge}>
                       <Ionicons name="sparkles-outline" size={12} color={colors.primary} />
-                      <Text style={styles.skillBadgeText}>{skillLabel(profile.self_assessed_skill)}</Text>
+                      <Text style={styles.skillBadgeText}>{skillLabel(profile.skill_level)}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -1209,6 +1234,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  profileError: { marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.14)' },
+  profileErrorText: { color: colors.accentRed, fontSize: 13, lineHeight: 18, fontWeight: '700' },
   content: { paddingHorizontal: 16, paddingBottom: 32, gap: 0 },
   accountActionBar: {
     zIndex: 1,

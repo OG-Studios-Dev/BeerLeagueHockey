@@ -15,6 +15,7 @@ import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import Avatar from '../components/Avatar';
+import { notifyProfilePreferencesChanged, PROFILE_PREFERENCES_SELECT, PROFILE_SKILL_LEVELS, type ProfilePreferencesUpdate } from '../lib/profileContract';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 
@@ -26,13 +27,6 @@ const POSITIONS = [
   { value: 'D', label: 'Defense' },
   { value: 'G', label: 'Goalie' },
 ];
-const SKILL_LEVELS = [
-  { value: 'beginner', label: 'Beginner' },
-  { value: 'intermediate', label: 'Intermediate' },
-  { value: 'advanced', label: 'Advanced' },
-  { value: 'expert', label: 'Expert' },
-];
-
 export default function EditProfileScreen({ navigation }: { navigation: any }) {
   const { width } = useWindowDimensions();
   const isCompact = width < 390;
@@ -45,54 +39,116 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
   const [selfAssessedSkill, setSelfAssessedSkill] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const mountedRef = React.useRef(true);
+  const loadGenerationRef = React.useRef(0);
+  const focusedRef = React.useRef(true);
+  const focusedUiGenerationRef = React.useRef(0);
+  const saveOperationRef = React.useRef(0);
 
   React.useEffect(() => {
+    mountedRef.current = true;
+    const loadGeneration = ++loadGenerationRef.current;
+    const isCurrentLoad = () => mountedRef.current && loadGenerationRef.current === loadGeneration;
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
-      setUserId(user.id);
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!isCurrentLoad()) return;
+        if (userError || !user) {
+          setLoadError("We couldn't load your player preferences. Please try again.");
+          return;
+        }
+        setUserId(user.id);
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, position, avatar_url, self_assessed_skill')
-        .eq('id', user.id)
-        .single();
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select(PROFILE_PREFERENCES_SELECT)
+          .eq('id', user.id)
+          .single();
+        if (!isCurrentLoad()) return;
 
-      if (profile) {
-        setFullName(profile.full_name ?? '');
-        setPosition(profile.position ?? '');
-        setAvatarUrl(profile.avatar_url ?? null);
-        setSelfAssessedSkill(profile.self_assessed_skill ?? '');
+        if (profileError || !profile) {
+          setLoadError("We couldn't load your player preferences. Please try again.");
+        } else {
+          setFullName(profile.full_name ?? '');
+          setPosition(profile.position ?? '');
+          setAvatarUrl(profile.avatar_url ?? null);
+          setSelfAssessedSkill(profile.skill_level ?? '');
+        }
+
+        const { data: roster } = await supabase
+          .from('team_rosters')
+          .select('jersey_number')
+          .eq('player_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (!isCurrentLoad()) return;
+        if (roster?.jersey_number != null) setJerseyNumber(String(roster.jersey_number));
+      } catch {
+        if (isCurrentLoad()) setLoadError("We couldn't load your player preferences. Please try again.");
+      } finally {
+        if (isCurrentLoad()) setLoading(false);
       }
-
-      // Also try to get jersey number from roster
-      const { data: roster } = await supabase
-        .from('team_rosters')
-        .select('jersey_number')
-        .eq('player_id', user.id)
-        .eq('status', 'active')
-        .maybeSingle();
-      if (roster?.jersey_number != null) {
-        setJerseyNumber(String(roster.jersey_number));
-      }
-      setLoading(false);
     }
-    load();
+    void load();
+    return () => {
+      mountedRef.current = false;
+      loadGenerationRef.current += 1;
+      saveOperationRef.current += 1;
+    };
   }, []);
+
+  React.useEffect(() => {
+    const removeBlurListener = navigation.addListener?.('blur', () => {
+      focusedRef.current = false;
+      focusedUiGenerationRef.current += 1;
+    });
+    const removeFocusListener = navigation.addListener?.('focus', () => { focusedRef.current = true; });
+    return () => {
+      removeBlurListener?.();
+      removeFocusListener?.();
+    };
+  }, [navigation]);
 
   async function handleSave() {
     if (!userId) return;
+    const operation = ++saveOperationRef.current;
+    const focusedUiGeneration = focusedUiGenerationRef.current;
+    const mayApplyFocusedUi = () =>
+      mountedRef.current &&
+      focusedRef.current &&
+      focusedUiGenerationRef.current === focusedUiGeneration;
     setSaving(true);
     try {
-      await supabase.from('profiles').update({
+      const update: ProfilePreferencesUpdate = {
         position: position || null,
-        self_assessed_skill: selfAssessedSkill || null,
-      }).eq('id', userId);
-      navigation.goBack();
-    } catch (e) {
-      Alert.alert('Error', 'Failed to save profile.');
+        skill_level: selfAssessedSkill || null,
+      };
+      const { data: updatedProfile, error } = await supabase
+        .from('profiles')
+        .update(update)
+        .eq('id', userId)
+        .select('id, position, skill_level')
+        .single();
+      const updateConfirmed =
+        !error &&
+        updatedProfile?.id === userId &&
+        updatedProfile.position === update.position &&
+        updatedProfile.skill_level === update.skill_level;
+      if (!updateConfirmed) {
+        if (mayApplyFocusedUi()) {
+          Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
+        }
+        return;
+      }
+      notifyProfilePreferencesChanged(userId);
+      if (mayApplyFocusedUi()) navigation.goBack();
+    } catch {
+      if (mayApplyFocusedUi()) {
+        Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
+      }
     } finally {
-      setSaving(false);
+      if (mountedRef.current && saveOperationRef.current === operation) setSaving(false);
     }
   }
 
@@ -107,6 +163,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
   return (
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <FocusScrollView contentContainerStyle={styles.content}>
+        {loadError ? <View accessibilityRole="alert" style={styles.errorNotice}><Text style={styles.errorText}>{loadError}</Text></View> : null}
         {/* Public identity is read-only in the mobile minimum-v1 surface. */}
         <View style={styles.avatarSection}>
           <Avatar uri={avatarUrl} name={fullName || 'Player'} size={90} borderColor={colors.primary} />
@@ -136,7 +193,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
             Used to place you in the right Hockey Life division when we do not have enough game data to rate you yet.
           </Text>
           <View style={styles.skillRow}>
-            {SKILL_LEVELS.map((skill) => (
+            {PROFILE_SKILL_LEVELS.map((skill) => (
               <Pressable
                 key={skill.value}
                 style={[
@@ -176,7 +233,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           <Pressable accessibilityRole="button" accessibilityLabel="Cancel profile editing" style={styles.cancelBtn} onPress={() => navigation.goBack()} disabled={saving}>
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Save profile changes" style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Save profile changes" style={styles.saveBtn} onPress={handleSave} disabled={saving || !!loadError}>
             {saving
               ? <ActivityIndicator color="#fff" />
               : <Text style={styles.saveBtnText}>Save Changes</Text>
@@ -191,6 +248,8 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  errorNotice: { padding: 12, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.14)' },
+  errorText: { color: colors.accentRed, fontSize: 13, lineHeight: 18, fontWeight: '700' },
   content: { padding: 16, gap: 14, paddingBottom: 40 },
   avatarSection: { alignItems: 'center', paddingVertical: 16, gap: 12 },
   identityName: { color: colors.textPrimary, fontSize: 18, fontWeight: '900' },

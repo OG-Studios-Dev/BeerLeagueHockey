@@ -1,4 +1,5 @@
 import { supabase } from './supabase/client';
+import { profileSkillRatingTier } from './profileContract';
 
 export type LeagueMatch = {
   id: string;
@@ -85,13 +86,6 @@ function getCityCoords(city: string | null): { lat: number; lng: number } | null
   return partialKey ? CITY_COORDS[partialKey] : null;
 }
 
-const SKILL_TIER_MAP: Record<string, number> = {
-  beginner: 3,
-  intermediate: 6,
-  advanced: 9,
-  expert: 11,
-};
-
 export async function getLeagueMarketplace(userId: string | null): Promise<MarketplaceResult> {
   // Location ranking is disabled in the single-league mobile candidate.
   const userLat: number | null = null;
@@ -123,19 +117,18 @@ export async function getLeagueMarketplace(userId: string | null): Promise<Marke
       userRating = ratingRow.rating as string;
       userTier = RATING_TIERS[ratingRow.rating as string];
     } else {
-      // Fallback: use self_assessed_skill from profiles
-      const { data: profileRow } = await supabase
+      // Fallback: profiles.skill_level is the self-assessed profile scale.
+      const { data: profileRow, error: profileError } = await supabase
         .from('profiles')
-        .select('self_assessed_skill')
+        .select('skill_level')
         .eq('id', userId)
         .maybeSingle();
+      if (profileError) throw new Error('Unable to load profile skill fallback');
 
-      if (profileRow?.self_assessed_skill) {
-        const t = SKILL_TIER_MAP[profileRow.self_assessed_skill as string];
-        if (t != null) {
-          userTier = t;
-          userRating = tierToRating(t);
-        }
+      const t = profileSkillRatingTier(profileRow?.skill_level);
+      if (t != null) {
+        userTier = t;
+        userRating = tierToRating(t);
       }
     }
   }

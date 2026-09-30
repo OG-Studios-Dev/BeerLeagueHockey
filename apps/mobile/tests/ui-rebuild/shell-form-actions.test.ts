@@ -85,14 +85,15 @@ describe('shell form exits', () => {
   it('keeps the real profile save callback and adds an adjacent cancel callback', async () => {
     const harness = createHookHarness();
     const updates: Record<string, unknown>[] = [];
+    const selects: string[] = [];
     let backs = 0;
     const supabase = {
       auth: { getUser: async () => ({ data: { user: { id: 'synthetic-player' } } }) },
       from: (table: string) => {
         const chain: Record<string, unknown> = {};
-        chain.select = () => chain;
+        chain.select = (columns: string) => { selects.push(`${table}:${columns}`); return chain; };
         chain.eq = () => chain;
-        chain.single = async () => ({ data: table === 'profiles' ? { full_name: 'Synthetic Player', position: 'C', avatar_url: null, self_assessed_skill: 'beginner' } : null });
+        chain.single = async () => ({ data: table === 'profiles' ? { id: 'synthetic-player', full_name: 'Synthetic Player', position: 'C', avatar_url: null, skill_level: 'beginner' } : null, error: null });
         chain.maybeSingle = async () => ({ data: { jersey_number: 12 } });
         chain.update = (payload: Record<string, unknown>) => { updates.push(payload); return chain; };
         return chain;
@@ -124,7 +125,8 @@ describe('shell form exits', () => {
     cancel.props.onPress();
     await findNode(harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
     assert.equal(backs, 2);
-    assert.deepEqual(updates, [{ position: 'C', self_assessed_skill: 'beginner' }]);
+    assert.ok(selects.includes('profiles:full_name, position, avatar_url, skill_level'));
+    assert.deepEqual(updates, [{ position: 'C', skill_level: 'beginner' }]);
   });
 
   it('executes the real player-card Share callback with the loaded synthetic identity', async () => {
