@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createHookHarness, findNode, nodeText } from './component-harness';
+import { compileCommonJs, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
+import { subscribeToProfilePreferencesChanges } from '../../src/lib/profileContract';
 
 const colors = {
   primary: '#0ff', textPrimary: '#fff', textSecondary: '#aaa', textOnPrimary: '#000',
   bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333', accentRed: '#f00',
 };
 
-type Deferred<T> = { promise: Promise<T>; resolve(value: T): void };
+type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(reason: unknown): void };
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 function mountEditProfile(options: {
@@ -22,6 +24,9 @@ function mountEditProfile(options: {
   const harness = createHookHarness();
   const alerts: Array<{ title: string; message?: string }> = [];
   const updates: Record<string, unknown>[] = [];
+  const updateSelects: string[] = [];
+  const navigationListeners = new Map<string, () => void>();
+  let profileQueries = 0;
   let backs = 0;
   const profileResult = options.profileResult ?? {
     data: { full_name: 'Casey', position: 'C', avatar_url: null, skill_level: 'advanced' }, error: null,
@@ -32,11 +37,23 @@ function mountEditProfile(options: {
       const chain: Record<string, any> = {};
       chain.select = () => chain;
       chain.eq = () => chain;
-      chain.single = async () => table === 'profiles' ? await profileResult : { data: null, error: null };
+      chain.single = async () => {
+        if (table === 'profiles') {
+          profileQueries += 1;
+          return await profileResult;
+        }
+        return { data: null, error: null };
+      };
       chain.maybeSingle = async () => ({ data: { jersey_number: 19 }, error: null });
       chain.update = (payload: Record<string, unknown>) => {
         updates.push(payload);
-        return { eq: async () => await (options.updateResult ?? { error: null }) };
+        const updateChain: Record<string, any> = {};
+        updateChain.eq = () => updateChain;
+        updateChain.select = (columns: string) => { updateSelects.push(columns); return updateChain; };
+        updateChain.single = async () => await (options.updateResult ?? {
+          data: { id: 'player-1', position: payload.position, skill_level: payload.skill_level }, error: null,
+        });
+        return updateChain;
       };
       return chain;
     },
@@ -53,11 +70,22 @@ function mountEditProfile(options: {
       'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
       '../components/Avatar': () => null,
       '../lib/supabase/client': { supabase },
-      '../theme/colors': { default: colors },
+      '../theme/colors': { __esModule: true, default: colors },
     },
   ).default;
-  harness.mount(() => Screen({ navigation: { goBack: () => { backs += 1; } } }));
-  return { harness, alerts, updates, get backs() { return backs; } };
+  const navigation = {
+    goBack: () => { backs += 1; },
+    addListener: (event: string, listener: () => void) => {
+      navigationListeners.set(event, listener);
+      return () => navigationListeners.delete(event);
+    },
+  };
+  harness.mount(() => Screen({ navigation }));
+  return {
+    harness, alerts, updates, updateSelects, navigationListeners,
+    get profileQueries() { return profileQueries; },
+    get backs() { return backs; },
+  };
 }
 
 describe('native profile database contract', () => {
@@ -68,6 +96,7 @@ describe('native profile database contract', () => {
 
     const advanced = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Advanced');
     assert.ok(advanced);
+    assert.equal(flattenStyle(advanced.props.style).backgroundColor, colors.primary);
     assert.equal(nodeText(mounted.harness.output).includes("couldn't load"), false);
     await findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
     assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'advanced' }]);
@@ -85,7 +114,7 @@ describe('native profile database contract', () => {
   });
 
   it('keeps entered values and does not navigate when a resolved update reports an error', async () => {
-    const mounted = mountEditProfile({ updateResult: { error: new Error('update denied') } });
+    const mounted = mountEditProfile({ updateResult: { data: null, error: new Error('update denied') } });
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();
 
@@ -101,11 +130,95 @@ describe('native profile database contract', () => {
     assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'beginner' }]);
     const selectedBeginner = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Beginner');
     assert.ok(selectedBeginner);
+    assert.equal(flattenStyle(selectedBeginner.props.style).backgroundColor, colors.primary);
+  });
+
+  it('rejects an error-free zero-row update and retains the selected draft', async () => {
+    let invalidations = 0;
+    const unsubscribe = subscribeToProfilePreferencesChanges(() => { invalidations += 1; });
+    const mounted = mountEditProfile({ updateResult: { data: null, error: null } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+
+    const expert = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Expert');
+    assert.ok(expert);
+    expert.props.onPress();
+    mounted.harness.render();
+    await findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
+    mounted.harness.render();
+
+    assert.equal(mounted.backs, 0);
+    assert.equal(mounted.alerts.at(-1)?.title, 'Unable to Save Profile');
+    assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'expert' }]);
+    assert.deepEqual(mounted.updateSelects, ['id, position, skill_level']);
+    assert.equal(invalidations, 0);
+    const selectedExpert = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Expert');
+    assert.equal(flattenStyle(selectedExpert?.props.style).backgroundColor, colors.primary);
+    unsubscribe();
+  });
+
+  it('navigates only after one exact matching row confirms the narrow update', async () => {
+    let invalidations = 0;
+    const unsubscribe = subscribeToProfilePreferencesChanges(() => { invalidations += 1; });
+    const mounted = mountEditProfile();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+
+    await findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
+
+    assert.equal(mounted.backs, 1);
+    assert.equal(mounted.alerts.length, 0);
+    assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'advanced' }]);
+    assert.deepEqual(mounted.updateSelects, ['id, position, skill_level']);
+    assert.equal(invalidations, 1);
+    unsubscribe();
+  });
+
+  it('rejects a returned row that does not exactly match the target and draft', async () => {
+    const mounted = mountEditProfile({ updateResult: {
+      data: { id: 'different-player', position: 'C', skill_level: 'advanced' }, error: null,
+    } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+    await findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
+
+    assert.equal(mounted.backs, 0);
+    assert.equal(mounted.alerts.at(-1)?.title, 'Unable to Save Profile');
+  });
+
+  it('ignores late resolved errors, successes, and thrown rejections after leaving', async () => {
+    for (const outcome of ['error', 'success', 'throw'] as const) {
+      const pending = deferred<any>();
+      const mounted = mountEditProfile({ updateResult: pending.promise });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      mounted.harness.render();
+      const save = findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes');
+      assert.ok(save);
+      const savePromise = save.props.onPress();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const updatesBeforeLeave = mounted.harness.stateUpdateCount;
+      if (outcome === 'success') {
+        mounted.navigationListeners.get('blur')?.();
+        mounted.navigationListeners.get('focus')?.();
+      }
+      else mounted.harness.unmount();
+
+      if (outcome === 'error') pending.resolve({ data: null, error: new Error('late denied') });
+      else if (outcome === 'success') pending.resolve({ data: { id: 'player-1', position: 'C', skill_level: 'advanced' }, error: null });
+      else pending.reject(new Error('late rejection'));
+      await savePromise;
+
+      assert.equal(mounted.alerts.length, 0, outcome);
+      assert.equal(mounted.backs, 0, outcome);
+      assert.equal(mounted.harness.stateUpdateCount, updatesBeforeLeave, outcome);
+    }
   });
 
   it('does not apply a late profile load after the screen unmounts', async () => {
     const pending = deferred<any>();
     const mounted = mountEditProfile({ profileResult: pending.promise });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(mounted.profileQueries, 1, 'profile query must be pending before unmount');
     const updatesBeforeUnmount = mounted.harness.stateUpdateCount;
     mounted.harness.unmount();
     pending.resolve({ data: { full_name: 'Late', position: 'G', avatar_url: null, skill_level: 'expert' }, error: null });

@@ -30,7 +30,7 @@ import { HOCKEY_LIFE_ID } from '../config/hockeyLife';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { deleteCurrentAccount } from '../lib/supabase/accountDeletion';
 import { supabase } from '../lib/supabase/client';
-import { PROFILE_IDENTITY_SELECT, type ProfileRow } from '../lib/profileContract';
+import { PROFILE_IDENTITY_SELECT, subscribeToProfilePreferencesChanges, type ProfileRow } from '../lib/profileContract';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
 
@@ -206,6 +206,11 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
   const isDeletingAccountRef = React.useRef(false);
   const [profileError, setProfileError] = React.useState<string | null>(null);
+  const [profileRefreshKey, setProfileRefreshKey] = React.useState(0);
+
+  React.useEffect(() => subscribeToProfilePreferencesChanges(() => {
+    setProfileRefreshKey((current) => current + 1);
+  }), []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -213,11 +218,18 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     async function load() {
       setLoading(true);
       setProfileError(null);
+      setProfile(null);
+      if (isGuest) {
+        setLoading(false);
+        return;
+      }
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser();
       if (cancelled) return;
-      if (!user) {
+      if (authError || !user) {
+        setProfileError("We couldn't load your player profile. Your team and stats may still be available.");
         setLoading(false);
         return;
       }
@@ -228,7 +240,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         .eq('id', user.id)
         .single();
       if (cancelled) return;
-      if (profileLoadError) {
+      if (profileLoadError || !profileData) {
         setProfile(null);
         setProfileError("We couldn't load your player profile. Your team and stats may still be available.");
       } else {
@@ -534,6 +546,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
     void load().catch(() => {
       if (!cancelled) {
+        setProfile(null);
+        setProfileError("We couldn't load your player profile. Your team and stats may still be available.");
         setLoading(false);
       }
     });
@@ -541,7 +555,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
     return () => {
       cancelled = true;
     };
-  }, [activeLeague?.id]);
+  }, [activeLeague?.id, isGuest, profileRefreshKey]);
 
   const displayName = profile?.full_name ?? 'Player';
   const primaryColor = roster?.team?.primary_color ?? activeTheme.primaryColor;

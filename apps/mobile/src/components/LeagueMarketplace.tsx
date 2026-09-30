@@ -20,6 +20,7 @@ import { useAccessibilityPreferences } from '../context/AccessibilityPreferences
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
 import { getLeagueMarketplace, type LeagueMatch } from '../lib/leagueMarketplace';
+import { subscribeToProfilePreferencesChanges } from '../lib/profileContract';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
@@ -216,6 +217,11 @@ export default function LeagueMarketplace({
   const [userRating, setUserRating] = React.useState<string | null>(null);
   const [selectedLeague, setSelectedLeague] = React.useState<LeagueMatch | null>(null);
   const [marketplaceError, setMarketplaceError] = React.useState<string | null>(null);
+  const [profileRefreshKey, setProfileRefreshKey] = React.useState(0);
+
+  React.useEffect(() => subscribeToProfilePreferencesChanges(() => {
+    setProfileRefreshKey((current) => current + 1);
+  }), []);
 
   // Load marketplace
   React.useEffect(() => {
@@ -253,7 +259,7 @@ export default function LeagueMarketplace({
     return () => {
       active = false;
     };
-  }, []);
+  }, [profileRefreshKey]);
 
   const memberIds = React.useMemo(
     () => new Set(availableLeagues.map((l) => l.id)),

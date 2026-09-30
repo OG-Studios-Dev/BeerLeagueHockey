@@ -7,6 +7,17 @@ export type ProfilePreferencesUpdate = Pick<TablesUpdate<'profiles'>, 'position'
 export const PROFILE_IDENTITY_SELECT = 'id, full_name, avatar_url, position, skill_level';
 export const PROFILE_PREFERENCES_SELECT = 'full_name, position, avatar_url, skill_level';
 
+const profilePreferencesChangeListeners = new Set<() => void>();
+
+export function subscribeToProfilePreferencesChanges(listener: () => void): () => void {
+  profilePreferencesChangeListeners.add(listener);
+  return () => profilePreferencesChangeListeners.delete(listener);
+}
+
+export function notifyProfilePreferencesChanged(): void {
+  for (const listener of profilePreferencesChangeListeners) listener();
+}
+
 export const PROFILE_SKILL_LEVELS: ReadonlyArray<{ value: ProfileSkillLevel; label: string; ratingTier: number }> = [
   { value: 'beginner', label: 'Beginner', ratingTier: 3 },
   { value: 'intermediate', label: 'Intermediate', ratingTier: 6 },

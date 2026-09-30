@@ -93,7 +93,7 @@ describe('shell form exits', () => {
         const chain: Record<string, unknown> = {};
         chain.select = (columns: string) => { selects.push(`${table}:${columns}`); return chain; };
         chain.eq = () => chain;
-        chain.single = async () => ({ data: table === 'profiles' ? { full_name: 'Synthetic Player', position: 'C', avatar_url: null, skill_level: 'beginner' } : null, error: null });
+        chain.single = async () => ({ data: table === 'profiles' ? { id: 'synthetic-player', full_name: 'Synthetic Player', position: 'C', avatar_url: null, skill_level: 'beginner' } : null, error: null });
         chain.maybeSingle = async () => ({ data: { jersey_number: 12 } });
         chain.update = (payload: Record<string, unknown>) => { updates.push(payload); return chain; };
         return chain;

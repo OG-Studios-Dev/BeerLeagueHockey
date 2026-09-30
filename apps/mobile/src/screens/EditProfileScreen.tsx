@@ -15,7 +15,7 @@ import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import Avatar from '../components/Avatar';
-import { PROFILE_PREFERENCES_SELECT, PROFILE_SKILL_LEVELS, type ProfilePreferencesUpdate } from '../lib/profileContract';
+import { notifyProfilePreferencesChanged, PROFILE_PREFERENCES_SELECT, PROFILE_SKILL_LEVELS, type ProfilePreferencesUpdate } from '../lib/profileContract';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 
@@ -40,14 +40,15 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const mountedRef = React.useRef(true);
+  const activeRef = React.useRef(true);
+  const lifetimeRef = React.useRef(0);
 
   React.useEffect(() => {
-    mountedRef.current = true;
+    activeRef.current = true;
     async function load() {
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (!mountedRef.current) return;
+        if (!activeRef.current) return;
         if (userError || !user) {
           setLoadError("We couldn't load your player preferences. Please try again.");
           return;
@@ -59,7 +60,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           .select(PROFILE_PREFERENCES_SELECT)
           .eq('id', user.id)
           .single();
-        if (!mountedRef.current) return;
+        if (!activeRef.current) return;
 
         if (profileError || !profile) {
           setLoadError("We couldn't load your player preferences. Please try again.");
@@ -76,37 +77,66 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           .eq('player_id', user.id)
           .eq('status', 'active')
           .maybeSingle();
-        if (!mountedRef.current) return;
+        if (!activeRef.current) return;
         if (roster?.jersey_number != null) setJerseyNumber(String(roster.jersey_number));
       } catch {
-        if (mountedRef.current) setLoadError("We couldn't load your player preferences. Please try again.");
+        if (activeRef.current) setLoadError("We couldn't load your player preferences. Please try again.");
       } finally {
-        if (mountedRef.current) setLoading(false);
+        if (activeRef.current) setLoading(false);
       }
     }
     void load();
-    return () => { mountedRef.current = false; };
+    return () => {
+      activeRef.current = false;
+      lifetimeRef.current += 1;
+    };
   }, []);
+
+  React.useEffect(() => {
+    const removeBlurListener = navigation.addListener?.('blur', () => {
+      activeRef.current = false;
+      lifetimeRef.current += 1;
+    });
+    const removeFocusListener = navigation.addListener?.('focus', () => { activeRef.current = true; });
+    return () => {
+      removeBlurListener?.();
+      removeFocusListener?.();
+    };
+  }, [navigation]);
 
   async function handleSave() {
     if (!userId) return;
+    const operationLifetime = lifetimeRef.current;
     setSaving(true);
     try {
       const update: ProfilePreferencesUpdate = {
         position: position || null,
         skill_level: selfAssessedSkill || null,
       };
-      const { error } = await supabase.from('profiles').update(update).eq('id', userId);
-      if (error) {
+      const { data: updatedProfile, error } = await supabase
+        .from('profiles')
+        .update(update)
+        .eq('id', userId)
+        .select('id, position, skill_level')
+        .single();
+      if (!activeRef.current || lifetimeRef.current !== operationLifetime) return;
+      const updateConfirmed =
+        !error &&
+        updatedProfile?.id === userId &&
+        updatedProfile.position === update.position &&
+        updatedProfile.skill_level === update.skill_level;
+      if (!updateConfirmed) {
         Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
         return;
       }
-      if (!mountedRef.current) return;
+      notifyProfilePreferencesChanged();
       navigation.goBack();
     } catch {
-      if (mountedRef.current) Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
+      if (activeRef.current && lifetimeRef.current === operationLifetime) {
+        Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
+      }
     } finally {
-      if (mountedRef.current) setSaving(false);
+      if (activeRef.current && lifetimeRef.current === operationLifetime) setSaving(false);
     }
   }
 
