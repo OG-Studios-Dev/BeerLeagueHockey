@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@hockey-life/ui/lib/utils';
 import { Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 type OAuthProvider = 'google' | 'apple';
 
@@ -56,6 +57,7 @@ export function OAuthProviderButton({
   redirectTo,
   className,
 }: OAuthProviderButtonProps) {
+  const t = useTranslations('auth');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,8 +84,7 @@ export function OAuthProviderButton({
     });
 
     if (error) {
-      console.error('OAuth error:', error.message);
-      setError(error.message);
+      setError(t('oauthFailed'));
       setLoading(false);
     }
     // If no error, browser will redirect to the provider

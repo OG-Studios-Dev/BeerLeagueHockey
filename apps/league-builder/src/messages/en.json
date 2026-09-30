@@ -1361,7 +1361,10 @@
     "formErrors": "Please fix the errors below",
     "saveFailed": "Failed to save. Please try again.",
     "deleteFailed": "Failed to delete. Please try again.",
-    "loadFailed": "Failed to load data. Please refresh the page."
+    "loadFailed": "Failed to load data. Please refresh the page.",
+    "oauthConsentCanceled": "Sign-in was canceled. You can try again when you're ready.",
+    "oauthIdentityConflict": "That sign-in method could not be connected to this account. Sign in with your existing method, then manage connected accounts in settings.",
+    "oauthFailed": "We couldn't complete sign-in. Please try again."
   },
   "errorPages": {
     "somethingWentWrong": "Something went wrong",
@@ -1389,7 +1392,12 @@
       "notConnected": "Not connected",
       "link": "Link",
       "unlink": "Disconnect",
-      "cannotUnlinkLast": "You cannot disconnect your only login method"
+      "cannotUnlinkLast": "You cannot disconnect your only login method",
+      "consentCanceled": "Connecting the account was canceled. Your current account was not changed.",
+      "identityConflict": "That sign-in is already connected to another account. Your current account was not changed.",
+      "oauthFailed": "We couldn't connect that account. Your current account was not changed. Please try again.",
+      "loadFailed": "We couldn't load connected accounts. Please refresh the page.",
+      "unlinkFailed": "We couldn't disconnect that account. Please try again."
     }
   },
   "settingsNav": {

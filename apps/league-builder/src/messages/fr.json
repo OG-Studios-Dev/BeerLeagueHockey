@@ -1361,7 +1361,10 @@
     "formErrors": "Veuillez corriger les erreurs ci-dessous",
     "saveFailed": "Echec de l'enregistrement. Veuillez reessayer.",
     "deleteFailed": "Echec de la suppression. Veuillez reessayer.",
-    "loadFailed": "Echec du chargement. Veuillez actualiser la page."
+    "loadFailed": "Echec du chargement. Veuillez actualiser la page.",
+    "oauthConsentCanceled": "La connexion a ete annulee. Vous pouvez reessayer lorsque vous etes pret.",
+    "oauthIdentityConflict": "Cette methode de connexion n'a pas pu etre associee a ce compte. Connectez-vous avec votre methode habituelle, puis gerez les comptes connectes dans les parametres.",
+    "oauthFailed": "Nous n'avons pas pu terminer la connexion. Veuillez reessayer."
   },
   "errorPages": {
     "somethingWentWrong": "Une erreur est survenue",
@@ -1389,7 +1392,12 @@
       "notConnected": "Non connecte",
       "link": "Associer",
       "unlink": "Deconnecter",
-      "cannotUnlinkLast": "Vous ne pouvez pas deconnecter votre seule methode de connexion"
+      "cannotUnlinkLast": "Vous ne pouvez pas deconnecter votre seule methode de connexion",
+      "consentCanceled": "L'association du compte a ete annulee. Votre compte actuel n'a pas ete modifie.",
+      "identityConflict": "Cette connexion est deja associee a un autre compte. Votre compte actuel n'a pas ete modifie.",
+      "oauthFailed": "Nous n'avons pas pu associer ce compte. Votre compte actuel n'a pas ete modifie. Veuillez reessayer.",
+      "loadFailed": "Nous n'avons pas pu charger les comptes connectes. Veuillez actualiser la page.",
+      "unlinkFailed": "Nous n'avons pas pu deconnecter ce compte. Veuillez reessayer."
     }
   },
   "settingsNav": {

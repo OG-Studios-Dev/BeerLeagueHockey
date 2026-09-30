@@ -20,6 +20,11 @@ describe('safeRedirectPath', () => {
     expect(safeRedirectPath('//evil.com/path')).toBe('/en/dashboard');
   });
 
+  it('blocks backslash variants that URL parsing treats as cross-origin', () => {
+    expect(safeRedirectPath('/\\evil.com/path')).toBe('/en/dashboard');
+    expect(safeRedirectPath('/path\\to\\resource')).toBe('/en/dashboard');
+  });
+
   it('blocks absolute URLs with protocol', () => {
     expect(safeRedirectPath('https://evil.com')).toBe('/en/dashboard');
     expect(safeRedirectPath('http://evil.com/callback')).toBe('/en/dashboard');

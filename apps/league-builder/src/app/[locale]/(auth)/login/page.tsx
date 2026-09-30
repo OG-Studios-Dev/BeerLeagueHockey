@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { posthog } from '@/lib/posthog-client';
 import { OAuthProviderButton } from '@/components/auth/OAuthProviderButton';
+import { oauthRecoveryCode } from '@/lib/auth/oauth-errors';
 
 export default function LoginPage() {
   return (
@@ -36,6 +37,14 @@ function LoginForm() {
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const redirectTo = searchParams.get('redirect');
+  const oauthError = oauthRecoveryCode(searchParams.get('oauth_error'));
+  const oauthErrorMessage = oauthError === 'consent_canceled'
+    ? t('auth.oauthConsentCanceled')
+    : oauthError === 'identity_conflict'
+      ? t('auth.oauthIdentityConflict')
+      : oauthError === 'oauth_failed'
+        ? t('auth.oauthFailed')
+        : null;
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -71,6 +80,12 @@ function LoginForm() {
       <p className="text-sm text-neutral-400 mb-6">
         {t('auth.enterEmail')}
       </p>
+
+      {oauthErrorMessage && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-6" aria-live="polite">
+          <p className="text-sm text-red-400">{oauthErrorMessage}</p>
+        </div>
+      )}
 
       {/* OAuth Providers */}
       <div className="space-y-3">
