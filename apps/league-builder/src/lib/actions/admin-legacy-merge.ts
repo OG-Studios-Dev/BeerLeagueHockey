@@ -57,9 +57,10 @@ type ActionResult<T = void> =
 
 async function assertPlatformAdmin() {
   const userData = await getCurrentUser();
-  if (!userData?.profile?.is_platform_admin) {
+  if (!userData?.user?.id || !userData.profile?.is_platform_admin) {
     throw new Error('Unauthorized');
   }
+  return userData;
 }
 
 // ============================================================================
@@ -178,7 +179,7 @@ export async function executeAdminMerge(
   targetProfileId: string,
   legacyProfileId: string
 ): Promise<ActionResult<{ totalReassigned: number }>> {
-  await assertPlatformAdmin();
+  const admin = await assertPlatformAdmin();
 
   if (!targetProfileId || !legacyProfileId) {
     return { success: false, error: 'Both profile IDs are required' };
@@ -190,41 +191,11 @@ export async function executeAdminMerge(
 
   const supabase = createServiceRoleClient();
 
-  // Verify legacy profile exists and is actually a legacy import
-  const { data: legacy } = await supabase
-    .from('profiles')
-    .select('id, is_legacy_import, legacy_merge_completed_at')
-    .eq('id', legacyProfileId)
-    .single();
-
-  if (!legacy) {
-    return { success: false, error: 'Legacy profile not found' };
-  }
-  if (!(legacy as any).is_legacy_import) {
-    return { success: false, error: 'Profile is not a legacy import' };
-  }
-  if ((legacy as any).legacy_merge_completed_at) {
-    return { success: false, error: 'Legacy profile has already been merged' };
-  }
-
-  // Verify target profile exists and is not a legacy import
-  const { data: target } = await supabase
-    .from('profiles')
-    .select('id, is_legacy_import')
-    .eq('id', targetProfileId)
-    .single();
-
-  if (!target) {
-    return { success: false, error: 'Target profile not found' };
-  }
-  if ((target as any).is_legacy_import) {
-    return { success: false, error: 'Target profile is also a legacy import — pick a real account' };
-  }
-
-  // Execute the merge via the existing RPC
-  const { data, error } = await (supabase.rpc as any)('merge_legacy_profile', {
-    p_new_profile_id: targetProfileId,
-    p_legacy_profile_id: legacyProfileId,
+  // The guarded DB wrapper repeats actor, target, and source invariants under lock.
+  const { data, error } = await (supabase.rpc as any)('admin_merge_legacy_profile', {
+    p_actor_profile_id: admin.user.id,
+    p_target_profile_id: targetProfileId,
+    p_source_profile_id: legacyProfileId,
   });
 
   if (error) {
@@ -233,8 +204,14 @@ export async function executeAdminMerge(
   }
 
   const result = data as any;
-  if (!result?.success) {
+  if (result?.success !== true) {
     return { success: false, error: result?.error || 'Merge RPC returned failure' };
+  }
+
+  if (typeof result.total_reassigned !== 'number'
+    || !Number.isFinite(result.total_reassigned)
+    || result.total_reassigned < 0) {
+    return { success: false, error: 'Merge RPC returned invalid response' };
   }
 
   if (isDevelopment) {
@@ -248,7 +225,7 @@ export async function executeAdminMerge(
 
   revalidatePath('/dashboard/admin/player-merge');
 
-  return { success: true, data: { totalReassigned: result.total_reassigned || 0 } };
+  return { success: true, data: { totalReassigned: result.total_reassigned } };
 }
 
 // ============================================================================

@@ -61,7 +61,11 @@ describe('quickbooks crypto helpers', () => {
       returnTo: '/en/dashboard/leagues/league-1/finance',
     });
 
-    const tamperedToken = `${token.slice(0, -1)}x`;
+    const [payload, signature] = token.split('.');
+    const tamperedSignature = Buffer.from(signature, 'base64url');
+    tamperedSignature[0] ^= 1;
+    expect(tamperedSignature).not.toEqual(Buffer.from(signature, 'base64url'));
+    const tamperedToken = `${payload}.${tamperedSignature.toString('base64url')}`;
     expect(verifyQuickBooksStateToken(tamperedToken)).toBeNull();
   });
 });
