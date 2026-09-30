@@ -215,12 +215,14 @@ export default function LeagueMarketplace({
   const [search, setSearch] = React.useState('');
   const [userRating, setUserRating] = React.useState<string | null>(null);
   const [selectedLeague, setSelectedLeague] = React.useState<LeagueMatch | null>(null);
+  const [marketplaceError, setMarketplaceError] = React.useState<string | null>(null);
 
   // Load marketplace
   React.useEffect(() => {
     let active = true;
     void (async () => {
       setLoading(true);
+      setMarketplaceError(null);
       let userId: string | null = null;
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
@@ -228,14 +230,17 @@ export default function LeagueMarketplace({
       } catch {}
 
       let result: Awaited<ReturnType<typeof getLeagueMarketplace>>;
+      let loadError: string | null = null;
       try {
         result = await getLeagueMarketplace(userId);
       } catch {
         result = { leagues: [], userRating: null, userTier: null };
+        loadError = "We couldn't load league recommendations. Please try again.";
       }
       if (!active) return;
       setLeagues(result.leagues);
       setUserRating(result.userRating);
+      setMarketplaceError(loadError);
 
       const results = result.leagues;
 
@@ -360,6 +365,11 @@ export default function LeagueMarketplace({
           </View>
         ) : null}
       </View>
+      {marketplaceError ? (
+        <View accessibilityRole="alert" style={styles.marketplaceError}>
+          <Text style={styles.marketplaceErrorText}>{marketplaceError}</Text>
+        </View>
+      ) : null}
       {membershipFailure ? (
         <FocusCard focusId="marketplace:membership">
           <View style={styles.membershipNotice} accessibilityRole="alert">
@@ -660,6 +670,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgBase },
 
   marketplaceContext: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 },
+  marketplaceError: { marginHorizontal: 16, marginBottom: 10, padding: 12, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.14)' },
+  marketplaceErrorText: { color: colors.accentRed, fontSize: 13, lineHeight: 18, fontWeight: '700' },
   subtitle: { fontSize: 13, lineHeight: 19, color: colors.textSecondary },
   locationPill: {
     backgroundColor: colors.bgInteractive,
