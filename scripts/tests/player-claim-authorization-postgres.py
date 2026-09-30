@@ -162,6 +162,142 @@ def main() -> int:
         """).stdout.strip()
         if not race_state.startswith('0|') or not race_state.endswith('|1'):
             raise AssertionError(f'race final state invalid: {race_state}')
+        print('PASS: same-source race produced exactly one winner', json.dumps(race_results))
+
+        # Actor == target with distinct sources must serialize without a
+        # SHARE-to-UPDATE upgrade deadlock. Hold the shared target identity
+        # advisory lock until both real caller sessions are observed waiting.
+        psql(sql="""
+          INSERT INTO public.profiles(id, is_legacy_import, identity_provenance) VALUES
+            ('15151515-1515-1515-1515-151515151515', true, 'auth_account'),
+            ('16161616-1616-1616-1616-161616161616', true, 'auth_account');
+        """)
+        target = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        distinct_sources = (
+            '15151515-1515-1515-1515-151515151515',
+            '16161616-1616-1616-1616-161616161616',
+        )
+        target_lock = (
+            "BEGIN; SELECT pg_advisory_xact_lock("
+            f"hashtextextended('public.profile_auth_identity:' || '{target}', 0)); "
+            "SELECT pg_sleep(2); COMMIT;"
+        )
+        holder = subprocess.Popen(
+            [str(PG_BIN / 'psql'), '-X', '-At', '-c', target_lock], cwd=ROOT,
+            env={**env, 'PGAPPNAME': 'distinct-target-holder'}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        for _ in range(50):
+            if psql(sql="SELECT count(*) FROM pg_stat_activity WHERE application_name='distinct-target-holder' AND wait_event='PgSleep';").stdout.strip() == '1':
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError('distinct-source target lock holder never became ready')
+
+        distinct_callers = []
+        for index, source in enumerate(distinct_sources, start=1):
+            statement = (
+                "BEGIN; SET ROLE service_role; "
+                f"SELECT public.admin_merge_legacy_profile('{target}','{target}','{source}'); "
+                "ROLLBACK;"
+            )
+            distinct_callers.append(subprocess.Popen(
+                [str(PG_BIN / 'psql'), '-X', '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement],
+                cwd=ROOT, env={**env, 'PGAPPNAME': f'distinct-claim-{index}'}, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ))
+        for _ in range(50):
+            waiting = psql(sql="SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE 'distinct-claim-%' AND wait_event='advisory';").stdout.strip()
+            if waiting == '2':
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError(f'distinct-source callers did not both reach advisory barrier: {waiting}')
+
+        distinct_results = []
+        for proc in distinct_callers:
+            output, error = proc.communicate(timeout=15)
+            if proc.returncode:
+                raise AssertionError(f'distinct-source process failed: {error}')
+            distinct_results.append(json.loads(next(line for line in output.splitlines() if line.startswith('{'))))
+        holder.communicate(timeout=15)
+        if not all(result.get('success') is True for result in distinct_results):
+            raise AssertionError(f'distinct-source actor-target claims did not both succeed: {distinct_results}')
+        print('PASS: actor-target distinct-source callers both succeeded after advisory wait barrier', json.dumps(distinct_results))
+
+        # An owner wrapper already holding the identity locks must never wait
+        # behind an admin-held invite lock. A profile-row barrier creates the
+        # overlap and pg_stat_activity proves both wait points were reached.
+        ordering_target = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+        ordering_source = '17171717-1717-1717-1717-171717171717'
+        psql(sql=f"""
+          INSERT INTO public.profiles(id, is_legacy_import, identity_provenance)
+          VALUES ('{ordering_source}', true, 'auth_account');
+          INSERT INTO public.captain_player_invites(
+            id, league_id, season_id, team_id, target_player_id, registration_path
+          ) VALUES (
+            '43434343-4343-4343-4343-434343434343',
+            '53535353-5353-5353-5353-535353535353',
+            '63636363-6363-6363-6363-636363636363',
+            '73737373-7373-7373-7373-737373737373',
+            '{ordering_source}', '/ordering'
+          );
+        """)
+        profile_holder = subprocess.Popen(
+            [str(PG_BIN / 'psql'), '-X', '-At', '-c',
+             f"BEGIN; SELECT id FROM public.profiles WHERE id='{ordering_target}' FOR UPDATE; SELECT pg_sleep(2); COMMIT;"],
+            cwd=ROOT, env={**env, 'PGAPPNAME': 'ordering-profile-holder'}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        for _ in range(50):
+            if psql(sql="SELECT count(*) FROM pg_stat_activity WHERE application_name='ordering-profile-holder' AND wait_event='PgSleep';").stdout.strip() == '1':
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError('ordering profile holder never became ready')
+
+        owner = subprocess.Popen(
+            [str(PG_BIN / 'psql'), '-X', '-v', 'ON_ERROR_STOP=1', '-At', '-c',
+             f"BEGIN; SELECT public.merge_legacy_profile('{ordering_target}','{ordering_source}'); COMMIT;"],
+            cwd=ROOT, env={**env, 'PGAPPNAME': 'ordering-owner-wrapper'}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        for _ in range(50):
+            owner_wait = psql(sql="SELECT wait_event FROM pg_stat_activity WHERE application_name='ordering-owner-wrapper';").stdout.strip()
+            if owner_wait in ('transactionid', 'tuple'):
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError(f'owner wrapper did not reach profile-row barrier: {owner_wait}')
+
+        admin = subprocess.Popen(
+            [str(PG_BIN / 'psql'), '-X', '-v', 'ON_ERROR_STOP=1', '-At', '-c',
+             f"BEGIN; SET ROLE service_role; SELECT public.admin_merge_legacy_profile('{target}','{ordering_target}','{ordering_source}'); COMMIT;"],
+            cwd=ROOT, env={**env, 'PGAPPNAME': 'ordering-admin-wrapper'}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        for _ in range(50):
+            admin_wait = psql(sql="SELECT wait_event FROM pg_stat_activity WHERE application_name='ordering-admin-wrapper';").stdout.strip()
+            if admin_wait == 'advisory':
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError(f'admin wrapper did not reach identity barrier: {admin_wait}')
+
+        owner_out, owner_err = owner.communicate(timeout=15)
+        admin_out, admin_err = admin.communicate(timeout=15)
+        profile_holder.communicate(timeout=15)
+        if owner.returncode or admin.returncode:
+            raise AssertionError(f'ordering process failed: owner={owner_err} admin={admin_err}')
+        ordering_results = [
+            json.loads(next(line for line in output.splitlines() if line.startswith('{')))
+            for output in (owner_out, admin_out)
+        ]
+        if any('deadlock detected' in result.get('error', '') for result in ordering_results):
+            raise AssertionError(f'owner/admin invite ordering deadlocked: {ordering_results}')
+        if sum(result.get('success') is True for result in ordering_results) != 1:
+            raise AssertionError(f'owner/admin same-source ordering did not produce one winner: {ordering_results}')
+        print('PASS: owner/admin invite ordering avoided deadlock with one winner', json.dumps(ordering_results))
 
         print('GREEN: player claim authorization PostgreSQL acceptance passed')
         return 0

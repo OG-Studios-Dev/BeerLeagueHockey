@@ -19,6 +19,58 @@ REVOKE ALL ON FUNCTION public._claim_rostered_player_profile_core(uuid, uuid)
 REVOKE ALL ON FUNCTION public._claim_update_uuid_column_if_exists(text, text, uuid, uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE OR REPLACE FUNCTION public._lock_player_merge_identities(
+  p_actor_profile_id uuid,
+  p_target_profile_id uuid,
+  p_source_profile_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+  v_identity_id uuid;
+  v_identity_ids uuid[];
+BEGIN
+  SELECT pg_catalog.array_agg(ids.id ORDER BY ids.id)
+  INTO v_identity_ids
+  FROM (
+    SELECT DISTINCT candidate.id
+    FROM pg_catalog.unnest(ARRAY[
+      p_actor_profile_id, p_target_profile_id, p_source_profile_id
+    ]) AS candidate(id)
+    WHERE candidate.id IS NOT NULL
+  ) AS ids;
+
+  -- Every destructive entry point takes identity, profile, then Auth locks.
+  -- Captain invite rows are locked only after this helper returns.
+  FOREACH v_identity_id IN ARRAY v_identity_ids LOOP
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended(
+        'public.profile_auth_identity:' || v_identity_id::text, 0
+      )
+    );
+  END LOOP;
+
+  PERFORM p.id
+  FROM public.profiles AS p
+  WHERE p.id = ANY(v_identity_ids)
+  ORDER BY p.id
+  FOR UPDATE;
+
+  PERFORM u.id
+  FROM auth.users AS u
+  WHERE u.id = ANY(v_identity_ids)
+  ORDER BY u.id
+  FOR SHARE;
+END;
+$function$;
+
+ALTER FUNCTION public._lock_player_merge_identities(uuid, uuid, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public._lock_player_merge_identities(uuid, uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public._assert_player_merge_invariants(
   p_target_profile_id uuid,
   p_source_profile_id uuid,
@@ -31,8 +83,6 @@ SECURITY DEFINER
 SET search_path = ''
 AS $function$
 DECLARE
-  v_first_id uuid;
-  v_second_id uuid;
 BEGIN
   IF p_target_profile_id IS NULL OR p_source_profile_id IS NULL THEN
     RAISE EXCEPTION 'Target and source profile IDs are required'
@@ -43,27 +93,9 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  -- Serialize against PR112 guest/auth attachment using its exact lock namespace.
-  IF p_target_profile_id::text < p_source_profile_id::text THEN
-    v_first_id := p_target_profile_id;
-    v_second_id := p_source_profile_id;
-  ELSE
-    v_first_id := p_source_profile_id;
-    v_second_id := p_target_profile_id;
-  END IF;
-  PERFORM pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('public.profile_auth_identity:' || v_first_id::text, 0)
+  PERFORM public._lock_player_merge_identities(
+    NULL, p_target_profile_id, p_source_profile_id
   );
-  PERFORM pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('public.profile_auth_identity:' || v_second_id::text, 0)
-  );
-
-  -- Row locks use the same deterministic order, preventing cross-claim deadlocks.
-  PERFORM p.id
-  FROM public.profiles AS p
-  WHERE p.id IN (p_target_profile_id, p_source_profile_id)
-  ORDER BY p.id
-  FOR UPDATE;
 
   IF NOT EXISTS (
     SELECT 1
@@ -275,6 +307,12 @@ BEGIN
     RAISE EXCEPTION 'Actor profile ID is required' USING ERRCODE = '22004';
   END IF;
 
+  -- The admin path joins the same sorted identity/profile/Auth lock sequence as
+  -- owner wrappers before authorization or captain invite rows are touched.
+  PERFORM public._lock_player_merge_identities(
+    p_actor_profile_id, p_target_profile_id, p_source_profile_id
+  );
+
   PERFORM p.id
   FROM public.profiles AS p
   JOIN auth.users AS u ON u.id = p.id
@@ -354,6 +392,8 @@ ALTER FUNCTION public.guard_captain_player_invite_consumption() OWNER TO postgre
 ALTER FUNCTION public.admin_merge_legacy_profile(uuid, uuid, uuid) OWNER TO postgres;
 
 REVOKE ALL ON FUNCTION public._assert_player_merge_invariants(uuid, uuid, boolean, boolean)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public._lock_player_merge_identities(uuid, uuid, uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.merge_legacy_profile(uuid, uuid)
   FROM PUBLIC, anon, authenticated, service_role;

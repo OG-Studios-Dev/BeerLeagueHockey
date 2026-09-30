@@ -18,6 +18,11 @@ BEGIN
      OR has_function_privilege('service_role', 'public._claim_update_uuid_column_if_exists(text,text,uuid,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'arbitrary update helper remains executable by an API role';
   END IF;
+  IF has_function_privilege('anon', 'public._lock_player_merge_identities(uuid,uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public._lock_player_merge_identities(uuid,uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('service_role', 'public._lock_player_merge_identities(uuid,uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'identity lock helper remains executable by an API role';
+  END IF;
   IF has_function_privilege('anon', 'public.admin_merge_legacy_profile(uuid,uuid,uuid)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.admin_merge_legacy_profile(uuid,uuid,uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.admin_merge_legacy_profile(uuid,uuid,uuid)', 'EXECUTE') THEN
