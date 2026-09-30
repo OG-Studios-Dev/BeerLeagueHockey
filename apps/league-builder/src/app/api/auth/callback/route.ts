@@ -2,6 +2,8 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { safeRedirectPath } from '@/lib/auth/safe-redirect';
+import { classifyOAuthFailure, type OAuthRecoveryCode } from '@/lib/auth/oauth-errors';
+import { validatedAuthLocale } from '@/lib/auth/oauth-redirect';
 
 /**
  * Auth Callback Route
@@ -20,9 +22,41 @@ import { safeRedirectPath } from '@/lib/auth/safe-redirect';
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = safeRedirectPath(searchParams.get('next'));
+  const requestedNext = searchParams.get('next');
+  const next = safeRedirectPath(requestedNext);
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type');
+  const isAccountLink = searchParams.get('flow') === 'link';
+  const providerError = searchParams.get('error');
+  const providerErrorCode = searchParams.get('error_code');
+  const providerErrorDescription = searchParams.get('error_description');
+  const locale = validatedAuthLocale(searchParams.get('locale'), next);
+
+  function oauthFailureRedirect(code: OAuthRecoveryCode): NextResponse {
+    const fallback = isAccountLink
+      ? `/${locale}/dashboard/settings`
+      : `/${locale}/login`;
+    const returnPath = isAccountLink
+      ? safeRedirectPath(requestedNext, fallback)
+      : fallback;
+    const url = new URL(returnPath, request.url);
+    url.searchParams.set('oauth_error', code);
+    if (!isAccountLink && requestedNext) {
+      url.searchParams.set(
+        'redirect',
+        safeRedirectPath(requestedNext, `/${locale}/dashboard`)
+      );
+    }
+    return NextResponse.redirect(url);
+  }
+
+  // Providers can return a denial or failure without an authorization code.
+  // Never forward their free-form text: it may contain an email or HTML.
+  if (!code && (providerError || providerErrorCode || providerErrorDescription)) {
+    return oauthFailureRedirect(
+      classifyOAuthFailure(providerError, providerErrorCode, providerErrorDescription)
+    );
+  }
 
   // Create a response we can attach cookies to — we'll swap the URL later
   // when we know where to redirect.
@@ -66,14 +100,16 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-      console.error('[Auth Callback] Code exchange error:', error.message);
+      console.error('[Auth Callback] Code exchange failed');
       if (type === 'recovery') {
         return redirectWithCookies(
           new URL('/en/reset-password?error=Invalid or expired link', request.url)
         );
       }
-      return redirectWithCookies(
-        new URL('/en/login?error=auth_error', request.url)
+      // A failed link exchange must not overwrite the already authenticated
+      // account's cookies with partial/clearing exchange cookies.
+      return oauthFailureRedirect(
+        classifyOAuthFailure(null, error.code ?? null, null)
       );
     }
 
@@ -146,7 +182,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (error) {
-      console.error('[Auth Callback] OTP verification error:', error.message);
+      console.error('[Auth Callback] OTP verification failed');
       if (type === 'recovery') {
         return redirectWithCookies(
           new URL('/en/reset-password?error=Invalid or expired link', request.url)
@@ -165,6 +201,6 @@ export async function GET(request: NextRequest) {
     return redirectWithCookies(new URL(next, request.url));
   }
 
-  // No code or token_hash provided
-  return redirectWithCookies(new URL('/en/login', request.url));
+  // Incomplete callbacks still need a visible, allowlisted recovery result.
+  return oauthFailureRedirect('oauth_failed');
 }

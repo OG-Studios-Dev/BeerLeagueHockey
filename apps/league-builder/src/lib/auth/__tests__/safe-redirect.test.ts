@@ -20,6 +20,24 @@ describe('safeRedirectPath', () => {
     expect(safeRedirectPath('//evil.com/path')).toBe('/en/dashboard');
   });
 
+  it('blocks backslash variants that URL parsing treats as cross-origin', () => {
+    expect(safeRedirectPath('/\\evil.com/path')).toBe('/en/dashboard');
+    expect(safeRedirectPath('/path\\to\\resource')).toBe('/en/dashboard');
+  });
+
+  it.each(['\t', '\n', '\r'])('blocks raw control character %p', (control) => {
+    expect(safeRedirectPath(`/${control}/evil.example.test`)).toBe('/en/dashboard');
+  });
+
+  it.each(['%09', '%0a', '%0D', '%7f'])('blocks encoded control character %p', (control) => {
+    expect(safeRedirectPath(`/${control}/evil.example.test`)).toBe('/en/dashboard');
+  });
+
+  it('blocks paths that normalize to a protocol-relative URL', () => {
+    expect(safeRedirectPath('/%2e%2e//evil.example.test/path')).toBe('/en/dashboard');
+    expect(safeRedirectPath('/safe/..//evil.example.test/path')).toBe('/en/dashboard');
+  });
+
   it('blocks absolute URLs with protocol', () => {
     expect(safeRedirectPath('https://evil.com')).toBe('/en/dashboard');
     expect(safeRedirectPath('http://evil.com/callback')).toBe('/en/dashboard');

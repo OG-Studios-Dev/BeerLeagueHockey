@@ -19,6 +19,7 @@ const PUBLIC_ROUTES = [
   '/reset-password',
   '/terms',
   '/privacy',
+  '/privacy-policy',
   '/setup-organization',
   '/pricing',
   '/book-demo',
@@ -115,6 +116,12 @@ export async function middleware(request: NextRequest) {
   // Normalize French routes to English equivalents for auth checking
   if (locale === 'fr') {
     pathWithoutLocale = normalizeFrenchRoute(pathWithoutLocale);
+  }
+
+  // Keep the previously published policy URL public and send it to the
+  // canonical localized policy before performing any authentication lookup.
+  if (pathWithoutLocale === '/privacy-policy') {
+    return NextResponse.redirect(new URL(`/${locale}/privacy`, request.url));
   }
 
   // Create Supabase client for auth — cookies are read from the request

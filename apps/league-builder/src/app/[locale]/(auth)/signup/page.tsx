@@ -2,16 +2,18 @@
 
 import { signUp } from '@/lib/actions/auth';
 import { searchClaimablePlayerProfiles, type ClaimablePlayerCandidate } from '@/lib/actions/legacy-merge';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { useState } from 'react';
 import { cn } from '@hockey-life/ui/lib/utils';
 import { Loader2, Search, UserCheck, X } from 'lucide-react';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { OAuthProviderButton } from '@/components/auth/OAuthProviderButton';
+import { validatedAuthLocale } from '@/lib/auth/oauth-redirect';
 
 export default function SignupPage() {
   const t = useTranslations();
+  const locale = validatedAuthLocale(useLocale());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -85,10 +87,12 @@ export default function SignupPage() {
         <OAuthProviderButton
           provider="google"
           label={t('auth.signUpWithGoogle')}
+          locale={locale}
         />
         <OAuthProviderButton
           provider="apple"
           label={t('auth.signUpWithApple')}
+          locale={locale}
         />
       </div>
 
