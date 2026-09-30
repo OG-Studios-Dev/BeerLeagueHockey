@@ -53,7 +53,10 @@ function mountProfile(options: {
       '../components/RevealView': { default: ({ children }: any) => createElement('RevealView', {}, children) },
       '../components/SectionHeader': { default: component('SectionHeader') }, '../components/TeamLogo': { default: component('TeamLogo') },
       '../components/MembershipDiagnosticsCard': { __esModule: true, default: component('MembershipDiagnosticsCard') },
-      '../context/AuthContext': { useAuth: () => ({ isGuest: options.isGuest ?? false, exitGuest: () => undefined, signOut: async () => ({ error: null }) }) },
+      '../context/AuthContext': { useAuth: () => ({
+        user: options.isGuest ? null : { id: 'player-1' }, isGuest: options.isGuest ?? false,
+        exitGuest: () => undefined, signOut: async () => ({ error: null }),
+      }) },
       '../context/LeagueContext': { useLeague: () => ({
         activeLeague: null, activeTheme: { backgroundColor: '#000', primaryColor: '#0ff', secondaryColor: '#00f' },
         membershipStatus: options.isGuest ? 'signed-out' : 'empty', membershipDiagnostics: { entries: [] },
@@ -85,7 +88,14 @@ describe('profile loading and retained-screen refresh', () => {
     assert.match(nodeText(mounted.harness.output), /Beginner/);
     assert.equal(mounted.profileReads, 1);
 
-    notifyProfilePreferencesChanged();
+    notifyProfilePreferencesChanged('player-2');
+    mounted.harness.render();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+    assert.equal(mounted.profileReads, 1);
+    assert.match(nodeText(mounted.harness.output), /Beginner/);
+
+    notifyProfilePreferencesChanged('player-1');
     mounted.harness.render();
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();

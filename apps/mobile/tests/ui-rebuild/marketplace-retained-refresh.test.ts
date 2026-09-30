@@ -49,7 +49,15 @@ describe('retained marketplace profile fallback', () => {
     assert.ok(list);
     assert.match(nodeText(list.props.ListHeaderComponent), /Your Rating:D/);
 
-    notifyProfilePreferencesChanged();
+    notifyProfilePreferencesChanged('player-2');
+    harness.render();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    harness.render();
+    assert.equal(loads, 1);
+    list = findNode(harness.output, (node) => node.type === 'FlatList');
+    assert.match(nodeText(list?.props.ListHeaderComponent), /Your Rating:D/);
+
+    notifyProfilePreferencesChanged('player-1');
     harness.render();
     await new Promise<void>((resolve) => setImmediate(resolve));
     harness.render();

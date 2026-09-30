@@ -18,8 +18,11 @@ function deferred<T>(): Deferred<T> {
 }
 
 function mountEditProfile(options: {
-  profileResult?: Promise<any> | any;
-  updateResult?: Promise<any> | any;
+  authResult?: unknown;
+  profileResult?: unknown;
+  rosterResult?: unknown;
+  updateResult?: unknown;
+  updateResults?: unknown[];
 } = {}) {
   const harness = createHookHarness();
   const alerts: Array<{ title: string; message?: string }> = [];
@@ -27,12 +30,14 @@ function mountEditProfile(options: {
   const updateSelects: string[] = [];
   const navigationListeners = new Map<string, () => void>();
   let profileQueries = 0;
+  let rosterQueries = 0;
+  let updateIndex = 0;
   let backs = 0;
   const profileResult = options.profileResult ?? {
     data: { full_name: 'Casey', position: 'C', avatar_url: null, skill_level: 'advanced' }, error: null,
   };
   const supabase = {
-    auth: { getUser: async () => ({ data: { user: { id: 'player-1' } }, error: null }) },
+    auth: { getUser: async () => await (options.authResult ?? ({ data: { user: { id: 'player-1' } }, error: null })) },
     from: (table: string) => {
       const chain: Record<string, any> = {};
       chain.select = () => chain;
@@ -44,13 +49,16 @@ function mountEditProfile(options: {
         }
         return { data: null, error: null };
       };
-      chain.maybeSingle = async () => ({ data: { jersey_number: 19 }, error: null });
+      chain.maybeSingle = async () => {
+        rosterQueries += 1;
+        return await (options.rosterResult ?? { data: { jersey_number: 19 }, error: null });
+      };
       chain.update = (payload: Record<string, unknown>) => {
         updates.push(payload);
         const updateChain: Record<string, any> = {};
         updateChain.eq = () => updateChain;
         updateChain.select = (columns: string) => { updateSelects.push(columns); return updateChain; };
-        updateChain.single = async () => await (options.updateResult ?? {
+        updateChain.single = async () => await (options.updateResults?.[updateIndex++] ?? options.updateResult ?? {
           data: { id: 'player-1', position: payload.position, skill_level: payload.skill_level }, error: null,
         });
         return updateChain;
@@ -84,6 +92,7 @@ function mountEditProfile(options: {
   return {
     harness, alerts, updates, updateSelects, navigationListeners,
     get profileQueries() { return profileQueries; },
+    get rosterQueries() { return rosterQueries; },
     get backs() { return backs; },
   };
 }
@@ -135,7 +144,7 @@ describe('native profile database contract', () => {
 
   it('rejects an error-free zero-row update and retains the selected draft', async () => {
     let invalidations = 0;
-    const unsubscribe = subscribeToProfilePreferencesChanges(() => { invalidations += 1; });
+    const unsubscribe = subscribeToProfilePreferencesChanges('player-1', () => { invalidations += 1; });
     const mounted = mountEditProfile({ updateResult: { data: null, error: null } });
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();
@@ -159,7 +168,7 @@ describe('native profile database contract', () => {
 
   it('navigates only after one exact matching row confirms the narrow update', async () => {
     let invalidations = 0;
-    const unsubscribe = subscribeToProfilePreferencesChanges(() => { invalidations += 1; });
+    const unsubscribe = subscribeToProfilePreferencesChanges('player-1', () => { invalidations += 1; });
     const mounted = mountEditProfile();
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();
@@ -186,9 +195,14 @@ describe('native profile database contract', () => {
     assert.equal(mounted.alerts.at(-1)?.title, 'Unable to Save Profile');
   });
 
-  it('ignores late resolved errors, successes, and thrown rejections after leaving', async () => {
-    for (const outcome of ['error', 'success', 'throw'] as const) {
+  it('settles a retained editor after blur for success, returned error, and rejection without stale UI effects', async () => {
+    for (const schedule of ['refocus-before-settlement', 'refocus-after-settlement'] as const) {
+      for (const outcome of ['error', 'success', 'throw'] as const) {
       const pending = deferred<any>();
+      let ownInvalidations = 0;
+      let otherInvalidations = 0;
+      const unsubscribeOwn = subscribeToProfilePreferencesChanges('player-1', () => { ownInvalidations += 1; });
+      const unsubscribeOther = subscribeToProfilePreferencesChanges('player-2', () => { otherInvalidations += 1; });
       const mounted = mountEditProfile({ updateResult: pending.promise });
       await new Promise<void>((resolve) => setImmediate(resolve));
       mounted.harness.render();
@@ -196,22 +210,130 @@ describe('native profile database contract', () => {
       assert.ok(save);
       const savePromise = save.props.onPress();
       await new Promise<void>((resolve) => setImmediate(resolve));
-      const updatesBeforeLeave = mounted.harness.stateUpdateCount;
-      if (outcome === 'success') {
-        mounted.navigationListeners.get('blur')?.();
+      mounted.harness.render();
+      assert.equal(mounted.updates.length, 1, `${schedule}/${outcome}: mutation must be pending first`);
+      assert.equal(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.disabled, true);
+      assert.equal(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Cancel profile editing')?.props.disabled, true);
+      assert.ok(findNode(mounted.harness.output, (node) => node.type === 'ActivityIndicator'));
+
+      mounted.navigationListeners.get('blur')?.();
+      if (schedule === 'refocus-before-settlement') {
         mounted.navigationListeners.get('focus')?.();
       }
-      else mounted.harness.unmount();
 
       if (outcome === 'error') pending.resolve({ data: null, error: new Error('late denied') });
       else if (outcome === 'success') pending.resolve({ data: { id: 'player-1', position: 'C', skill_level: 'advanced' }, error: null });
       else pending.reject(new Error('late rejection'));
       await savePromise;
+      if (schedule === 'refocus-after-settlement') mounted.navigationListeners.get('focus')?.();
+      mounted.harness.render();
 
-      assert.equal(mounted.alerts.length, 0, outcome);
-      assert.equal(mounted.backs, 0, outcome);
-      assert.equal(mounted.harness.stateUpdateCount, updatesBeforeLeave, outcome);
+      assert.equal(mounted.alerts.length, 0, `${schedule}/${outcome}`);
+      assert.equal(mounted.backs, 0, `${schedule}/${outcome}`);
+      assert.equal(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.disabled, false);
+      assert.equal(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Cancel profile editing')?.props.disabled, false);
+      assert.equal(findNode(mounted.harness.output, (node) => node.type === 'ActivityIndicator'), undefined);
+      assert.equal(ownInvalidations, outcome === 'success' ? 1 : 0);
+      assert.equal(otherInvalidations, 0);
+      unsubscribeOwn();
+      unsubscribeOther();
+      mounted.harness.unmount();
+      }
     }
+  });
+
+  it('publishes confirmed persistence after unmount only to the saved user', async () => {
+    const pending = deferred<any>();
+    let ownInvalidations = 0;
+    let otherInvalidations = 0;
+    const unsubscribeOwn = subscribeToProfilePreferencesChanges('player-1', () => { ownInvalidations += 1; });
+    const unsubscribeOther = subscribeToProfilePreferencesChanges('player-2', () => { otherInvalidations += 1; });
+    const mounted = mountEditProfile({ updateResult: pending.promise });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+    const savePromise = findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(mounted.updates.length, 1, 'mutation must be pending before unmount');
+    mounted.harness.unmount();
+    pending.resolve({ data: { id: 'player-1', position: 'C', skill_level: 'advanced' }, error: null });
+    await savePromise;
+    assert.equal(ownInvalidations, 1);
+    assert.equal(otherInvalidations, 0);
+    assert.equal(mounted.alerts.length, 0);
+    assert.equal(mounted.backs, 0);
+    unsubscribeOwn();
+    unsubscribeOther();
+  });
+
+  it('does not let an older completion clear a newer save operation', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    const mounted = mountEditProfile({ updateResults: [first.promise, second.promise] });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+    const handleSave = findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress;
+    assert.ok(handleSave);
+    const firstSave = handleSave();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const secondSave = handleSave();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(mounted.updates.length, 2, 'newer mutation must be pending before the older one settles');
+
+    first.resolve({ data: null, error: new Error('older denied') });
+    await firstSave;
+    mounted.harness.render();
+    assert.equal(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.disabled, true);
+    assert.ok(findNode(mounted.harness.output, (node) => node.type === 'ActivityIndicator'));
+
+    second.resolve({ data: null, error: new Error('newer denied') });
+    await secondSave;
+    mounted.harness.render();
+    assert.equal(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.disabled, false);
+    assert.equal(findNode(mounted.harness.output, (node) => node.type === 'ActivityIndicator'), undefined);
+    mounted.harness.unmount();
+  });
+
+  it('finishes delayed auth, profile, and roster stages that settle while blurred', async () => {
+    for (const stage of ['auth', 'profile', 'roster'] as const) {
+      const pending = deferred<any>();
+      const mounted = mountEditProfile({
+        authResult: stage === 'auth' ? pending.promise : undefined,
+        profileResult: stage === 'profile' ? pending.promise : undefined,
+        rosterResult: stage === 'roster' ? pending.promise : undefined,
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (stage === 'profile') assert.equal(mounted.profileQueries, 1);
+      if (stage === 'roster') {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.equal(mounted.rosterQueries, 1);
+      }
+      mounted.navigationListeners.get('blur')?.();
+      if (stage === 'auth') pending.resolve({ data: { user: { id: 'player-1' } }, error: null });
+      else if (stage === 'profile') pending.resolve({ data: { full_name: 'Casey', position: 'C', avatar_url: null, skill_level: 'expert' }, error: null });
+      else pending.resolve({ data: { jersey_number: 19 }, error: null });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      mounted.navigationListeners.get('focus')?.();
+      mounted.harness.render();
+      assert.ok(findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes'), stage);
+      assert.equal(findNode(mounted.harness.output, (node) => node.type === 'ActivityIndicator'), undefined, stage);
+      mounted.harness.unmount();
+    }
+  });
+
+  it('shows a delayed load rejection that settles while blurred instead of spinning forever', async () => {
+    const pending = deferred<unknown>();
+    const mounted = mountEditProfile({ profileResult: pending.promise });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(mounted.profileQueries, 1, 'profile read must be pending before blur');
+    mounted.navigationListeners.get('blur')?.();
+    pending.reject(new Error('offline'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.navigationListeners.get('focus')?.();
+    mounted.harness.render();
+    assert.equal(findNode(mounted.harness.output, (node) => node.type === 'ActivityIndicator'), undefined);
+    assert.match(nodeText(mounted.harness.output), /couldn't load your player preferences/i);
+    mounted.harness.unmount();
   });
 
   it('does not apply a late profile load after the screen unmounts', async () => {

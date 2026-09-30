@@ -40,15 +40,20 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const activeRef = React.useRef(true);
-  const lifetimeRef = React.useRef(0);
+  const mountedRef = React.useRef(true);
+  const loadGenerationRef = React.useRef(0);
+  const focusedRef = React.useRef(true);
+  const focusedUiGenerationRef = React.useRef(0);
+  const saveOperationRef = React.useRef(0);
 
   React.useEffect(() => {
-    activeRef.current = true;
+    mountedRef.current = true;
+    const loadGeneration = ++loadGenerationRef.current;
+    const isCurrentLoad = () => mountedRef.current && loadGenerationRef.current === loadGeneration;
     async function load() {
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (!activeRef.current) return;
+        if (!isCurrentLoad()) return;
         if (userError || !user) {
           setLoadError("We couldn't load your player preferences. Please try again.");
           return;
@@ -60,7 +65,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           .select(PROFILE_PREFERENCES_SELECT)
           .eq('id', user.id)
           .single();
-        if (!activeRef.current) return;
+        if (!isCurrentLoad()) return;
 
         if (profileError || !profile) {
           setLoadError("We couldn't load your player preferences. Please try again.");
@@ -77,27 +82,28 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           .eq('player_id', user.id)
           .eq('status', 'active')
           .maybeSingle();
-        if (!activeRef.current) return;
+        if (!isCurrentLoad()) return;
         if (roster?.jersey_number != null) setJerseyNumber(String(roster.jersey_number));
       } catch {
-        if (activeRef.current) setLoadError("We couldn't load your player preferences. Please try again.");
+        if (isCurrentLoad()) setLoadError("We couldn't load your player preferences. Please try again.");
       } finally {
-        if (activeRef.current) setLoading(false);
+        if (isCurrentLoad()) setLoading(false);
       }
     }
     void load();
     return () => {
-      activeRef.current = false;
-      lifetimeRef.current += 1;
+      mountedRef.current = false;
+      loadGenerationRef.current += 1;
+      saveOperationRef.current += 1;
     };
   }, []);
 
   React.useEffect(() => {
     const removeBlurListener = navigation.addListener?.('blur', () => {
-      activeRef.current = false;
-      lifetimeRef.current += 1;
+      focusedRef.current = false;
+      focusedUiGenerationRef.current += 1;
     });
-    const removeFocusListener = navigation.addListener?.('focus', () => { activeRef.current = true; });
+    const removeFocusListener = navigation.addListener?.('focus', () => { focusedRef.current = true; });
     return () => {
       removeBlurListener?.();
       removeFocusListener?.();
@@ -106,7 +112,12 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
 
   async function handleSave() {
     if (!userId) return;
-    const operationLifetime = lifetimeRef.current;
+    const operation = ++saveOperationRef.current;
+    const focusedUiGeneration = focusedUiGenerationRef.current;
+    const mayApplyFocusedUi = () =>
+      mountedRef.current &&
+      focusedRef.current &&
+      focusedUiGenerationRef.current === focusedUiGeneration;
     setSaving(true);
     try {
       const update: ProfilePreferencesUpdate = {
@@ -119,24 +130,25 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
         .eq('id', userId)
         .select('id, position, skill_level')
         .single();
-      if (!activeRef.current || lifetimeRef.current !== operationLifetime) return;
       const updateConfirmed =
         !error &&
         updatedProfile?.id === userId &&
         updatedProfile.position === update.position &&
         updatedProfile.skill_level === update.skill_level;
       if (!updateConfirmed) {
-        Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
+        if (mayApplyFocusedUi()) {
+          Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
+        }
         return;
       }
-      notifyProfilePreferencesChanged();
-      navigation.goBack();
+      notifyProfilePreferencesChanged(userId);
+      if (mayApplyFocusedUi()) navigation.goBack();
     } catch {
-      if (activeRef.current && lifetimeRef.current === operationLifetime) {
+      if (mayApplyFocusedUi()) {
         Alert.alert('Unable to Save Profile', 'Your changes were not saved. Please try again.');
       }
     } finally {
-      if (activeRef.current && lifetimeRef.current === operationLifetime) setSaving(false);
+      if (mountedRef.current && saveOperationRef.current === operation) setSaving(false);
     }
   }
 

@@ -219,9 +219,13 @@ export default function LeagueMarketplace({
   const [marketplaceError, setMarketplaceError] = React.useState<string | null>(null);
   const [profileRefreshKey, setProfileRefreshKey] = React.useState(0);
 
-  React.useEffect(() => subscribeToProfilePreferencesChanges(() => {
-    setProfileRefreshKey((current) => current + 1);
-  }), []);
+  React.useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId) return undefined;
+    return subscribeToProfilePreferencesChanges(userId, () => {
+      setProfileRefreshKey((current) => current + 1);
+    });
+  }, [session?.user.id]);
 
   // Load marketplace
   React.useEffect(() => {

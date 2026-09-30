@@ -177,7 +177,7 @@ function formatRecord(wins: number, losses: number, ties: number) {
 }
 
 export default function ProfileScreen({ navigation }: { navigation: any }) {
-  const { isGuest, exitGuest, signOut } = useAuth();
+  const { user, isGuest, exitGuest, signOut } = useAuth();
   const {
     activeLeague,
     activeTheme,
@@ -208,9 +208,12 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   const [profileError, setProfileError] = React.useState<string | null>(null);
   const [profileRefreshKey, setProfileRefreshKey] = React.useState(0);
 
-  React.useEffect(() => subscribeToProfilePreferencesChanges(() => {
-    setProfileRefreshKey((current) => current + 1);
-  }), []);
+  React.useEffect(() => {
+    if (!user?.id) return undefined;
+    return subscribeToProfilePreferencesChanges(user.id, () => {
+      setProfileRefreshKey((current) => current + 1);
+    });
+  }, [user?.id]);
 
   React.useEffect(() => {
     let cancelled = false;

@@ -7,15 +7,20 @@ export type ProfilePreferencesUpdate = Pick<TablesUpdate<'profiles'>, 'position'
 export const PROFILE_IDENTITY_SELECT = 'id, full_name, avatar_url, position, skill_level';
 export const PROFILE_PREFERENCES_SELECT = 'full_name, position, avatar_url, skill_level';
 
-const profilePreferencesChangeListeners = new Set<() => void>();
+const profilePreferencesChangeListeners = new Map<string, Set<() => void>>();
 
-export function subscribeToProfilePreferencesChanges(listener: () => void): () => void {
-  profilePreferencesChangeListeners.add(listener);
-  return () => profilePreferencesChangeListeners.delete(listener);
+export function subscribeToProfilePreferencesChanges(userId: string, listener: () => void): () => void {
+  const listeners = profilePreferencesChangeListeners.get(userId) ?? new Set<() => void>();
+  listeners.add(listener);
+  profilePreferencesChangeListeners.set(userId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) profilePreferencesChangeListeners.delete(userId);
+  };
 }
 
-export function notifyProfilePreferencesChanged(): void {
-  for (const listener of profilePreferencesChangeListeners) listener();
+export function notifyProfilePreferencesChanged(userId: string): void {
+  for (const listener of profilePreferencesChangeListeners.get(userId) ?? []) listener();
 }
 
 export const PROFILE_SKILL_LEVELS: ReadonlyArray<{ value: ProfileSkillLevel; label: string; ratingTier: number }> = [
