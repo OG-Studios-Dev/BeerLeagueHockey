@@ -20,3 +20,11 @@ test('function config preserves delete-account JWT verification and matches depl
   assert.match(config, /\[functions\.delete-account\]\s+enabled = true\s+verify_jwt = true/s);
   assert.match(config, /\[functions\.process-account-deletions\]\s+enabled = true\s+verify_jwt = false/s);
 });
+
+test('production entrypoint prefers the dedicated deletion scheduler secret and retains the generic fallback', () => {
+  const source = fs.readFileSync(path.join(functionDirectory, 'index.ts'), 'utf8');
+  assert.match(
+    source,
+    /cronSecret:\s*Deno\.env\.get\('ACCOUNT_DELETION_CRON_SECRET'\)\s*\?\?\s*Deno\.env\.get\('CRON_SECRET'\)/,
+  );
+});

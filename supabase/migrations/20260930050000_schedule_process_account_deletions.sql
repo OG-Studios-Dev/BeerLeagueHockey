@@ -10,24 +10,32 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  service_role_key text;
+  cron_secret text;
+  secret_count bigint;
   request_id bigint;
 BEGIN
-  SELECT NULLIF(btrim(secret.decrypted_secret), '')
-  INTO service_role_key
+  SELECT count(*), min(NULLIF(btrim(secret.decrypted_secret), ''))
+  INTO secret_count, cron_secret
   FROM vault.decrypted_secrets AS secret
-  WHERE secret.name = 'service_role_key'
-  LIMIT 1;
+  WHERE secret.name = 'account_deletion_cron_secret';
 
-  IF service_role_key IS NULL THEN
-    RAISE EXCEPTION 'Vault secret service_role_key is missing or blank.';
+  IF secret_count = 0 THEN
+    RAISE EXCEPTION 'Vault secret account_deletion_cron_secret is missing or blank.';
+  END IF;
+
+  IF secret_count > 1 THEN
+    RAISE EXCEPTION 'Vault secret account_deletion_cron_secret is ambiguous.';
+  END IF;
+
+  IF cron_secret IS NULL THEN
+    RAISE EXCEPTION 'Vault secret account_deletion_cron_secret is missing or blank.';
   END IF;
 
   SELECT net.http_post(
     url := 'https://ntplczcmhvfkijjxavdl.supabase.co/functions/v1/process-account-deletions',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || service_role_key
+      'X-Cron-Secret', cron_secret
     ),
     body := jsonb_build_object('mode', 'batch')
   )
