@@ -39,7 +39,11 @@ export async function signUp(formData: FormData) {
   const password = formData.get('password') as string;
   const fullName = formData.get('fullName') as string;
   const organizationName = formData.get('organizationName') as string;
-  const claimPlayerProfileId = (formData.get('claimPlayerProfileId') as string | null)?.trim() || null;
+  const requestedClaimProfileId = (formData.get('claimPlayerProfileId') as string | null)?.trim() || null;
+  const claimPlayerProfileId = requestedClaimProfileId
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedClaimProfileId)
+    ? requestedClaimProfileId
+    : null;
 
   // GDPR/CCPA Compliance: Validate required consents
   // Checkboxes send 'on' by default, or a custom value if specified
@@ -98,10 +102,10 @@ export async function signUp(formData: FormData) {
       return { error: 'Failed to create account. Please try again.' };
     }
 
-    // 2. Update or create profile. Claiming players are normal player accounts;
-    // non-claim signups keep the existing league-owner organization path.
+    // 2. Update or create profile. A selected player is only an untrusted
+    // pending review hint; it never authorizes a destructive claim.
     // Note: A trigger might auto-create the profile, so we use upsert.
-    const isPlayerClaimSignup = !!claimPlayerProfileId;
+    const isPlayerClaimSignup = !!requestedClaimProfileId;
     const { error: profileError } = await (serviceSupabase
       .from('profiles') as any)
       .upsert({
@@ -109,6 +113,9 @@ export async function signUp(formData: FormData) {
         email,
         full_name: fullName,
         role: isPlayerClaimSignup ? 'player' : 'owner',
+        ...(claimPlayerProfileId
+          ? { pending_legacy_match_ids: [claimPlayerProfileId] }
+          : {}),
       }, {
         onConflict: 'id',
       });
@@ -148,76 +155,9 @@ export async function signUp(formData: FormData) {
       // User can still use the platform, but we should track this for audit
     }
 
-    // 3. If the user selected an existing rostered player profile, claim it now.
-    // The DB function re-validates that the source profile is rostered and not tied to an auth user.
-    if (claimPlayerProfileId) {
-      // SECURITY (identity): a player profile that has a REAL contact email on
-      // file may only be claimed by an account signing up with that same email.
-      // The claim reassigns the player's roster/stats/payments and deletes the
-      // source profile, so without this check anyone could claim an arbitrary
-      // teammate's rostered profile from the public name search. Profiles with no
-      // email or a system placeholder (captain-invite / legacy / manual-spare) are
-      // handled by their own token-based flows and are not gated here.
-      const { data: claimTarget } = await (serviceSupabase.from('profiles') as any)
-        .select('email')
-        .eq('id', claimPlayerProfileId)
-        .maybeSingle();
-      const claimEmail = String(claimTarget?.email ?? '').trim().toLowerCase();
-      const isPlaceholderEmail =
-        claimEmail === '' ||
-        claimEmail.startsWith('captaininvite_') ||
-        claimEmail.startsWith('legacy_') ||
-        claimEmail.startsWith('manual-spare+');
-      if (!isPlaceholderEmail && claimEmail !== email.trim().toLowerCase()) {
-        // Not the person on file — undo the just-created account and refuse.
-        await serviceSupabase.auth.admin.deleteUser(authData.user.id);
-        return {
-          error:
-            'This player is linked to a different email address. Sign up with the email on file, or ask a captain/admin to send you an invite.',
-        };
-      }
-
-      const { data: claimData, error: claimError } = await (serviceSupabase.rpc as any)(
-        'claim_rostered_player_profile',
-        {
-          p_target_profile_id: authData.user.id,
-          p_claim_profile_id: claimPlayerProfileId,
-        }
-      );
-
-      const claimResult = claimData as any;
-      if (claimError || !claimResult?.success) {
-        // The auth trigger may have already auto-merged a single exact legacy match by name.
-        const [{ data: targetAfterClaim }, { data: claimSourceStillExists }] = await Promise.all([
-          serviceSupabase
-            .from('profiles')
-            .select('legacy_merge_completed_at')
-            .eq('id', authData.user.id)
-            .maybeSingle() as any,
-          serviceSupabase
-            .from('profiles')
-            .select('id')
-            .eq('id', claimPlayerProfileId)
-            .maybeSingle() as any,
-        ]);
-
-        const alreadyMergedByTrigger =
-          !!targetAfterClaim?.legacy_merge_completed_at && !claimSourceStillExists;
-
-        if (!alreadyMergedByTrigger) {
-          if (isDevelopment) {
-            console.error('[auth] Player claim failed:', claimError || claimResult?.error);
-          }
-          await serviceSupabase.from('profiles').delete().eq('id', authData.user.id);
-          await serviceSupabase.auth.admin.deleteUser(authData.user.id);
-          return { error: 'We could not safely claim that player profile. Please search again or continue without claiming history.' };
-        }
-      }
-    }
-
-    // 4. Non-player signups create a league organization. Player-claim signups
-    // inherit their roster/team context from the claimed profile and should not
-    // be forced to invent an organization.
+    // 4. Standard owner signups create a league organization. A player who
+    // requested history review gets an independent player account; the pending
+    // source does not grant roster, team, or league access.
     if (!isPlayerClaimSignup) {
       if (!organizationName?.trim()) {
         await serviceSupabase.from('profiles').delete().eq('id', authData.user.id);
@@ -273,7 +213,7 @@ export async function signUp(formData: FormData) {
     const locale = await getLocale();
     try {
       const legacyStatus = await checkLegacyMergeStatus();
-      if (legacyStatus.hasPendingMatches && legacyStatus.matchCount > 1) {
+      if (requestedClaimProfileId || legacyStatus.hasPendingMatches) {
         redirect({ href: '/claim-history', locale });
       }
     } catch (legacyError) {

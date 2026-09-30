@@ -308,6 +308,12 @@
     "companyNamePlaceholder": "Hockey Adulte de Montreal Inc.",
     "companyNameDescription": "Le nom de votre entreprise ou organisation. Vous pouvez creer plusieurs ligues sous votre entreprise.",
     "companyNameExample": "Exemple: \"Hockey Adulte de Montreal Inc.\" ou simplement votre nom si vous etes un individu",
+    "requestPlayerHistoryReview": "Demander la verification de l'historique du joueur",
+    "playerHistoryReviewDescription": "Deja dans un alignement? Selectionnez une correspondance possible pour verification par un administrateur de la plateforme. Votre compte sera cree maintenant; aucun historique ne sera transfere avant l'approbation.",
+    "playerHistoryPendingFor": "Demande de verification pour {name}",
+    "noPlayerHistorySelected": "Aucune verification d'historique de joueur selectionnee.",
+    "leagueTeamName": "Nom de la ligue / equipe",
+    "pendingReviewAccountDescription": "Votre compte joueur est cree independamment pendant que l'historique selectionne reste en attente de l'approbation d'un administrateur.",
     "acceptTerms": "J'accepte les <link>Conditions d'utilisation</link>",
     "acceptPrivacy": "J'accepte la <link>Politique de confidentialite</link>",
     "requiredField": "Requis pour creer un compte",
@@ -3588,6 +3594,13 @@
       "suggestion": "Suggestion",
       "other": "Autre"
     }
+  },
+  "claimHistory": {
+    "title": "Verification de l'historique du joueur en attente",
+    "subtitle": "Ces correspondances possibles restent inchangees jusqu'a ce qu'un administrateur de la plateforme verifie et approuve votre demande.",
+    "teamsPlayed": "Equipes",
+    "pendingApproval": "En attente de l'approbation d'un administrateur",
+    "continue": "Continuer vers le tableau de bord"
   },
   "goalieMarketplace": {
     "settingsTitle": "Banque de gardiens",
