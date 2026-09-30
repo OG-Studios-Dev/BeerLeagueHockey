@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { classifyOAuthFailure } from './oauth-errors';
 import { buildOAuthCallbackUrl } from './oauth-redirect';
 
@@ -41,7 +42,7 @@ describe('OAuth recovery translations', () => {
       const rendered = JSON.parse(execFileSync(
         process.execPath,
         ['--input-type=module', '--eval', script],
-        { cwd: process.cwd(), encoding: 'utf8' }
+        { cwd: resolve(__dirname, '../../..'), encoding: 'utf8' }
       ));
 
       expect(rendered.values).toEqual(expected[locale]);
