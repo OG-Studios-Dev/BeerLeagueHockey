@@ -74,22 +74,68 @@ def main() -> int:
         """)
 
         if args.red:
-            red = psql(sql="""
+            psql(sql="""
+              INSERT INTO auth.users(id) VALUES ('05050505-0505-0505-0505-050505050505');
+              SET request.jwt.claim.sub='05050505-0505-0505-0505-050505050505';
+              SET ROLE authenticated;
+              INSERT INTO public.profiles(id, full_name)
+              VALUES ('05050505-0505-0505-0505-050505050505', 'Exact Name Match');
+              RESET ROLE;
+
               SET ROLE anon;
-              SELECT public.merge_legacy_profile(
-                'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-                '11111111-1111-1111-1111-111111111111'
+              SELECT public.match_legacy_player_to_profile(
+                '02020202-0202-0202-0202-020202020202',
+                'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
               );
+              RESET ROLE;
+
+              SET request.jwt.claim.sub='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+              SET ROLE authenticated;
+              UPDATE public.legacy_players
+              SET matched_to_profile_id='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+              WHERE id='03030303-0303-0303-0303-030303030303';
+              RESET ROLE;
+
+              SET request.jwt.claim.sub='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+              SET ROLE authenticated;
+              UPDATE public.profiles
+              SET legacy_player_id='04040404-0404-0404-0404-040404040404',
+                  legacy_merge_completed_at=now()
+              WHERE id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+              RESET ROLE;
             """)
-            result = json.loads(red.stdout.strip().splitlines()[-1])
-            moved = psql(sql="SELECT count(*) FROM public.game_checkins WHERE id='10101010-1010-1010-1010-101010101010' AND player_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';").stdout.strip()
-            source = psql(sql="SELECT count(*) FROM public.profiles WHERE id='11111111-1111-1111-1111-111111111111';").stdout.strip()
-            if result.get('success') is True and moved == '1' and source == '0':
-                print('RED CONFIRMED: anon moved sentinel and deleted source before migration')
+            red_state = psql(sql="""
+              SELECT
+                (SELECT matched_to_profile_id FROM public.legacy_players WHERE id='01010101-0101-0101-0101-010101010101'),
+                (SELECT matched_to_profile_id FROM public.legacy_players WHERE id='02020202-0202-0202-0202-020202020202'),
+                (SELECT matched_to_profile_id FROM public.legacy_players WHERE id='03030303-0303-0303-0303-030303030303'),
+                (SELECT legacy_player_id FROM public.profiles WHERE id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+            """).stdout.strip()
+            expected = (
+                '05050505-0505-0505-0505-050505050505|'
+                'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb|'
+                'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee|'
+                '04040404-0404-0404-0404-040404040404'
+            )
+            if red_state == expected:
+                print('RED CONFIRMED: exact live trigger/RPC/owner-policy/profile-self-write routes all persisted bindings')
                 return 1
-            raise AssertionError(f'expected vulnerable RED, got result={result}, moved={moved}, source={source}')
+            raise AssertionError(f'expected all four vulnerable binding routes, got {red_state}')
 
         psql(file=ROOT / 'supabase/migrations/20260930142000_player_claim_authorization.sql')
+
+        # New profile creation no longer binds history by name.
+        psql(sql="""
+          INSERT INTO auth.users(id) VALUES ('05050505-0505-0505-0505-050505050505');
+          SET request.jwt.claim.sub='05050505-0505-0505-0505-050505050505';
+          SET ROLE authenticated;
+          INSERT INTO public.profiles(id, full_name)
+          VALUES ('05050505-0505-0505-0505-050505050505', 'Exact Name Match');
+          RESET ROLE;
+        """)
+        automatic_binding = psql(sql="SELECT matched_to_profile_id IS NULL FROM public.legacy_players WHERE id='01010101-0101-0101-0101-010101010101';").stdout.strip()
+        if automatic_binding != 't':
+            raise AssertionError('profile creation still auto-bound legacy history by name')
 
         # Actual SQL-role denials, including a spoofed request role GUC.
         denial_cases = {
@@ -99,11 +145,60 @@ def main() -> int:
             'GUC spoof': "SET ROLE authenticated; SET request.jwt.claim.role='service_role'; SELECT public.admin_merge_legacy_profile('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','11111111-1111-1111-1111-111111111111');",
             'service raw helper': "SET ROLE service_role; SELECT public._claim_update_uuid_column_if_exists('game_checkins','player_id','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','11111111-1111-1111-1111-111111111111');",
             'anon invite read': "SET ROLE anon; SELECT count(*) FROM public.captain_player_invites;",
+            'anon legacy match RPC': "SET ROLE anon; SELECT public.match_legacy_player_to_profile('02020202-0202-0202-0202-020202020202','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');",
+            'service legacy match RPC': "SET ROLE service_role; SELECT public.match_legacy_player_to_profile('02020202-0202-0202-0202-020202020202','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');",
+            'owner-role legacy table write': "SET request.jwt.claim.sub='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'; SET ROLE authenticated; UPDATE public.legacy_players SET matched_to_profile_id='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' WHERE id='03030303-0303-0303-0303-030303030303';",
+            'self profile binding update': "SET request.jwt.claim.sub='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'; SET ROLE authenticated; UPDATE public.profiles SET legacy_player_id='04040404-0404-0404-0404-040404040404' WHERE id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';",
+            'JWT-spoofed self binding update': "SET request.jwt.claim.sub='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'; SET request.jwt.claim.role='service_role'; SET ROLE authenticated; UPDATE public.profiles SET legacy_merge_completed_at=now() WHERE id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';",
+            'self profile binding insert': "INSERT INTO auth.users(id) VALUES ('06060606-0606-0606-0606-060606060606'); SET request.jwt.claim.sub='06060606-0606-0606-0606-060606060606'; SET ROLE authenticated; INSERT INTO public.profiles(id, full_name, legacy_player_id) VALUES ('06060606-0606-0606-0606-060606060606','Unsafe Insert','04040404-0404-0404-0404-040404040404');",
         }
         for label, statement in denial_cases.items():
             denied = psql(sql=statement, check=False)
-            if denied.returncode == 0 or 'permission denied' not in denied.stderr.lower():
+            denial_text = denied.stderr.lower()
+            if denied.returncode == 0 or not (
+                'permission denied' in denial_text
+                or 'requires a trusted operation' in denial_text
+            ):
                 raise AssertionError(f'{label} was not denied: stdout={denied.stdout} stderr={denied.stderr}')
+
+        # Ordinary profile edits and non-authoritative pending hints still work.
+        psql(sql="""
+          SET request.jwt.claim.sub='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+          SET ROLE authenticated;
+          UPDATE public.profiles
+          SET full_name='Normal Edit',
+              pending_legacy_match_ids=ARRAY['04040404-0404-0404-0404-040404040404'::uuid],
+              legacy_player_id=legacy_player_id,
+              legacy_merge_completed_at=legacy_merge_completed_at
+          WHERE id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+          RESET ROLE;
+        """)
+        normal_edit = psql(sql="SELECT full_name, cardinality(pending_legacy_match_ids), legacy_player_id IS NULL, legacy_merge_completed_at IS NULL FROM public.profiles WHERE id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';").stdout.strip()
+        if normal_edit != 'Normal Edit|1|t|t':
+            raise AssertionError(f'normal profile edit/pending hint compatibility failed: {normal_edit}')
+
+        # Trusted spare/guest creation remains compatible and cannot name-bind.
+        psql(sql="""
+          SET ROLE service_role;
+          INSERT INTO public.profiles(id, full_name, is_legacy_import, identity_provenance)
+          VALUES (
+            '07070707-0707-0707-0707-070707070707',
+            'Exact Name Match', false, 'claimable_guest'
+          );
+          RESET ROLE;
+        """)
+        public_read = psql(sql="SET ROLE anon; SELECT count(*) FROM public.legacy_players;").stdout.strip().splitlines()[-1]
+        if public_read != '4':
+            raise AssertionError(f'public legacy read compatibility failed: {public_read}')
+
+        # Trusted service writes remain available for reviewed import/merge work.
+        psql(sql="""
+          SET ROLE service_role;
+          UPDATE public.legacy_players
+          SET matched_to_profile_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', matched_at=now()
+          WHERE id='04040404-0404-0404-0404-040404040404';
+          RESET ROLE;
+        """)
 
         # A service-role call through the sole external RPC succeeds and preserves data.
         service = psql(sql="""

@@ -6,6 +6,16 @@ CREATE ROLE service_role NOLOGIN BYPASSRLS;
 CREATE ROLE postgres SUPERUSER NOLOGIN;
 CREATE SCHEMA auth;
 
+CREATE FUNCTION auth.uid()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
+GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
+
 CREATE TYPE public.user_role AS ENUM ('owner', 'captain', 'player');
 CREATE TABLE auth.users (
   id uuid PRIMARY KEY,
@@ -49,6 +59,7 @@ CREATE TABLE public.player_stats (
 );
 CREATE TABLE public.legacy_players (
   id uuid PRIMARY KEY,
+  full_name text,
   matched_to_profile_id uuid,
   matched_at timestamptz,
   updated_at timestamptz
@@ -112,6 +123,73 @@ CREATE TABLE public.captain_player_invites (
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.captain_player_invites TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.profiles, public.legacy_players TO anon, authenticated, service_role;
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can insert own profile" ON public.profiles
+  FOR INSERT TO PUBLIC WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON public.profiles
+  FOR UPDATE TO PUBLIC USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can view their own profile" ON public.profiles
+  FOR SELECT TO PUBLIC USING (auth.uid() = id);
+CREATE POLICY "Service role can insert profiles" ON public.profiles
+  FOR INSERT TO service_role WITH CHECK (true);
+
+ALTER TABLE public.legacy_players ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Legacy players are viewable by everyone" ON public.legacy_players
+  FOR SELECT TO PUBLIC USING (true);
+CREATE POLICY "Only owners can manage legacy players" ON public.legacy_players
+  FOR ALL TO PUBLIC USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.role = 'owner'::public.user_role
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.match_legacy_player_to_profile(
+  legacy_player_id uuid,
+  profile_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+BEGIN
+  UPDATE public.legacy_players
+  SET matched_to_profile_id = profile_id,
+      matched_at = NOW()
+  WHERE id = legacy_player_id;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.auto_match_legacy_player()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  legacy_id uuid;
+BEGIN
+  SELECT id INTO legacy_id
+  FROM public.legacy_players
+  WHERE LOWER(full_name) = LOWER(NEW.full_name)
+    AND matched_to_profile_id IS NULL
+  LIMIT 1;
+  IF legacy_id IS NOT NULL THEN
+    UPDATE public.legacy_players
+    SET matched_to_profile_id = NEW.id,
+        matched_at = NOW()
+    WHERE id = legacy_id;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER trigger_auto_match_legacy_player
+AFTER INSERT ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.auto_match_legacy_player();
 
 CREATE OR REPLACE FUNCTION public._claim_update_uuid_column_if_exists(
   p_table text, p_column text, p_target_profile_id uuid, p_claim_profile_id uuid
@@ -184,3 +262,9 @@ INSERT INTO public.captain_player_invites(
 ) VALUES
   ('41414141-4141-4141-4141-414141414141', '51515151-5151-5151-5151-515151515151', '61616161-6161-6161-6161-616161616161', '71717171-7171-7171-7171-717171717171', '11111111-1111-1111-1111-111111111111', '/source'),
   ('42424242-4242-4242-4242-424242424242', '52525252-5252-5252-5252-525252525252', '62626262-6262-6262-6262-626262626262', '72727272-7272-7272-7272-727272727272', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '/unrelated');
+
+INSERT INTO public.legacy_players(id, full_name) VALUES
+  ('01010101-0101-0101-0101-010101010101', 'Exact Name Match'),
+  ('02020202-0202-0202-0202-020202020202', 'RPC Target'),
+  ('03030303-0303-0303-0303-030303030303', 'Owner Target'),
+  ('04040404-0404-0404-0404-040404040404', 'Service Target');

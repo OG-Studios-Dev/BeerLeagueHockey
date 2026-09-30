@@ -406,6 +406,80 @@ REVOKE ALL ON FUNCTION public.admin_merge_legacy_profile(uuid, uuid, uuid)
 GRANT EXECUTE ON FUNCTION public.admin_merge_legacy_profile(uuid, uuid, uuid)
   TO service_role;
 
+-- Historical identity may only be bound by the reviewed platform-admin merge
+-- path above. Keep the deployed trigger in place for compatibility, but make
+-- it intentionally non-persistent so profile creation can never claim history
+-- by a case-insensitive name collision.
+CREATE OR REPLACE FUNCTION public.auto_match_legacy_player()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $function$
+BEGIN
+  RETURN NEW;
+END;
+$function$;
+
+ALTER FUNCTION public.auto_match_legacy_player() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.auto_match_legacy_player()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- This legacy RPC performs an unreviewed persistent binding. Retain it only
+-- for SQL-owner compatibility; API roles, including service_role, must use the
+-- platform-admin-authorized merge RPC.
+ALTER FUNCTION public.match_legacy_player_to_profile(uuid, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.match_legacy_player_to_profile(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- Public historical reads remain available. Ordinary account role labels are
+-- not platform authority and must not confer writes to the legacy catalog.
+DROP POLICY IF EXISTS "Only owners can manage legacy players"
+  ON public.legacy_players;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON TABLE public.legacy_players FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.legacy_players TO anon, authenticated;
+GRANT ALL ON TABLE public.legacy_players TO service_role;
+
+-- SECURITY INVOKER is intentional: CURRENT_USER must be the actual SQL role
+-- that initiated the write. JWT GUCs and application-level role columns do not
+-- affect this decision. Owner-executed SECURITY DEFINER maintenance and direct
+-- service operations remain compatible.
+CREATE OR REPLACE FUNCTION public.guard_profile_legacy_binding_columns()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $function$
+BEGIN
+  IF CURRENT_USER IN ('anon', 'authenticated') THEN
+    IF TG_OP = 'INSERT' THEN
+      IF NEW.legacy_player_id IS NOT NULL
+         OR NEW.legacy_merge_completed_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Profile legacy binding metadata requires a trusted operation'
+          USING ERRCODE = '42501';
+      END IF;
+    ELSIF NEW.legacy_player_id IS DISTINCT FROM OLD.legacy_player_id
+       OR NEW.legacy_merge_completed_at IS DISTINCT FROM OLD.legacy_merge_completed_at THEN
+      RAISE EXCEPTION 'Profile legacy binding metadata requires a trusted operation'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS profiles_guard_legacy_binding_columns
+  ON public.profiles;
+CREATE TRIGGER profiles_guard_legacy_binding_columns
+BEFORE INSERT OR UPDATE OF legacy_player_id, legacy_merge_completed_at
+ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.guard_profile_legacy_binding_columns();
+
+ALTER FUNCTION public.guard_profile_legacy_binding_columns() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.guard_profile_legacy_binding_columns()
+  FROM PUBLIC, anon, authenticated, service_role;
+
 COMMENT ON FUNCTION public.admin_merge_legacy_profile(uuid, uuid, uuid) IS
   'Only destructive player-history claim RPC. Service role caller supplies a server-authenticated actor; DB independently requires an active platform admin and hardened target/source invariants.';
 

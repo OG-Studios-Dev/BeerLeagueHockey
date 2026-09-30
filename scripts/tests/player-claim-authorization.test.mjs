@@ -61,4 +61,16 @@ describe('player claim authorization migration contract', () => {
     assert.match(sql, /i\.id = ANY\(v_invite_ids\)[\s\S]*?i\.target_player_id = p_target_profile_id[\s\S]*?i\.consumed_at IS NULL/i);
     assert.match(sql, /v_updated_invites <> v_expected_invites[\s\S]*?finalization race detected/i);
   });
+
+  it('closes all residual persistent legacy binding routes', () => {
+    assert.match(sql, /CREATE OR REPLACE FUNCTION public\.auto_match_legacy_player\(\)[\s\S]*?SECURITY INVOKER[\s\S]*?RETURN NEW/i);
+    assert.match(sql, /REVOKE ALL ON FUNCTION public\.auto_match_legacy_player\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/i);
+    assert.match(sql, /REVOKE ALL ON FUNCTION public\.match_legacy_player_to_profile\(uuid, uuid\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/i);
+    assert.match(sql, /DROP POLICY IF EXISTS "Only owners can manage legacy players"/i);
+    assert.match(sql, /REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER[\s\S]*?public\.legacy_players FROM PUBLIC, anon, authenticated/i);
+    assert.match(sql, /GRANT SELECT ON TABLE public\.legacy_players TO anon, authenticated/i);
+    assert.match(sql, /guard_profile_legacy_binding_columns[\s\S]*?SECURITY INVOKER[\s\S]*?CURRENT_USER IN \('anon', 'authenticated'\)/i);
+    assert.match(sql, /NEW\.legacy_player_id IS DISTINCT FROM OLD\.legacy_player_id[\s\S]*?NEW\.legacy_merge_completed_at IS DISTINCT FROM OLD\.legacy_merge_completed_at/i);
+    assert.match(sql, /REVOKE ALL ON FUNCTION public\.guard_profile_legacy_binding_columns\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/i);
+  });
 });
