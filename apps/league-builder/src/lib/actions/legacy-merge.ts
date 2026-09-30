@@ -161,7 +161,7 @@ export async function getLegacyCandidates(): Promise<
  */
 export async function claimLegacyProfile(
   legacyProfileId: string
-): Promise<{ success: true; totalReassigned: number } | { success: false; error: string }> {
+): Promise<{ success: true; pendingApproval: true } | { success: false; error: string }> {
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -183,30 +183,9 @@ export async function claimLegacyProfile(
     return { success: false, error: 'This legacy profile is not in your pending matches' };
   }
 
-  // Execute the atomic merge via RPC (cast needed until types are regenerated after migration)
-  const { data, error } = await (serviceSupabase.rpc as any)('merge_legacy_profile', {
-    p_new_profile_id: user.id,
-    p_legacy_profile_id: legacyProfileId,
-  });
-
-  if (error) {
-    if (isDevelopment) {
-      console.error('[legacy-merge] RPC error:', error.message);
-    }
-    return { success: false, error: 'Failed to merge legacy profile' };
-  }
-
-  const result = data as any;
-  if (!result?.success) {
-    return { success: false, error: result?.error || 'Merge failed' };
-  }
-
-  if (isDevelopment) {
-    console.info('[legacy-merge] Merged legacy profile %s into %s (%d records)',
-      legacyProfileId, user.id, result.total_reassigned);
-  }
-
-  return { success: true, totalReassigned: result.total_reassigned || 0 };
+  // pending_legacy_match_ids is discovery/request state only. Selection does not
+  // authorize a merge; a platform administrator must review it separately.
+  return { success: true, pendingApproval: true };
 }
 
 // ============================================================================
@@ -220,24 +199,14 @@ export async function dismissLegacyMatch(): Promise<
   { success: true } | { success: false; error: string }
 > {
   const supabase = await createClient();
-  const serviceSupabase = createServiceRoleClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
     return { success: false, error: 'Not authenticated' };
   }
 
-  const { error } = await serviceSupabase
-    .from('profiles')
-    .update({
-      pending_legacy_match_ids: [],
-    } as any)
-    .eq('id', user.id);
-
-  if (error) {
-    return { success: false, error: 'Failed to dismiss matches' };
-  }
-
+  // Preserve pending hints for administrator review. This action now only lets
+  // the user leave the chooser; it never clears claim evidence.
   return { success: true };
 }
 

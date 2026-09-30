@@ -5,12 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   getLegacyCandidates,
-  claimLegacyProfile,
-  dismissLegacyMatch,
 } from '@/lib/actions/legacy-merge';
 import type { LegacyCandidate } from '@/lib/actions/legacy-merge';
 import { cn } from '@hockey-life/ui';
-import { History, UserCheck, X, ArrowRight, Loader2 } from 'lucide-react';
+import { History, ShieldCheck, ArrowRight } from 'lucide-react';
 
 interface ClaimHistoryClientProps {
   locale: string;
@@ -22,8 +20,6 @@ export function ClaimHistoryClient({ locale }: ClaimHistoryClientProps) {
 
   const [candidates, setCandidates] = useState<LegacyCandidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [claimingId, setClaimingId] = useState<string | null>(null);
-  const [dismissing, setDismissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,30 +38,6 @@ export function ClaimHistoryClient({ locale }: ClaimHistoryClientProps) {
     }
     load();
   }, [locale, router]);
-
-  async function handleClaim(candidateId: string) {
-    setClaimingId(candidateId);
-    setError(null);
-    const result = await claimLegacyProfile(candidateId);
-    if (result.success) {
-      router.replace(`/${locale}/dashboard`);
-    } else {
-      setError(result.error);
-      setClaimingId(null);
-    }
-  }
-
-  async function handleDismiss() {
-    setDismissing(true);
-    setError(null);
-    const result = await dismissLegacyMatch();
-    if (result.success) {
-      router.replace(`/${locale}/dashboard`);
-    } else {
-      setError(result.error);
-      setDismissing(false);
-    }
-  }
 
   // Skeleton loading state
   if (loading) {
@@ -113,12 +85,12 @@ export function ClaimHistoryClient({ locale }: ClaimHistoryClientProps) {
             <History className="w-8 h-8 text-rink-500" />
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight mb-2">
-            {t('claimHistory.title', { defaultValue: 'Claim Your Player History' })}
+            {t('claimHistory.title', { defaultValue: 'Player history review pending' })}
           </h1>
           <p className="text-neutral-400 max-w-lg mx-auto">
             {t('claimHistory.subtitle', {
               defaultValue:
-                'We found multiple player profiles that may belong to you. Select the one that matches your playing history to merge your stats.',
+                'These possible matches remain unchanged until a platform administrator verifies and approves your request.',
             })}
           </p>
         </div>
@@ -138,7 +110,7 @@ export function ClaimHistoryClient({ locale }: ClaimHistoryClientProps) {
               className={cn(
                 'bg-white/[0.04] border border-white/10 backdrop-blur-xl rounded-2xl p-6',
                 'hover:border-rink-500/30 transition-all duration-200',
-                claimingId === candidate.id && 'border-rink-500/50 ring-1 ring-rink-500/20'
+                'border-rink-500/20'
               )}
             >
               {/* Player Name */}
@@ -193,63 +165,21 @@ export function ClaimHistoryClient({ locale }: ClaimHistoryClientProps) {
                 ))}
               </div>
 
-              {/* Claim Button */}
-              <button
-                onClick={() => handleClaim(candidate.id)}
-                disabled={claimingId !== null || dismissing}
-                className={cn(
-                  'w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all',
-                  'bg-rink-500 text-black hover:bg-rink-400',
-                  'disabled:opacity-50 disabled:cursor-not-allowed'
-                )}
-              >
-                {claimingId === candidate.id ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {t('claimHistory.claiming', { defaultValue: 'Claiming...' })}
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="w-4 h-4" />
-                    {t('claimHistory.thisIsMe', { defaultValue: 'This is me' })}
-                  </>
-                )}
-              </button>
+              <div className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-amber-500/10 border border-amber-500/20 text-amber-200">
+                <ShieldCheck className="w-4 h-4" />
+                {t('claimHistory.pendingApproval', { defaultValue: 'Pending admin approval' })}
+              </div>
             </div>
           ))}
         </div>
 
         {/* Footer Actions */}
-        <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button
-            onClick={handleDismiss}
-            disabled={claimingId !== null || dismissing}
-            className={cn(
-              'flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all',
-              'bg-white/[0.04] border border-white/10 text-neutral-300',
-              'hover:bg-white/[0.08] hover:border-white/20',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-          >
-            {dismissing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {t('claimHistory.dismissing', { defaultValue: 'Dismissing...' })}
-              </>
-            ) : (
-              <>
-                <X className="w-4 h-4" />
-                {t('claimHistory.noneAreMe', { defaultValue: 'None of these are me' })}
-              </>
-            )}
-          </button>
-
+        <div className="mt-10 flex items-center justify-center">
           <button
             onClick={() => router.push(`/${locale}/dashboard`)}
-            disabled={claimingId !== null || dismissing}
             className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
           >
-            {t('claimHistory.decideLater', { defaultValue: "I'll decide later" })}
+            {t('claimHistory.continue', { defaultValue: 'Continue to dashboard' })}
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

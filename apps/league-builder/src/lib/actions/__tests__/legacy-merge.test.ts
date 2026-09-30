@@ -6,7 +6,7 @@ jest.mock('@/lib/supabase/server', () => ({
 }));
 
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { getLegacyCandidates, searchClaimablePlayerProfiles } from '../legacy-merge';
+import { claimLegacyProfile, getLegacyCandidates, searchClaimablePlayerProfiles } from '../legacy-merge';
 
 describe('legacy merge candidate loading', () => {
   const mockCreateClient = createClient as jest.MockedFunction<typeof createClient>;
@@ -16,6 +16,34 @@ describe('legacy merge candidate loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('records a selected pending match for admin review without merging it', async () => {
+    const rpc = jest.fn();
+    mockCreateClient.mockResolvedValue({
+      auth: {
+        getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }),
+      },
+    } as never);
+    mockCreateServiceRoleClient.mockReturnValue({
+      rpc,
+      from: jest.fn(() => ({
+        select: jest.fn(() => ({
+          eq: jest.fn(() => ({
+            single: jest.fn().mockResolvedValue({
+              data: { pending_legacy_match_ids: ['legacy-1'] },
+              error: null,
+            }),
+          })),
+        })),
+      })),
+    } as never);
+
+    await expect(claimLegacyProfile('legacy-1')).resolves.toEqual({
+      success: true,
+      pendingApproval: true,
+    });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('aggregates candidate stats from player_season_stats instead of per-game rows', async () => {

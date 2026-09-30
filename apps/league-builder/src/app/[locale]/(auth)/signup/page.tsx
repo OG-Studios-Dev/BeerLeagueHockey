@@ -177,7 +177,7 @@ export default function SignupPage() {
               htmlFor="playerSearch"
               className="block text-sm font-medium text-neutral-300 mb-2"
             >
-              Claim player history <span className="text-neutral-500 font-normal">(optional)</span>
+              {t('auth.requestPlayerHistoryReview', { defaultValue: 'Request player history review' })} <span className="text-neutral-500 font-normal">({t('common.optional', { defaultValue: 'optional' })})</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -205,7 +205,7 @@ export default function SignupPage() {
               </button>
             </div>
             <p className="text-xs text-neutral-500 mt-1.5">
-              Already on a roster? Claim your stats and team history while creating your account.
+              {t('auth.playerHistoryReviewDescription', { defaultValue: 'Already on a roster? Select a possible match for platform-admin review. Your account will be created now; no history moves until approval.' })}
             </p>
           </div>
 
@@ -214,7 +214,7 @@ export default function SignupPage() {
               <div>
                 <p className="text-sm font-semibold text-white flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-rink-400" />
-                  Claiming {selectedPlayer.fullName}
+                  {t('auth.playerHistoryPendingFor', { defaultValue: 'Requesting review for {name}', name: selectedPlayer.fullName })}
                 </p>
                 <p className="text-xs text-neutral-400 mt-1">
                   {selectedPlayer.teams[0]?.teamName || 'Rostered player'} · {selectedPlayer.stats.points} PTS · {selectedPlayer.stats.gamesPlayed} GP
@@ -260,7 +260,7 @@ export default function SignupPage() {
           )}
 
           {!selectedPlayer && playerSearch.trim().length >= 2 && !playerSearchLoading && playerCandidates.length === 0 && (
-            <p className="text-xs text-neutral-500">No claimable rostered player history selected.</p>
+            <p className="text-xs text-neutral-500">{t('auth.noPlayerHistorySelected', { defaultValue: 'No player history review selected.' })}</p>
           )}
 
           <input type="hidden" name="claimPlayerProfileId" value={selectedPlayer?.id || ''} />
@@ -271,7 +271,7 @@ export default function SignupPage() {
             htmlFor="organizationName"
             className="block text-sm font-medium text-neutral-300 mb-2"
           >
-            {selectedPlayer ? 'League / team name' : t('auth.companyName')} {selectedPlayer && <span className="text-neutral-500 font-normal">(optional)</span>}
+            {selectedPlayer ? t('auth.leagueTeamName', { defaultValue: 'League / team name' }) : t('auth.companyName')} {selectedPlayer && <span className="text-neutral-500 font-normal">({t('common.optional', { defaultValue: 'optional' })})</span>}
           </label>
           <input
             type="text"
@@ -284,7 +284,7 @@ export default function SignupPage() {
           />
           <p className="text-xs text-neutral-500 mt-1">
             {selectedPlayer
-              ? 'Player accounts inherit league and team access from the claimed roster profile.'
+              ? t('auth.pendingReviewAccountDescription', { defaultValue: 'Your player account is created independently while the selected history remains pending admin review.' })
               : t('auth.companyNameDescription')}
           </p>
           {!selectedPlayer && (
