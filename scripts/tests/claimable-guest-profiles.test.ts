@@ -35,6 +35,15 @@ describe('claimable guest profile provenance', () => {
     assert.doesNotMatch(migration, /ALTER DEFAULT PRIVILEGES/i);
   });
 
+  it('serializes guest classification and auth attachment on the same profile key', () => {
+    const lock = /pg_catalog\.pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\('public\.profile_auth_identity:' \|\| NEW\.id::text, 0\)\s*\)/gi;
+    assert.equal(migration.match(lock)?.length, 2);
+    const classifier = migration.match(/CREATE OR REPLACE FUNCTION public\.classify_claimable_guest_profile\(\)[\s\S]*?\$function\$;/i)?.[0] || '';
+    const authGuard = migration.match(/CREATE OR REPLACE FUNCTION public\.block_auth_for_claimable_guest\(\)[\s\S]*?\$function\$;/i)?.[0] || '';
+    assert.ok(classifier.indexOf('pg_advisory_xact_lock') < classifier.indexOf('NOT EXISTS'));
+    assert.ok(authGuard.indexOf('pg_advisory_xact_lock') < authGuard.indexOf('IF EXISTS'));
+  });
+
   it('does not replace or weaken the reverse auth-delete guard', () => {
     assert.doesNotMatch(migration, /CREATE OR REPLACE FUNCTION public\.preserve_auth_for_active_profile/i);
     assert.doesNotMatch(migration, /DROP TRIGGER[^;]*auth_users_preserve_active_profiles/i);

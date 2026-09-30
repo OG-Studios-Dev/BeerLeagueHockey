@@ -23,6 +23,10 @@ DECLARE
   v_expected_manual_email text := 'manual-spare+' || NEW.id::text || '@beerleaguehockey.local';
   v_expected_captain_email text := 'captaininvite_' || NEW.id::text || '@captaininvite.hockeylifehl.com';
 BEGIN
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('public.profile_auth_identity:' || NEW.id::text, 0)
+  );
+
   -- SECURITY DEFINER changes current_user to the function owner. The verified
   -- auth.role() reads PostgREST's verified JWT claim and is the invocation
   -- provenance relevant to server writes.
@@ -109,6 +113,10 @@ SECURITY DEFINER
 SET search_path = ''
 AS $function$
 BEGIN
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('public.profile_auth_identity:' || NEW.id::text, 0)
+  );
+
   IF EXISTS (
     SELECT 1 FROM public.profiles AS p
     WHERE p.id = NEW.id AND p.identity_provenance = 'claimable_guest'
