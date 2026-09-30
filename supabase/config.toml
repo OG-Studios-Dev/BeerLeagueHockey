@@ -366,6 +366,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/delete-account/index.ts"
 
+[functions.process-account-deletions]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/process-account-deletions/index.ts"
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
