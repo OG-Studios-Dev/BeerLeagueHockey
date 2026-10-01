@@ -24,6 +24,21 @@ describe('standings web-parity model', () => {
     assert.deepEqual(picture.groups[0]?.matchups.map((matchup) => [matchup.highSeed.teamId, matchup.lowSeed?.teamId]), [['b', 'd'], ['a', 'c']]);
   });
 
+  it('projects the canonical preview round metadata for two, three, and four teams', () => {
+    const labels = [2, 3, 4].map((teamCount) => {
+      const picture = buildPlayoffPicture(rows.slice(0, teamCount), {
+        playoffTeamsTotal: teamCount, playoffTeamsPerDivision: null, useDivisionPlayoffs: false,
+      });
+      assert.equal(picture.status, 'ready');
+      return picture.groups[0]?.rounds.map((round) => [round.roundNumber, round.label]);
+    });
+    assert.deepEqual(labels, [
+      [[1, 'Championship']],
+      [[1, 'Semifinals'], [2, 'Championship']],
+      [[1, 'Semifinals'], [2, 'Championship']],
+    ]);
+  });
+
   it('counts only regular completed or pending-verification games and detects playoffs', () => {
     const completion = buildSeasonCompletion([
       { id: '1', homeTeamId: 'a', awayTeamId: 'b', status: 'completed', gameType: 'regular' },

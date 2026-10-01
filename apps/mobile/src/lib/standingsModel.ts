@@ -75,19 +75,32 @@ function previewGroups(rows: StandingsFact[], config: PlayoffConfig) {
     .map(([key, group]) => ({ key, name: group.name, rows: byPoints(group.rows), limit: config.playoffTeamsPerDivision ?? 0 }));
 }
 
+function playoffRoundLabel(roundNumber: number, totalRounds: number) {
+  const roundsFromEnd = totalRounds - roundNumber + 1;
+  if (roundsFromEnd === 1) return 'Championship';
+  if (roundsFromEnd === 2) return 'Semifinals';
+  if (roundsFromEnd === 3) return 'Quarterfinals';
+  return `Round ${roundNumber}`;
+}
+
 export function buildPlayoffPicture(rows: StandingsFact[], config: PlayoffConfig) {
   if (!configured(config)) return { status: 'unavailable' as const, reason: 'Playoff qualification settings are not published.', groups: [] };
   if (rows.length < 2) return { status: 'unavailable' as const, reason: 'Standings are not available yet.', groups: [] };
   const groups = previewGroups(rows, config).map((group) => {
     const qualifiers = group.rows.slice(0, Math.min(group.limit, group.rows.length));
     const bracketSize = 2 ** Math.ceil(Math.log2(Math.max(qualifiers.length, 2)));
+    const totalRounds = Math.log2(bracketSize);
     const matchups = Array.from({ length: bracketSize / 2 }, (_, index) => ({
       highSeed: qualifiers[index]!,
       lowSeed: qualifiers[bracketSize - 1 - index] ?? null,
       highRank: index + 1,
       lowRank: qualifiers[bracketSize - 1 - index] ? bracketSize - index : null,
     })).filter((matchup) => matchup.highSeed);
-    return { key: group.key, name: group.name, qualifierCount: qualifiers.length, matchups };
+    const rounds = Array.from({ length: totalRounds }, (_, index) => ({
+      roundNumber: index + 1,
+      label: playoffRoundLabel(index + 1, totalRounds),
+    }));
+    return { key: group.key, name: group.name, qualifierCount: qualifiers.length, rounds, matchups };
   }).filter((group) => group.qualifierCount >= 2);
   return groups.length
     ? { status: 'ready' as const, groups }
