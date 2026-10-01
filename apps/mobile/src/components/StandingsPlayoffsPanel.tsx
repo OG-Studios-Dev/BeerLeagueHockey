@@ -14,6 +14,28 @@ type Picture = { status: 'ready'; groups: Array<{ key: string; name: string | nu
 type Predictor = { status: 'ready'; teams: Array<{ teamId: string; firstPlace: number; makePlayoffs: number }> }
   | { status: 'unavailable'; reason: string; teams?: undefined };
 
+type Segment = { x1: number; y1: number; x2: number; y2: number };
+export const CANONICAL_BRACKET_GEOMETRY = {
+  width: 520, height: 446,
+  nodes: {
+    seed1: { left: 0, top: 4 }, seed4: { left: 0, top: 114 }, seed2: { left: 0, top: 248 }, seed3: { left: 0, top: 358 },
+    semi1: { left: 156, top: 60 }, semi2: { left: 156, top: 304 }, trophy: { left: 292, top: 154 }, winner: { left: 442, top: 184 },
+  },
+  segments: [
+    { x1: 78, y1: 43, x2: 96, y2: 43 }, { x1: 78, y1: 153, x2: 96, y2: 153 }, { x1: 96, y1: 43, x2: 96, y2: 153 }, { x1: 96, y1: 99, x2: 156, y2: 99 },
+    { x1: 78, y1: 287, x2: 96, y2: 287 }, { x1: 78, y1: 397, x2: 96, y2: 397 }, { x1: 96, y1: 287, x2: 96, y2: 397 }, { x1: 96, y1: 343, x2: 156, y2: 343 },
+    { x1: 234, y1: 99, x2: 254, y2: 99 }, { x1: 234, y1: 343, x2: 254, y2: 343 }, { x1: 254, y1: 99, x2: 254, y2: 343 }, { x1: 254, y1: 215, x2: 280, y2: 215 },
+    { x1: 412, y1: 223, x2: 442, y2: 223 },
+  ] as Segment[],
+};
+
+export function bracketConnectorStyle(segment: Segment) {
+  const horizontal = segment.y1 === segment.y2;
+  return horizontal
+    ? { left: Math.min(segment.x1, segment.x2), top: segment.y1 - 1, width: Math.abs(segment.x2 - segment.x1), height: 2 }
+    : { left: segment.x1 - 1, top: Math.min(segment.y1, segment.y2), width: 2, height: Math.abs(segment.y2 - segment.y1) };
+}
+
 function percent(value: number) {
   const amount = value * 100;
   if (amount <= 0) return '<1%';
@@ -21,45 +43,47 @@ function percent(value: number) {
   return amount >= 10 ? `${Math.round(amount)}%` : `${amount.toFixed(1)}%`;
 }
 
-function SeedNode({ team, rank, accentColor }: { team: Seed; rank: number; accentColor: string }) {
-  return <View accessibilityLabel={`${rank} seed, ${team.teamName}`} style={[styles.seedNode, { borderColor: accentColor }]}>
+function SeedNode({ team, rank, accentColor, testID, style }: { team: Seed; rank: number; accentColor: string; testID: string; style: object }) {
+  return <View testID={testID} accessibilityLabel={`${rank} seed, ${team.teamName}`} style={[styles.seedNode, style, { borderColor: accentColor }]}>
     <TeamLogo teamId={team.teamId} logoUrl={team.logoUrl} teamName={team.teamName} primaryColor={team.primaryColor} size={48} />
     <View style={[styles.rankBadge, { borderColor: accentColor }]}><Text style={styles.rankText}>{rank}</Text></View>
   </View>;
 }
 
-function ShieldNode({ accentColor, label }: { accentColor: string; label: string }) {
-  return <View accessibilityLabel={label} style={[styles.shieldNode, { borderColor: accentColor }]}>
+function ShieldNode({ accentColor, label, testID, style }: { accentColor: string; label: string; testID: string; style?: object }) {
+  return <View testID={testID} accessibilityLabel={label} style={[styles.shieldNode, style, { borderColor: accentColor }]}>
     <Ionicons name="shield-outline" size={31} color={colors.textSecondary} />
   </View>;
 }
 
-function Connector({ style, accentColor }: { style: object; accentColor: string }) {
-  return <View testID="bracket-connector" style={[styles.connector, style, { backgroundColor: accentColor }]} />;
+function Connector({ segment, index, accentColor }: { segment: Segment; index: number; accentColor: string }) {
+  return <View testID={`bracket-connector-${index}`} style={[styles.connector, bracketConnectorStyle(segment), { backgroundColor: accentColor }]} />;
+}
+
+function SeedSlot({ team, rank, bye, slot, position, accentColor }: { team: Seed | null; rank: number | null; bye: boolean; slot: string; position: object; accentColor: string }) {
+  if (team && rank) return <SeedNode team={team} rank={rank} accentColor={accentColor} testID={`bracket-node-${slot}`} style={position} />;
+  if (bye) return <View testID={`bracket-node-${slot}`} style={[styles.bye, position]}><Text style={styles.byeText}>BYE</Text></View>;
+  return <ShieldNode accentColor={accentColor} label="Unresolved seed" testID={`bracket-node-${slot}`} style={position} />;
 }
 
 function ConnectedBracket({ group, accentColor }: { group: Extract<Picture, { status: 'ready' }>['groups'][number]; accentColor: string }) {
+  const seriesA = group.matchups[0];
+  const seriesB = group.matchups[1];
+  const geometry = CANONICAL_BRACKET_GEOMETRY;
   return <View style={styles.group}>
     {group.name ? <Text style={styles.groupTitle}>{group.name}</Text> : null}
     <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bracketScroll}>
       <View testID="playoff-connected-bracket" style={styles.bracketCanvas}>
         <Text style={[styles.roundLabel, { left: 0 }]}>First Round</Text><Text style={[styles.roundLabel, { left: 292 }]}>Final</Text>
-        <View style={styles.firstRound}>
-          {group.matchups.map((matchup) => <View key={matchup.highSeed.teamId} style={styles.matchupPair}>
-            <SeedNode team={matchup.highSeed} rank={matchup.highRank} accentColor={accentColor} />
-            {matchup.lowSeed && matchup.lowRank ? <SeedNode team={matchup.lowSeed} rank={matchup.lowRank} accentColor={accentColor} /> : <View style={styles.bye}><Text style={styles.byeText}>BYE</Text></View>}
-          </View>)}
-        </View>
-        <View style={styles.semifinalColumn}>{group.matchups.map((matchup) => <ShieldNode key={matchup.highSeed.teamId} accentColor={accentColor} label="Unresolved next-round team" />)}</View>
-        <Image alt="Championship trophy" source={trophy} accessibilityLabel="Championship trophy" resizeMode="contain" style={styles.trophy} />
-        <View style={styles.winner}><ShieldNode accentColor={accentColor} label="Unresolved champion" /></View>
-        <Connector accentColor={accentColor} style={{ left: 78, top: 84, width: 74, height: 2 }} />
-        <Connector accentColor={accentColor} style={{ left: 78, top: 194, width: 74, height: 2 }} />
-        <Connector accentColor={accentColor} style={{ left: 110, top: 84, width: 2, height: 112 }} />
-        <Connector accentColor={accentColor} style={{ left: 234, top: 123, width: 44, height: 2 }} />
-        <Connector accentColor={accentColor} style={{ left: 234, top: 321, width: 44, height: 2 }} />
-        <Connector accentColor={accentColor} style={{ left: 256, top: 123, width: 2, height: 200 }} />
-        <Connector accentColor={accentColor} style={{ left: 408, top: 222, width: 34, height: 2 }} />
+        <SeedSlot team={seriesA?.highSeed ?? null} rank={seriesA?.highRank ?? null} bye={false} slot="1" position={geometry.nodes.seed1} accentColor={accentColor} />
+        <SeedSlot team={seriesA?.lowSeed ?? null} rank={seriesA?.lowRank ?? null} bye={Boolean(seriesA && !seriesA.lowSeed)} slot="4" position={geometry.nodes.seed4} accentColor={accentColor} />
+        <SeedSlot team={seriesB?.highSeed ?? null} rank={seriesB?.highRank ?? null} bye={false} slot="2" position={geometry.nodes.seed2} accentColor={accentColor} />
+        <SeedSlot team={seriesB?.lowSeed ?? null} rank={seriesB?.lowRank ?? null} bye={Boolean(seriesB && !seriesB.lowSeed)} slot="3" position={geometry.nodes.seed3} accentColor={accentColor} />
+        <ShieldNode accentColor={accentColor} label="Unresolved next-round team" testID="bracket-node-semi-1" style={geometry.nodes.semi1} />
+        <ShieldNode accentColor={accentColor} label="Unresolved next-round team" testID="bracket-node-semi-2" style={geometry.nodes.semi2} />
+        <Image alt="Championship trophy" source={trophy} accessibilityLabel="Championship trophy" resizeMode="contain" style={[styles.trophy, geometry.nodes.trophy]} />
+        <ShieldNode accentColor={accentColor} label="Unresolved champion" testID="bracket-node-winner" style={geometry.nodes.winner} />
+        {geometry.segments.map((segment, index) => <Connector key={index} segment={segment} index={index} accentColor={accentColor} />)}
       </View>
     </ScrollView>
   </View>;
@@ -103,13 +127,12 @@ const styles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: 24, fontWeight: '900' }, tabs: { flexDirection: 'row', borderRadius: 24, borderWidth: 1, borderColor: colors.borderCard, padding: 3 },
   tab: { minHeight: 44, minWidth: 72, borderRadius: 21, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, tabText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' },
   group: { gap: 8 }, groupTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900' }, bracketScroll: { paddingTop: 22, paddingBottom: 8 },
-  bracketCanvas: { width: 520, height: 420, position: 'relative' }, roundLabel: { position: 'absolute', top: 0, color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' },
-  firstRound: { position: 'absolute', left: 0, top: 30, gap: 24 }, matchupPair: { gap: 14 },
-  seedNode: { width: 78, height: 78, borderRadius: 18, borderWidth: 2, backgroundColor: '#171410', alignItems: 'center', justifyContent: 'center' },
+  bracketCanvas: { width: 520, height: 446, position: 'relative' }, roundLabel: { position: 'absolute', top: -24, color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' },
+  seedNode: { position: 'absolute', width: 78, height: 78, borderRadius: 18, borderWidth: 2, backgroundColor: '#171410', alignItems: 'center', justifyContent: 'center' },
   rankBadge: { position: 'absolute', right: -6, bottom: -6, minWidth: 24, height: 24, borderRadius: 12, borderWidth: 2, backgroundColor: '#2A2114', alignItems: 'center', justifyContent: 'center' }, rankText: { color: '#EFE2BD', fontSize: 11, fontWeight: '900' },
-  bye: { width: 78, height: 78, alignItems: 'center', justifyContent: 'center' }, byeText: { color: colors.textSecondary, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
-  semifinalColumn: { position: 'absolute', left: 156, top: 84, gap: 120 }, shieldNode: { width: 78, height: 78, borderRadius: 18, borderWidth: 2, backgroundColor: '#171410', alignItems: 'center', justifyContent: 'center' },
-  trophy: { position: 'absolute', left: 292, top: 162, width: 120, height: 120 }, winner: { position: 'absolute', left: 442, top: 184 }, connector: { position: 'absolute', opacity: 0.9 },
+  bye: { position: 'absolute', width: 78, height: 78, alignItems: 'center', justifyContent: 'center' }, byeText: { color: colors.textSecondary, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  shieldNode: { position: 'absolute', width: 78, height: 78, borderRadius: 18, borderWidth: 2, backgroundColor: '#171410', alignItems: 'center', justifyContent: 'center' },
+  trophy: { position: 'absolute', width: 120, height: 120 }, connector: { position: 'absolute', opacity: 0.9 },
   unavailable: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' }, oddsTable: { minWidth: 520 },
   oddsHeader: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderCard, paddingVertical: 10 },
   headerText: { width: 112, color: colors.textSecondary, fontSize: 10, lineHeight: 14, fontWeight: '900', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.3 }, teamColumn: { width: 112, alignItems: 'center' },

@@ -247,6 +247,19 @@ export async function loadPublishedPresentationArticles(
   leagueId: string,
   presentationSeason: PresentationSeason | null,
 ): Promise<HomeArticle[]> {
+  if (!presentationSeason) return [];
+  const { start, end } = seasonBounds(presentationSeason);
+  const dateTerms = (column: 'published_at' | 'created_at') => [
+    Number.isFinite(start) ? `${column}.gte.${new Date(start).toISOString()}` : null,
+    Number.isFinite(end) ? `${column}.lte.${new Date(end).toISOString()}` : null,
+  ].filter(Boolean).join(',');
+  const publishedTerms = dateTerms('published_at');
+  const createdTerms = dateTerms('created_at');
+  const eligibilityFilter = [
+    `season_id.eq.${presentationSeason.id}`,
+    `and(season_id.is.null,published_at.not.is.null${publishedTerms ? `,${publishedTerms}` : ''})`,
+    `and(season_id.is.null,published_at.is.null${createdTerms ? `,${createdTerms}` : ''})`,
+  ].join(',');
   const rows: HomeArticle[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < MAX_ARTICLE_PAGES; page += 1) {
@@ -254,6 +267,7 @@ export async function loadPublishedPresentationArticles(
     const readPage = () => supabase.from('articles')
       .select('id,league_id,season_id,title,content,excerpt,image_url,slug,published,published_at,created_at,type')
       .eq('league_id', leagueId).eq('published', true).in('type', ['news', 'game_recap', 'weekly_wrap'])
+      .or(eligibilityFilter)
       .order('published_at', { ascending: false }).order('id', { ascending: true })
       .range(from, from + ARTICLE_PAGE_SIZE - 1);
     let result = await readPage();
@@ -266,7 +280,7 @@ export async function loadPublishedPresentationArticles(
       rows.push(row);
     }
     if (pageRows.length < ARTICLE_PAGE_SIZE) {
-      return (presentationSeason ? rows.filter((row) => inPresentationSeason(row, presentationSeason)) : [])
+      return rows.filter((row) => inPresentationSeason(row, presentationSeason))
         .sort((left, right) => (right.published_at ?? right.created_at).localeCompare(left.published_at ?? left.created_at)
           || left.id.localeCompare(right.id));
     }

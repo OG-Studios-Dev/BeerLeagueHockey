@@ -26,7 +26,7 @@ describe('Home public bootstrap schema contract', () => {
       unknownSelectedColumns: [],
       sectionStatuses: Object.fromEntries(PUBLIC_SECTIONS.map((section) => [section, 'ready'])),
     });
-    assert.ok(boundary.calls.some((call) => call.table === 'articles' && call.method === 'select'));
+    assert.equal(boundary.calls.some((call) => call.table === 'articles'), false);
     assert.ok(boundary.calls.some((call) => call.table === 'games' && call.method === 'select'));
   });
 });

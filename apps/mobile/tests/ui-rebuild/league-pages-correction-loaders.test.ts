@@ -30,6 +30,22 @@ function homeBoundary(rows: any[], failures = new Map<number, number>()) {
         select(projection: string) { calls.push({ method: 'select', args: [projection] }); return chain; },
         eq(column: string, value: unknown) { calls.push({ method: 'eq', args: [column, value] }); filtered = filtered.filter((row) => row[column] === value); return chain; },
         in(column: string, values: unknown[]) { calls.push({ method: 'in', args: [column, values] }); filtered = filtered.filter((row) => values.includes(row[column])); return chain; },
+        or(expression: string) {
+          calls.push({ method: 'or', args: [expression] });
+          const start = new Date(`${season.start_date}T00:00:00`).toISOString();
+          const end = new Date(`${season.end_date}T23:59:59.999`).toISOString();
+          assert.equal(expression, [
+            `season_id.eq.${season.id}`,
+            `and(season_id.is.null,published_at.not.is.null,published_at.gte.${start},published_at.lte.${end})`,
+            `and(season_id.is.null,published_at.is.null,created_at.gte.${start},created_at.lte.${end})`,
+          ].join(','));
+          filtered = filtered.filter((row) => row.season_id === season.id || (row.season_id === null && (() => {
+            const value = row.published_at ?? row.created_at;
+            const time = new Date(value).getTime();
+            return time >= new Date(`${season.start_date}T00:00:00`).getTime() && time <= new Date(`${season.end_date}T23:59:59.999`).getTime();
+          })()));
+          return chain;
+        },
         order(column: string, options: { ascending: boolean }) { calls.push({ method: 'order', args: [column, options] }); orders.push({ column, ascending: options.ascending }); return chain; },
         range(from: number, to: number) {
           calls.push({ method: 'range', args: [from, to] });
@@ -81,6 +97,35 @@ describe('league pages correction loaders', () => {
 
     const failure = homeBoundary(rows, new Map([[50, 2]]));
     await assert.rejects(() => failure.loader.loadPublishedPresentationArticles(leagueId, season), /page 50 unavailable/);
+  });
+
+  it('B1R applies exact explicit-season and unscoped date eligibility before the page range so history cannot consume the bound', async () => {
+    const history = Array.from({ length: 1001 }, (_, index) => article(2000 + index, {
+      id: `historical-${String(index).padStart(4, '0')}`, season_id: 'historical', published_at: '2026-12-30T12:00:00Z',
+    }));
+    const eligible = [
+      article(1, { id: 'explicit-current-outside-date', published_at: '2027-02-01T00:00:00Z' }),
+      article(2, { id: 'unscoped-start', season_id: null, published_at: '2026-09-01T00:00:00' }),
+      article(3, { id: 'unscoped-end', season_id: null, published_at: '2026-12-31T23:59:59.999' }),
+      article(4, { id: 'unscoped-created-fallback', season_id: null, published_at: null, created_at: '2026-10-15T12:00:00Z' }),
+    ];
+    const negatives = [
+      article(5, { id: 'historical-in-window', season_id: 'historical', published_at: '2026-10-01T12:00:00Z' }),
+      article(6, { id: 'unscoped-before', season_id: null, published_at: '2026-08-31T23:59:59' }),
+      article(7, { id: 'unscoped-after', season_id: null, published_at: '2027-01-01T00:00:00' }),
+    ];
+    const boundary = homeBoundary([...history, ...negatives, ...eligible]);
+    const result = await boundary.loader.loadPublishedPresentationArticles(leagueId, season);
+    assert.deepEqual(new Set(result.map((row: any) => row.id)), new Set(eligible.map((row) => row.id)));
+    const methods = boundary.calls.map((call) => call.method);
+    assert.ok(methods.indexOf('or') > methods.indexOf('in'));
+    assert.ok(methods.indexOf('or') < methods.indexOf('range'));
+    assert.deepEqual(boundary.calls.filter((call) => call.method === 'range').map((call) => call.args), [[0, 49]]);
+    const filter = boundary.calls.find((call) => call.method === 'or')?.args[0];
+    assert.match(String(filter), /season_id\.eq\.season-current/);
+    assert.match(String(filter), /season_id\.is\.null/);
+    assert.match(String(filter), /published_at\.is\.null/);
+    assert.match(String(filter), /created_at\.gte\./);
   });
 
   it('B2 selects the canonical operational season without changing the legacy helper', () => {

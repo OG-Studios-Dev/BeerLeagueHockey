@@ -78,7 +78,7 @@ describe('web-contract Home data boundary', () => {
     };
     const query = (table: string) => {
       const chain: Record<string, any> = {};
-      for (const method of ['select', 'eq', 'in', 'gte', 'lte', 'order', 'limit']) {
+      for (const method of ['select', 'eq', 'in', 'or', 'gte', 'lte', 'order', 'limit']) {
         chain[method] = (...args: unknown[]) => { calls.push([table, method, args]); return chain; };
       }
       chain.range = (from: number, to: number) => {

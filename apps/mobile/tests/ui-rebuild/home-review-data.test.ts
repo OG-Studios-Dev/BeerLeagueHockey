@@ -67,7 +67,7 @@ function makeBoundary({
   for (const [table, data] of Object.entries(resultData)) results[table] = { data, error: null };
   const query = (table: string) => {
     const chain: Record<string, any> = {};
-    for (const method of ['select', 'eq', 'in', 'gte', 'lte', 'order', 'limit']) {
+    for (const method of ['select', 'eq', 'in', 'or', 'gte', 'lte', 'order', 'limit']) {
       chain[method] = (...args: unknown[]) => {
         calls.push({ table, method, args });
         return chain;

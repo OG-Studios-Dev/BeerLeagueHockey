@@ -25,7 +25,7 @@ const predictor = { status: 'ready', teams: standings.map((team, index) => ({ te
 describe('corrected native standings visuals', () => {
   it('PV1 renders a connected seeded bracket and switches through 44pt controls to the labeled odds table', () => {
     const harness = createHookHarness();
-    const Panel = compileCommonJs<any>(new URL('../../src/components/StandingsPlayoffsPanel.tsx', import.meta.url), {
+    const panelModule = compileCommonJs<any>(new URL('../../src/components/StandingsPlayoffsPanel.tsx', import.meta.url), {
       react: harness.react,
       'react-native': {
         Image: 'Image', Pressable: 'Pressable', ScrollView: ({ children, ...props }: any) => createElement('ScrollView', props, children),
@@ -35,11 +35,30 @@ describe('corrected native standings visuals', () => {
       './TeamLogo': (props: any) => createElement('TeamLogo', props),
       '../../assets/playoff-trophy.png': 'playoff-trophy.png',
       '../theme/colors': { default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333' } },
-    }).default;
+    });
+    const Panel = panelModule.default;
+    const expectedSegments = [
+      [78, 43, 96, 43], [78, 153, 96, 153], [96, 43, 96, 153], [96, 99, 156, 99],
+      [78, 287, 96, 287], [78, 397, 96, 397], [96, 287, 96, 397], [96, 343, 156, 343],
+      [234, 99, 254, 99], [234, 343, 254, 343], [254, 99, 254, 343], [254, 215, 280, 215], [412, 223, 442, 223],
+    ];
+    assert.equal(panelModule.CANONICAL_BRACKET_GEOMETRY.width, 520);
+    assert.equal(panelModule.CANONICAL_BRACKET_GEOMETRY.height, 446);
+    assert.deepEqual(panelModule.CANONICAL_BRACKET_GEOMETRY.segments.map((segment: any) => [segment.x1, segment.y1, segment.x2, segment.y2]), expectedSegments);
     harness.mount(() => Panel({ picture, predictor, standings, accentColor: '#2694C4' }));
     assert.ok(findNode(harness.output, (node) => node.props.testID === 'playoff-connected-bracket'));
     assert.equal(allNodes(harness.output).filter((node) => node.type === 'TeamLogo').length, 4);
-    assert.ok(allNodes(harness.output).filter((node) => node.props.testID === 'bracket-connector').length >= 4);
+    const connectors = allNodes(harness.output).filter((node) => String(node.props.testID).startsWith('bracket-connector-'));
+    assert.equal(connectors.length, 13);
+    assert.deepEqual(connectors.map((node) => {
+      const style = flattenStyle(node.props.style);
+      return { left: style.left, top: style.top, width: style.width, height: style.height };
+    }), panelModule.CANONICAL_BRACKET_GEOMETRY.segments.map(panelModule.bracketConnectorStyle));
+    for (const [id, left, top] of [['1', 0, 4], ['4', 0, 114], ['2', 0, 248], ['3', 0, 358], ['semi-1', 156, 60], ['semi-2', 156, 304], ['winner', 442, 184]] as const) {
+      const node = findNode(harness.output, (candidate) => candidate.props.testID === `bracket-node-${id}`);
+      const style = flattenStyle(node?.props.style);
+      assert.deepEqual([style.left, style.top], [left, top]);
+    }
     assert.ok(findNode(harness.output, (node) => node.props.accessibilityLabel === 'Championship trophy'));
     const oddsButton = findNode(harness.output, (node) => node.props.accessibilityLabel === 'Show playoff odds');
     assert.ok(oddsButton);
@@ -49,6 +68,28 @@ describe('corrected native standings visuals', () => {
     const text = nodeText(harness.output);
     for (const label of ['Team', 'Record', '1st Place', 'Make Playoffs', '3-0-0', '86%']) assert.match(text, new RegExp(label));
     assert.equal(allNodes(harness.output).filter((node) => node.props.testID === 'playoff-probability-bar').length, 8);
+  });
+
+  it('PV1R keeps canonical unresolved nodes and only shows a BYE when the model supplies a null opponent for 2, 3, and 4 teams', () => {
+    const render = (matchups: any[], qualifierCount: number) => {
+      const harness = createHookHarness();
+      const Panel = compileCommonJs<any>(new URL('../../src/components/StandingsPlayoffsPanel.tsx', import.meta.url), {
+        react: harness.react,
+        'react-native': { Image: 'Image', Pressable: 'Pressable', ScrollView: ({ children, ...props }: any) => createElement('ScrollView', props, children), StyleSheet: { create: <T>(value: T) => value, hairlineWidth: 1 }, Text: 'Text', View: 'View' },
+        '@expo/vector-icons': { Ionicons: (props: any) => createElement('Ionicon', props) }, './TeamLogo': (props: any) => createElement('TeamLogo', props),
+        '../../assets/playoff-trophy.png': 'playoff-trophy.png', '../theme/colors': { default: { textPrimary: '#fff', textSecondary: '#aaa', bgInteractive: '#222', borderCard: '#333' } },
+      }).default;
+      harness.mount(() => Panel({ picture: { status: 'ready', groups: [{ key: 'league', name: null, qualifierCount, matchups }] }, predictor, standings, accentColor: '#2694C4' }));
+      return harness.output;
+    };
+    const two = render([{ highSeed: standings[0], lowSeed: standings[1], highRank: 1, lowRank: 2 }], 2);
+    assert.doesNotMatch(nodeText(two), /BYE/);
+    assert.equal(allNodes(two).filter((node) => node.props.accessibilityLabel === 'Unresolved seed').length, 2);
+    const three = render([{ highSeed: standings[0], lowSeed: null, highRank: 1, lowRank: null }, { highSeed: standings[1], lowSeed: standings[2], highRank: 2, lowRank: 3 }], 3);
+    assert.equal((nodeText(three).match(/BYE/g) ?? []).length, 1);
+    const four = render(picture.groups[0].matchups, 4);
+    assert.doesNotMatch(nodeText(four), /BYE/);
+    assert.equal(allNodes(four).filter((node) => node.props.accessibilityLabel === 'Unresolved next-round team').length, 2);
   });
 
   it('PV2 retains the exact 800x180 cubic hump source and renders honest zero and playoff-only success states', () => {

@@ -105,7 +105,7 @@ export function createHomeSchemaAwareBoundary() {
       queryError ??= errors[0] ?? null;
       return chain;
     };
-    for (const method of ['eq', 'in', 'gte', 'lte', 'order', 'limit']) {
+    for (const method of ['eq', 'in', 'or', 'gte', 'lte', 'order', 'limit']) {
       chain[method] = (...args: unknown[]) => {
         calls.push({ table, method, args });
         return chain;
