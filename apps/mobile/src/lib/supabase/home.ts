@@ -58,6 +58,8 @@ const MAX_COMPANION_BYTES = 256 * 1024;
 const MAX_LEADERS = 15;
 const MAX_STANDINGS = 200;
 const MAX_DIVISIONS = 64;
+const ARTICLE_PAGE_SIZE = 50;
+const MAX_ARTICLE_PAGES = 20;
 const GAME_STATUSES = new Set(['scheduled', 'in_progress', 'completed', 'pending_verification', 'postponed', 'cancelled']);
 
 function newestSeasonDate(season: PresentationSeason) {
@@ -239,6 +241,37 @@ function validateArticles(value: unknown, leagueId: string): HomeArticle[] {
       created_at: validDateString(row.created_at, 'article created date') as string, type: nullableString(row.type, 'article type'),
     };
   });
+}
+
+export async function loadPublishedPresentationArticles(
+  leagueId: string,
+  presentationSeason: PresentationSeason | null,
+): Promise<HomeArticle[]> {
+  const rows: HomeArticle[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < MAX_ARTICLE_PAGES; page += 1) {
+    const from = page * ARTICLE_PAGE_SIZE;
+    const readPage = () => supabase.from('articles')
+      .select('id,league_id,season_id,title,content,excerpt,image_url,slug,published,published_at,created_at,type')
+      .eq('league_id', leagueId).eq('published', true).in('type', ['news', 'game_recap', 'weekly_wrap'])
+      .order('published_at', { ascending: false }).order('id', { ascending: true })
+      .range(from, from + ARTICLE_PAGE_SIZE - 1);
+    let result = await readPage();
+    if (result.error) result = await readPage();
+    if (result.error) throw new Error(result.error.message);
+    const pageRows = validateArticles(result.data ?? [], leagueId);
+    for (const row of pageRows) {
+      if (seen.has(row.id)) throw new Error('Duplicate article page row');
+      seen.add(row.id);
+      rows.push(row);
+    }
+    if (pageRows.length < ARTICLE_PAGE_SIZE) {
+      return (presentationSeason ? rows.filter((row) => inPresentationSeason(row, presentationSeason)) : [])
+        .sort((left, right) => (right.published_at ?? right.created_at).localeCompare(left.published_at ?? left.created_at)
+          || left.id.localeCompare(right.id));
+    }
+  }
+  throw new Error('Published article pagination exceeded its completeness bound');
 }
 
 function validateGames(value: unknown, leagueId: string, seasonId: string | null): HomeWeeklyGame[] {
@@ -478,12 +511,7 @@ export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: strin
 
   const articlePromise = section<HomeArticle[]>([], 'News is temporarily unavailable.', async () => {
     if (seasonLookupFailed) throw new Error('Season unavailable');
-    const result = await supabase.from('articles')
-      .select('id,league_id,season_id,title,content,excerpt,image_url,slug,published,published_at,created_at,type')
-      .eq('league_id', leagueId).eq('published', true).in('type', ['news', 'game_recap', 'weekly_wrap'])
-      .order('published_at', { ascending: false }).limit(18);
-    if (result.error) throw result.error;
-    return filterArticlesForPresentationSeason(validateArticles(result.data ?? [], leagueId), presentationSeason).slice(0, 5);
+    return loadPublishedPresentationArticles(leagueId, presentationSeason);
   });
   const gamesPromise = section<HomeWeeklyGame[]>([], 'This week’s games are temporarily unavailable.', async () => {
     if (seasonLookupFailed || !league.timezone || !weekKey) throw new Error('Weekly game period unavailable');

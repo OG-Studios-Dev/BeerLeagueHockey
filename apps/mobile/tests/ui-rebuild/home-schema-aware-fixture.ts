@@ -112,6 +112,11 @@ export function createHomeSchemaAwareBoundary() {
       };
     }
     const result = (): QueryResult => ({ data: queryError ? null : rows[table] ?? [], error: queryError });
+    chain.range = (from: number, to: number) => {
+      calls.push({ table, method: 'range', args: [from, to] });
+      const value = result();
+      return Promise.resolve({ ...value, data: Array.isArray(value.data) ? value.data.slice(from, to + 1) : value.data });
+    };
     chain.maybeSingle = async () => result();
     chain.then = (resolve: (value: QueryResult) => void) => resolve(result());
     return chain;

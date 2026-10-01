@@ -74,15 +74,18 @@ async function renderStandings() {
     '../components/CardFocus': { FocusCard: ({ children, ...props }: any) => createElement('FocusCard', props, children), FocusScrollView: ({ children, ...props }: any) => createElement('FocusScrollView', props, children) },
     '../components/DivisionFilter': () => null,
     '../components/GuestBanner': () => null,
+    '../components/SeasonCompletionHump': (props: any) => createElement('SeasonCompletionHump', props),
+    '../components/StandingsPlayoffsPanel': (props: any) => createElement('StandingsPlayoffsPanel', props, createElement('Text', null, 'Playoffs')),
     '../components/TeamLogo': (props: any) => createElement('TeamLogo', props),
     '../components/TeamPositioningChart': (props: any) => createElement('TeamPositioningChart', props),
     '../context/LeagueContext': { useLeague: () => ({ activeLeague, activeTheme, activeDivision: null, setActiveDivision: () => undefined, divisions: [] }) },
+    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
     '../lib/leaguePages': { getLeaguePage: async (_slug: string, page: string) => page === 'teams'
       ? { page: 'teams', selectedSeason: { id: 'season-1' }, teams, divisions: [], positioning: { seasonId: 'season-1', totalTeams: 4, attendanceSource: 'confirmed-plus-fallback-roster-appearances', teams: [] } }
       : { page: 'playoffs', selectedSeason: { id: 'season-1' }, standings: [], series: [], teams, divisions: [], previewConfig: { playoffTeamsTotal: 4, playoffTeamsPerDivision: null, useDivisionPlayoffs: false } } },
     '../lib/leaguePagesModel': { filterAndRerankPositioning: (value: unknown) => value },
     '../lib/standingsModel': await import('../../src/lib/standingsModel.ts'),
-    '../lib/supabase/data': { getCurrentSeason: async () => ({ id: 'season-1', name: 'Winter' }), getStandings: async () => rows, getSchedule: async () => games },
+    '../lib/supabase/data': { getOperationalSeason: async () => ({ id: 'season-1', name: 'Winter' }), getStandings: async () => rows, getSchedule: async () => games },
     '../theme/colors': { default: { bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333', glassStroke: '#333', textPrimary: '#fff', textSecondary: '#aaa', primary: '#8F7A4B' } },
     './ScheduleScreen': () => createElement('ScheduleScreen', null),
   }).default;
@@ -104,7 +107,8 @@ describe('league page polish runtime', () => {
   it('renders standings with playoff picture, honest predictor, completion chart, and the single positioning chart', async () => {
     const output = await renderStandings();
     const text = nodeText(output);
-    for (const title of ['Standings', 'Playoff Picture', 'Predictor', 'Season Completion', 'Team Positioning']) assert.match(text, new RegExp(title));
+    for (const title of ['Standings', 'Playoffs', 'Season Completion', 'Team Positioning']) assert.match(text, new RegExp(title));
+    assert.equal(allNodes(output).filter((node) => node.type === 'StandingsPlayoffsPanel').length, 1);
     assert.equal(allNodes(output).filter((node) => node.type === 'TeamPositioningChart').length, 1);
     assert.doesNotMatch(text, /Compare each team|Estimated from confirmed|available only for/i);
   });

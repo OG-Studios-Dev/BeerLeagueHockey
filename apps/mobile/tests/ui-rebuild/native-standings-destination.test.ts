@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, nodeText } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
 import * as standingsModel from '../../src/lib/standingsModel.ts';
 
 const leagueA = {
   id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null, city: null,
   theme: { backgroundColor: '#010203', primaryColor: '#00ffff' },
 };
+const leagueB = { ...leagueA, id: 'league-b', name: 'League B', slug: 'league-b' };
 
 function createRenderedScreens(activeLeague: typeof leagueA | null) {
   const harness = createHookHarness();
@@ -43,6 +44,8 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       'expo-haptics': { impactAsync: () => {}, ImpactFeedbackStyle: { Light: 'light' } },
       '../components/DivisionFilter': () => null,
       '../components/GuestBanner': () => null,
+      '../components/SeasonCompletionHump': (props: Record<string, unknown>) => createElement('SeasonCompletionHump', props),
+      '../components/StandingsPlayoffsPanel': (props: Record<string, unknown>) => createElement('StandingsPlayoffsPanel', props, createElement('Text', null, 'Playoffs')),
       '../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
       '../components/PillToggle': () => null,
       '../components/QuickCheckinActions': () => null,
@@ -50,6 +53,7 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       '../components/SectionHeader': ({ title }: { title: string }) => createElement('Text', null, title),
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../context/LeagueContext': { useLeague: leagueContext },
+      '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
       '../lib/scheduleConflicts': { getScheduleConflicts: () => [] },
       '../lib/supabase/checkins': {
         getMyCheckins: async () => ({}), getMyCheckinsForTeams: async () => ({}), updateCheckin: async () => ({ success: true }),
@@ -59,6 +63,7 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       },
       '../lib/supabase/data': {
         getCurrentSeason: async () => ({ id: 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
+        getOperationalSeason: async (leagueId: string) => ({ id: leagueId === leagueB.id ? 'season-b' : 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
         getSchedule: async () => [],
         getStandings: async () => {
           standingsReads += 1;
@@ -84,27 +89,30 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       },
       '../components/DivisionFilter': () => null,
       '../components/GuestBanner': () => null,
+      '../components/SeasonCompletionHump': (props: Record<string, unknown>) => createElement('SeasonCompletionHump', props),
+      '../components/StandingsPlayoffsPanel': (props: Record<string, unknown>) => createElement('StandingsPlayoffsPanel', props, createElement('Text', null, 'Playoffs')),
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../components/TeamPositioningChart': (props: Record<string, unknown>) => createElement('TeamPositioningChart', props),
       '../context/LeagueContext': { useLeague: leagueContext },
+      '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
       '../lib/leaguePages': { getLeaguePage: async (_slug: string, page: string) => page === 'playoffs'
         ? { previewConfig: { playoffTeamsTotal: 2, playoffTeamsPerDivision: null, useDivisionPlayoffs: false } }
         : { positioning: null } },
       '../lib/leaguePagesModel': { filterAndRerankPositioning: (value: unknown) => value },
       '../lib/standingsModel': standingsModel,
       '../lib/supabase/data': {
-        getCurrentSeason: async () => ({ id: 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
+        getOperationalSeason: async (leagueId: string) => ({ id: leagueId === leagueB.id ? 'season-b' : 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
         getSchedule: async () => [{ id: 'game-1', home_team_id: 'team-owls', away_team_id: 'team-foxes', status: 'completed', game_type: 'regular' }],
-        getStandings: async () => {
+        getStandings: async (leagueId: string) => {
           standingsReads += 1;
-          return [{ team_id: 'team-owls', team_name: 'Ice Owls', primary_color: '#123456', logo_url: null, division_id: null, wins: 3, losses: 1, ties: 0, points: 6, goals_for: 10, goals_against: 4, games_played: 4 }];
+          return [{ team_id: leagueId === leagueB.id ? 'team-b' : 'team-owls', team_name: leagueId === leagueB.id ? 'Blue Blades' : 'Ice Owls', primary_color: '#123456', logo_url: null, division_id: null, wins: 3, losses: 1, ties: 0, points: 6, goals_for: 10, goals_against: 4, games_played: 4 }];
         },
       },
       '../navigation/cutIceSafeAreaPolicy': { cutIceContentEdges: (edges: unknown) => edges },
       '../theme/colors': { default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', borderCard: '#222', glassStroke: '#333' } },
     },
   ).default;
-  return { harness, ScheduleScreen, StandingsScreen, selected, counts: () => ({ authReads, standingsReads }) };
+  return { harness, ScheduleScreen, StandingsScreen, selected, switchLeague: (next: typeof leagueA) => { league = next; harness.render(); }, counts: () => ({ authReads, standingsReads }) };
 }
 
 async function settle(harness: ReturnType<typeof createHookHarness>) {
@@ -138,9 +146,20 @@ describe('native Standings dock destination', () => {
 
     assert.match(nodeText(screen.harness.output), /Standings/);
     assert.match(nodeText(screen.harness.output), /Ice Owls/);
-    assert.match(nodeText(screen.harness.output), /Playoff Picture/);
-    assert.match(nodeText(screen.harness.output), /Predictor/);
+    assert.match(nodeText(screen.harness.output), /Playoffs/);
     assert.match(nodeText(screen.harness.output), /Season Completion/);
     assert.ok(screen.counts().standingsReads > 0);
+  });
+
+  it('B5 never renders completed facts beneath a different mounted league scope', async () => {
+    const screen = createRenderedScreens(leagueA);
+    screen.harness.mount(() => screen.StandingsScreen({ navigation: { navigate: () => {} } }));
+    await settle(screen.harness);
+    assert.match(nodeText(screen.harness.output), /Ice Owls/);
+    screen.switchLeague(leagueB);
+    assert.doesNotMatch(nodeText(screen.harness.output), /Ice Owls/);
+    await settle(screen.harness);
+    assert.match(nodeText(screen.harness.output), /Blue Blades/);
+    assert.ok(findNode(screen.harness.output, (node) => node.props.testID === 'standings-scope:league-b:season-b'));
   });
 });

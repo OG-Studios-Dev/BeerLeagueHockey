@@ -111,7 +111,26 @@ export type Season = {
   start_date: string;
   end_date: string | null;
   status: string;
+  created_at?: string | null;
 };
+
+const OPERATIONAL_SEASON_PRIORITY: Record<string, number> = {
+  active: 0, playoffs: 1, registration: 2, upcoming: 2, draft: 3, completed: 4, archived: 5,
+};
+
+export function selectOperationalSeason<T extends Pick<Season, 'id' | 'status' | 'start_date' | 'end_date' | 'created_at'>>(rows: T[]) {
+  const timestamp = (season: T) => {
+    const value = season.start_date ?? season.end_date ?? season.created_at ?? null;
+    if (!value) return 0;
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  return [...rows].sort((left, right) => (
+    (OPERATIONAL_SEASON_PRIORITY[left.status ?? ''] ?? 99) - (OPERATIONAL_SEASON_PRIORITY[right.status ?? ''] ?? 99)
+    || timestamp(right) - timestamp(left)
+    || left.id.localeCompare(right.id)
+  ))[0] ?? null;
+}
 
 // ─────────────────────────────────────────
 // Helpers
@@ -155,6 +174,18 @@ export async function getCurrentSeason(
   return (data as Season) ?? null;
 }
 
+export async function getOperationalSeason(leagueId: string): Promise<Season | null> {
+  const { data, error } = await supabase.from('seasons')
+    .select('id,name,start_date,end_date,status,created_at')
+    .eq('league_id', leagueId)
+    .in('status', ['active', 'playoffs', 'registration', 'upcoming', 'draft', 'completed', 'archived'])
+    .order('start_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return selectOperationalSeason((data ?? []) as Season[]);
+}
+
 export async function getActiveSeason(leagueId: string): Promise<Season | null> {
   return getCurrentSeason(leagueId);
 }
@@ -178,11 +209,16 @@ export async function getDivisions(leagueId: string): Promise<Division[]> {
 // Standings
 // ─────────────────────────────────────────
 
-export async function getStandings(leagueId: string, seasonId?: string): Promise<StandingRow[]> {
-  const { data: teams } = await supabase
+export async function getStandings(
+  leagueId: string,
+  seasonId?: string,
+  options: { throwOnError?: boolean; complete?: boolean } = {},
+): Promise<StandingRow[]> {
+  const { data: teams, error: teamsError } = await supabase
     .from('teams')
     .select('id, name, short_name, logo_url, primary_color, division_id, divisions(id, name)')
     .eq('league_id', leagueId);
+  if (teamsError && options.throwOnError) throw new Error(teamsError.message);
 
   const teamInfoMap = new Map(
     (teams ?? []).map((t: any) => {
@@ -227,14 +263,42 @@ export async function getStandings(leagueId: string, seasonId?: string): Promise
       });
   }
 
-  let query = supabase
-    .from('team_standings')
-    .select('*')
-    .order('points', { ascending: false });
-  if (seasonId) query = query.eq('season_id', seasonId);
-
-  const { data: standings, error } = await query;
-  if (error || !standings) return [];
+  const readFallback = (from?: number) => {
+    let query = supabase.from('team_standings')
+      .select('team_id,league_id,season_id,games_played,wins,losses,ties,points,goals_for,goals_against')
+      .eq('league_id', leagueId)
+      .order('points', { ascending: false })
+      .order('team_id', { ascending: true });
+    if (seasonId) query = query.eq('season_id', seasonId);
+    return from === undefined ? query : query.range(from, from + 249);
+  };
+  let standings: Array<Record<string, unknown>> = [];
+  if (options.complete) {
+    const seen = new Set<string>();
+    for (let from = 0; from < 5000; from += 250) {
+      const result = await readFallback(from);
+      if (result.error) {
+        if (options.throwOnError) throw new Error(result.error.message);
+        return [];
+      }
+      const page = (result.data ?? []) as Array<Record<string, unknown>>;
+      for (const row of page) {
+        const teamId = typeof row.team_id === 'string' ? row.team_id : '';
+        if (!teamId || seen.has(teamId)) throw new Error('Duplicate or invalid standings row');
+        seen.add(teamId);
+        standings.push(row);
+      }
+      if (page.length < 250) break;
+      if (from === 4750) throw new Error('Standings pagination exceeded its completeness bound');
+    }
+  } else {
+    const result = await readFallback();
+    if (result.error || !result.data) {
+      if (result.error && options.throwOnError) throw new Error(result.error.message);
+      return [];
+    }
+    standings = result.data as unknown as Array<Record<string, unknown>>;
+  }
 
   return standings.map((s: any) => {
     const info = teamInfoMap.get(s.team_id);
@@ -423,27 +487,48 @@ export async function getSchedule(
   leagueId: string,
   seasonId?: string | null,
   divisionId?: string | null,
+  options: { throwOnError?: boolean; complete?: boolean } = {},
 ): Promise<GameRow[]> {
-  let query = supabase
-    .from('games')
-    .select(
+  const buildQuery = () => {
+    let query = supabase.from('games').select(
       `id, home_team_id, away_team_id, home_score, away_score,
        scheduled_at, status, game_type, location, season_id, division_id,
        home_team:teams!games_home_team_id_fkey(id, name, primary_color, logo_url),
        away_team:teams!games_away_team_id_fkey(id, name, primary_color, logo_url)`,
     )
     .eq('league_id', leagueId)
-    .order('scheduled_at', { ascending: true });
-
-  if (seasonId) query = query.eq('season_id', seasonId);
-  if (divisionId) query = query.eq('division_id', divisionId);
-
-  const { data, error } = await query;
-  if (error) {
-    console.error('getSchedule error:', error);
-    return [];
+    .order('scheduled_at', { ascending: true })
+    .order('id', { ascending: true });
+    if (seasonId) query = query.eq('season_id', seasonId);
+    if (divisionId) query = query.eq('division_id', divisionId);
+    return query;
+  };
+  if (!options.complete) {
+    const { data, error } = await buildQuery();
+    if (error) {
+      if (options.throwOnError) throw new Error(error.message);
+      console.error('getSchedule error:', error);
+      return [];
+    }
+    return (data as any[]) ?? [];
   }
-  return (data as any[]) ?? [];
+  const games: GameRow[] = [];
+  const seen = new Set<string>();
+  for (let from = 0; from < 5000; from += 250) {
+    const { data, error } = await buildQuery().range(from, from + 249);
+    if (error) {
+      if (options.throwOnError) throw new Error(error.message);
+      return [];
+    }
+    const page = (data as unknown as GameRow[] | null) ?? [];
+    for (const game of page) {
+      if (seen.has(game.id)) throw new Error('Duplicate schedule row');
+      seen.add(game.id);
+      games.push(game);
+    }
+    if (page.length < 250) return games;
+  }
+  throw new Error('Schedule pagination exceeded its completeness bound');
 }
 
 export async function getLeagueGames(leagueId: string, seasonId?: string): Promise<GameRow[]> {

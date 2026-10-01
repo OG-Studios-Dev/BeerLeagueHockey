@@ -73,6 +73,11 @@ function makeBoundary({
         return chain;
       };
     }
+    chain.range = (from: number, to: number) => {
+      calls.push({ table, method: 'range', args: [from, to] });
+      const value = results[table];
+      return Promise.resolve({ ...value, data: Array.isArray(value.data) ? value.data.slice(from, to + 1) : value.data });
+    };
     chain.maybeSingle = async () => results[table];
     chain.then = (resolve: (value: unknown) => void) => resolve(results[table]);
     return chain;

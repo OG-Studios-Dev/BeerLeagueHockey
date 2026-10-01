@@ -203,6 +203,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [divisionId, setDivisionId] = React.useState<string | null>(null);
   const [storyIndex, setStoryIndex] = React.useState(0);
   const storyPager = React.useRef<ScrollView>(null);
+  const selectedStoryId = React.useRef<string | null>(null);
+  const storyScope = React.useRef<string | null>(null);
 
   const load = React.useCallback(async (preserve: boolean) => {
     if (!activeLeague) return;
@@ -241,11 +243,23 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     setRefreshing(true);
     try { await load(true); } finally { setRefreshing(false); }
   }, [load]);
-  const storyIds = (publicHome?.articles.data ?? []).map((story) => story.id).join('|');
+  const stories = publicHome?.articles.data ?? [];
+  const storyIds = stories.map((story) => story.id).join('|');
+  const storyPageWidth = Math.max(1, width - homeTokens.contentPadding * 2);
   React.useEffect(() => {
-    setStoryIndex(0);
-    storyPager.current?.scrollTo({ x: 0, animated: false });
-  }, [activeLeague?.id, publicHome?.presentationSeason?.id, storyIds]);
+    const scope = `${activeLeague?.id ?? ''}:${publicHome?.presentationSeason?.id ?? ''}`;
+    const scopeChanged = storyScope.current !== scope;
+    const retained = scopeChanged || !selectedStoryId.current
+      ? -1
+      : stories.findIndex((story) => story.id === selectedStoryId.current);
+    const nextIndex = scopeChanged ? 0 : retained >= 0 ? retained : Math.min(storyIndex, Math.max(0, stories.length - 1));
+    storyScope.current = scope;
+    selectedStoryId.current = stories[nextIndex]?.id ?? null;
+    setStoryIndex(nextIndex);
+    storyPager.current?.scrollTo({ x: nextIndex * storyPageWidth, animated: false });
+  // storyIndex is intentionally sampled only when the selected identity disappeared.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLeague?.id, publicHome?.presentationSeason?.id, storyIds, storyPageWidth]);
 
   if (!activeLeague) {
     return (
@@ -260,9 +274,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   }
 
   const accent = focusAccent;
-  const stories = publicHome?.articles.data ?? [];
   const article = stories[storyIndex] ?? stories[0] ?? null;
-  const storyPageWidth = Math.max(1, width - homeTokens.contentPadding * 2);
   const heroAlbum = !article ? publicHome?.albums.data.find((album) => album.cover_photo_url) ?? publicHome?.albums.data[0] ?? null : null;
   const standings = publicHome?.standings.data ?? [];
   const divisions = publicHome?.divisions ?? [];
@@ -283,6 +295,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     if (!stories.length) return;
     const normalized = (nextIndex + stories.length) % stories.length;
     if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    selectedStoryId.current = stories[normalized]?.id ?? null;
     setStoryIndex(normalized);
     if (scroll) storyPager.current?.scrollTo({ x: normalized * storyPageWidth, animated: !reduceMotion });
   };
@@ -330,17 +343,18 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               onMomentumScrollEnd={handleStorySwipe}
               style={styles.newsPager}
             >
-              {stories.map((story) => (
-                <View key={story.id} style={{ width: storyPageWidth }}>
-                  <FocusCard focusId={`home:story:${story.id}`} accentColor={accent}>
+              {stories.map((story, index) => {
+                const mounted = Math.abs(index - storyIndex) <= 1;
+                return <View key={story.id} style={{ width: storyPageWidth }}>
+                  {mounted ? <FocusCard focusId={`home:story:${story.id}`} accentColor={accent}>
                     <Pressable accessibilityRole="link" accessibilityLabel={`Read ${story.title}`} style={[sectionCard, styles.hero]} onPress={() => openExternal(`${origin}/news/${story.slug || story.id}`)}>
                       {story.image_url ? <Image source={{ uri: story.image_url }} style={styles.heroImage} alt={story.title} /> : <View style={styles.heroMark}><Image source={hockeyLifeLogo} style={styles.heroLogo} alt="" /></View>}
                       <LinearGradient colors={['transparent', 'rgba(3,8,16,0.96)']} style={styles.heroShade} />
                       <View style={styles.heroCopy}><Text style={[styles.heroEyebrow, { color: accent }]}>{articleLabel(story.type)}</Text><Text style={styles.heroTitle}>{story.title}</Text>{articleExcerpt(story) ? <Text style={styles.heroExcerpt}>{articleExcerpt(story)}</Text> : null}</View>
                     </Pressable>
-                  </FocusCard>
-                </View>
-              ))}
+                  </FocusCard> : <View accessible={false} style={styles.hero} />}
+                </View>;
+              })}
             </ScrollView>
           ) : (
             <FocusCard focusId={`home:story:${heroAlbum?.id ?? activeLeague.id}`} accentColor={accent}>

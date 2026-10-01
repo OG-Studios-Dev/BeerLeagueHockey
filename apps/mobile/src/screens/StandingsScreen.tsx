@@ -5,8 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
 import GuestBanner from '../components/GuestBanner';
+import SeasonCompletionHump from '../components/SeasonCompletionHump';
+import StandingsPlayoffsPanel from '../components/StandingsPlayoffsPanel';
 import TeamLogo from '../components/TeamLogo';
 import TeamPositioningChart from '../components/TeamPositioningChart';
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
 import { getLeaguePage, type PlayoffsPageResponse, type TeamsPageResponse } from '../lib/leaguePages';
 import { filterAndRerankPositioning } from '../lib/leaguePagesModel';
@@ -18,12 +21,13 @@ import {
   type StandingsFact,
   type StandingsGameFact,
 } from '../lib/standingsModel';
-import { getCurrentSeason, getSchedule, getStandings, type Season } from '../lib/supabase/data';
+import { getOperationalSeason, getSchedule, getStandings, type Season } from '../lib/supabase/data';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import colors from '../theme/colors';
 
 type Navigation = { navigate: (screen: string, params?: unknown) => void };
 type LoadState = {
+  scopeKey: string | null;
   loading: boolean;
   error: string | null;
   season: Season | null;
@@ -33,38 +37,37 @@ type LoadState = {
   teams: TeamsPageResponse | null;
 };
 
-const initialState: LoadState = { loading: true, error: null, season: null, standings: [], games: [], playoffs: null, teams: null };
+const initialState: LoadState = { scopeKey: null, loading: true, error: null, season: null, standings: [], games: [], playoffs: null, teams: null };
 
-function percent(value: number) {
-  const amount = value * 100;
-  if (amount <= 0) return '<1%';
-  if (amount >= 100) return '100%';
-  return amount >= 10 ? `${Math.round(amount)}%` : `${amount.toFixed(1)}%`;
+export function standingsScopeKey(leagueId: string, seasonId: string) {
+  return `${leagueId}:${seasonId}`;
 }
 
 export default function StandingsScreen({ navigation }: { navigation: Navigation }) {
   const { activeLeague, activeTheme, activeDivision, setActiveDivision, divisions } = useLeague();
+  const { reduceTransparency } = useAccessibilityPreferences();
   const [state, setState] = React.useState<LoadState>(initialState);
   const generation = React.useRef(0);
 
   const load = React.useCallback(async () => {
     if (!activeLeague) return;
     const request = ++generation.current;
-    setState((current) => ({ ...current, loading: true, error: null }));
+    setState({ ...initialState, loading: true });
     try {
-      const season = await getCurrentSeason(activeLeague.id, { throwOnError: true });
+      const season = await getOperationalSeason(activeLeague.id);
       if (!season) {
         if (request === generation.current) setState({ ...initialState, loading: false, season: null });
         return;
       }
       const [standingsRows, games, playoffs, teams] = await Promise.all([
-        getStandings(activeLeague.id, season.id),
-        getSchedule(activeLeague.id, season.id),
-        getLeaguePage(activeLeague.slug, 'playoffs', season.id).catch(() => null),
-        getLeaguePage(activeLeague.slug, 'teams', season.id).catch(() => null),
+        getStandings(activeLeague.id, season.id, { complete: true, throwOnError: true }),
+        getSchedule(activeLeague.id, season.id, null, { complete: true, throwOnError: true }),
+        getLeaguePage(activeLeague.slug, 'playoffs', season.id),
+        getLeaguePage(activeLeague.slug, 'teams', season.id),
       ]);
       if (request !== generation.current) return;
       setState({
+        scopeKey: standingsScopeKey(activeLeague.id, season.id),
         loading: false,
         error: null,
         season,
@@ -93,40 +96,34 @@ export default function StandingsScreen({ navigation }: { navigation: Navigation
     return <SafeAreaView style={[styles.safe, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}><View style={styles.center}><Text style={styles.stateTitle}>Hockey Life access required</Text></View></SafeAreaView>;
   }
 
-  const scoped = rankStandings(activeDivision ? state.standings.filter((row) => row.divisionId === activeDivision.id) : state.standings);
-  const config = state.playoffs?.previewConfig ?? { playoffTeamsTotal: null, playoffTeamsPerDivision: null, useDivisionPlayoffs: null };
-  const picture = buildPlayoffPicture(state.standings, config);
-  const predictor = calculatePlayoffPredictor(state.standings, state.games, config);
-  const completion = buildSeasonCompletion(state.games);
-  const positioning = filterAndRerankPositioning(state.teams?.positioning ?? null, activeDivision?.id ?? null);
+  const stateMatchesLeague = state.scopeKey === null || state.scopeKey.startsWith(`${activeLeague.id}:`);
+  const visibleState = stateMatchesLeague ? state : initialState;
+
+  const scoped = rankStandings(activeDivision ? visibleState.standings.filter((row) => row.divisionId === activeDivision.id) : visibleState.standings);
+  const config = visibleState.playoffs?.previewConfig ?? { playoffTeamsTotal: null, playoffTeamsPerDivision: null, useDivisionPlayoffs: null };
+  const picture = buildPlayoffPicture(visibleState.standings, config);
+  const predictor = calculatePlayoffPredictor(visibleState.standings, visibleState.games, config);
+  const completion = buildSeasonCompletion(visibleState.games);
+  const positioning = filterAndRerankPositioning(visibleState.teams?.positioning ?? null, activeDivision?.id ?? null);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <GuestBanner />
       <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} />
-      {state.loading ? <View style={styles.center}><ActivityIndicator color={activeTheme.primaryColor} /></View> : state.error ? (
-        <View accessibilityRole="alert" style={styles.center}><Text style={styles.stateTitle}>Couldn’t load standings</Text><Text style={styles.muted}>{state.error}</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={[styles.retry, { backgroundColor: activeTheme.primaryColor }]}><Text style={styles.retryText}>Retry</Text></Pressable></View>
+      {visibleState.loading ? <View style={styles.center}><ActivityIndicator color={activeTheme.primaryColor} /></View> : visibleState.error ? (
+        <View accessibilityRole="alert" style={styles.center}><Text style={styles.stateTitle}>Couldn’t load standings</Text><Text style={styles.muted}>{visibleState.error}</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={[styles.retry, { backgroundColor: activeTheme.primaryColor }]}><Text style={styles.retryText}>Retry</Text></Pressable></View>
       ) : (
         <FocusScrollView focusScopeKey={`standings:${activeLeague.id}`} contentContainerStyle={styles.content}>
-          <View><Text accessibilityRole="header" style={styles.title}>Standings</Text>{state.season ? <Text style={styles.season}>{state.season.name} Season</Text> : null}</View>
+          <View testID={`standings-scope:${visibleState.scopeKey ?? 'loading'}`}><Text accessibilityRole="header" style={styles.title}>Standings</Text>{visibleState.season ? <Text style={styles.season}>{visibleState.season.name} Season</Text> : null}</View>
           {scoped.length ? <FocusCard focusId={`standings:table:${activeLeague.id}`} style={styles.card}>
             <View style={styles.tableHeader}><Text style={[styles.headerText, styles.teamCol]}>Team</Text><Text style={styles.headerText}>GP</Text><Text style={styles.headerText}>W</Text><Text style={styles.headerText}>L</Text><Text style={styles.headerText}>PTS</Text></View>
             {scoped.map((row, index) => <Pressable key={row.teamId} accessibilityRole="button" accessibilityLabel={`${row.teamName}, ${row.points} points`} onPress={() => navigation.navigate('Team', { screen: 'TeamDetail', params: { teamId: row.teamId, leagueId: activeLeague.id } })} style={[styles.tableRow, index === 0 && styles.leader]}><View style={styles.teamCol}><TeamLogo teamId={row.teamId} logoUrl={row.logoUrl} teamName={row.teamName} primaryColor={row.primaryColor} size={30} /><Text style={styles.teamName}>{row.teamName}</Text></View><Text style={styles.cell}>{row.gamesPlayed}</Text><Text style={styles.cell}>{row.wins}</Text><Text style={styles.cell}>{row.losses}</Text><Text style={[styles.cell, styles.points]}>{row.points}</Text></Pressable>)}
           </FocusCard> : <Text style={styles.muted}>No standings available yet.</Text>}
 
-          <View style={styles.section}><Text style={styles.sectionTitle}>Playoff Picture</Text>
-            {picture.status === 'ready' ? picture.groups.map((group) => <View key={group.key} style={styles.pictureGroup}>{group.name ? <Text style={styles.groupTitle}>{group.name}</Text> : null}{group.matchups.map((matchup) => <View key={`${group.key}-${matchup.highSeed.teamId}`} style={styles.matchup}><View style={styles.seed}><Text style={styles.seedRank}>{matchup.highRank}</Text><TeamLogo teamId={matchup.highSeed.teamId} logoUrl={matchup.highSeed.logoUrl} teamName={matchup.highSeed.teamName} primaryColor={matchup.highSeed.primaryColor} size={42} /></View><Text style={styles.versus}>VS</Text>{matchup.lowSeed ? <View style={styles.seed}><Text style={styles.seedRank}>{matchup.lowRank}</Text><TeamLogo teamId={matchup.lowSeed.teamId} logoUrl={matchup.lowSeed.logoUrl} teamName={matchup.lowSeed.teamName} primaryColor={matchup.lowSeed.primaryColor} size={42} /></View> : <Text style={styles.muted}>BYE</Text>}</View>)}</View>) : <Text style={styles.muted}>{picture.reason}</Text>}
-          </View>
-
-          <View style={styles.section}><Text style={styles.sectionTitle}>Predictor</Text>
-            {predictor.status === 'ready' ? predictor.teams.map((odds) => {
-              const team = state.standings.find((row) => row.teamId === odds.teamId)!;
-              return <View key={odds.teamId} style={styles.oddsRow}><TeamLogo teamId={team.teamId} logoUrl={team.logoUrl} teamName={team.teamName} primaryColor={team.primaryColor} size={38} /><Text style={styles.oddsTeam}>{team.teamName}</Text><View><Text style={styles.oddsValue}>{percent(odds.firstPlace)}</Text><Text style={styles.oddsLabel}>1st</Text></View><View><Text style={styles.oddsValue}>{percent(odds.makePlayoffs)}</Text><Text style={styles.oddsLabel}>Playoffs</Text></View></View>;
-            }) : <Text style={styles.muted}>{predictor.reason}</Text>}
-          </View>
+          <StandingsPlayoffsPanel picture={picture} predictor={predictor} standings={visibleState.standings} accentColor={activeTheme.primaryColor} />
 
           <View style={styles.section}><Text style={styles.sectionTitle}>Season Completion</Text>
-            {completion.totalRegular ? <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: completion.percentage, text: completion.playoffMode ? 'Playoffs' : `${completion.percentage}%` }} style={styles.completion}><View style={[styles.completionFill, { width: `${completion.playoffMode ? 100 : completion.percentage}%`, backgroundColor: activeTheme.primaryColor }]} /><Text style={styles.completionText}>{completion.playoffMode ? 'PLAYOFFS' : `${completion.percentage}%`}</Text></View> : <Text style={styles.muted}>Season schedule data is unavailable.</Text>}
+            <SeasonCompletionHump percentage={completion.percentage} playoffMode={completion.playoffMode} accentColor={activeTheme.primaryColor} reduceTransparency={reduceTransparency} />
           </View>
 
           {positioning ? <View style={styles.section}><Text style={styles.sectionTitle}>Team Positioning</Text><TeamPositioningChart positioning={positioning} /></View> : null}

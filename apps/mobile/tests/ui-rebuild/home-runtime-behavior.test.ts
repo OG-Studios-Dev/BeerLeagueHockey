@@ -46,6 +46,7 @@ const snapshot = {
 function createRuntime({
   guest = false,
   reduceMotion = false,
+  width = 320,
   updateResults = [] as Array<{ success: boolean }>,
   publicData = snapshot as any,
   publicResults = [] as any[],
@@ -61,6 +62,8 @@ function createRuntime({
   const playerCalls: unknown[] = [];
   const checkinCalls: unknown[][] = [];
   const animationCalls: unknown[] = [];
+  const scrollCalls: Array<{ x: number; animated: boolean }> = [];
+  let viewportWidth = width;
   const queryCalls: Array<[string, unknown[]]> = [];
   const chain: Record<string, any> = {};
   for (const method of ['select', 'eq', 'gte', 'or', 'order', 'limit']) chain[method] = (...args: unknown[]) => { queryCalls.push([method, args]); return chain; };
@@ -73,10 +76,15 @@ function createRuntime({
   const HomeScreen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(new URL('../../src/screens/HomeScreen.tsx', import.meta.url), {
     react: harness.react,
     'react-native': {
-      ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', RefreshControl: 'RefreshControl', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
+      ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', RefreshControl: 'RefreshControl',
+      ScrollView: ({ ref, children, ...props }: Record<string, any>) => {
+        if (ref && typeof ref === 'object') ref.current = { scrollTo: (value: { x: number; animated: boolean }) => scrollCalls.push(value) };
+        return createElement('ScrollView', props, children);
+      },
+      Text: 'Text', View: 'View',
       StyleSheet: { create: <T>(value: T) => value, absoluteFill: {}, absoluteFillObject: { position: 'absolute', inset: 0 }, hairlineWidth: 1 },
       LayoutAnimation: { Presets: { easeInEaseOut: 'ease' }, configureNext: (preset: unknown) => animationCalls.push(preset) },
-      useWindowDimensions: () => ({ width: 320, height: 700 }),
+      useWindowDimensions: () => ({ width: viewportWidth, height: 700 }),
     },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     '@expo/vector-icons': { Ionicons: 'Ionicon' },
@@ -127,7 +135,8 @@ function createRuntime({
   }).default;
   harness.mount(() => HomeScreen({ navigation: { navigate: (...args: unknown[]) => navigationCalls.push(args) } }));
   return {
-    harness, navigationCalls, linkCalls, playerCalls, checkinCalls, queryCalls, animationCalls,
+    harness, navigationCalls, linkCalls, playerCalls, checkinCalls, queryCalls, animationCalls, scrollCalls,
+    resize: (nextWidth: number) => { viewportWidth = nextWidth; harness.render(); },
     changeGame: (kind: 'game' | 'team') => {
       if (kind === 'team') {
         replacementTeam = assignmentB;
@@ -280,6 +289,44 @@ describe('Home web-structure runtime', () => {
     findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story')?.props.onPress();
     runtime.harness.render();
     assert.equal(runtime.animationCalls.length, 0);
+  });
+
+  it('preserves selected story identity, physical offset, and announced position across width and refreshed arrays', async () => {
+    const stories = ['One', 'Two', 'Three'].map((title, index) => ({
+      ...snapshot.articles.data[0], id: `story-${index + 1}`, slug: title.toLowerCase(), title,
+    }));
+    const initial = { ...snapshot, articles: { status: 'ready', data: stories } };
+    const reordered = { ...snapshot, articles: { status: 'ready', data: [stories[1], stories[0], stories[2]] } };
+    const removed = { ...snapshot, articles: { status: 'ready', data: [stories[0], stories[2]] } };
+    const runtime = createRuntime({ reduceMotion: true, publicResults: [initial, reordered, removed] });
+    await settle(runtime);
+    findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story')?.props.onPress();
+    runtime.harness.render();
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '2 of 3');
+
+    runtime.resize(400);
+    assert.deepEqual(runtime.scrollCalls.at(-1), { x: 368, animated: false });
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '2 of 3');
+
+    await refresh(runtime);
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '1 of 3');
+    assert.deepEqual(runtime.scrollCalls.at(-1), { x: 0, animated: false });
+
+    await refresh(runtime);
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '1 of 2');
+    assert.equal(runtime.animationCalls.length, 0);
+  });
+
+  it('keeps every news page addressable without eagerly mounting an unbounded set of article images', async () => {
+    const stories = Array.from({ length: 53 }, (_, index) => ({
+      ...snapshot.articles.data[0], id: `story-${index}`, title: `Story ${index}`, slug: `story-${index}`, image_url: `https://images.test/${index}.jpg`,
+    }));
+    const runtime = createRuntime({ publicData: { ...snapshot, articles: { status: 'ready', data: stories } } });
+    await settle(runtime);
+    const pager = findNode(runtime.harness.output, (node) => node.props.testID === 'home-news-pager');
+    assert.equal(Array.isArray(pager?.props.children) ? pager.props.children.length : 0, 53);
+    assert.ok(allNodes(pager).filter((node) => node.type === 'Image' && typeof node.props.source?.uri === 'string').length <= 3);
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.max, 53);
   });
 
   it('retains same-period facts with visible stale notes, including an independent photo reel when albums fail', async () => {

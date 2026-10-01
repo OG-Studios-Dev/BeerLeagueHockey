@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180" width="800" height="180">
+  <!-- Canonical SeasonCompletionArc geometry retained as the source for the native alpha mask. -->
+  <path d="M 0 180 C 180 180, 280 10, 400 10 C 520 10, 620 180, 800 180 Z" fill="#ffffff"/>
+</svg>
