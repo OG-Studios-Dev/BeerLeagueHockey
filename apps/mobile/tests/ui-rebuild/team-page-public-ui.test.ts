@@ -204,7 +204,7 @@ describe('native Team public composition', () => {
       const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
       assert.equal(findNode(hero, (node) => node.type === 'TeamLogo')?.props.size, 160);
       const pillRows = findNodes(hero, (node) => node.props.testID === 'team-hero-pill-row');
-      assert.deepEqual(pillRows.map((row) => findNodes(row, (node) => node.props.testID === 'team-hero-pill').length), width === 390 ? [2, 3, 1] : [2, 2, 2]);
+      assert.deepEqual(pillRows.map((row) => findNodes(row, (node) => node.props.testID === 'team-hero-pill').length), [3, 3]);
       const podium = findNode(output, (node) => node.props.testID === 'team-leader-podium');
       for (const avatar of findNodes(podium, (node) => node.type === 'Avatar')) assert.ok(avatar.props.size >= (width === 390 ? 70 : 54));
       const rosterSection = findNode(output, (node) => node.props.testID === 'team-roster-section');
@@ -242,8 +242,12 @@ describe('native Team public composition', () => {
 
   it('switches exact leader metrics and podium/bar views without fake navigation', () => {
     const run = runtime();
+    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityState, { selected: true });
+    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.accessibilityState, { selected: false });
     findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.onPress();
     let output = run.harness.render();
+    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityState, { selected: false });
+    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.accessibilityState, { selected: true });
     assert.match(nodeText(findNode(output, (node) => node.props.testID === 'team-leader-podium')), /Stefan Kowles20/);
     findNode(output, (node) => node.props.testID === 'team-leader-chart-toggle')?.props.onPress();
     output = run.harness.render();
@@ -350,5 +354,44 @@ describe('native Team public composition', () => {
     assert.match(jerseyText, /96/);
     assert.match(jerseyText, /00/);
     assert.doesNotMatch(jerseyText, /(^|\D)0(\D|$)/);
+    assert.equal(findNodes(jerseys, (node) => /^team-lineup-forward-slot-\d+$/.test(node.props.testID ?? '')).length, 6);
+    assert.equal(findNodes(jerseys, (node) => /^team-lineup-defence-slot-\d+$/.test(node.props.testID ?? '')).length, 4);
+    assert.equal(findNodes(jerseys, (node) => node.props.testID === 'team-lineup-goalie-slot-0').length, 1);
+    assert.equal(findNode(jerseys, (node) => node.props.testID === 'team-lineup-forward-slot-1')?.props.accessibilityLabel, 'Empty forward slot 2');
+  });
+
+  it('keeps a valid published empty lineup empty and renders the full 6F/4D/1G board', () => {
+    const output = runtime(390, { ...snapshot, publishedLineup: { status: 'published', layout_json: { roster: [], placedPlayers: [] } } }).harness.output;
+    const section = findNode(output, (node) => node.props.testID === 'team-roster-section');
+    assert.match(nodeText(section), /Published next-game lineup/);
+    assert.doesNotMatch(nodeText(section), /GROSSI|MOORE|KOWLES/);
+    assert.equal(findNodes(section, (node) => /^team-lineup-forward-slot-\d+$/.test(node.props.testID ?? '')).length, 6);
+    assert.equal(findNodes(section, (node) => /^team-lineup-defence-slot-\d+$/.test(node.props.testID ?? '')).length, 4);
+    assert.equal(findNodes(section, (node) => node.props.testID === 'team-lineup-goalie-slot-0').length, 1);
+  });
+
+  it('renders compact two-team schedule cards with both transparent crests and omits an empty Schedule section', () => {
+    const output = runtime(390).harness.output;
+    const row = findNode(output, (node) => node.props.testID === 'team-schedule-game-g3');
+    assert.match(nodeText(row), /First General London.*vs.*London Eco Metal/i);
+    const rowLogos = findNodes(row, (node) => node.type === 'TeamLogo');
+    assert.deepEqual(rowLogos.map((node) => node.props.teamId), ['team-b', 'team-a']);
+    assert.ok(rowLogos.every((node) => node.props.transparentBacking === true));
+    const empty = runtime(390, { ...snapshot, games: [], collapsedSchedule: [], nextGame: null }).harness.output;
+    assert.equal(findNode(empty, (node) => node.props.testID === 'team-schedule-section'), undefined);
+  });
+
+  it('uses role-specific goalie columns and preserves full metric state text', () => {
+    const metric = (value: number | null, state: string) => ({ value, state, sources: state === 'unknown' ? [] : ['goalie_stats'] });
+    const goalie = { ...roster[0], playerId: 'goalie', name: 'Goalie One', position: 'G', isGoalie: true, publicGoalieMetrics: {
+      gamesPlayed: metric(4, 'recorded'), wins: metric(2, 'recorded'), losses: metric(1, 'recorded'), saves: metric(80, 'recorded'),
+      goalsAgainst: metric(10, 'recorded'), savePercentage: metric(.889, 'recorded'), goalsAgainstAverage: metric(null, 'conflicted'), shutouts: metric(null, 'unknown'),
+    } };
+    const run = runtime(390, { ...snapshot, roster: [goalie] });
+    findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    const row = findNode(run.harness.render(), (node) => node.props.testID === 'team-roster-player-goalie');
+    assert.match(nodeText(row), /GP4W2L1GAANeeds reviewSV%88\.9%SO—/);
+    assert.match(row?.props.accessibilityLabel, /goals against average Needs review.*Conflicting records need review.*shutouts —.*Not recorded/i);
+    assert.doesNotMatch(nodeText(row), /PTS|PIM/);
   });
 });

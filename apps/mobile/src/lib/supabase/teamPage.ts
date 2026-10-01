@@ -143,6 +143,7 @@ export type TeamPageSnapshotInput = {
   acceptedSubstitutions?: Array<Record<string, unknown>>;
   sponsors: Array<Record<string, unknown>>;
   publicSeasonStats?: PublicSeasonStats;
+  publicLeagueSeasonStats?: PublicSeasonStats;
 };
 
 function stringValue(value: unknown): string | null {
@@ -166,6 +167,13 @@ function identity(row: Record<string, unknown> | null | undefined): TeamPageIden
     primaryColor: stringValue(row?.primary_color),
     secondaryColor: stringValue(row?.secondary_color),
   };
+}
+
+function isPublicTeam(row: Record<string, unknown> | null | undefined, includeExhibition = false): boolean {
+  const type = stringValue(row?.team_type)?.toLowerCase();
+  if (type === 'free_agents' || type === 'placeholder' || (!includeExhibition && type === 'exhibition')) return false;
+  const name = stringValue(row?.name)?.toLowerCase().replace(/\s+/g, ' ');
+  return !name || !['free agent', 'free agents', 'unassigned free agent', 'unassigned free agents'].includes(name);
 }
 
 function hasStats(row: Record<string, unknown> | undefined): boolean {
@@ -282,41 +290,8 @@ function buildGoalieStats(input: TeamPageSnapshotInput) {
   return byPlayer;
 }
 
-function buildFallbackGoalieStats(input: TeamPageSnapshotInput): Map<string, { gamesPlayed: number; goalsAgainst: number }> {
-  const result = new Map<string, { gamesPlayed: number; goalsAgainst: number }>();
-  if (input.goalieStats.some((row) => row.season_id === input.season.id)) return result;
-
-  const goalieByTeam = new Map<string, string[]>();
-  for (const row of input.leagueRosters ?? input.rosters) {
-    if (row.league_id !== input.leagueId || row.season_id !== input.season.id || row.status !== 'active' || row.end_date !== null || typeof row.team_id !== 'string' || typeof row.player_id !== 'string') continue;
-    if (!isGoalie(stringValue(row.position), booleanValue(row.is_goalie))) continue;
-    goalieByTeam.set(row.team_id, [...(goalieByTeam.get(row.team_id) ?? []), row.player_id]);
-  }
-  const singleGoalieByTeam = new Map(
-    Array.from(goalieByTeam.entries())
-      .filter(([, playerIds]) => new Set(playerIds).size === 1)
-      .map(([teamId, playerIds]) => [teamId, playerIds[0]]),
-  );
-  const add = (teamId: unknown, goalsAgainst: unknown) => {
-    if (typeof teamId !== 'string') return;
-    const playerId = singleGoalieByTeam.get(teamId);
-    const ga = numberValue(goalsAgainst);
-    if (!playerId || ga == null) return;
-    const current = result.get(playerId) ?? { gamesPlayed: 0, goalsAgainst: 0 };
-    current.gamesPlayed += 1;
-    current.goalsAgainst += ga;
-    result.set(playerId, current);
-  };
-  for (const game of input.games) {
-    if (game.league_id !== input.leagueId || game.season_id !== input.season.id || game.status !== 'completed') continue;
-    add(game.home_team_id, game.away_score);
-    add(game.away_team_id, game.home_score);
-  }
-  return result;
-}
-
 function standingsFrom(input: TeamPageSnapshotInput): TeamPageStanding[] {
-  const teamMap = new Map(input.teams.map((row) => [String(row.id), row]));
+  const teamMap = new Map(input.teams.filter((row) => isPublicTeam(row)).map((row) => [String(row.id), row]));
   return input.standings
     .filter((row) => row.season_id === input.season.id && teamMap.has(String(row.team_id)))
     .map((row) => {
@@ -342,23 +317,25 @@ function standingsFrom(input: TeamPageSnapshotInput): TeamPageStanding[] {
 }
 
 function buildGames(input: TeamPageSnapshotInput): TeamPageGame[] {
-  const teamMap = new Map(input.teams.map((row) => [String(row.id), row]));
+  const teamMap = new Map(input.teams.filter((row) => isPublicTeam(row)).map((row) => [String(row.id), row]));
+  const sourceTeam = (row: Record<string, unknown>, side: 'home' | 'away') => teamMap.get(String(row[`${side}_team_id`])) ?? (row[`${side}_team`] as Record<string, unknown> | undefined);
   return input.games
     .filter((row) =>
       row.league_id === input.leagueId &&
       row.season_id === input.season.id &&
+      Boolean(sourceTeam(row, 'home')) && Boolean(sourceTeam(row, 'away')) &&
+      isPublicTeam(sourceTeam(row, 'home')) && isPublicTeam(sourceTeam(row, 'away')) &&
       (row.home_team_id === input.teamId || row.away_team_id === input.teamId),
     )
-    .map((row) => ({
-      id: String(row.id),
-      scheduledAt: String(row.scheduled_at),
-      status: stringValue(row.status),
-      location: stringValue(row.location) ?? stringValue(row.venue),
-      homeScore: numberValue(row.home_score),
-      awayScore: numberValue(row.away_score),
-      homeTeam: identity(teamMap.get(String(row.home_team_id)) ?? (row.home_team as Record<string, unknown> | undefined)),
-      awayTeam: identity(teamMap.get(String(row.away_team_id)) ?? (row.away_team as Record<string, unknown> | undefined)),
-    }))
+    .map((row) => {
+      const home = identity(sourceTeam(row, 'home'));
+      const away = identity(sourceTeam(row, 'away'));
+      return {
+        id: String(row.id), scheduledAt: String(row.scheduled_at), status: stringValue(row.status),
+        location: stringValue(row.location) ?? stringValue(row.venue), homeScore: numberValue(row.home_score), awayScore: numberValue(row.away_score),
+        homeTeam: { ...home, id: home.id || String(row.home_team_id) }, awayTeam: { ...away, id: away.id || String(row.away_team_id) },
+      };
+    })
     .sort((left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime());
 }
 
@@ -441,7 +418,7 @@ function buildRivals(
   games: TeamPageGame[],
   standings: TeamPageStanding[],
 ): TeamPageRival[] {
-  const teamMap = new Map(input.teams.map((row) => [String(row.id), identity(row)]));
+  const teamMap = new Map(input.teams.filter((row) => isPublicTeam(row)).map((row) => [String(row.id), identity(row)]));
   const counts = new Map<string, { wins: number; losses: number; ties: number; latestMeeting: number }>();
   for (const game of games) {
     if (game.status !== 'completed' || game.homeScore == null || game.awayScore == null) continue;
@@ -459,82 +436,21 @@ function buildRivals(
   }
 
   const standingMap = new Map(standings.map((row) => [row.teamId, row]));
-  const profileMap = new Map(input.profiles.map((row) => [String(row.id), row]));
-  // Match the web unified producer: completed-season totals by player, attributed
-  // to the team with most appearances. Stats-only players are not roster members.
-  const completedIds = new Set(input.games.filter((game) => game.league_id === input.leagueId && game.season_id === input.season.id && game.status === 'completed').map((game) => String(game.id)));
-  const memberships = (input.leagueRosters ?? input.rosters).filter((row) => row.league_id === input.leagueId && row.season_id === input.season.id && row.status === 'active' && row.end_date === null);
-  type RivalTotals = { playerId: string; teamId: string; name: string; goals: number; assists: number; goalsAgainst: number; gameIds: Set<string>; teamGames: Map<string, Set<string>>; bestTeamGames: number; goalie: boolean; fallbackGames?: number };
-  const create = (playerId: string, teamId: string): RivalTotals => {
-    const membership = memberships.find((row) => row.player_id === playerId && row.team_id === teamId);
-    return { playerId, teamId, name: stringValue(profileMap.get(playerId)?.full_name) ?? 'Unknown Player', goals: 0, assists: 0, goalsAgainst: 0, gameIds: new Set(), teamGames: new Map(), bestTeamGames: 0, goalie: isGoalie(stringValue(membership?.position), booleanValue(membership?.is_goalie)) };
-  };
-  const addAppearance = (entry: RivalTotals, teamId: string, gameId: string, updateRole: boolean) => {
-    entry.gameIds.add(gameId);
-    const ids = entry.teamGames.get(teamId) ?? new Set<string>();
-    ids.add(gameId);
-    entry.teamGames.set(teamId, ids);
-    if (ids.size > entry.bestTeamGames) {
-      entry.teamId = teamId;
-      entry.bestTeamGames = ids.size;
-      if (updateRole) {
-        const membership = memberships.find((row) => row.player_id === entry.playerId && row.team_id === teamId);
-        entry.goalie = isGoalie(stringValue(membership?.position), booleanValue(membership?.is_goalie));
-      }
-    }
-  };
-  const aggregate = (rows: Array<Record<string, unknown>>) => {
-    const totals = new Map<string, RivalTotals>();
-    const seen = new Set<string>();
-    for (const row of rows) {
-      if (row.season_id !== input.season.id || !completedIds.has(String(row.game_id)) || !teamMap.has(String(row.team_id)) || typeof row.player_id !== 'string') continue;
-      const key = `${row.player_id}:${row.team_id}:${row.game_id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const entry = totals.get(row.player_id) ?? create(row.player_id, String(row.team_id));
-      entry.goals += numberValue(row.goals) ?? 0;
-      entry.assists += numberValue(row.assists) ?? 0;
-      entry.goalsAgainst += numberValue(row.goals_against) ?? 0;
-      addAppearance(entry, String(row.team_id), String(row.game_id), true);
-      totals.set(row.player_id, entry);
-    }
-    return totals;
-  };
-  const skaterTotals = aggregate(input.playerStats);
-  for (const row of memberships) {
-    if (typeof row.player_id !== 'string' || typeof row.team_id !== 'string' || isGoalie(stringValue(row.position), booleanValue(row.is_goalie)) || skaterTotals.has(row.player_id)) continue;
-    skaterTotals.set(row.player_id, create(row.player_id, row.team_id));
-  }
-  for (const teamId of teamMap.keys()) {
-    const appearances = buildEstimatedAppearanceGameIds({ ...input, teamId, rosters: memberships });
-    for (const [playerId, gameIds] of appearances) {
-      const entry = skaterTotals.get(playerId);
-      if (entry) for (const gameId of gameIds) addAppearance(entry, teamId, gameId, false);
-    }
-  }
-  const goalieTotals = aggregate(input.goalieStats);
-  if (goalieTotals.size === 0) {
-    const fallback = buildFallbackGoalieStats({ ...input, goalieStats: [] });
-    for (const [playerId, row] of fallback) {
-      const membership = memberships.find((candidate) => candidate.player_id === playerId && isGoalie(stringValue(candidate.position), booleanValue(candidate.is_goalie)));
-      if (!membership) continue;
-      const entry = create(playerId, String(membership.team_id));
-      entry.goalsAgainst = row.goalsAgainst;
-      entry.fallbackGames = row.gamesPlayed;
-      goalieTotals.set(playerId, entry);
-    }
-  }
-  const goalieGp = (entry: RivalTotals) => entry.fallbackGames ?? entry.gameIds.size;
-  const gaa = (entry: RivalTotals) => goalieGp(entry) > 0 ? Math.round(entry.goalsAgainst / goalieGp(entry) * 100) / 100 : null;
-  const compareSkaters = (metric: 'goals' | 'assists') => (a: RivalTotals, b: RivalTotals) => b[metric] - a[metric] || (b.goals + b.assists) - (a.goals + a.assists) || b.goals - a.goals || b.assists - a.assists || a.name.localeCompare(b.name);
+  const canonicalPlayers = input.publicLeagueSeasonStats?.players ?? [];
+  const teamFor = (player: PublicSeasonPlayer) => player.displayTeam?.id && teamMap.has(player.displayTeam.id) ? player.displayTeam.id : null;
+  const metricProvenance = (metric: PublicStatMetric | undefined): TeamStatProvenance => metric?.value == null ? null : metric.state === 'estimated' ? 'estimated' : 'authoritative';
+  const compareSkaters = (metric: 'goals' | 'assists') => (a: PublicSeasonPlayer, b: PublicSeasonPlayer) =>
+    (b.metrics[metric].value ?? -1) - (a.metrics[metric].value ?? -1) ||
+    (b.metrics.points.value ?? -1) - (a.metrics.points.value ?? -1) || a.playerName.localeCompare(b.playerName);
   const side = (teamId: string): TeamPageRivalSide | null => {
     const standing = standingMap.get(teamId);
     const team = teamMap.get(teamId);
     if (!standing || !team) return null;
-    const skaters = Array.from(skaterTotals.values()).filter((row) => row.teamId === teamId && !row.goalie);
+    const skaters = canonicalPlayers.filter((player) => teamFor(player) === teamId && player.roles.includes('skater'));
     const sniper = [...skaters].sort(compareSkaters('goals'))[0];
     const playmaker = [...skaters].sort(compareSkaters('assists'))[0];
-    const goalie = Array.from(goalieTotals.values()).filter((row) => row.teamId === teamId).sort((a, b) => goalieGp(b) - goalieGp(a) || (gaa(a) ?? Infinity) - (gaa(b) ?? Infinity) || a.name.localeCompare(b.name))[0];
+    const goalie = canonicalPlayers.filter((player) => teamFor(player) === teamId && player.goalie)
+      .sort((a, b) => (b.goalie?.gamesPlayed.value ?? -1) - (a.goalie?.gamesPlayed.value ?? -1) || (a.goalie?.goalsAgainstAverage.value ?? Infinity) - (b.goalie?.goalsAgainstAverage.value ?? Infinity) || a.playerName.localeCompare(b.playerName))[0];
     const sw = strengthWeakness(standings, teamId);
     return {
       ...team,
@@ -544,14 +460,14 @@ function buildRivals(
       goalDifferential: standing.goalDifferential,
       strength: sw.strength,
       weakness: sw.weakness,
-      sniper: { name: sniper?.name ?? 'No data', goals: sniper?.goals ?? 0 },
-      playmaker: { name: playmaker?.name ?? 'No data', assists: playmaker?.assists ?? 0 },
+      sniper: { name: sniper?.playerName ?? 'No data', goals: sniper?.metrics.goals.value ?? null },
+      playmaker: { name: playmaker?.playerName ?? 'No data', assists: playmaker?.metrics.assists.value ?? null },
       tendy: {
-        name: goalie && goalieGp(goalie) > 0 ? goalie.name : 'No data',
-        gamesPlayed: goalie ? goalieGp(goalie) : 0,
-        gamesPlayedProvenance: goalie ? 'estimated' : null,
-        goalsAgainstAverage: goalie ? gaa(goalie) : null,
-        goalsAgainstAverageProvenance: goalie && gaa(goalie) != null ? 'estimated' : null,
+        name: goalie?.playerName ?? 'No data',
+        gamesPlayed: goalie?.goalie?.gamesPlayed.value ?? null,
+        gamesPlayedProvenance: metricProvenance(goalie?.goalie?.gamesPlayed),
+        goalsAgainstAverage: goalie?.goalie?.goalsAgainstAverage.value ?? null,
+        goalsAgainstAverageProvenance: metricProvenance(goalie?.goalie?.goalsAgainstAverage),
       },
     };
   };
@@ -578,7 +494,7 @@ function buildRivals(
 }
 
 function championshipSummary(input: TeamPageSnapshotInput, now: Date) {
-  const teamIds = new Set(input.teams.map((row) => String(row.id)));
+  const teamIds = new Set(input.teams.filter((row) => isPublicTeam(row)).map((row) => String(row.id)));
   const historyBySeason = new Map<string, TeamPageStanding[]>();
   for (const row of input.historicalStandings) {
     if (!teamIds.has(String(row.team_id)) || typeof row.season_id !== 'string') continue;
@@ -795,7 +711,10 @@ export async function loadTeamPageSnapshot(
 
     const leagueSlug = stringValue((leagueResult.data as Record<string, unknown>).slug);
     if (!leagueSlug) return { data: null, error: 'League public stats slug is unavailable.' };
-    const publicSeasonStats = await getPublicSeasonStats(leagueSlug, leagueId, seasonId, null, teamId);
+    const [publicSeasonStats, publicLeagueSeasonStats] = await Promise.all([
+      getPublicSeasonStats(leagueSlug, leagueId, seasonId, null, teamId),
+      getPublicSeasonStats(leagueSlug, leagueId, seasonId),
+    ]);
 
     const teamIds = teams.map((row) => String(row.id));
     const completedSeasonIds = seasons.filter((row) => row.status !== 'active' && stringValue(row.end_date) != null && new Date(String(row.end_date)).getTime() < now.getTime()).map((row) => String(row.id));
@@ -827,7 +746,7 @@ export async function loadTeamPageSnapshot(
       data: buildTeamPageSnapshot({
         teamId, leagueId, season,
         team: teamResult.data as Record<string, unknown>, league: leagueResult.data as Record<string, unknown>,
-        teams, standings, rosters, leagueRosters, profiles, seasonStats: [], playerStats, goalieStats, games, seasons, historicalStandings, publishedLineup, acceptedSubstitutions, sponsors, publicSeasonStats,
+        teams, standings, rosters, leagueRosters, profiles, seasonStats: [], playerStats, goalieStats, games, seasons, historicalStandings, publishedLineup, acceptedSubstitutions, sponsors, publicSeasonStats, publicLeagueSeasonStats,
       }, now),
       error: null,
     };
