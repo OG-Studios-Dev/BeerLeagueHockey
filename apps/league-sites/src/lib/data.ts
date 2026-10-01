@@ -708,7 +708,7 @@ export async function getDivisions(leagueId: string): Promise<Division[]> {
 /**
  * Fetch all seasons for a league
  */
-export async function getSeasons(leagueId: string): Promise<Season[]> {
+export async function getSeasons(leagueId: string, options: CanonicalReadOptions = {}): Promise<Season[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -718,6 +718,7 @@ export async function getSeasons(leagueId: string): Promise<Season[]> {
     .order('start_date', { ascending: false });
 
   if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'seasons');
     return [];
   }
 
@@ -5385,16 +5386,18 @@ export async function getPlayerCareerStatsTimeline(
   isGoalie: boolean,
   options: {
     includeHistoricalBaseline?: boolean;
+    strict?: boolean;
   } = {},
 ): Promise<PlayerCareerSeasonRow[]> {
-  const { includeHistoricalBaseline = false } = options;
+  const { includeHistoricalBaseline = false, strict = false } = options;
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
-  const { data: seasonRecords } = await supabase
+  const { data: seasonRecords, error: seasonRecordsError } = await supabase
     .from('seasons')
     .select('id, name, start_date')
     .eq('league_id', leagueId)
     .order('start_date', { ascending: false });
+  if (seasonRecordsError && strict) throwCanonicalReadError(seasonRecordsError, 'player timeline seasons');
   const seasons = (seasonRecords || []) as Array<{ id: string; name: string; start_date: string | null }>;
   const seasonNameById = new Map(seasons.map((season) => [season.id, season.name]));
   const seasonSortById = new Map(seasons.map((season) => [season.id, season.start_date ?? null]));
@@ -5407,6 +5410,7 @@ export async function getPlayerCareerStatsTimeline(
       .eq('player_id', playerId);
 
     if (error) {
+      if (strict) throwCanonicalReadError(error, 'goalie career timeline');
       return [];
     }
 
@@ -5484,11 +5488,13 @@ export async function getPlayerCareerStatsTimeline(
     }
 
     if (historicalBaselineSeason) {
-      const { data: baselineStats } = await serviceSupabase
+      const { data: baselineStats, error: baselineError } = await serviceSupabase
         .from('player_career_baselines')
         .select('games_played, wins, losses, ties, saves, goals_against, shutouts, save_percentage, goals_against_average')
+        .eq('league_id', leagueId)
         .eq('player_id', playerId)
         .maybeSingle();
+      if (baselineError && strict) throwCanonicalReadError(baselineError, 'goalie career baseline');
 
       if (baselineStats) {
         const baselineGames = Number(baselineStats.games_played || 0);
@@ -5557,6 +5563,7 @@ export async function getPlayerCareerStatsTimeline(
     .eq('player_id', playerId);
 
   if (error) {
+    if (strict) throwCanonicalReadError(error, 'skater career timeline');
     return [];
   }
 
@@ -5596,11 +5603,12 @@ export async function getPlayerCareerStatsTimeline(
     appearancesBySeasonTeam.set(key, games);
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('full_name')
     .eq('id', playerId)
     .maybeSingle();
+  if (profileError && strict) throwCanonicalReadError(profileError, 'career timeline profile');
 
   const importedSeed = getImportedAggregateSkaterSeed(HLHL_WINTER_2026_SEASON_ID, profile?.full_name);
 
@@ -5685,7 +5693,7 @@ export async function getPlayerCareerStatsTimeline(
 export async function getPlayerCareerStats(
   playerId: string,
   seasonId?: string | null,
-  options: { leagueId?: string; isGoalie?: boolean } = {},
+  options: CanonicalReadOptions & { leagueId?: string; isGoalie?: boolean } = {},
 ): Promise<PlayerStats | null> {
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
@@ -5697,7 +5705,7 @@ export async function getPlayerCareerStats(
     }
 
     const careerRows = filterVisiblePlayerCareerTimelineRows(
-      await getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, { includeHistoricalBaseline: true }),
+      await getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, { includeHistoricalBaseline: true, strict: options.strict }),
       { includeHistoricalBaseline: true },
     );
 
@@ -5723,20 +5731,22 @@ export async function getPlayerCareerStats(
   let seasonName: string | null = null;
 
   if (seasonId) {
-    const { data: seasonRecord } = await supabase
+    const { data: seasonRecord, error: seasonRecordError } = await supabase
       .from('seasons')
       .select('name')
       .eq('id', seasonId)
       .maybeSingle();
+    if (seasonRecordError && options.strict) throwCanonicalReadError(seasonRecordError, 'player stats season');
 
     seasonName = seasonRecord?.name ?? null;
 
     if (isImportedAggregateSeasonId(seasonId)) {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', playerId)
         .maybeSingle();
+      if (profileError && options.strict) throwCanonicalReadError(profileError, 'imported player profile');
 
       const importedSkater = getImportedAggregateSkaterSeed(seasonId, profile?.full_name);
       if (importedSkater) {
@@ -5781,21 +5791,24 @@ export async function getPlayerCareerStats(
       }
     }
 
-    const { data: seasonStats } = await supabase
+    const { data: seasonStats, error: seasonStatsError } = await supabase
       .from('player_season_stats')
       .select('games_played, goals, assists, points, team_name, position')
       .eq('player_id', playerId)
       .eq('season_id', seasonId)
       .maybeSingle();
+    if (seasonStatsError && options.strict) throwCanonicalReadError(seasonStatsError, 'player season stats');
 
     seasonSummary = seasonStats;
 
     if (isHistoricalCareerBaselineSeasonName(seasonName)) {
-      const { data: baselineStats } = await serviceSupabase
+      let baselineQuery = serviceSupabase
         .from('player_career_baselines')
         .select('games_played, goals, assists, points')
-        .eq('player_id', playerId)
-        .maybeSingle();
+        .eq('player_id', playerId);
+      if (leagueId) baselineQuery = baselineQuery.eq('league_id', leagueId);
+      const { data: baselineStats, error: baselineError } = await baselineQuery.maybeSingle();
+      if (baselineError && options.strict) throwCanonicalReadError(baselineError, 'player career baseline');
 
       if (baselineStats) {
         seasonSummary = {
@@ -5809,11 +5822,12 @@ export async function getPlayerCareerStats(
     }
 
     if (isImportedAggregateSeasonId(seasonId)) {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', playerId)
         .maybeSingle();
+      if (profileError && options.strict) throwCanonicalReadError(profileError, 'aggregate player profile');
 
       const gamesPlayedOverride = getImportedAggregateSkaterGamesPlayed(seasonId, profile?.full_name);
       if (gamesPlayedOverride != null) {
@@ -5838,7 +5852,10 @@ export async function getPlayerCareerStats(
 
   const { data, error } = await query;
 
-  if (error) return null;
+  if (error) {
+    if (options.strict) throwCanonicalReadError(error, 'player stats');
+    return null;
+  }
 
   const statGameIds = new Set((data || []).map((row) => row.game_id).filter(Boolean));
 
@@ -5876,6 +5893,9 @@ export async function getPlayerCareerStats(
         .eq('player_id', playerId)
         .eq('season_id', seasonId),
     ]);
+    if (options.strict && (rosterSummaryResult.error || goalieStatsResult.error)) {
+      throwCanonicalReadError(rosterSummaryResult.error || goalieStatsResult.error, 'player roster or goalie stats');
+    }
 
     for (const row of [...confirmedCheckins, ...fallbackRosterAppearances]) {
       if (row.game_id) {
@@ -5990,14 +6010,18 @@ export async function getPlayerCareerStats(
 
 export async function getImportedPlayerCareerAchievements(
   playerId: string,
+  options: CanonicalReadOptions & { leagueId?: string } = {},
 ): Promise<{ championships: number }> {
   const serviceSupabase = createServiceRoleClient();
-  const { data, error } = await serviceSupabase
+  let query = serviceSupabase
     .from('player_career_baselines')
     .select('moosehead_cup_wins')
     .eq('player_id', playerId);
+  if (options.leagueId) query = query.eq('league_id', options.leagueId);
+  const { data, error } = await query;
 
   if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'player career achievements');
     return { championships: 0 };
   }
 
@@ -6016,16 +6040,18 @@ export async function getImportedPlayerCareerAchievements(
 export async function getPlayerGameLog(
   playerId: string,
   seasonId?: string,
-  limit = 20
+  limit = 20,
+  options: CanonicalReadOptions = {},
 ): Promise<PlayerGameLogEntry[]> {
   const supabase = await createClient();
 
   if (seasonId) {
-    const { data: seasonRecord } = await supabase
+    const { data: seasonRecord, error: seasonError } = await supabase
       .from('seasons')
       .select('name')
       .eq('id', seasonId)
       .maybeSingle();
+    if (seasonError && options.strict) throwCanonicalReadError(seasonError, 'player game log season');
 
     if (isAggregateOnlySeasonView(seasonId, seasonRecord?.name ?? null)) {
       return [];
@@ -6062,7 +6088,10 @@ export async function getPlayerGameLog(
 
   const { data, error } = await query;
 
-  if (error || !data) return [];
+  if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'player game log');
+    return [];
+  }
 
   const rows = [...data];
 
@@ -6709,8 +6738,28 @@ export async function getGameRecap(gameId: string): Promise<NewsArticle | null> 
 /**
  * Get articles that tag a specific player
  */
-export async function getPlayerArticles(playerId: string, limit = 10): Promise<NewsArticle[]> {
+export async function getPlayerArticles(
+  playerId: string,
+  limit = 10,
+  options: CanonicalReadOptions & { leagueId?: string } = {},
+): Promise<NewsArticle[]> {
   const supabase = await createClient();
+
+  if (options.leagueId) {
+    const { data: scopedArticles, error: scopedError } = await supabase
+      .from('articles')
+      .select('*, author:profiles!articles_author_id_fkey(full_name, avatar_url, photo_url), player_tags:article_player_tags!inner(player_id)')
+      .eq('league_id', options.leagueId)
+      .eq('published', true)
+      .eq('player_tags.player_id', playerId)
+      .order('published_at', { ascending: false })
+      .limit(limit);
+    if (scopedError || !scopedArticles) {
+      if (scopedError && options.strict) throwCanonicalReadError(scopedError, 'scoped player articles');
+      return [];
+    }
+    return scopedArticles as unknown as NewsArticle[];
+  }
 
   // Get article IDs from player tags
   const { data: tags, error: tagsError } = await supabase
@@ -6719,19 +6768,27 @@ export async function getPlayerArticles(playerId: string, limit = 10): Promise<N
     .eq('player_id', playerId)
     .limit(limit);
 
-  if (tagsError || !tags || tags.length === 0) return [];
+  if (tagsError || !tags || tags.length === 0) {
+    if (tagsError && options.strict) throwCanonicalReadError(tagsError, 'player article tags');
+    return [];
+  }
 
   const articleIds = tags.map(t => t.article_id);
 
   // Get the articles
-  const { data: articles, error } = await supabase
+  const articleQuery = supabase
     .from('articles')
     .select('*, author:profiles!articles_author_id_fkey(full_name, avatar_url, photo_url)')
     .in('id', articleIds)
     .eq('published', true)
-    .order('published_at', { ascending: false });
+    .order('published_at', { ascending: false })
+    .limit(limit);
+  const { data: articles, error } = await articleQuery;
 
-  if (error || !articles) return [];
+  if (error || !articles) {
+    if (error && options.strict) throwCanonicalReadError(error, 'player articles');
+    return [];
+  }
   return articles as unknown as NewsArticle[];
 }
 
@@ -7362,14 +7419,22 @@ export async function getGamePlayerStats(gameId: string): Promise<GamePlayerStat
 }
 
 // ========== PLAYER BADGES ==========
-export async function getPlayerBadges(playerId: string): Promise<PlayerBadge[]> {
+export async function getPlayerBadges(
+  playerId: string,
+  options: CanonicalReadOptions & { leagueId?: string } = {},
+): Promise<PlayerBadge[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('player_badges')
     .select('*, season:seasons(name), team:teams(name, logo_url, slug)')
     .eq('player_id', playerId)
     .order('created_at', { ascending: false });
-  if (error || !data) return [];
+  if (options.leagueId) query = query.eq('league_id', options.leagueId);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'player badges');
+    return [];
+  }
   return data as unknown as PlayerBadge[];
 }
 
@@ -7405,7 +7470,8 @@ export async function getSeasonBadges(leagueId: string, seasonId: string): Promi
 
 export async function getPlayerGoalieMatchups(
   playerId: string,
-  seasonId?: string
+  seasonId?: string,
+  options: CanonicalReadOptions & { leagueId?: string } = {},
 ): Promise<{
   goalieId: string;
   goalieName: string;
@@ -7427,9 +7493,13 @@ export async function getPlayerGoalieMatchups(
   if (seasonId) {
     query = query.eq('season_id', seasonId);
   }
+  if (options.leagueId) query = query.eq('league_id', options.leagueId);
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'player goalie matchups');
+    return [];
+  }
 
   return data.map((row: any) => {
     const goalie = Array.isArray(row.goalie) ? row.goalie[0] : row.goalie;
@@ -7533,7 +7603,8 @@ export function getLegacyChampions(leagueSlug: string) {
 
 export async function getGoaliePlayerMatchups(
   goalieId: string,
-  seasonId?: string
+  seasonId?: string,
+  options: CanonicalReadOptions & { leagueId?: string } = {},
 ): Promise<{
   playerId: string;
   playerName: string;
@@ -7555,9 +7626,13 @@ export async function getGoaliePlayerMatchups(
   if (seasonId) {
     query = query.eq('season_id', seasonId);
   }
+  if (options.leagueId) query = query.eq('league_id', options.leagueId);
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'goalie player matchups');
+    return [];
+  }
 
   return data.map((row: any) => {
     const player = Array.isArray(row.player) ? row.player[0] : row.player;
