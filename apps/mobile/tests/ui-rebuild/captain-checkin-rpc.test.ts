@@ -37,11 +37,19 @@ function rosterRoleBuilder(role: 'captain' | 'alternate_captain' | null) {
 function loadCaptainClient(options: {
   role?: 'captain' | 'alternate_captain' | null;
   rpcResults?: Array<{ data: unknown; error: { message: string } | null }>;
+  rpcThrows?: unknown[];
 } = {}) {
   const calls: RpcCall[] = [];
   const tables: string[] = [];
   const roster = rosterRoleBuilder(options.role === undefined ? 'captain' : options.role);
-  const rpcResults = options.rpcResults ?? [{ data: { affected_rows: 1 }, error: null }];
+  const rpcResults = options.rpcResults ?? [{
+    data: {
+      outcome: 'set', operation: 'set', status: 'tentative', affected_rows: 1,
+      checkin_id: '60000000-0000-4000-8000-000000000001',
+    },
+    error: null,
+  }];
+  const rpcThrows = options.rpcThrows ?? [];
 
   const captainClient = compileCommonJs<CaptainCheckinModule>(
     new URL('../../src/lib/supabase/captain.ts', import.meta.url),
@@ -59,6 +67,7 @@ function loadCaptainClient(options: {
           },
           rpc: async (name: string, args: Record<string, unknown>) => {
             calls.push({ name, args });
+            if (rpcThrows.length) throw rpcThrows.shift();
             return rpcResults.shift() ?? { data: null, error: null };
           },
         },
@@ -100,7 +109,13 @@ describe('captain check-in RPC adapter', () => {
   });
 
   it('maps Waiting to an explicit reset operation with no direct delete fallback', async () => {
-    const run = loadCaptainClient();
+    const run = loadCaptainClient({ rpcResults: [{
+      data: {
+        outcome: 'already_waiting', operation: 'reset', status: null,
+        affected_rows: 0, checkin_id: null,
+      },
+      error: null,
+    }] });
     const result = await run.captainClient.clearPlayerCheckinAsCaptain('game-2', 'team-2', 'player-2');
 
     assert.deepEqual(result, { success: true });
@@ -115,6 +130,20 @@ describe('captain check-in RPC adapter', () => {
       },
     }]);
     assert.deepEqual(run.tables, ['team_rosters']);
+  });
+
+  it('accepts the exact one-row reset variant', async () => {
+    const run = loadCaptainClient({ rpcResults: [{
+      data: {
+        outcome: 'reset', operation: 'reset', status: null, affected_rows: 1,
+        checkin_id: '60000000-0000-4000-8000-000000000002',
+      },
+      error: null,
+    }] });
+    assert.deepEqual(
+      await run.captainClient.clearPlayerCheckinAsCaptain('game-1', 'team-1', 'player-1'),
+      { success: true },
+    );
   });
 
   it('propagates RPC failures and never reports a failed set or reset as success', async () => {
@@ -134,6 +163,51 @@ describe('captain check-in RPC adapter', () => {
       { success: false, error: 'zero-row reset rejected' },
     );
     assert.equal(run.calls.length, 2);
+  });
+
+  it('normalizes thrown Error and non-Error failures for both operations', async () => {
+    const setRun = loadCaptainClient({ rpcThrows: [new Error('network set failure')] });
+    assert.deepEqual(
+      await setRun.captainClient.updatePlayerCheckinAsCaptain('game-1', 'team-1', 'player-1', 'out'),
+      { success: false, error: 'network set failure' },
+    );
+    const resetRun = loadCaptainClient({ rpcThrows: [{ code: 'offline' }] });
+    assert.deepEqual(
+      await resetRun.captainClient.clearPlayerCheckinAsCaptain('game-1', 'team-1', 'player-1'),
+      { success: false, error: 'Captain check-in request failed' },
+    );
+  });
+
+  it('rejects null, malformed, extra-key, mismatched, and false write replies', async () => {
+    const invalidSetReplies = [
+      null,
+      { affected_rows: 1 },
+      { outcome: 'set', operation: 'set', status: 'out', affected_rows: 0, checkin_id: '60000000-0000-4000-8000-000000000001' },
+      { outcome: 'set', operation: 'reset', status: 'out', affected_rows: 1, checkin_id: '60000000-0000-4000-8000-000000000001' },
+      { outcome: 'set', operation: 'set', status: 'confirmed', affected_rows: 1, checkin_id: 'not-a-uuid' },
+      { outcome: 'set', operation: 'set', status: 'out', affected_rows: 1, checkin_id: '60000000-0000-4000-8000-000000000001', extra: true },
+    ];
+    for (const data of invalidSetReplies) {
+      const run = loadCaptainClient({ rpcResults: [{ data, error: null }] });
+      assert.deepEqual(
+        await run.captainClient.updatePlayerCheckinAsCaptain('game-1', 'team-1', 'player-1', 'out'),
+        { success: false, error: 'Invalid captain check-in RPC response' },
+      );
+    }
+
+    const invalidResetReplies = [
+      null,
+      { outcome: 'already_waiting', operation: 'reset', status: null, affected_rows: 1, checkin_id: null },
+      { outcome: 'reset', operation: 'reset', status: null, affected_rows: 0, checkin_id: null },
+      { outcome: 'reset', operation: 'reset', status: 'out', affected_rows: 1, checkin_id: '60000000-0000-4000-8000-000000000001' },
+    ];
+    for (const data of invalidResetReplies) {
+      const run = loadCaptainClient({ rpcResults: [{ data, error: null }] });
+      assert.deepEqual(
+        await run.captainClient.clearPlayerCheckinAsCaptain('game-1', 'team-1', 'player-1'),
+        { success: false, error: 'Invalid captain check-in RPC response' },
+      );
+    }
   });
 
   it('does not call the RPC when the existing local captain role check fails', async () => {

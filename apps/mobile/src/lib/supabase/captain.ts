@@ -385,43 +385,67 @@ export async function updatePlayerCheckinAsCaptain(
   playerId: string,
   status: CheckinStatus,
 ) {
-  const auth = await verifyCaptainAccess(teamId);
-  if (auth.error) {
-    return { success: false as const, error: auth.error };
+  try {
+    const auth = await verifyCaptainAccess(teamId);
+    if (auth.error) return { success: false as const, error: auth.error };
+
+    const { data, error } = await supabase.rpc('captain_manage_game_checkin', {
+      p_game_id: gameId, p_team_id: teamId, p_player_id: playerId,
+      p_operation: 'set', p_status: status,
+    });
+    if (error) return { success: false as const, error: error.message };
+    if (!isExactSetResult(data, status)) {
+      return { success: false as const, error: 'Invalid captain check-in RPC response' };
+    }
+    return { success: true as const };
+  } catch (error) {
+    return { success: false as const, error: normalizeCaptainCheckinError(error) };
   }
-
-  const { error } = await supabase.rpc('captain_manage_game_checkin', {
-    p_game_id: gameId,
-    p_team_id: teamId,
-    p_player_id: playerId,
-    p_operation: 'set',
-    p_status: status,
-  });
-
-  if (error) {
-    return { success: false as const, error: error.message };
-  }
-
-  return { success: true as const };
 }
 
 export async function clearPlayerCheckinAsCaptain(gameId: string, teamId: string, playerId: string) {
-  const auth = await verifyCaptainAccess(teamId);
-  if (auth.error) {
-    return { success: false as const, error: auth.error };
+  try {
+    const auth = await verifyCaptainAccess(teamId);
+    if (auth.error) return { success: false as const, error: auth.error };
+
+    const { data, error } = await supabase.rpc('captain_manage_game_checkin', {
+      p_game_id: gameId, p_team_id: teamId, p_player_id: playerId,
+      p_operation: 'reset', p_status: null,
+    });
+    if (error) return { success: false as const, error: error.message };
+    if (!isExactResetResult(data)) {
+      return { success: false as const, error: 'Invalid captain check-in RPC response' };
+    }
+    return { success: true as const };
+  } catch (error) {
+    return { success: false as const, error: normalizeCaptainCheckinError(error) };
   }
+}
 
-  const { error } = await supabase.rpc('captain_manage_game_checkin', {
-    p_game_id: gameId,
-    p_team_id: teamId,
-    p_player_id: playerId,
-    p_operation: 'reset',
-    p_status: null,
-  });
+const captainResultKeys = ['affected_rows', 'checkin_id', 'operation', 'outcome', 'status'];
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-  if (error) {
-    return { success: false as const, error: error.message };
-  }
+function hasExactCaptainResultKeys(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join('|') === captainResultKeys.join('|');
+}
 
-  return { success: true as const };
+function isExactSetResult(value: unknown, status: CheckinStatus) {
+  return hasExactCaptainResultKeys(value)
+    && value.outcome === 'set' && value.operation === 'set' && value.status === status
+    && value.affected_rows === 1 && typeof value.checkin_id === 'string'
+    && uuidPattern.test(value.checkin_id);
+}
+
+function isExactResetResult(value: unknown) {
+  if (!hasExactCaptainResultKeys(value) || value.operation !== 'reset' || value.status !== null) return false;
+  return (value.outcome === 'reset' && value.affected_rows === 1
+      && typeof value.checkin_id === 'string' && uuidPattern.test(value.checkin_id))
+    || (value.outcome === 'already_waiting' && value.affected_rows === 0 && value.checkin_id === null);
+}
+
+function normalizeCaptainCheckinError(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  return 'Captain check-in request failed';
 }
