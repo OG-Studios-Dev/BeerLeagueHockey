@@ -8,13 +8,15 @@ const loader = readFileSync(fileURLToPath(new URL('../../src/lib/supabase/player
 
 describe('native Hockey Life player parity screen', () => {
   it('renders the website sections in exact order and has explicit empty states', () => {
-    const labels = ['Achievements', 'Season Stats', 'Career Stats', 'Game Log', 'Matchup Stats', 'In The News', 'Season History'];
+    const labels = ['Achievements', 'Career Stats', 'Game Log', 'Matchup Stats', 'In The News', 'Season History'];
     let previous = -1;
     for (const label of labels) {
       const index = screen.indexOf(`title="${label}"`);
       assert.ok(index > previous, `${label} must appear after the previous parity section`);
       previous = index;
     }
+    assert.match(screen, /SeasonPicker/);
+    assert.match(screen, /CareerTrendChart/);
     assert.match(screen, /No stats available/);
     assert.match(screen, /No games played this season/);
   });
@@ -24,7 +26,8 @@ describe('native Hockey Life player parity screen', () => {
     assert.match(screen, /createPlayerRequestGate/);
     assert.doesNotMatch(screen, /Across Beer League Hockey|uniqueLeagueCount|Season Radar/);
     assert.match(loader, /HOCKEY_LIFE_ID/);
-    assert.match(loader, /\.eq\('league_id', HOCKEY_LIFE_ID\)/);
-    assert.doesNotMatch(loader, /select\('\*'\)|select\(`\s*\*/);
+    assert.match(loader, /api\/mobile\/player-profile/);
+    assert.match(loader, /credentials: 'omit'/);
+    assert.doesNotMatch(loader, /supabase|\.from\(/i);
   });
 });
