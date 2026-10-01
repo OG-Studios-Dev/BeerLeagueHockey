@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { Constants } from '../../../../packages/database/src/types.ts';
 import { compileCommonJs } from './component-harness.ts';
 
 const leagueId = 'league-a';
@@ -71,22 +72,41 @@ function homeBoundary(rows: any[], failures = new Map<number, number>()) {
 }
 
 describe('league pages correction loaders', () => {
-  it('B1 pages every eligible current-season story with stable equal-date ordering past rows 5, 18, and provider page one', async () => {
-    const current = Array.from({ length: 53 }, (_, index) => article(index));
+  it('B1 pages every published league story across seasons with stable equal-date ordering past rows 5, 18, and provider page one', async () => {
+    const current = Array.from({ length: 27 }, (_, index) => article(index));
+    const historical = Array.from({ length: 26 }, (_, index) => article(index + 27, {
+      season_id: 'season-prior',
+      published_at: `2026-08-${String((index % 3) + 1).padStart(2, '0')}T12:00:00Z`,
+    }));
     const input = [
-      article(999, { season_id: 'historical', published_at: '2026-12-30T12:00:00Z' }),
+      article(999, { league_id: 'league-other' }),
       article(998, { published: false }),
       article(997, { type: 'feature' }),
-      ...current.sort(() => 0.5 - 0.25),
+      ...historical,
+      ...current,
     ];
     const boundary = homeBoundary(input);
     const result = await boundary.loader.loadPublishedPresentationArticles(leagueId, season);
     assert.equal(result.length, 53);
     assert.ok(result.some((row: any) => row.id === 'story-052'));
+    assert.ok(result.some((row: any) => row.season_id === 'season-prior'));
     assert.deepEqual(result, [...result].sort((a: any, b: any) =>
       String(b.published_at).localeCompare(String(a.published_at)) || a.id.localeCompare(b.id)));
     assert.deepEqual(boundary.calls.filter((call) => call.method === 'range').map((call) => call.args), [[0, 49], [50, 99]]);
     assert.ok(boundary.calls.some((call) => call.method === 'eq' && call.args[0] === 'published' && call.args[1] === true));
+    assert.ok(boundary.calls.some((call) => call.method === 'eq' && call.args[0] === 'league_id' && call.args[1] === leagueId));
+    assert.equal(boundary.calls.filter((call) => call.method === 'or').length, 0);
+  });
+
+  it('B1R keeps prior-season published news reachable when a new presentation season has no articles', async () => {
+    const prior = [
+      article(1, { season_id: 'season-prior', published_at: '2026-09-27T20:59:12.839Z' }),
+      article(2, { season_id: 'season-prior', published_at: '2026-09-21T20:59:12.839Z' }),
+    ];
+    const boundary = homeBoundary(prior);
+    const result = await boundary.loader.loadPublishedPresentationArticles(leagueId, season);
+    assert.deepEqual(result.map((row: any) => row.id), ['story-001', 'story-002']);
+    assert.equal(boundary.calls.filter((call) => call.method === 'or').length, 0);
   });
 
   it('B1 retries a later provider page once and fails the whole news section instead of claiming partial completeness', async () => {
@@ -97,35 +117,6 @@ describe('league pages correction loaders', () => {
 
     const failure = homeBoundary(rows, new Map([[50, 2]]));
     await assert.rejects(() => failure.loader.loadPublishedPresentationArticles(leagueId, season), /page 50 unavailable/);
-  });
-
-  it('B1R applies exact explicit-season and unscoped date eligibility before the page range so history cannot consume the bound', async () => {
-    const history = Array.from({ length: 1001 }, (_, index) => article(2000 + index, {
-      id: `historical-${String(index).padStart(4, '0')}`, season_id: 'historical', published_at: '2026-12-30T12:00:00Z',
-    }));
-    const eligible = [
-      article(1, { id: 'explicit-current-outside-date', published_at: '2027-02-01T00:00:00Z' }),
-      article(2, { id: 'unscoped-start', season_id: null, published_at: '2026-09-01T00:00:00' }),
-      article(3, { id: 'unscoped-end', season_id: null, published_at: '2026-12-31T23:59:59.999' }),
-      article(4, { id: 'unscoped-created-fallback', season_id: null, published_at: null, created_at: '2026-10-15T12:00:00Z' }),
-    ];
-    const negatives = [
-      article(5, { id: 'historical-in-window', season_id: 'historical', published_at: '2026-10-01T12:00:00Z' }),
-      article(6, { id: 'unscoped-before', season_id: null, published_at: '2026-08-31T23:59:59' }),
-      article(7, { id: 'unscoped-after', season_id: null, published_at: '2027-01-01T00:00:00' }),
-    ];
-    const boundary = homeBoundary([...history, ...negatives, ...eligible]);
-    const result = await boundary.loader.loadPublishedPresentationArticles(leagueId, season);
-    assert.deepEqual(new Set(result.map((row: any) => row.id)), new Set(eligible.map((row) => row.id)));
-    const methods = boundary.calls.map((call) => call.method);
-    assert.ok(methods.indexOf('or') > methods.indexOf('in'));
-    assert.ok(methods.indexOf('or') < methods.indexOf('range'));
-    assert.deepEqual(boundary.calls.filter((call) => call.method === 'range').map((call) => call.args), [[0, 49]]);
-    const filter = boundary.calls.find((call) => call.method === 'or')?.args[0];
-    assert.match(String(filter), /season_id\.eq\.season-current/);
-    assert.match(String(filter), /season_id\.is\.null/);
-    assert.match(String(filter), /published_at\.is\.null/);
-    assert.match(String(filter), /created_at\.gte\./);
   });
 
   it('B2 selects the canonical operational season without changing the legacy helper', () => {
@@ -139,6 +130,39 @@ describe('league pages correction loaders', () => {
       { id: 'draft', status: 'draft', start_date: '2027-01-01', end_date: null, created_at: '2026-08-01' },
     ]);
     assert.equal(selected.id, 'registration-new');
+  });
+
+  it('B2R serializes only generated season_status enum values and preserves operational selection', async () => {
+    const serialized: unknown[][] = [];
+    const rows = [
+      { id: 'completed', name: 'Completed', status: 'completed', start_date: '2026-01-01', end_date: null, created_at: '2025-12-01' },
+      { id: 'active', name: 'Fall', status: 'active', start_date: '2026-10-01', end_date: null, created_at: '2026-09-28' },
+    ];
+    const supabase = { from(table: string) {
+      assert.equal(table, 'seasons');
+      let filtered = [...rows];
+      const chain: any = {
+        select() { return chain; },
+        eq(column: string, value: unknown) { assert.deepEqual([column, value], ['league_id', leagueId]); return chain; },
+        in(column: string, values: unknown[]) {
+          assert.equal(column, 'status');
+          serialized.push(values);
+          filtered = filtered.filter((row) => values.includes(row.status));
+          return chain;
+        },
+        order() { return chain; },
+        limit() { return Promise.resolve({ data: filtered, error: null }); },
+      };
+      return chain;
+    } };
+    const data = compileCommonJs<any>(new URL('../../src/lib/supabase/data.ts', import.meta.url), {
+      './client': { supabase },
+    });
+    const selected = await data.getOperationalSeason(leagueId);
+    const generatedStatuses = Constants.public.Enums.season_status;
+    assert.deepEqual(serialized, [['active', 'playoffs', 'draft', 'completed', 'archived']]);
+    assert.ok(serialized[0].every((status) => generatedStatuses.includes(status as typeof generatedStatuses[number])));
+    assert.equal(selected.id, 'active');
   });
 
   it('B3 uses complete deterministic schedule pages and rejects later-page failure instead of returning partial facts', async () => {

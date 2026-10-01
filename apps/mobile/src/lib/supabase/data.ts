@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import type { Database } from '../../../../../packages/database/src/types';
 import type { PublicMetricState, PublicSeasonPlayer, PublicSeasonStats } from './publicStats';
 import { toPlayerStatRows } from './publicStats';
 
@@ -117,6 +118,10 @@ export type Season = {
 const OPERATIONAL_SEASON_PRIORITY: Record<string, number> = {
   active: 0, playoffs: 1, registration: 2, upcoming: 2, draft: 3, completed: 4, archived: 5,
 };
+type SeasonStatus = Database['public']['Enums']['season_status'];
+const OPERATIONAL_SEASON_DB_STATUSES = [
+  'active', 'playoffs', 'draft', 'completed', 'archived',
+] as const satisfies readonly SeasonStatus[];
 
 export function selectOperationalSeason<T extends Pick<Season, 'id' | 'status' | 'start_date' | 'end_date' | 'created_at'>>(rows: T[]) {
   const timestamp = (season: T) => {
@@ -178,7 +183,7 @@ export async function getOperationalSeason(leagueId: string): Promise<Season | n
   const { data, error } = await supabase.from('seasons')
     .select('id,name,start_date,end_date,status,created_at')
     .eq('league_id', leagueId)
-    .in('status', ['active', 'playoffs', 'registration', 'upcoming', 'draft', 'completed', 'archived'])
+    .in('status', [...OPERATIONAL_SEASON_DB_STATUSES])
     .order('start_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(500);
