@@ -390,17 +390,13 @@ export async function updatePlayerCheckinAsCaptain(
     return { success: false as const, error: auth.error };
   }
 
-  const { error } = await supabase.from('game_checkins').upsert(
-    {
-      game_id: gameId,
-      team_id: teamId,
-      player_id: playerId,
-      status,
-      note: 'Updated by captain',
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'game_id,player_id' },
-  );
+  const { error } = await supabase.rpc('captain_manage_game_checkin', {
+    p_game_id: gameId,
+    p_team_id: teamId,
+    p_player_id: playerId,
+    p_operation: 'set',
+    p_status: status,
+  });
 
   if (error) {
     return { success: false as const, error: error.message };
@@ -415,12 +411,13 @@ export async function clearPlayerCheckinAsCaptain(gameId: string, teamId: string
     return { success: false as const, error: auth.error };
   }
 
-  const { error } = await supabase
-    .from('game_checkins')
-    .delete()
-    .eq('game_id', gameId)
-    .eq('team_id', teamId)
-    .eq('player_id', playerId);
+  const { error } = await supabase.rpc('captain_manage_game_checkin', {
+    p_game_id: gameId,
+    p_team_id: teamId,
+    p_player_id: playerId,
+    p_operation: 'reset',
+    p_status: null,
+  });
 
   if (error) {
     return { success: false as const, error: error.message };
