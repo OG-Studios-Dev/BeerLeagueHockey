@@ -16,7 +16,7 @@ type QueryResult = { data: unknown[] | null; error: { message?: string } | null 
 export type DirectoryTeam = {
   id: string;
   name: string;
-  slug: string;
+  slug: string | null;
   logoUrl: string | null;
   divisionId: string | null;
   primaryColor: string | null;
@@ -33,7 +33,7 @@ export type DirectoryMembership = {
   leadershipRole: string | null;
   teamId: string;
   teamName: string;
-  teamSlug: string;
+  teamSlug: string | null;
   teamLogoUrl: string | null;
   divisionId: string | null;
   teamPrimaryColor: string | null;
@@ -61,8 +61,19 @@ function object(value: unknown, label: string): Raw {
 
 function text(value: unknown, label: string, nullable = false): string | null {
   if (value === null && nullable) return null;
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`Invalid ${label}`);
+  if (typeof value !== 'string') throw new TypeError(`Invalid ${label}`);
+  if (!value.trim()) {
+    if (nullable) return null;
+    throw new TypeError(`Invalid ${label}`);
+  }
   return value.trim();
+}
+
+function teamSlug(value: unknown): string | null {
+  if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return null;
+  const slug = text(value, 'team slug') as string;
+  if (!SLUG.test(slug)) throw new TypeError('Invalid team slug');
+  return slug;
 }
 
 function id(value: unknown, label: string): string {
@@ -91,12 +102,10 @@ function isPublicTeam(team: { name: string; teamType: string | null }) {
 function decodeTeam(value: unknown, leagueId: string): DirectoryTeam {
   const row = object(value, 'team');
   if (id(row.league_id, 'team league id') !== leagueId) throw new TypeError('Players directory tenant mismatch');
-  const slug = text(row.slug, 'team slug') as string;
-  if (!SLUG.test(slug)) throw new TypeError('Invalid team slug');
   return {
     id: id(row.id, 'team id'),
     name: text(row.name, 'team name') as string,
-    slug,
+    slug: teamSlug(row.slug),
     logoUrl: text(row.logo_url, 'team logo URL', true),
     divisionId: nullableId(row.division_id, 'team division id'),
     primaryColor: text(row.primary_color, 'team primary color', true),
@@ -144,6 +153,7 @@ export async function loadPublicPlayersDirectory({
     .select('id,name,slug')
     .eq('id', leagueId)
     .eq('slug', leagueSlug)
+    .eq('status', 'active')
     .maybeSingle();
   if (leagueQuery.error) throw new Error(`Unable to verify Players directory identity: ${leagueQuery.error.message}`);
   if (!leagueQuery.data) throw new TypeError('Players directory identity mismatch');

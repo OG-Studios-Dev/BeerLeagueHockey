@@ -14,7 +14,15 @@ const ids = {
   orphanRoster: '88888888-8888-4888-8888-888888888888',
 };
 
-type Row = Record<string, any>;
+type Row = Record<string, unknown>;
+type LoaderModule = {
+  loadPublicPlayersDirectory(args: { leagueId: string; leagueSlug: string; pageSize?: number }): Promise<{
+    teams: Row[];
+    memberships: Row[];
+    omittedOrphanRows: number;
+  }>;
+  buildPlayersDirectoryView(data: unknown, filters: unknown): { players: Row[]; positions: string[] };
+};
 
 class Query {
   filters: Array<[string, unknown]> = [];
@@ -44,7 +52,7 @@ class Query {
 function loadWith(tables: Record<string, Row[]>, failRosterFrom: number | null = null) {
   const calls: Query[] = [];
   const client = { from: (table: string) => new Query(table, tables[table] ?? [], calls, table === 'team_rosters' ? failRosterFrom : null) };
-  const exports = compileCommonJs<any>(new URL('../../src/lib/playersDirectory.ts', import.meta.url), {
+  const exports = compileCommonJs<LoaderModule>(new URL('../../src/lib/playersDirectory.ts', import.meta.url), {
     './supabase/client': { publicSupabase: client },
   });
   return { ...exports, calls };
@@ -57,7 +65,7 @@ function fixtures(): Record<string, Row[]> {
   const profileA = { id: ids.playerA, full_name: 'Alex Ten', avatar_url: ' avatar ', photo_url: 'photo' };
   const profileB = { id: ids.playerB, full_name: 'Blair Two', avatar_url: null, photo_url: ' photo-b ' };
   return {
-    leagues: [{ id: ids.league, slug: 'hockey-life', name: 'Hockey Life' }],
+    leagues: [{ id: ids.league, slug: 'hockey-life', name: 'Hockey Life', status: 'active' }],
     teams: [teamB, hidden, teamA],
     team_rosters: [
       { id: '90000000-0000-4000-8000-000000000001', league_id: ids.league, team_id: ids.teamA, player_id: ids.playerA, jersey_number: 10, position: 'Forward', leadership_role: 'captain', profile: profileA, team: teamA },
@@ -105,11 +113,52 @@ describe('public Players directory loader and web-order model', () => {
     await assert.rejects(missing.loadPublicPlayersDirectory({ leagueId: ids.otherLeague, leagueSlug: 'hockey-life', pageSize: 2 }), /identity/i);
 
     const f = fixtures();
-    f.team_rosters[2] = { ...f.team_rosters[2], team: { ...f.team_rosters[2].team, league_id: ids.otherLeague } };
+    f.team_rosters[2] = { ...f.team_rosters[2], team: { ...(f.team_rosters[2].team as Row), league_id: ids.otherLeague } };
     const cross = loadWith(f);
     await assert.rejects(cross.loadPublicPlayersDirectory({ leagueId: ids.league, leagueSlug: 'hockey-life', pageSize: 20 }), /tenant/i);
 
     const laterFailure = loadWith(fixtures(), 2);
     await assert.rejects(laterFailure.loadPublicPlayersDirectory({ leagueId: ids.league, leagueSlug: 'hockey-life', pageSize: 2 }), /later page unavailable/i);
+  });
+
+  it('normalizes blank optional display fields, falls back from blank avatar, and permits a nullable team slug', async () => {
+    const f = fixtures();
+    f.teams[0] = { ...f.teams[0], slug: null, logo_url: '  ', primary_color: '', team_type: '   ' };
+    f.teams[1] = { ...f.teams[1], slug: '   ' };
+    f.teams[2] = { ...f.teams[2] };
+    delete f.teams[2].slug;
+    f.team_rosters = f.team_rosters.map((row) => row.team_id === ids.teamB
+      ? { ...row, team: f.teams[0] }
+      : row.team_id === ids.teamA ? { ...row, team: f.teams[2] } : row);
+    f.team_rosters[0] = {
+      ...f.team_rosters[0],
+      profile: { ...(f.team_rosters[0].profile as Row), avatar_url: '  ', photo_url: ' fallback-photo ' },
+    };
+    f.team_rosters[2] = {
+      ...f.team_rosters[2],
+      profile: { ...(f.team_rosters[2].profile as Row), avatar_url: '', photo_url: '   ' },
+    };
+
+    const result = await loadWith(f).loadPublicPlayersDirectory({ leagueId: ids.league, leagueSlug: 'hockey-life', pageSize: 20 });
+    const beta = result.teams.find((team: Row) => team.id === ids.teamB);
+    assert.deepEqual(beta, {
+      id: ids.teamB, name: 'Beta', slug: null, logoUrl: null, divisionId: null, primaryColor: null, teamType: null,
+    });
+    assert.equal(result.memberships.find((row) => String(row.rosterId).endsWith('0001'))?.photoUrl, 'fallback-photo');
+    assert.equal(result.memberships.find((row) => String(row.rosterId).endsWith('0003'))?.photoUrl, null);
+  });
+
+  it('requires the strict active league identity row', async () => {
+    const inactive = fixtures();
+    inactive.leagues[0].status = 'inactive';
+    await assert.rejects(loadWith(inactive).loadPublicPlayersDirectory({ leagueId: ids.league, leagueSlug: 'hockey-life' }), /identity mismatch/i);
+
+    const noRow = fixtures();
+    noRow.leagues = [];
+    const loader = loadWith(noRow);
+    await assert.rejects(loader.loadPublicPlayersDirectory({ leagueId: ids.league, leagueSlug: 'hockey-life' }), /identity mismatch/i);
+    const identityRead = loader.calls.find((call: Query) => call.table === 'leagues');
+    assert.equal(identityRead?.selected, 'id,name,slug');
+    assert.deepEqual(identityRead?.filters, [['id', ids.league], ['slug', 'hockey-life'], ['status', 'active']]);
   });
 });

@@ -15,14 +15,34 @@ import { LeaguePageFrame, PageLoadState, useLeaguePageScope } from './LeaguePage
 
 type Props = NativeStackScreenProps<LeaguePagesStackParamList, 'PlayersDirectory'>;
 type Option = { id: string | null; label: string };
+type PortraitState = { stage: 'photo' | 'placeholder' | 'fallback'; uri: string | null };
+
+function portraitState(photoUrl: string | null): PortraitState {
+  if (photoUrl && photoUrl !== BLH_DEFAULT_PLAYER_AVATAR_URL) return { stage: 'photo', uri: photoUrl };
+  return { stage: 'placeholder', uri: BLH_DEFAULT_PLAYER_AVATAR_URL };
+}
 
 function PlayerPortrait({ player, size }: { player: DirectoryMembership; size: number }) {
-  const [uri, setUri] = React.useState(player.photoUrl ?? BLH_DEFAULT_PLAYER_AVATAR_URL);
-  React.useEffect(() => setUri(player.photoUrl ?? BLH_DEFAULT_PLAYER_AVATAR_URL), [player.photoUrl]);
+  const [portrait, setPortrait] = React.useState<PortraitState>(() => portraitState(player.photoUrl));
+  React.useEffect(() => setPortrait(portraitState(player.photoUrl)), [player.photoUrl]);
+  const initials = player.fullName.split(/\s+/).filter(Boolean).map((word) => word[0]).join('').toUpperCase().slice(0, 2) || '•';
+  const failedStage = portrait.stage;
+  const failedUri = portrait.uri;
   return (
     <View style={[styles.portraitFrame, { width: size, height: size }]}>
-      <Image alt={`${player.fullName} photo`} accessibilityLabel={`${player.fullName} photo`} resizeMode="cover" source={{ uri }} style={styles.portrait}
-        onError={() => { if (uri !== BLH_DEFAULT_PLAYER_AVATAR_URL) setUri(BLH_DEFAULT_PLAYER_AVATAR_URL); }} />
+      {portrait.stage === 'fallback' ? (
+        <View accessibilityRole="image" accessibilityLabel={`${player.fullName} photo`} style={styles.portraitFallback}>
+          <Text maxFontSizeMultiplier={1.4} style={[styles.portraitInitials, { fontSize: size * 0.28 }]}>{initials}</Text>
+        </View>
+      ) : (
+        <Image alt={`${player.fullName} photo`} accessibilityLabel={`${player.fullName} photo`} resizeMode="cover" source={{ uri: portrait.uri as string }} style={styles.portrait}
+          onError={() => setPortrait((current) => {
+            if (current.stage !== failedStage || current.uri !== failedUri) return current;
+            return current.stage === 'photo'
+              ? { stage: 'placeholder', uri: BLH_DEFAULT_PLAYER_AVATAR_URL }
+              : { stage: 'fallback', uri: null };
+          })} />
+      )}
       {player.jerseyNumber === null ? null : <View style={styles.jerseyBadge}><Text style={styles.jerseyText}>#{player.jerseyNumber}</Text></View>}
       {player.leadershipRole === 'captain' || player.leadershipRole === 'alternate_captain' ? (
         <View style={styles.roleBadge} accessibilityLabel={player.leadershipRole === 'captain' ? 'Captain' : 'Alternate captain'}>
@@ -91,7 +111,7 @@ export default function PlayersDirectoryScreen({ route, navigation }: Props) {
   const scope = useLeaguePageScope(route.params);
   const directory = usePlayersDirectory(scope);
   const { width: windowWidth } = useWindowDimensions();
-  const cardWidth = Math.max(140, (windowWidth - 48) / 2);
+  const cardWidth = (windowWidth - 32 - 16) / 2;
   const [filters, setFilters] = React.useState<DirectoryFilters>({ search: '', divisionId: null, teamId: null, position: null });
   React.useEffect(() => setFilters({ search: '', divisionId: null, teamId: null, position: null }), [scope.leagueId, scope.leagueSlug]);
 
@@ -152,6 +172,8 @@ const styles = StyleSheet.create({
   card: { overflow: 'hidden', borderRadius: 26, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: 'rgba(5, 12, 22, 0.96)' },
   portraitFrame: { position: 'relative', overflow: 'hidden', backgroundColor: colors.bgInteractive },
   portrait: { width: '100%', height: '100%' },
+  portraitFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgInteractive },
+  portraitInitials: { color: colors.textPrimary, fontWeight: '900' },
   jerseyBadge: { position: 'absolute', top: 8, left: 8, borderRadius: 8, backgroundColor: 'rgba(3, 9, 18, 0.84)', paddingHorizontal: 8, paddingVertical: 4 },
   jerseyText: { color: colors.textPrimary, fontSize: 14, fontWeight: '900' },
   roleBadge: { position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brandGold },
