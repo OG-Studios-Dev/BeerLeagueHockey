@@ -55,10 +55,11 @@ export function classifyArticleHref(value: string, leagueSlug: string): ArticleL
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
     if (url.host === tenantHost) {
       const parts = url.pathname.split('/').filter(Boolean);
-      const kind = parts[0]; const identity = parts[1];
-      if ((kind === 'players' || kind === 'games') && parts.length === 2 && identity && UUID.test(identity)) return { kind: kind === 'players' ? 'player' : 'game', id: identity };
-      if (kind === 'teams' && parts[1] === 'id' && parts.length === 3 && parts[2] && UUID.test(parts[2])) return { kind: 'team', id: parts[2] };
-      if (kind === 'news' && parts.length === 2 && identity && SLUG.test(identity)) return { kind: 'article', slug: identity };
+      const tenantParts = parts[0] === leagueSlug ? parts.slice(1) : parts;
+      const kind = tenantParts[0]; const identity = tenantParts[1];
+      if ((kind === 'players' || kind === 'games') && tenantParts.length === 2 && identity && UUID.test(identity)) return { kind: kind === 'players' ? 'player' : 'game', id: identity };
+      if (kind === 'teams' && tenantParts[1] === 'id' && tenantParts.length === 3 && tenantParts[2] && UUID.test(tenantParts[2])) return { kind: 'team', id: tenantParts[2] };
+      if (kind === 'news' && tenantParts.length === 2 && identity && SLUG.test(identity)) return { kind: 'article', slug: identity };
     }
     return { kind: 'external', url: url.toString() };
   } catch { return null; }

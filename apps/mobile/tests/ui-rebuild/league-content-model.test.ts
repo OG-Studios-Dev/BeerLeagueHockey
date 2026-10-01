@@ -14,6 +14,7 @@ describe('native league content model', () => {
     assert.deepEqual(classifyArticleHref('https://hockey-life.beerleaguehockey.ca/players/11111111-1111-4111-8111-111111111111', 'hockey-life'), { kind: 'player', id: '11111111-1111-4111-8111-111111111111' });
     assert.deepEqual(classifyArticleHref('/teams/id/22222222-2222-4222-8222-222222222222', 'hockey-life'), { kind: 'team', id: '22222222-2222-4222-8222-222222222222' });
     assert.deepEqual(classifyArticleHref('https://hockey-life.beerleaguehockey.ca/news/linked-story?source=article#result', 'hockey-life'), { kind: 'article', slug: 'linked-story' });
+    assert.deepEqual(classifyArticleHref('/hockey-life/news/tenant-linked-story', 'hockey-life'), { kind: 'article', slug: 'tenant-linked-story' });
     assert.deepEqual(classifyArticleHref('https://example.com/reference', 'hockey-life'), { kind: 'external', url: 'https://example.com/reference' });
     assert.equal(classifyArticleHref('javascript:alert(1)', 'hockey-life'), null);
     assert.equal(classifyArticleHref('mailto:synthetic@example.com', 'hockey-life'), null);

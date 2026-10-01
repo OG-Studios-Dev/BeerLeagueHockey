@@ -69,15 +69,18 @@ describe('mounted native content navigation', () => {
     assert.equal((harness.output as any).data.league.id, 'league-b-id');
   });
 
-  it('renders the complete article readably and keeps inline links and mentions native', () => {
+  it('renders the complete article readably and keeps inline links and mentions native', async () => {
     const harness = createHookHarness(); const calls: unknown[][] = []; const browserCalls: string[] = [];
     const Screen = compileCommonJs<any>(new URL('../../src/screens/league-pages/NewsArticleScreen.tsx', import.meta.url), {
       react: harness.react,
       'react-native': { ...native, Linking: { openURL: (url: string) => { browserCalls.push(url); return Promise.resolve(); } } },
       '../../components/Avatar': { __esModule: true, default: (props: any) => createElement('Avatar', props) },
       '../../components/TeamLogo': { __esModule: true, default: (props: any) => createElement('TeamLogo', props) },
+      '../../components/NativeNewspaperEdition': { __esModule: true, default: (props: any) => createElement('NativeEdition', props) },
+      '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
       '../../lib/leagueContentModel': leagueContentModel,
-      '../../lib/newspaperReader': { loadPublishedNewspaperReaderTarget: async () => null, openNewspaperReader: async () => undefined },
+      '../../lib/newspaperReader': { loadPublishedNewspaperEdition: async () => ({ status: 'unavailable' }) },
+      '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#0ff' }) },
       '../../theme/colors': colors,
       './LeaguePageCommon': {
         useLeaguePageScope: (scope: unknown) => scope,
@@ -95,7 +98,9 @@ describe('mounted native content navigation', () => {
       } }) },
     }).default;
     const navigation = { isFocused: () => true, addListener: () => () => {}, goBack() {}, navigate: (...args: unknown[]) => calls.push(args), push: (...args: unknown[]) => calls.push(args) };
-    const output = harness.mount(() => Screen({ route: { params: { leagueId: 'league-1', leagueSlug: 'hockey-life', articleSlug: 'synthetic-story' } }, navigation }));
+    harness.mount(() => Screen({ route: { params: { leagueId: 'league-1', leagueSlug: 'hockey-life', articleSlug: 'synthetic-story' } }, navigation }));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const output = harness.render();
     const text = nodeText(output);
     assert.match(text, /Recorded Result/);
     assert.match(text, /Every published sentence survives with the team\./);

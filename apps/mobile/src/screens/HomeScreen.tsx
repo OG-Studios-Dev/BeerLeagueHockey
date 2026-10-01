@@ -347,7 +347,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 const mounted = Math.abs(index - storyIndex) <= 1;
                 return <View key={story.id} style={{ width: storyPageWidth }}>
                   {mounted ? <FocusCard focusId={`home:story:${story.id}`} accentColor={accent}>
-                    <Pressable accessibilityRole="link" accessibilityLabel={`Read ${story.title}`} style={[sectionCard, styles.hero]} onPress={() => openExternal(`${origin}/news/${story.slug || story.id}`)}>
+                    <Pressable accessibilityRole="link" accessibilityLabel={`Read ${story.title}`} style={[sectionCard, styles.hero]} onPress={() => navigation?.navigate?.('LeaguePages', { screen: 'NewsArticle', params: { leagueId: activeLeague.id, leagueSlug: activeLeague.slug, articleSlug: story.slug || story.id } })}>
                       {story.image_url ? <Image source={{ uri: story.image_url }} style={styles.heroImage} alt={story.title} /> : <View style={styles.heroMark}><Image source={hockeyLifeLogo} style={styles.heroLogo} alt="" /></View>}
                       <LinearGradient colors={['transparent', 'rgba(3,8,16,0.96)']} style={styles.heroShade} />
                       <View style={styles.heroCopy}><Text style={[styles.heroEyebrow, { color: accent }]}>{articleLabel(story.type)}</Text><Text style={styles.heroTitle}>{story.title}</Text>{articleExcerpt(story) ? <Text style={styles.heroExcerpt}>{articleExcerpt(story)}</Text> : null}</View>
@@ -367,9 +367,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           )}
           {stories.length > 1 ? <View testID="home-story-navigation" style={styles.storyNavigation}>
             <Pressable accessibilityRole="button" accessibilityLabel="Previous story" style={styles.storyNavigationButton} onPress={() => selectStory(storyIndex - 1)}><Ionicons name="chevron-back" size={18} color={homeTokens.text} /></Pressable>
-            <View testID="home-story-indicator" accessible accessibilityRole="adjustable" accessibilityLabel="Latest News position" accessibilityValue={{ min: 1, max: stories.length, now: storyIndex + 1, text: `${storyIndex + 1} of ${stories.length}` }} style={styles.storyDots}>
-              {stories.map((story, index) => <View key={story.id} style={[styles.storyDot, index === storyIndex && styles.storyDotActive, index === storyIndex && { backgroundColor: accent }]} />)}
-            </View>
+            <View testID="home-story-indicator" accessible accessibilityRole="adjustable" accessibilityLabel="Latest News position" accessibilityValue={{ min: 1, max: stories.length, now: storyIndex + 1, text: `${storyIndex + 1} of ${stories.length}` }} style={styles.storyDots}><Text testID="home-story-count" style={[styles.storyCount, { color: accent }]}>{storyIndex + 1} / {stories.length}</Text></View>
             <Pressable accessibilityRole="button" accessibilityLabel="Next story" style={styles.storyNavigationButton} onPress={() => selectStory(storyIndex + 1)}><Ionicons name="chevron-forward" size={18} color={homeTokens.text} /></Pressable>
           </View> : null}
           {publicHome?.articles.status === 'error' && article ? <Text style={styles.staleNote}>{publicHome.articles.message} Showing the last loaded story.</Text> : null}
@@ -444,11 +442,10 @@ const styles = StyleSheet.create({
   heroTitle: { color: colors.textPrimary, fontSize: 24, lineHeight: 28, fontWeight: '900', marginTop: 4 },
   heroExcerpt: { color: '#CCD6E5', fontSize: 13, lineHeight: 19, marginTop: 7 },
   newsPager: { width: '100%' },
-  storyNavigation: { minHeight: 44, marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
-  storyNavigationButton: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, alignItems: 'center', justifyContent: 'center' },
-  storyDots: { minWidth: 52, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  storyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.textSecondary },
-  storyDotActive: { width: 18 },
+  storyNavigation: { width: '100%', minHeight: 44, marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  storyNavigationButton: { width: 44, height: 44, flexShrink: 0, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, alignItems: 'center', justifyContent: 'center' },
+  storyDots: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  storyCount: { fontSize: 12, lineHeight: 18, fontWeight: '900', letterSpacing: 1 },
   emptyCard: { minHeight: 104, alignItems: 'center', justifyContent: 'center', padding: 18 },
   emptyTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '900', textAlign: 'center' },
   emptyCopy: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 5 },

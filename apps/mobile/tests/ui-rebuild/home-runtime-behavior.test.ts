@@ -199,9 +199,10 @@ describe('Home web-structure runtime', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(runtime.playerCalls, [{ playerId: 'player-leader', leagueId: 'league-1' }]);
     assert.deepEqual(runtime.navigationCalls, [
+      ['LeaguePages', { screen: 'NewsArticle', params: { leagueId: 'league-1', leagueSlug: 'harbour-hockey', articleSlug: 'opening-night' } }],
       ['Schedule', { screen: 'GamePreview', initial: false, params: { gameId: 'week-final' } }], ['Schedule'], ['Profile', { screen: 'NotificationsFeed' }],
     ]);
-    assert.deepEqual(runtime.linkCalls, ['https://harbour-hockey.beerleaguehockey.ca/news/opening-night', 'https://rinkshop.test/']);
+    assert.deepEqual(runtime.linkCalls, ['https://rinkshop.test/']);
   });
 
   it('shows public sections to guests while omitting membership and check-in controls', async () => {
@@ -275,7 +276,8 @@ describe('Home web-structure runtime', () => {
     assert.match(nodeText(runtime.harness.output), /Championship recap/);
     findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Championship recap')?.props.onPress();
     await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.deepEqual(runtime.linkCalls.at(-1), 'https://harbour-hockey.beerleaguehockey.ca/news/championship-recap');
+    assert.deepEqual(runtime.navigationCalls.at(-1), ['LeaguePages', { screen: 'NewsArticle', params: { leagueId: 'league-1', leagueSlug: 'harbour-hockey', articleSlug: 'championship-recap' } }]);
+    assert.deepEqual(runtime.linkCalls, []);
 
     await refresh(runtime);
     assert.match(nodeText(runtime.harness.output), /Opening night/);
@@ -326,7 +328,19 @@ describe('Home web-structure runtime', () => {
     const pager = findNode(runtime.harness.output, (node) => node.props.testID === 'home-news-pager');
     assert.equal(Array.isArray(pager?.props.children) ? pager.props.children.length : 0, 53);
     assert.ok(allNodes(pager).filter((node) => node.type === 'Image' && typeof node.props.source?.uri === 'string').length <= 3);
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.max, 53);
+    const indicator = findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator');
+    assert.equal(indicator?.props.accessibilityValue.max, 53);
+    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 53');
+    assert.equal(allNodes(indicator).filter((node) => flattenStyle(node.props.style).width === 6).length, 0);
+    for (const label of ['Previous story', 'Next story']) {
+      const button = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === label);
+      const style = flattenStyle(button?.props.style);
+      assert.deepEqual([style.width, style.height, style.flexShrink], [44, 44, 0]);
+    }
+    runtime.resize(320);
+    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 53');
+    runtime.resize(390);
+    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 53');
   });
 
   it('retains same-period facts with visible stale notes, including an independent photo reel when albums fail', async () => {
