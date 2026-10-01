@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- focused native data/component harness */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,15 @@ const leagueId = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 const articleId = '11111111-1111-4111-8111-111111111111';
 const expected = { articleId, articleSlug: 'hockey-life-times-2026-09-21-1df8f917', leagueId, leagueSlug: 'hockey-life' };
 const publicRow = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/newspaper-public-edition-row.json', import.meta.url).href), 'utf8'));
+
+function mountedReactRuntime() {
+  const require = createRequire(import.meta.url);
+  const pnpmDirectory = fileURLToPath(new URL('../../../../node_modules/.pnpm/', import.meta.url).href);
+  const jsdomEntry = readdirSync(pnpmDirectory).find((entry) => entry.startsWith('jsdom@'));
+  assert.ok(jsdomEntry, 'the frozen workspace lockfile must provision jsdom for mounted lifecycle tests');
+  const requireJsdom = createRequire(`${pnpmDirectory}${jsdomEntry}/node_modules/jsdom/package.json`);
+  return { React: require('react'), createRoot: require('react-dom/client').createRoot, JSDOM: requireJsdom('jsdom').JSDOM };
+}
 
 function edition(overrides: Record<string, unknown> = {}) {
   return {
@@ -141,27 +150,98 @@ describe('native newspaper edition composition', () => {
     assert.doesNotMatch(text, /Zoom|Download|Print|Page \d+ of|Open.*browser/i);
   });
 
-  it('uses intrinsic square, wide, and tall ratios without crop and rejects stale dimensions after a URI change', () => {
-    const harness = createHookHarness();
-    const pending = new Map<string, { success(width: number, height: number): void; failure(): void }>();
-    const Image = Object.assign((props: any) => createElement('Image', props), {
-      getSize: (uri: string, success: (width: number, height: number) => void, failure: () => void) => pending.set(uri, { success, failure }),
-    });
-    const NativeEdition = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
-      react: harness.react, 'react-native': { Image, StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
-      '../theme/colors': { __esModule: true, default: { bgElevated: '#222' } },
-    });
-    let uri = 'https://images.test/square.png';
-    const root = () => NativeEdition.Artwork({ uri, label: 'Editorial art' });
-    harness.mount(root); pending.get(uri)!.success(1254, 1254); let output = harness.render();
-    const image = findNode(output, node => node.type === 'Image')!;
-    assert.equal(flattenStyle(image.props.style).aspectRatio, 1); assert.equal(image.props.resizeMode, 'contain');
-    const stale = pending.get(uri)!; uri = 'https://images.test/wide.png'; harness.render(); stale.success(1, 4); output = harness.render();
-    assert.notEqual(flattenStyle(findNode(output, node => node.type === 'Image')!.props.style).aspectRatio, 0.25);
-    pending.get(uri)!.success(16, 9); output = harness.render(); assert.equal(flattenStyle(findNode(output, node => node.type === 'Image')!.props.style).aspectRatio, 16 / 9);
-    uri = 'https://images.test/tall.png'; harness.render(); pending.get(uri)!.success(3, 4); output = harness.render(); assert.equal(flattenStyle(findNode(output, node => node.type === 'Image')!.props.style).aspectRatio, 3 / 4);
-    findNode(output, node => node.type === 'Image')!.props.onError(); output = harness.render(); assert.ok(findNode(output, node => node.props.accessibilityLabel === 'Editorial art; artwork unavailable'));
-    const before = harness.stateUpdateCount; harness.unmount(); pending.get(uri)!.success(2, 1); assert.equal(harness.stateUpdateCount, before);
+  it('owns every dimension and native-error callback for exactly one mounted URI lifetime', async () => {
+    const { React, createRoot, JSDOM } = mountedReactRuntime();
+    const dom = new JSDOM('<!doctype html><div id="root"></div>');
+    const previous = { window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator, act: (globalThis as any).IS_REACT_ACT_ENVIRONMENT };
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window }); Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document }); Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator }); (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    try {
+      type Pending = { success(width: number, height: number): void; failure(): void };
+      const pending = new Map<string, Pending[]>(); const rendered = new Map<string, any[]>();
+      const Image = Object.assign((props: any) => {
+        const values = rendered.get(props.source.uri) ?? []; values.push(props); rendered.set(props.source.uri, values);
+        const style = flattenStyle(props.style);
+        return React.createElement('img', { 'aria-label': props.accessibilityLabel, 'data-uri': props.source.uri, 'data-ratio': String(style.aspectRatio), 'data-resize': props.resizeMode });
+      }, { getSize: (uri: string, success: Pending['success'], failure: Pending['failure']) => pending.set(uri, [...(pending.get(uri) ?? []), { success, failure }]) });
+      const component = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
+        react: React, 'react-native': { Image, StyleSheet: { create: <T>(value: T) => value }, Text: ({ children }: any) => React.createElement('span', null, children), View: ({ children, accessibilityLabel }: any) => React.createElement('div', { 'aria-label': accessibilityLabel }, children) }, '../theme/colors': { __esModule: true, default: { bgElevated: '#222' } },
+      });
+      const container = dom.window.document.getElementById('root')!; const root = createRoot(container);
+      let uri: string | undefined = 'https://images.test/A.jpg'; let label = 'Editorial art';
+      const draw = () => React.act(async () => root.render(React.createElement(React.StrictMode, null, React.createElement(component.Artwork, { uri, label }))));
+      const settle = (callback: () => void) => React.act(async () => { callback(); await Promise.resolve(); });
+      const image = () => container.querySelector('img') as HTMLElement | null;
+      const ratio = () => Number(image()!.dataset.ratio);
+      const unavailable = () => /UNAVAILABLE/.test(container.textContent ?? '');
+
+      await draw(); assert.equal(ratio(), 1); assert.equal(image()!.dataset.resize, 'contain');
+      const oldARequest = pending.get(uri)!.at(-1)!; const oldAError = rendered.get(uri)!.at(-1)!.onError;
+      await settle(() => oldARequest.success(1254, 1254)); assert.equal(ratio(), 1);
+      label = 'Same URI'; await draw(); assert.equal(ratio(), 1);
+
+      uri = 'https://images.test/B.jpg'; await draw(); const bRequest = pending.get(uri)!.at(-1)!;
+      await settle(() => bRequest.success(3, 4)); assert.equal(ratio(), 3 / 4);
+      await settle(oldAError); assert.equal(ratio(), 3 / 4); assert.equal(image()!.dataset.uri, uri);
+      const bError = rendered.get(uri)!.at(-1)!.onError; await settle(bError); assert.equal(unavailable(), true);
+      await settle(() => bRequest.success(5, 4)); assert.equal(unavailable(), true);
+      await settle(oldAError); assert.equal(unavailable(), true);
+
+      uri = 'https://images.test/failure-then-success.jpg'; await draw(); const failureFirst = pending.get(uri)!.at(-1)!;
+      await settle(failureFirst.failure); await settle(() => failureFirst.success(4, 3)); assert.equal(unavailable(), true);
+      uri = 'https://images.test/success-then-error.jpg'; await draw(); const successFirst = pending.get(uri)!.at(-1)!;
+      await settle(() => successFirst.success(4, 3)); assert.equal(ratio(), 4 / 3);
+      await settle(rendered.get(uri)!.at(-1)!.onError); assert.equal(unavailable(), true);
+
+      uri = 'https://images.test/invalid.jpg'; await draw(); const invalid = pending.get(uri)!.at(-1)!;
+      await settle(() => invalid.success(0, 4)); assert.equal(ratio(), 1);
+      await settle(() => invalid.success(Number.NaN, 4)); assert.equal(ratio(), 1);
+
+      uri = 'https://images.test/A.jpg'; await draw(); const newARequest = pending.get(uri)!.at(-1)!;
+      await settle(() => newARequest.success(2, 1)); assert.equal(ratio(), 2);
+      await settle(() => { oldAError(); oldARequest.success(1, 9); oldARequest.failure(); }); assert.equal(ratio(), 2);
+      const newAError = rendered.get(uri)!.at(-1)!.onError; await settle(newAError); assert.equal(unavailable(), true);
+      await settle(oldAError); assert.equal(unavailable(), true);
+
+      uri = undefined; await draw(); assert.match(container.textContent ?? '', /HOCKEY LIFETIMES/); assert.equal(image(), null);
+      uri = 'https://images.test/future.jpg'; await draw(); assert.equal(ratio(), 1);
+      const futureRequest = pending.get(uri)!.at(-1)!; const futureError = rendered.get(uri)!.at(-1)!.onError;
+      await settle(() => futureRequest.success(4, 1)); assert.equal(ratio(), 4);
+      await React.act(async () => root.unmount());
+      await settle(() => { futureRequest.failure(); futureRequest.success(1, 4); futureError(); });
+      assert.equal(container.childNodes.length, 0);
+    } finally {
+      dom.window.close(); Object.defineProperty(globalThis, 'window', { configurable: true, value: previous.window }); Object.defineProperty(globalThis, 'document', { configurable: true, value: previous.document }); Object.defineProperty(globalThis, 'navigator', { configurable: true, value: previous.navigator }); (globalThis as any).IS_REACT_ACT_ENVIRONMENT = previous.act;
+    }
+  });
+
+  it('keeps early artwork errors terminal before passive initialization on mount and URI transition', async () => {
+    const { React, createRoot, JSDOM } = mountedReactRuntime();
+    const dom = new JSDOM('<!doctype html><div id="root"></div>');
+    const previous = { window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator, act: (globalThis as any).IS_REACT_ACT_ENVIRONMENT };
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window }); Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document }); Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator }); (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    try {
+      const early = new Set<string>();
+      const dimensions = new Map<string, { success(width: number, height: number): void; failure(): void }>();
+      const Image = Object.assign((props: any) => {
+        const imageUri = props.source.uri; const onError = props.onError;
+        React.useLayoutEffect(() => { if (early.has(imageUri)) onError(); }, [imageUri, onError]);
+        return React.createElement('img', { 'data-uri': imageUri });
+      }, { getSize: (uri: string, success: (width: number, height: number) => void, failure: () => void) => dimensions.set(uri, { success, failure }) });
+      const component = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
+        react: React, 'react-native': { Image, StyleSheet: { create: <T>(value: T) => value }, Text: ({ children }: any) => React.createElement('span', null, children), View: ({ children, accessibilityLabel }: any) => React.createElement('div', { 'aria-label': accessibilityLabel }, children) }, '../theme/colors': { __esModule: true, default: { bgElevated: '#222' } },
+      });
+      let uri = 'https://images.test/initial.jpg';
+      const root = createRoot(dom.window.document.getElementById('root')!);
+      const draw = () => React.act(async () => root.render(React.createElement(React.StrictMode, null, React.createElement(component.Artwork, { uri, label: 'Art' }))));
+      early.add(uri); await draw(); assert.match(dom.window.document.body.textContent ?? '', /UNAVAILABLE/);
+      early.clear(); uri = 'https://images.test/good.jpg'; await draw();
+      await React.act(async () => { dimensions.get(uri)?.success(1, 1); await Promise.resolve(); });
+      uri = 'https://images.test/transition.jpg'; early.add(uri); await draw();
+      assert.match(dom.window.document.body.textContent ?? '', /UNAVAILABLE/);
+      await React.act(async () => root.unmount());
+    } finally {
+      dom.window.close(); Object.defineProperty(globalThis, 'window', { configurable: true, value: previous.window }); Object.defineProperty(globalThis, 'document', { configurable: true, value: previous.document }); Object.defineProperty(globalThis, 'navigator', { configurable: true, value: previous.navigator }); (globalThis as any).IS_REACT_ACT_ENVIRONMENT = previous.act;
+    }
   });
 
   it('formats fixtures with the edition timezone across the New Year and DST boundaries', () => {
@@ -188,10 +268,7 @@ describe('native newspaper edition composition', () => {
 
 describe('mounted native article reader state', () => {
   it('recovers an actual React StrictMode mount from never-settling transports without accepting late results', async () => {
-    const require = createRequire(import.meta.url);
-    const React = require('react');
-    const { createRoot } = require('react-dom/client');
-    const { JSDOM } = require(fileURLToPath(new URL('../../../../node_modules/.pnpm/jsdom@27.4.0/node_modules/jsdom', import.meta.url).href));
+    const { React, createRoot, JSDOM } = mountedReactRuntime();
     const dom = new JSDOM('<!doctype html><div id="root"></div>');
     const previous = { window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator, act: (globalThis as any).IS_REACT_ACT_ENVIRONMENT };
     Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window }); Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document }); Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator }); (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

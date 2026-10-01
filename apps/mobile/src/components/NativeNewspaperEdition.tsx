@@ -5,19 +5,21 @@ import type { NewspaperBrief, NewspaperEdition } from '../lib/newspaperReader';
 import colors from '../theme/colors';
 
 export function Artwork({ uri, label }: { uri?: string; label: string }) {
-  const [media, setMedia] = React.useState({ uri, aspectRatio: 1, failed: false });
-  const current = media.uri === uri ? media : { uri, aspectRatio: 1, failed: false };
+  if (!uri) return <View accessibilityLabel={`${label}; artwork not supplied`} style={styles.artFallback}><Text style={styles.fallbackSmall}>HOCKEY LIFE</Text><Text style={styles.fallbackLarge}>TIMES</Text></View>;
+  return <ArtworkForUri key={uri} uri={uri} label={label} />;
+}
+
+function ArtworkForUri({ uri, label }: { uri: string; label: string }) {
+  const [media, setMedia] = React.useState({ aspectRatio: 1, failed: false });
   React.useEffect(() => {
     let active = true;
-    setMedia({ uri, aspectRatio: 1, failed: false });
-    if (uri && typeof Image.getSize === 'function') Image.getSize(uri,
-      (width, height) => { if (active && width > 0 && height > 0) setMedia({ uri, aspectRatio: width / height, failed: false }); },
-      () => { if (active) setMedia({ uri, aspectRatio: 1, failed: true }); });
+    if (typeof Image.getSize === 'function') Image.getSize(uri,
+      (width, height) => { if (active && width > 0 && height > 0) setMedia((value) => value.failed ? value : { ...value, aspectRatio: width / height }); },
+      () => { if (active) setMedia((value) => value.failed ? value : { ...value, failed: true }); });
     return () => { active = false; };
   }, [uri]);
-  if (!uri) return <View accessibilityLabel={`${label}; artwork not supplied`} style={styles.artFallback}><Text style={styles.fallbackSmall}>HOCKEY LIFE</Text><Text style={styles.fallbackLarge}>TIMES</Text></View>;
-  if (current.failed) return <View accessibilityLabel={`${label}; artwork unavailable`} style={styles.artFallback}><Text style={styles.fallbackSmall}>ARTWORK</Text><Text style={styles.fallbackLarge}>UNAVAILABLE</Text></View>;
-  return <Image source={{ uri }} accessibilityLabel={label} alt={label} resizeMode="contain" onError={() => setMedia((value) => value.uri === uri ? { ...value, failed: true } : value)} style={[styles.artwork, { aspectRatio: current.aspectRatio }]} />;
+  if (media.failed) return <View accessibilityLabel={`${label}; artwork unavailable`} style={styles.artFallback}><Text style={styles.fallbackSmall}>ARTWORK</Text><Text style={styles.fallbackLarge}>UNAVAILABLE</Text></View>;
+  return <Image source={{ uri }} accessibilityLabel={label} alt={label} resizeMode="contain" onError={() => setMedia((value) => value.failed ? value : { ...value, failed: true })} style={[styles.artwork, { aspectRatio: media.aspectRatio }]} />;
 }
 
 export function formatEditionScheduled(value: string, timezone: NewspaperEdition['timezone']) {

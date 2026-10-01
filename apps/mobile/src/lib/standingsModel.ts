@@ -34,6 +34,17 @@ export function rankStandings(rows: StandingsFact[]) {
     || right.wins - left.wins
     || (right.goalsFor - right.goalsAgainst) - (left.goalsFor - left.goalsAgainst)
     || right.goalsFor - left.goalsFor
+    || left.teamName.localeCompare(right.teamName)
+    || left.teamId.localeCompare(right.teamId)
+  ));
+}
+
+function rankOddsStandings<T extends StandingsFact>(rows: T[]) {
+  return [...rows].sort((left, right) => (
+    right.points - left.points
+    || right.wins - left.wins
+    || (right.goalsFor - right.goalsAgainst) - (left.goalsFor - left.goalsAgainst)
+    || right.goalsFor - left.goalsFor
     || left.teamId.localeCompare(right.teamId)
   ));
 }
@@ -47,7 +58,7 @@ function configured(config: PlayoffConfig) {
 }
 
 function playoffGroups(rows: StandingsFact[], config: PlayoffConfig) {
-  if (!config.useDivisionPlayoffs) return [{ key: 'league', name: null, rows: rankStandings(rows), limit: config.playoffTeamsTotal ?? 0 }];
+  if (!config.useDivisionPlayoffs) return [{ key: 'league', name: null, rows: rankOddsStandings(rows), limit: config.playoffTeamsTotal ?? 0 }];
   const divisions = new Map<string, { name: string | null; rows: StandingsFact[] }>();
   for (const row of rows) {
     const key = row.divisionId ?? '__unassigned__';
@@ -57,7 +68,7 @@ function playoffGroups(rows: StandingsFact[], config: PlayoffConfig) {
   }
   return [...divisions.entries()]
     .sort((left, right) => (left[1].name ?? '').localeCompare(right[1].name ?? ''))
-    .map(([key, group]) => ({ key, name: group.name, rows: rankStandings(group.rows), limit: config.playoffTeamsPerDivision ?? 0 }));
+    .map(([key, group]) => ({ key, name: group.name, rows: rankOddsStandings(group.rows), limit: config.playoffTeamsPerDivision ?? 0 }));
 }
 
 function previewGroups(rows: StandingsFact[], config: PlayoffConfig) {
@@ -243,7 +254,7 @@ export function calculatePlayoffPredictor(rows: StandingsFact[], games: Standing
   });
 
   if (!remaining.length) {
-    const ranked = rankStandings(base);
+    const ranked = rankOddsStandings(base);
     const qualified = qualifierIds(base, config);
     return { status: 'ready' as const, teams: ranked.map((team, index) => ({ teamId: team.teamId, firstPlace: index === 0 ? 1 : 0, makePlayoffs: qualified.has(team.teamId) ? 1 : 0 })) };
   }
@@ -271,7 +282,7 @@ export function calculatePlayoffPredictor(rows: StandingsFact[], games: Standing
         away.wins += 1; home.losses += 1; away.points += 2;
       }
     }
-    const ranked = rankStandings(next);
+    const ranked = rankOddsStandings(next);
     if (ranked[0]) firstCounts.set(ranked[0].teamId, (firstCounts.get(ranked[0].teamId) ?? 0) + 1);
     for (const id of qualifierIds(next, config)) playoffCounts.set(id, (playoffCounts.get(id) ?? 0) + 1);
   }
@@ -281,7 +292,7 @@ export function calculatePlayoffPredictor(rows: StandingsFact[], games: Standing
   const bounds = outcomeBounds(base, remaining, config);
   return {
     status: 'ready' as const,
-    teams: rankStandings(base).map((team) => ({
+    teams: rankOddsStandings(base).map((team) => ({
       teamId: team.teamId,
       firstPlace: clamp(firstBaseline + (((firstCounts.get(team.teamId) ?? 0) / simulations) - firstBaseline) * progress, bounds.get(team.teamId)?.firstPlace.min ?? 0, bounds.get(team.teamId)?.firstPlace.max ?? 1),
       makePlayoffs: clamp(playoffBaseline + (((playoffCounts.get(team.teamId) ?? 0) / simulations) - playoffBaseline) * progress, bounds.get(team.teamId)?.playoffs.min ?? 0, bounds.get(team.teamId)?.playoffs.max ?? 1),

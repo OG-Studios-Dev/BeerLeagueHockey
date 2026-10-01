@@ -101,7 +101,7 @@ export default function StandingsScreen({ navigation }: { navigation: Navigation
 
   const scoped = rankStandings(activeDivision ? visibleState.standings.filter((row) => row.divisionId === activeDivision.id) : visibleState.standings);
   const config = visibleState.playoffs?.previewConfig ?? { playoffTeamsTotal: null, playoffTeamsPerDivision: null, useDivisionPlayoffs: null };
-  const picture = buildPlayoffPicture(visibleState.standings, config);
+  const picture = buildPlayoffPicture(rankStandings(visibleState.standings), config);
   const predictor = calculatePlayoffPredictor(visibleState.standings, visibleState.games, config);
   const completion = buildSeasonCompletion(visibleState.games);
   const positioning = filterAndRerankPositioning(visibleState.teams?.positioning ?? null, activeDivision?.id ?? null);
