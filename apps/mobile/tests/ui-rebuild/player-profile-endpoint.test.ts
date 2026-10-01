@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { HOCKEY_LIFE_ID, HOCKEY_LIFE_SLUG } from '../../src/config/hockeyLife.ts';
@@ -10,6 +12,8 @@ import {
 const PROFILE_ID = 'add94b26-b344-459f-9727-8cddae9783de';
 const ROSTER_ID = '751c2f47-f0e8-4506-b10e-b39a7bbcd302';
 const SEASON_ID = '145ac7ee-99fb-4a50-a0b5-37f24e9991f3';
+const SUMMER_ID = '1df8f917-a87e-4053-8650-f55aff2c0fcb';
+const capturedMattSummerWire = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/matt-summer-player-profile-wire.json', import.meta.url).toString()), 'utf8')) as unknown;
 
 function envelope(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,6 +48,19 @@ function envelope(overrides: Record<string, unknown> = {}) {
 }
 
 describe('public player profile endpoint boundary', () => {
+  it('decodes the captured producer wire with nullable unknown game score', () => {
+    const page = decodeHockeyLifePlayerProfileEnvelope(capturedMattSummerWire, PROFILE_ID, SUMMER_ID);
+    assert.equal(page.games.length, 13);
+    assert.equal(page.games[0]?.score, null);
+    assert.equal(page.games[0]?.metrics.goals, 5);
+    const optionalUnknowns = JSON.parse(JSON.stringify(capturedMattSummerWire));
+    optionalUnknowns.data.games[0].opponent = null;
+    optionalUnknowns.data.games[0].result = null;
+    delete optionalUnknowns.data.games[0].score;
+    const sparsePage = decodeHockeyLifePlayerProfileEnvelope(optionalUnknowns, PROFILE_ID, SUMMER_ID);
+    assert.deepEqual([sparsePage.games[0]?.opponent, sparsePage.games[0]?.result, sparsePage.games[0]?.score], [null, null, null]);
+    assert.equal(sparsePage.games[0]?.metrics.goals, 5, 'known metrics survive unrelated unknown display fields');
+  });
   it('decodes a versioned, fixed-tenant payload while preserving verified zero and unknown null', () => {
     const page = decodeHockeyLifePlayerProfileEnvelope(envelope(), PROFILE_ID, SEASON_ID);
     assert.equal(page.playerId, PROFILE_ID);

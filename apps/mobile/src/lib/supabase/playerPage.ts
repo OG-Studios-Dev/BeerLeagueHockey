@@ -15,7 +15,7 @@ export type HockeyLifePlayerPage = {
   metrics: PlayerMetricValues | null;
   careerRows: Array<{ seasonId: string; seasonName: string; teamId?: string | null; teamName?: string | null; metrics: PlayerMetricValues }>;
   badges: Array<{ id: string; type: string; seasonId: string | null; seasonName: string | null; teamName: string | null; createdAt: string }>;
-  games: Array<{ id: string; date: string; opponent: string; result: string; score: string; metrics: PlayerMetricValues }>;
+  games: Array<{ id: string; date: string; opponent: string | null; result: string | null; score: string | null; metrics: PlayerMetricValues }>;
   matchups: Array<{ id: string; name: string; gamesPlayed: number; goals: number; assists: number; points: number; shots: number; shootingPct: number | null }>;
   articles: Array<{ id: string; slug: string | null; title: string; excerpt: string | null; publishedAt: string | null; imageUrl: string | null; type: string | null }>;
   heroAwards: Array<{ key: string; label: string; count: number; imageUrl: string | null }>;
@@ -121,7 +121,7 @@ export function decodeHockeyLifePlayerProfileEnvelope(value: unknown, requestedP
   });
   const games = array(data.games, 'games', 100).map((value) => {
     const row = object(value, 'game');
-    return { id: uuid(row.id, 'game id'), date: string(row.date, 'game date'), opponent: string(row.opponent, 'game opponent'), result: string(row.result, 'game result', 12), score: string(row.score, 'game score', 32), metrics: metrics(row.metrics, 'game metrics') };
+    return { id: uuid(row.id, 'game id'), date: string(row.date, 'game date'), opponent: nullableString(row.opponent ?? null, 'game opponent'), result: nullableString(row.result ?? null, 'game result', 12), score: nullableString(row.score ?? null, 'game score', 32), metrics: metrics(row.metrics, 'game metrics') };
   });
   const matchups = array(data.matchups, 'matchups', 100).map((value) => {
     const row = object(value, 'matchup');

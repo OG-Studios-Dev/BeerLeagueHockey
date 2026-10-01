@@ -24,7 +24,7 @@ describe('Hockey Life player page parity model', () => {
 
   it('preserves skater and goalie metric differences', () => {
     assert.deepEqual(getPlayerMetricDefinitions(false).map((metric) => metric.key), ['games_played', 'goals', 'assists', 'points', 'penalty_minutes', 'plus_minus']);
-    assert.deepEqual(getPlayerMetricDefinitions(true).map((metric) => metric.key), ['games_played', 'wins', 'losses', 'save_percentage', 'goals_against_average', 'shutouts', 'saves']);
+    assert.deepEqual(getPlayerMetricDefinitions(true).map((metric) => metric.key), ['games_played', 'wins', 'losses', 'ties', 'save_percentage', 'goals_against_average', 'shutouts', 'saves']);
     assert.deepEqual(getCareerMetricDefinitions(false).map((metric) => metric.key), ['goals', 'assists', 'points', 'attendance', 'goals_per_game', 'points_per_game']);
     assert.deepEqual(getCareerMetricDefinitions(true).map((metric) => metric.key), ['wins', 'save_percentage', 'goals_against_average', 'saves', 'shutouts', 'attendance']);
   });

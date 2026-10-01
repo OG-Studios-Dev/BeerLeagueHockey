@@ -44,6 +44,7 @@ const GOALIE_METRICS: PlayerMetricDefinition[] = [
   { key: 'games_played', label: 'GP' },
   { key: 'wins', label: 'W' },
   { key: 'losses', label: 'L' },
+  { key: 'ties', label: 'T' },
   { key: 'save_percentage', label: 'SV%' },
   { key: 'goals_against_average', label: 'GAA' },
   { key: 'shutouts', label: 'SO' },

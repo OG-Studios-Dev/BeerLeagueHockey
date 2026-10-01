@@ -19,6 +19,7 @@ describe('native Hockey Life player parity screen', () => {
     assert.match(screen, /CareerTrendChart/);
     assert.match(screen, /No stats available/);
     assert.match(screen, /No games played this season/);
+    assert.match(screen, /game\.score \?\? '—'/);
   });
 
   it('uses the Hockey Life loader and identity gate rather than direct cross-league reads', () => {
