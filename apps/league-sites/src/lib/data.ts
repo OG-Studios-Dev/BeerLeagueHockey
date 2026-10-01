@@ -5886,12 +5886,15 @@ export async function getPlayerCareerStats(
   if (seasonId) {
     const [confirmedCheckins, fallbackRosterAppearances, rosterSummaryResult, goalieStatsResult] = await Promise.all([
       getConfirmedCheckinAppearanceRows(supabase, {
+        leagueId,
         seasonId,
         playerIds: [playerId],
+        strict: options.strict,
       }),
       getFallbackRosterAppearanceRows(supabase, {
         seasonId,
         playerIds: [playerId],
+        strict: options.strict,
       }),
       (!seasonSummary?.team_name || !seasonSummary?.position)
         ? supabase
@@ -6123,6 +6126,7 @@ export async function getPlayerGameLog(
     const fallbackRosterAppearances = await getFallbackRosterAppearanceRows(supabase, {
       seasonId,
       playerIds: [playerId],
+      strict: options.strict,
     });
 
     const existingGameIds = new Set(rows.map((row: any) => row.game_id).filter(Boolean));
