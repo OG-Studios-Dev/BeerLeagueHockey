@@ -567,3 +567,83 @@ describe('captain attendance lifecycle correction v3', () => {
     assert.equal(run.calls.status.length, 1);
   });
 });
+
+function selectedStatus(run: ReturnType<typeof mountAvailability>) {
+  for (const status of ['confirmed', 'tentative', 'out', 'waiting']) {
+    if (findNode(run.h.output, node => node.props.testID === `captain-status-player-1-${status}`)?.props.accessibilityState.selected) return status;
+  }
+  return null;
+}
+
+describe('captain attendance lifecycle correction v4', () => {
+  for (const failure of ['returned', 'rejected'] as const) {
+    it(`lets authoritative refresh win when a ${failure} write settles during route revalidation`, async () => {
+      const firstWrite = deferred<any>();
+      const heldGame = deferred<any>();
+      let gameReads = 0;
+      let writes = 0;
+      const run = mountAvailability({
+        gameLoader: async () => ++gameReads === 2 ? heldGame.promise : { data: validGame, error: null },
+        checkins: async () => ({ 'player-1': 'confirmed' }),
+        status: async () => ++writes === 1 ? firstWrite.promise : { success: true },
+      });
+      await settle(run.h);
+      press(run, 'captain-status-player-1-out');
+      const scroll = findNode(run.h.output, node => node.type === 'ScrollView');
+      const refreshPromise = scroll?.props.refreshControl.props.onRefresh();
+      await settle(run.h);
+      if (failure === 'returned') firstWrite.resolve({ success: false, error: 'denied' });
+      else firstWrite.reject(new Error('transport rejected'));
+      await settle(run.h);
+      heldGame.resolve({ data: validGame, error: null });
+      await refreshPromise; await settle(run.h);
+
+      assert.equal(selectedStatus(run), 'confirmed');
+      assert.notEqual(findNode(run.h.output, node => node.props.testID === 'captain-status-player-1-out')?.props.disabled, true);
+      assert.equal(run.calls.status.length, 1);
+      press(run, 'captain-status-player-1-out'); await settle(run.h);
+      assert.equal(run.calls.status.length, 2, 'the settled failure remains deliberately retryable');
+    });
+  }
+
+  it('keeps intervening B status out of A when an A write fails during A re-entry', async () => {
+    const pendingWrite = deferred<any>();
+    const heldReentry = deferred<any>();
+    let gameReads = 0;
+    const run = mountAvailability({
+      gameLoader: async () => ++gameReads === 3 ? heldReentry.promise : { data: validGame, error: null },
+      checkins: async (_gameId, teamId) => teamId === 'team-1' ? { 'player-1': 'confirmed' } : { 'player-1': 'tentative' },
+      status: async () => pendingWrite.promise,
+    });
+    await settle(run.h);
+    press(run, 'captain-status-player-1-out');
+    run.setParams({ ...routeParams, teamId: 'team-2' }); await settle(run.h);
+    assert.equal(selectedStatus(run), 'tentative');
+    run.setParams(routeParams); await settle(run.h);
+    pendingWrite.resolve({ success: false, error: 'denied' }); await settle(run.h);
+    heldReentry.resolve({ data: validGame, error: null }); await settle(run.h);
+
+    assert.equal(selectedStatus(run), 'confirmed');
+    assert.equal(run.calls.status.length, 1);
+  });
+
+  it('preserves an A success that settles during A re-entry over the older A read', async () => {
+    const pendingWrite = deferred<any>();
+    const heldReentry = deferred<any>();
+    let gameReads = 0;
+    const run = mountAvailability({
+      gameLoader: async () => ++gameReads === 3 ? heldReentry.promise : { data: validGame, error: null },
+      checkins: async (_gameId, teamId) => teamId === 'team-1' ? { 'player-1': 'confirmed' } : { 'player-1': 'tentative' },
+      status: async () => pendingWrite.promise,
+    });
+    await settle(run.h);
+    press(run, 'captain-status-player-1-out');
+    run.setParams({ ...routeParams, teamId: 'team-2' }); await settle(run.h);
+    run.setParams(routeParams); await settle(run.h);
+    pendingWrite.resolve({ success: true }); await settle(run.h);
+    heldReentry.resolve({ data: validGame, error: null }); await settle(run.h);
+
+    assert.equal(selectedStatus(run), 'out');
+    assert.equal(run.calls.status.length, 1);
+  });
+});

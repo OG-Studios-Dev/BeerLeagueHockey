@@ -44,6 +44,11 @@ type ScreenProps = {
   navigation: { goBack(): void };
 };
 
+type ScopedStatusFact = {
+  value: CheckinStatus | null;
+  revision: number;
+};
+
 export default function GameAvailabilityScreen({ route, navigation }: ScreenProps) {
   const { gameId, teamId, leagueId } = route.params;
   const { user } = useAuth();
@@ -75,13 +80,18 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
   const validatedRouteRef = React.useRef<string | null>(null);
   const activeScopeRef = React.useRef<string | null>(null);
   const subLoadTokenRef = React.useRef(0);
-  const statusVersionRef = React.useRef<Map<string, number>>(new Map());
+  const confirmedStatusRef = React.useRef<Map<string, ScopedStatusFact>>(new Map());
+  const confirmedStatusRevisionRef = React.useRef(0);
+  const authoritativeStatusRef = React.useRef<Map<string, ScopedStatusFact>>(new Map());
+  const authoritativeStatusRevisionRef = React.useRef(0);
   const writeGuardsRef = React.useRef<Map<string, 'pending' | 'succeeded'>>(new Map());
   const [writeGuardStates, setWriteGuardStates] = React.useState<Record<string, 'pending' | 'succeeded'>>({});
 
   const loadData = React.useCallback(async () => {
     const generation = ++loadGenerationRef.current;
-    const statusVersionsAtLoad = new Map(statusVersionRef.current);
+    const confirmedRevisionsAtLoad = new Map(
+      [...confirmedStatusRef.current].map(([key, fact]) => [key, fact.revision]),
+    );
     validatedRouteRef.current = null;
     setValidatedRouteKey(null);
     subLoadTokenRef.current += 1;
@@ -133,13 +143,21 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
         getGameCheckinStatusMap(gameId, teamId), getTeamSubInvitations(teamId, [gameId]), getOpenGoalieRequest(gameId, teamId),
       ]);
       if (generation !== loadGenerationRef.current) return;
-      setCheckinMap((current) => {
+      const authoritativeRevision = ++authoritativeStatusRevisionRef.current;
+      for (const player of rosterData) {
+        const statusKey = `${controlKey}:${player.player_id}`;
+        authoritativeStatusRef.current.set(statusKey, {
+          value: checkins[player.player_id] ?? null,
+          revision: authoritativeRevision,
+        });
+      }
+      setCheckinMap(() => {
         const merged = { ...checkins };
         for (const player of rosterData) {
-          const versionKey = `${controlKey}:${player.player_id}`;
-          if ((statusVersionRef.current.get(versionKey) ?? 0) === (statusVersionsAtLoad.get(versionKey) ?? 0)) continue;
-          const currentStatus = current[player.player_id];
-          if (currentStatus) merged[player.player_id] = currentStatus;
+          const statusKey = `${controlKey}:${player.player_id}`;
+          const confirmed = confirmedStatusRef.current.get(statusKey);
+          if (!confirmed || confirmed.revision <= (confirmedRevisionsAtLoad.get(statusKey) ?? 0)) continue;
+          if (confirmed.value) merged[player.player_id] = confirmed.value;
           else delete merged[player.player_id];
         }
         return merged;
@@ -179,8 +197,8 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     const operationGameId = gameId;
     const operationTeamId = teamId;
     const previousStatus = checkinMap[playerId];
-    const versionKey = `${operationControlKey}:${playerId}`;
-    statusVersionRef.current.set(versionKey, (statusVersionRef.current.get(versionKey) ?? 0) + 1);
+    const statusKey = `${operationControlKey}:${playerId}`;
+    const authoritativeRevisionAtStart = authoritativeStatusRef.current.get(statusKey)?.revision ?? 0;
     writeGuardsRef.current.set(operationKey, 'pending');
     setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
     setStatusSavingPlayerId(playerId); setActionError(null);
@@ -196,15 +214,23 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       if (!result.success) {
         writeGuardsRef.current.delete(operationKey);
         if (validatedRouteRef.current === operationControlKey) {
+          const authoritative = authoritativeStatusRef.current.get(statusKey);
+          const restoredStatus = authoritative && authoritative.revision > authoritativeRevisionAtStart
+            ? authoritative.value
+            : previousStatus ?? null;
           setCheckinMap((current) => {
             const restored = { ...current };
-            if (previousStatus) restored[playerId] = previousStatus; else delete restored[playerId];
+            if (restoredStatus) restored[playerId] = restoredStatus; else delete restored[playerId];
             return restored;
           });
           setActionError(result.error ?? 'Unable to update lineup.');
         }
         return;
       }
+      confirmedStatusRef.current.set(statusKey, {
+        value: nextStatus === 'waiting' ? null : nextStatus,
+        revision: ++confirmedStatusRevisionRef.current,
+      });
       if (validatedRouteRef.current === operationControlKey) {
         setCheckinMap((current) => {
           const confirmed = { ...current };
@@ -215,16 +241,19 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     } catch {
       writeGuardsRef.current.delete(operationKey);
       if (validatedRouteRef.current === operationControlKey) {
+        const authoritative = authoritativeStatusRef.current.get(statusKey);
+        const restoredStatus = authoritative && authoritative.revision > authoritativeRevisionAtStart
+          ? authoritative.value
+          : previousStatus ?? null;
         setCheckinMap((current) => {
           const restored = { ...current };
-          if (previousStatus) restored[playerId] = previousStatus; else delete restored[playerId];
+          if (restoredStatus) restored[playerId] = restoredStatus; else delete restored[playerId];
           return restored;
         });
         setActionError('Unable to update lineup.');
       }
     } finally {
       writeGuardsRef.current.delete(operationKey);
-      statusVersionRef.current.set(versionKey, (statusVersionRef.current.get(versionKey) ?? 0) + 1);
       setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
       if (validatedRouteRef.current === operationControlKey) setStatusSavingPlayerId(null);
     }
