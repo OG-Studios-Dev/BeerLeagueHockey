@@ -185,8 +185,8 @@ function Hero({ snapshot, compact }: { snapshot: TeamPageSnapshot; compact: bool
       <Text style={styles.heroName}>{team.name}</Text>
       <Text testID="team-hero-record" style={[styles.heroRecord, compact && styles.heroRecordCompact]}>{snapshot.record}</Text>
       <View style={styles.heroPills}>
-        {[pills.slice(0, 3), pills.slice(3)].map((row, index) => <View key={index} testID="team-hero-pill-row" style={styles.heroPillRow}>{row.map(([label, value]) => (
-          <View key={label} testID="team-hero-pill" style={styles.heroPill}>
+        {[pills.slice(0, 3), pills.slice(3)].map((row, index) => <View key={index} testID="team-hero-pill-row" style={[styles.heroPillRow, compact && styles.heroPillRowCompact]}>{row.map(([label, value]) => (
+          <View key={label} testID="team-hero-pill" style={[styles.heroPill, compact && styles.heroPillCompact]}>
             <Text style={styles.heroPillLabel}>{label}</Text><Text style={[styles.heroPillValue, label === 'DIFF' && standing?.goalDifferential != null && standing.goalDifferential > 0 && { color: accent }]}>{value}</Text>
           </View>
         ))}</View>)}
@@ -265,10 +265,10 @@ function Leaders({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapsho
           <View style={styles.segmented}>
             {METRICS.map((item) => {
               const active = metric === item.key;
-              return <Pressable key={item.key} testID={`team-leader-metric-${item.label.toLowerCase()}`} accessibilityRole="tab" accessibilityLabel={METRIC_NAMES[item.key]} accessibilityState={{ selected: active }} onPress={() => setMetric(item.key)} style={[styles.metricButton, active && { backgroundColor: accent }]}><Text style={[styles.metricText, active && styles.metricTextActive]}>{item.label}</Text></Pressable>;
+              return <Pressable key={item.key} testID={`team-leader-metric-${item.label.toLowerCase()}`} accessibilityRole="tab" accessibilityLabel={METRIC_NAMES[item.key]} accessibilityState={{ selected: active }} aria-selected={active} onPress={() => setMetric(item.key)} style={[styles.metricButton, active && { backgroundColor: accent }]}><Text style={[styles.metricText, active && styles.metricTextActive]}>{item.label}</Text></Pressable>;
             })}
           </View>
-          <Pressable testID="team-leader-chart-toggle" accessibilityRole="switch" accessibilityLabel="Toggle bar chart view" accessibilityState={{ checked: bars }} onPress={() => setBars((value) => !value)} style={[styles.chartToggle, bars && { borderColor: accent, backgroundColor: `${accent}1F` }]}><Ionicons name="bar-chart-outline" size={20} color={bars ? accent : colors.textSecondary} /></Pressable>
+          <Pressable testID="team-leader-chart-toggle" accessibilityRole="switch" accessibilityLabel="Toggle bar chart view" accessibilityState={{ checked: bars }} aria-checked={bars} onPress={() => setBars((value) => !value)} style={[styles.chartToggle, bars && { borderColor: accent, backgroundColor: `${accent}1F` }]}><Ionicons name="bar-chart-outline" size={20} color={bars ? accent : colors.textSecondary} /></Pressable>
         </View>
         {bars ? (
           <View testID="team-leader-bars" style={styles.bars}>
@@ -394,7 +394,7 @@ function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPag
   const secondary = snapshot.team.secondaryColor ?? '#D9B64C';
   return (
     <View testID="team-roster-section">
-      <View style={styles.rosterHeadingRow}><View style={styles.rosterHeadingCopy}><SectionHeading icon="people-outline" title={snapshot.nextGame ? 'Next Game Roster' : 'Roster'} accent={accent} /></View><View style={styles.iconToggle}><Pressable testID="team-roster-jersey-toggle" accessibilityRole="tab" accessibilityLabel="Show jersey roster" accessibilityState={{ selected: !listView }} onPress={() => setListView(false)} style={[styles.iconToggleButton, !listView && { backgroundColor: accent }]}><Ionicons name="shirt-outline" size={19} color={!listView ? '#02111B' : colors.textSecondary} /></Pressable><Pressable testID="team-roster-list-toggle" accessibilityRole="tab" accessibilityLabel="Show roster stats" accessibilityState={{ selected: listView }} onPress={() => setListView(true)} style={[styles.iconToggleButton, listView && { backgroundColor: accent }]}><Ionicons name="list" size={20} color={listView ? '#02111B' : colors.textSecondary} /></Pressable></View></View>
+      <View style={styles.rosterHeadingRow}><View style={styles.rosterHeadingCopy}><SectionHeading icon="people-outline" title={snapshot.nextGame ? 'Next Game Roster' : 'Roster'} accent={accent} /></View><View style={styles.iconToggle}><Pressable testID="team-roster-jersey-toggle" accessibilityRole="tab" accessibilityLabel="Show jersey roster" accessibilityState={{ selected: !listView }} aria-selected={!listView} onPress={() => setListView(false)} style={[styles.iconToggleButton, !listView && { backgroundColor: accent }]}><Ionicons name="shirt-outline" size={19} color={!listView ? '#02111B' : colors.textSecondary} /></Pressable><Pressable testID="team-roster-list-toggle" accessibilityRole="tab" accessibilityLabel="Show roster stats" accessibilityState={{ selected: listView }} aria-selected={listView} onPress={() => setListView(true)} style={[styles.iconToggleButton, listView && { backgroundColor: accent }]}><Ionicons name="list" size={20} color={listView ? '#02111B' : colors.textSecondary} /></Pressable></View></View>
       <Text style={styles.rosterTruth}>{display.published ? 'Published next-game lineup' : snapshot.nextGame ? 'Current active-season roster • no published lineup' : 'Current active-season roster'}</Text>
       <Text style={styles.estimateNote}>~ indicates an estimate. — means not recorded. “Needs review” marks conflicting records.</Text>
       {snapshot.acceptedSubstitutions.length > 0 ? <View testID="team-substitution-notes" style={styles.substitutionNotes}>{snapshot.acceptedSubstitutions.map((substitution) => <Text key={substitution.id} style={styles.substitutionNote}>🥖 {substitution.subPlayerName} subbing in{substitution.replacedPlayerName ? ` for ${substitution.replacedPlayerName}` : ''}</Text>)}</View> : null}
@@ -471,7 +471,9 @@ const styles = StyleSheet.create({
   heroRecord: { color: '#F7FBFF', fontSize: 34, lineHeight: 40, fontWeight: '900', letterSpacing: -1 }, heroRecordCompact: { fontSize: 32, lineHeight: 38 },
   heroPills: { width: '100%', alignItems: 'center', gap: 8 },
   heroPillRow: { maxWidth: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
+  heroPillRowCompact: { width: '100%', flexWrap: 'nowrap', gap: 4 },
   heroPill: { maxWidth: '100%', minHeight: 34, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,.14)', backgroundColor: 'rgba(255,255,255,.025)', paddingHorizontal: 16, paddingVertical: 8 },
+  heroPillCompact: { flexBasis: 0, flexGrow: 1, minWidth: 0, flexWrap: 'nowrap', gap: 4, paddingHorizontal: 8 },
   heroPillLabel: { color: '#8E9BAF', fontSize: 10, fontWeight: '800', letterSpacing: .75 }, heroPillValue: { color: '#F7FBFF', fontSize: 13, fontWeight: '900' },
   championshipLine: { maxWidth: 320, color: '#7E8A9D', fontSize: 11, lineHeight: 16, textAlign: 'center' },
   matchupCard: { overflow: 'hidden', borderRadius: 28, minHeight: 328, backgroundColor: '#03070D' }, matchupBackground: { minHeight: 328, justifyContent: 'flex-end', paddingHorizontal: 16, paddingBottom: 20 }, matchupBackgroundCompact: { minHeight: 300, paddingHorizontal: 10 }, matchupImage: { borderRadius: 28 },

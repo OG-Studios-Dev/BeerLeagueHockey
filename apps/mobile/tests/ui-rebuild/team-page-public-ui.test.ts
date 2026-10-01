@@ -1,9 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+const require = createRequire(import.meta.url);
+const nativeWeb = require('react-native-web') as Record<string, React.ComponentType<Record<string, unknown>>>;
 
 function pngPixels(layer: string) {
   const bytes = readFileSync(new NodeURL(`../../src/assets/team-page/jersey-${layer}.png`, import.meta.url));
@@ -205,6 +211,15 @@ describe('native Team public composition', () => {
       assert.equal(findNode(hero, (node) => node.type === 'TeamLogo')?.props.size, 160);
       const pillRows = findNodes(hero, (node) => node.props.testID === 'team-hero-pill-row');
       assert.deepEqual(pillRows.map((row) => findNodes(row, (node) => node.props.testID === 'team-hero-pill').length), [3, 3]);
+      if (width === 320) {
+        assert.deepEqual(pillRows.map((row) => flattenStyle(row.props.style).flexWrap), ['nowrap', 'nowrap']);
+        for (const pill of findNodes(hero, (node) => node.props.testID === 'team-hero-pill')) {
+          const style = flattenStyle(pill.props.style);
+          assert.equal(style.flexBasis, 0);
+          assert.equal(style.flexGrow, 1);
+          assert.equal(style.minWidth, 0);
+        }
+      }
       const podium = findNode(output, (node) => node.props.testID === 'team-leader-podium');
       for (const avatar of findNodes(podium, (node) => node.type === 'Avatar')) assert.ok(avatar.props.size >= (width === 390 ? 70 : 54));
       const rosterSection = findNode(output, (node) => node.props.testID === 'team-roster-section');
@@ -435,5 +450,30 @@ describe('native Team public composition', () => {
     for (const name of findNodes(schedule, (node) => node.type === 'Text' && ['First General London', 'London Eco Metal'].includes(nodeText(node)))) {
       assert.equal(name.props.numberOfLines, undefined);
     }
+  });
+
+  it('emits explicit true and false selection state through the installed React Native Web DOM boundary', () => {
+    const run = runtime(320);
+    const dom = (testID: string) => {
+      const node = findNode(run.harness.output, (candidate) => candidate.props.testID === testID);
+      assert.ok(node);
+      const markup = renderToStaticMarkup(React.createElement(nativeWeb.Pressable, node.props, React.createElement(nativeWeb.Text, null, testID)));
+      return markup;
+    };
+    assert.match(dom('team-leader-metric-p'), /aria-selected="true"/);
+    assert.match(dom('team-leader-metric-g'), /aria-selected="false"/);
+    assert.match(dom('team-leader-chart-toggle'), /aria-checked="false"/);
+    assert.match(dom('team-roster-jersey-toggle'), /aria-selected="true"/);
+    assert.match(dom('team-roster-list-toggle'), /aria-selected="false"/);
+
+    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-g')?.props.onPress();
+    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-chart-toggle')?.props.onPress();
+    findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    run.harness.render();
+    assert.match(dom('team-leader-metric-p'), /aria-selected="false"/);
+    assert.match(dom('team-leader-metric-g'), /aria-selected="true"/);
+    assert.match(dom('team-leader-chart-toggle'), /aria-checked="true"/);
+    assert.match(dom('team-roster-jersey-toggle'), /aria-selected="false"/);
+    assert.match(dom('team-roster-list-toggle'), /aria-selected="true"/);
   });
 });
