@@ -1,9 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+const require = createRequire(import.meta.url);
+const nativeWeb = require('react-native-web') as Record<string, React.ComponentType<Record<string, unknown>>>;
 
 function pngPixels(layer: string) {
   const bytes = readFileSync(new NodeURL(`../../src/assets/team-page/jersey-${layer}.png`, import.meta.url));
@@ -204,7 +210,16 @@ describe('native Team public composition', () => {
       const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
       assert.equal(findNode(hero, (node) => node.type === 'TeamLogo')?.props.size, 160);
       const pillRows = findNodes(hero, (node) => node.props.testID === 'team-hero-pill-row');
-      assert.deepEqual(pillRows.map((row) => findNodes(row, (node) => node.props.testID === 'team-hero-pill').length), width === 390 ? [2, 3, 1] : [2, 2, 2]);
+      assert.deepEqual(pillRows.map((row) => findNodes(row, (node) => node.props.testID === 'team-hero-pill').length), [3, 3]);
+      if (width === 320) {
+        assert.deepEqual(pillRows.map((row) => flattenStyle(row.props.style).flexWrap), ['nowrap', 'nowrap']);
+        for (const pill of findNodes(hero, (node) => node.props.testID === 'team-hero-pill')) {
+          const style = flattenStyle(pill.props.style);
+          assert.equal(style.flexBasis, 0);
+          assert.equal(style.flexGrow, 1);
+          assert.equal(style.minWidth, 0);
+        }
+      }
       const podium = findNode(output, (node) => node.props.testID === 'team-leader-podium');
       for (const avatar of findNodes(podium, (node) => node.type === 'Avatar')) assert.ok(avatar.props.size >= (width === 390 ? 70 : 54));
       const rosterSection = findNode(output, (node) => node.props.testID === 'team-roster-section');
@@ -242,11 +257,19 @@ describe('native Team public composition', () => {
 
   it('switches exact leader metrics and podium/bar views without fake navigation', () => {
     const run = runtime();
+    assert.equal(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityRole, 'tab');
+    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityState, { selected: true });
+    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.accessibilityState, { selected: false });
     findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.onPress();
     let output = run.harness.render();
+    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityState, { selected: false });
+    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.accessibilityState, { selected: true });
     assert.match(nodeText(findNode(output, (node) => node.props.testID === 'team-leader-podium')), /Stefan Kowles20/);
     findNode(output, (node) => node.props.testID === 'team-leader-chart-toggle')?.props.onPress();
     output = run.harness.render();
+    const chartToggle = findNode(output, (node) => node.props.testID === 'team-leader-chart-toggle');
+    assert.equal(chartToggle?.props.accessibilityRole, 'switch');
+    assert.deepEqual(chartToggle?.props.accessibilityState, { checked: true });
     assert.ok(findNode(output, (node) => node.props.testID === 'team-leader-bars'));
     assert.ok(!findNode(output, (node) => node.props.testID === 'team-leader-podium'));
   });
@@ -350,5 +373,107 @@ describe('native Team public composition', () => {
     assert.match(jerseyText, /96/);
     assert.match(jerseyText, /00/);
     assert.doesNotMatch(jerseyText, /(^|\D)0(\D|$)/);
+    assert.equal(findNodes(jerseys, (node) => /^team-lineup-forward-slot-\d+$/.test(node.props.testID ?? '')).length, 6);
+    assert.equal(findNodes(jerseys, (node) => /^team-lineup-defence-slot-\d+$/.test(node.props.testID ?? '')).length, 4);
+    assert.equal(findNodes(jerseys, (node) => node.props.testID === 'team-lineup-goalie-slot-0').length, 1);
+    assert.equal(findNode(jerseys, (node) => node.props.testID === 'team-lineup-forward-slot-1')?.props.accessibilityLabel, 'Empty forward slot 2');
+  });
+
+  it('keeps a valid published empty lineup empty and renders the full 6F/4D/1G board', () => {
+    const output = runtime(390, { ...snapshot, publishedLineup: { status: 'published', layout_json: { roster: [], placedPlayers: [] } } }).harness.output;
+    const section = findNode(output, (node) => node.props.testID === 'team-roster-section');
+    assert.match(nodeText(section), /Published next-game lineup/);
+    assert.doesNotMatch(nodeText(section), /GROSSI|MOORE|KOWLES/);
+    assert.equal(findNodes(section, (node) => /^team-lineup-forward-slot-\d+$/.test(node.props.testID ?? '')).length, 6);
+    assert.equal(findNodes(section, (node) => /^team-lineup-defence-slot-\d+$/.test(node.props.testID ?? '')).length, 4);
+    assert.equal(findNodes(section, (node) => node.props.testID === 'team-lineup-goalie-slot-0').length, 1);
+  });
+
+  it('renders compact two-team schedule cards with both transparent crests and omits an empty Schedule section', () => {
+    const output = runtime(390).harness.output;
+    const row = findNode(output, (node) => node.props.testID === 'team-schedule-game-g3');
+    assert.match(nodeText(row), /First General London.*vs.*London Eco Metal/i);
+    const rowLogos = findNodes(row, (node) => node.type === 'TeamLogo');
+    assert.deepEqual(rowLogos.map((node) => node.props.teamId), ['team-b', 'team-a']);
+    assert.ok(rowLogos.every((node) => node.props.transparentBacking === true));
+    const empty = runtime(390, { ...snapshot, games: [], collapsedSchedule: [], nextGame: null }).harness.output;
+    assert.equal(findNode(empty, (node) => node.props.testID === 'team-schedule-section'), undefined);
+  });
+
+  it('uses role-specific goalie columns and preserves full metric state text', () => {
+    const metric = (value: number | null, state: string) => ({ value, state, sources: state === 'unknown' ? [] : ['goalie_stats'] });
+    const goalie = { ...roster[0], playerId: 'goalie', name: 'Goalie One', position: 'G', isGoalie: true, publicGoalieMetrics: {
+      gamesPlayed: metric(4, 'recorded'), wins: metric(2, 'recorded'), losses: metric(1, 'recorded'), saves: metric(80, 'recorded'),
+      goalsAgainst: metric(10, 'recorded'), savePercentage: metric(.123, 'conflicted'), goalsAgainstAverage: metric(null, 'conflicted'), shutouts: metric(null, 'unknown'),
+    } };
+    const run = runtime(390, { ...snapshot, roster: [goalie] });
+    findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    const row = findNode(run.harness.render(), (node) => node.props.testID === 'team-roster-player-goalie');
+    assert.match(nodeText(row), /GP4W2L1GAANeeds reviewSV%Needs reviewSO—/);
+    assert.match(row?.props.accessibilityLabel, /goals against average Needs review.*Conflicting records need review.*shutouts —.*Not recorded/i);
+    assert.doesNotMatch(nodeText(row), /PTS|PIM/);
+    const saveCell = findNode(row, (node) => node.props.testID === 'team-roster-stat-goalie-savePercentage');
+    assert.equal(flattenStyle(saveCell?.props.style).flexBasis, '100%');
+  });
+
+  it('uses goalie role for six truthful columns even when canonical goalie metrics are absent', () => {
+    const goalie = { ...roster[0], playerId: 'unknown-goalie', name: 'Unknown Goalie', position: 'G', isGoalie: true, publicGoalieMetrics: null };
+    const run = runtime(320, { ...snapshot, roster: [goalie] });
+    findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    const row = findNode(run.harness.render(), (node) => node.props.testID === 'team-roster-player-unknown-goalie');
+    assert.match(nodeText(row), /GP—W—L—GAA—SV%—SO—/);
+    assert.doesNotMatch(nodeText(row), /PTS|PIM/);
+    const ordinaryCell = findNode(row, (node) => node.props.testID === 'team-roster-stat-unknown-goalie-savePercentage');
+    assert.equal(flattenStyle(ordinaryCell?.props.style).flexBasis, '30%');
+  });
+
+  it('always renders trophy artwork and the exact championship count including zero', () => {
+    const output = runtime(390, { ...snapshot, championships: { count: 0, latestTitleSeasonName: null, latestTitleLabel: null, titleSeasonIds: [] } }).harness.output;
+    const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
+    assert.ok(findNode(hero, (node) => node.type === 'Image' && node.props.source === 2));
+    assert.match(nodeText(hero), /x0/);
+  });
+
+  it('uses tab semantics for the mutually exclusive roster views and lets schedule names wrap', () => {
+    const run = runtime(320);
+    const jerseyToggle = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-jersey-toggle');
+    const statsToggle = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle');
+    assert.equal(jerseyToggle?.props.accessibilityRole, 'tab');
+    assert.equal(statsToggle?.props.accessibilityRole, 'tab');
+    assert.deepEqual(jerseyToggle?.props.accessibilityState, { selected: true });
+    assert.deepEqual(statsToggle?.props.accessibilityState, { selected: false });
+    statsToggle?.props.onPress();
+    const changed = run.harness.render();
+    assert.deepEqual(findNode(changed, (node) => node.props.testID === 'team-roster-jersey-toggle')?.props.accessibilityState, { selected: false });
+    assert.deepEqual(findNode(changed, (node) => node.props.testID === 'team-roster-list-toggle')?.props.accessibilityState, { selected: true });
+    const schedule = findNode(changed, (node) => node.props.testID === 'team-schedule-game-g3');
+    for (const name of findNodes(schedule, (node) => node.type === 'Text' && ['First General London', 'London Eco Metal'].includes(nodeText(node)))) {
+      assert.equal(name.props.numberOfLines, undefined);
+    }
+  });
+
+  it('emits explicit true and false selection state through the installed React Native Web DOM boundary', () => {
+    const run = runtime(320);
+    const dom = (testID: string) => {
+      const node = findNode(run.harness.output, (candidate) => candidate.props.testID === testID);
+      assert.ok(node);
+      const markup = renderToStaticMarkup(React.createElement(nativeWeb.Pressable, node.props, React.createElement(nativeWeb.Text, null, testID)));
+      return markup;
+    };
+    assert.match(dom('team-leader-metric-p'), /aria-selected="true"/);
+    assert.match(dom('team-leader-metric-g'), /aria-selected="false"/);
+    assert.match(dom('team-leader-chart-toggle'), /aria-checked="false"/);
+    assert.match(dom('team-roster-jersey-toggle'), /aria-selected="true"/);
+    assert.match(dom('team-roster-list-toggle'), /aria-selected="false"/);
+
+    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-g')?.props.onPress();
+    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-chart-toggle')?.props.onPress();
+    findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    run.harness.render();
+    assert.match(dom('team-leader-metric-p'), /aria-selected="false"/);
+    assert.match(dom('team-leader-metric-g'), /aria-selected="true"/);
+    assert.match(dom('team-leader-chart-toggle'), /aria-checked="true"/);
+    assert.match(dom('team-roster-jersey-toggle'), /aria-selected="false"/);
+    assert.match(dom('team-roster-list-toggle'), /aria-selected="true"/);
   });
 });

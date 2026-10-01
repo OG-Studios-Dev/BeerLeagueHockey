@@ -138,6 +138,39 @@ describe('Team page public snapshot model', () => {
     assert.equal(snapshot.roster[0].points, null);
   });
 
+  it('excludes private carrier teams from standings, rank, games, and rivals', () => {
+    const model = loadModel();
+    const hidden = [
+      { id: 'free', name: 'Free Agents', team_type: 'free_agents' },
+      { id: 'placeholder', name: 'Holding Team', team_type: 'placeholder' },
+      { id: 'exhibition', name: 'Exhibition Team', team_type: 'exhibition' },
+    ].map((team) => ({ ...baseInput.team, ...team }));
+    const standings = hidden.map((team, index) => ({ ...baseInput.standings[0], team_id: team.id, points: 100 - index }));
+    const games = hidden.map((team, index) => ({ ...baseInput.games[0], id: `hidden-${index}`, away_team_id: team.id }));
+    const snapshot = model.buildTeamPageSnapshot({ ...baseInput, teams: [...baseInput.teams, ...hidden], standings: [...standings, ...baseInput.standings], games });
+    assert.deepEqual(snapshot.standings.map((row: any) => row.teamId), ['team-a', 'team-b']);
+    assert.equal(snapshot.rank, 1);
+    assert.deepEqual(snapshot.games, []);
+    assert.deepEqual(snapshot.rivals, []);
+  });
+
+  it('uses canonical league stats for rival facts and never counts raw carrier rows as appearances', () => {
+    const model = loadModel();
+    const metric = (value: number | null, state = value == null ? 'unknown' : 'recorded') => ({ value, state, sources: value == null ? [] : ['skater_stats'] });
+    const canonical = {
+      players: [{
+        playerId: 'canonical-rival', playerName: 'Canonical Rival', avatarUrl: null, roles: ['skater'],
+        displayTeam: { id: 'team-b', name: 'First General London' }, teams: [{ id: 'team-b', name: 'First General London' }],
+        metrics: { gamesPlayed: metric(3), goals: metric(2), assists: metric(4), points: metric(6), penaltyMinutes: metric(null) }, goalie: null,
+      }],
+    };
+    const carrier = { player_id: 'carrier', team_id: 'team-b', season_id: 'season-a', game_id: 'past-1', goals: 99, assists: 99 };
+    const snapshot = model.buildTeamPageSnapshot({ ...baseInput, playerStats: [carrier], publicLeagueSeasonStats: canonical });
+    assert.deepEqual(snapshot.rivals[0].rival.sniper, { name: 'Canonical Rival', goals: 2 });
+    assert.deepEqual(snapshot.rivals[0].rival.playmaker, { name: 'Canonical Rival', assists: 4 });
+    assert.doesNotMatch(JSON.stringify(snapshot.rivals), /carrier/i);
+  });
+
   it('estimates GP only from public roster and completed-game facts', () => {
     const model = loadModel();
     const completedGames = Array.from({ length: 11 }, (_, index) => ({
@@ -187,7 +220,7 @@ describe('Team page public snapshot model', () => {
     assert.equal(matt.points, 25);
   });
 
-  it('orders tied rivals by their latest meeting and builds canonical single-goalie fallbacks', () => {
+  it('orders tied rivals by their latest meeting and leaves goalie facts unknown without canonical stats', () => {
     const model = loadModel();
     const premier = { id: 'a-premier', league_id: 'league-a', name: 'FitzRays Premier', slug: 'premier', logo_url: null, primary_color: '#C8102E', secondary_color: '#fff' };
     const flyers = { id: 'z-flyers', league_id: 'league-a', name: 'FitzRays Flyers', slug: 'flyers', logo_url: null, primary_color: '#F97316', secondary_color: '#000' };
@@ -241,14 +274,11 @@ describe('Team page public snapshot model', () => {
 
     const snapshot = model.buildTeamPageSnapshot(input, new Date('2026-03-20T12:00:00Z'));
     assert.equal(snapshot.rivals[0].rival.id, 'z-flyers');
-    assert.equal(snapshot.rivals[0].team.tendy.name, 'Steven Wild');
-    assert.equal(snapshot.rivals[0].team.tendy.gamesPlayed, 8);
-    assert.equal(snapshot.rivals[0].team.tendy.goalsAgainstAverage, 3.5);
-    assert.equal(snapshot.rivals[0].rival.tendy.name, 'Connor Flyers');
-    assert.equal(snapshot.rivals[0].rival.tendy.goalsAgainstAverage, 5);
+    assert.deepEqual(snapshot.rivals[0].team.tendy, { name: 'No data', gamesPlayed: null, gamesPlayedProvenance: null, goalsAgainstAverage: null, goalsAgainstAverageProvenance: null });
+    assert.deepEqual(snapshot.rivals[0].rival.tendy, { name: 'No data', gamesPlayed: null, gamesPlayedProvenance: null, goalsAgainstAverage: null, goalsAgainstAverageProvenance: null });
   });
 
-  it('rounds canonical single-goalie team GA/GP to two decimals without contaminating the target roster', () => {
+  it('does not derive goalie appearances from team games when canonical goalie facts are absent', () => {
     const model = loadModel();
     const goalies = ['team-a', 'team-b'].map((team_id, index) => ({ id: `r-goalie-${index}`, player_id: `goalie-${index}`, team_id, league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, is_goalie: true, position: 'Goalie' }));
     const input = {
@@ -257,12 +287,12 @@ describe('Team page public snapshot model', () => {
       games: Array.from({ length: 11 }, (_, index) => ({ ...baseInput.games[0], id: `g-${index}`, home_score: index === 10 ? 4 : 5, away_score: index === 10 ? 5 : 4 })),
     };
     const snapshot = model.buildTeamPageSnapshot(input);
-    assert.deepEqual(snapshot.rivals[0].team.tendy, { name: 'Home Goalie', gamesPlayed: 11, gamesPlayedProvenance: 'estimated', goalsAgainstAverage: 4.09, goalsAgainstAverageProvenance: 'estimated' });
-    assert.deepEqual(snapshot.rivals[0].rival.tendy, { name: 'Away Goalie', gamesPlayed: 11, gamesPlayedProvenance: 'estimated', goalsAgainstAverage: 4.91, goalsAgainstAverageProvenance: 'estimated' });
+    assert.deepEqual(snapshot.rivals[0].team.tendy, { name: 'No data', gamesPlayed: null, gamesPlayedProvenance: null, goalsAgainstAverage: null, goalsAgainstAverageProvenance: null });
+    assert.deepEqual(snapshot.rivals[0].rival.tendy, { name: 'No data', gamesPlayed: null, gamesPlayedProvenance: null, goalsAgainstAverage: null, goalsAgainstAverageProvenance: null });
     assert.deepEqual(snapshot.roster.map((row: any) => row.playerId), ['goalie-0']);
   });
 
-  it('matches the actual web tale-of-the-tape producer for raw leaders, goalie ranking and strength ties', () => {
+  it('does not promote raw rows into rival leaders and preserves canonical strength ties', () => {
     const model = loadModel();
     const web = compileCommonJs<Record<string, (...args: any[]) => any>>(
       new URL('../../../league-sites/src/lib/team-page.ts', import.meta.url),
@@ -289,10 +319,8 @@ describe('Team page public snapshot model', () => {
     input.playerStats.push({ player_id: 'rogue', team_id: 'team-b', player_name: 'Rogue', goals: 999, assists: 999, points: 1998, season_id: 'season-a', game_id: 'next-1' });
     const snapshot = model.buildTeamPageSnapshot(input, new Date('2026-03-20T12:00:00Z'));
     const webStandings = snapshot.standings.map((s: any) => ({ team_id: s.teamId, team_name: s.teamName, team_logo: s.logoUrl, goals_for: s.goalsFor, goals_against: s.goalsAgainst, goal_differential: s.goalDifferential, games_played: s.gamesPlayed, wins: s.wins, losses: s.losses, ties: s.ties, points: s.points }));
-    const expected = web.buildTaleOfTheTapeRivals({ teamId: 'team-a', rivals: [{ team: { id: 'team-b', name: 'First General London', slug: 'fgl', logo: 'rival.png' }, wins: 2, losses: 1, ties: 0, games_played: 3 }], standings: webStandings, skaterRows: skaters, goalieRows: goalies });
-    const facts = (side: any) => ({ overallRecord: side.overallRecord, strength: side.strength, weakness: side.weakness, sniper: side.sniper, playmaker: side.playmaker, tendy: { name: side.tendy.name, gamesPlayed: side.tendy.gamesPlayed, goalsAgainstAverage: side.tendy.goalsAgainstAverage } });
-    assert.deepEqual(facts(snapshot.rivals[0].team), facts(expected[0].team));
-    assert.deepEqual(facts(snapshot.rivals[0].rival), facts(expected[0].rival));
+    assert.deepEqual(snapshot.rivals[0].team.sniper, { name: 'No data', goals: null });
+    assert.deepEqual(snapshot.rivals[0].rival.playmaker, { name: 'No data', assists: null });
     assert.equal(snapshot.roster.length, 0, 'stats-only leaders cannot become current roster members');
 
     const tied = [

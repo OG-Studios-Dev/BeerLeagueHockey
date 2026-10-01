@@ -144,6 +144,9 @@ describe('shell form exits', () => {
         'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
         '@expo/vector-icons': { Ionicons: (props: Record<string, unknown>) => createElement('Ionicons', props) },
         '../components/Avatar': () => null, '../components/BrandAtmosphere': () => null,
+        '../components/PlayerProfile/CareerTrendChart': () => null,
+        '../components/PlayerProfile/PlayerPortrait': () => null,
+        '../components/PlayerProfile/SeasonPicker': () => null,
         '../components/SectionHeader': () => null, '../components/TeamLogo': () => null,
         '../lib/supabase/playerPage': { loadHockeyLifePlayerPage: async () => ({
           playerId: 'synthetic-player', rosterId: 'roster-1', fullName: 'Synthetic Player', photoUrl: null,
@@ -161,6 +164,6 @@ describe('shell form exits', () => {
     const share = findNode(harness.output, (node) => node.props.accessibilityLabel === 'Share player card');
     assert.ok(share);
     await share.props.onPress();
-    assert.deepEqual(shares, [{ title: 'Synthetic Player · Hockey Life Player', message: 'Synthetic Player · Hockey Life Player\nCareer stats and history in the Hockey Life app.' }]);
+    assert.deepEqual(shares, [{ title: 'Synthetic Player · Hockey Life Player', message: 'Synthetic Player · Hockey Life Player\nCareer stats and history: https://hockey-life.beerleaguehockey.ca/hockey-life/players/synthetic-player?season=all' }]);
   });
 });

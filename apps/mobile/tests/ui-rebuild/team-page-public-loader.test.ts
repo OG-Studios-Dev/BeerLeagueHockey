@@ -101,11 +101,16 @@ function createSupabase(dataset: Dataset, fail?: (query: RecordedQuery) => strin
 }
 
 const activeSeason = { id: 'season-current', league_id: 'league-a', name: 'Fall 2026', status: 'active', start_date: '2026-08-01', end_date: null };
-const canonicalPublicStats = async () => ({ players: [{ playerId: 'player-a', playerName: 'Matt Current', avatarUrl: 'matt.jpg', roles: ['skater'], metrics: {
-  gamesPlayed: { value: 2, state: 'recorded', sources: ['skater_stats'] }, goals: { value: 2, state: 'recorded', sources: ['skater_stats'] },
-  assists: { value: 1, state: 'recorded', sources: ['skater_stats'] }, points: { value: 3, state: 'recorded', sources: ['skater_stats'] },
-  penaltyMinutes: { value: 4, state: 'reported', sources: ['skater_stats'] },
-}, goalie: null }] });
+const canonicalPublicStats = async (_slug: string, _leagueId: string, _seasonId: string, _divisionId: string | null, teamId?: string | null) => {
+  const metric = (value: number | null, source = 'goalie_stats') => ({ value, state: value == null ? 'unknown' : 'recorded', sources: value == null ? [] : [source] });
+  const skater = { playerId: 'player-a', playerName: 'Matt Current', avatarUrl: 'matt.jpg', roles: ['skater'], displayTeam: { id: 'team-a', name: 'Team A' }, teams: [{ id: 'team-a', name: 'Team A' }], metrics: {
+    gamesPlayed: metric(2, 'skater_stats'), goals: metric(2, 'skater_stats'), assists: metric(1, 'skater_stats'), points: metric(3, 'skater_stats'), penaltyMinutes: { value: 4, state: 'reported', sources: ['skater_stats'] },
+  }, goalie: null };
+  const goalie = { playerId: 'goalie-b', playerName: 'Connor Current', avatarUrl: 'connor.jpg', roles: ['goalie'], displayTeam: { id: 'team-b', name: 'Team B' }, teams: [{ id: 'team-b', name: 'Team B' }], metrics: {
+    gamesPlayed: metric(null), goals: metric(null), assists: metric(null), points: metric(null), penaltyMinutes: metric(null),
+  }, goalie: { gamesPlayed: metric(2), wins: metric(1), losses: metric(1), saves: metric(null), goalsAgainst: metric(8), savePercentage: metric(null), goalsAgainstAverage: metric(4), shutouts: metric(0) } };
+  return { players: teamId ? [skater] : [skater, goalie] };
+};
 
 function fixture(): Dataset {
   const dummyStats = Array.from({ length: 1000 }, (_, index) => ({
