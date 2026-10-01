@@ -1007,7 +1007,6 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
                     <FocusCard
                       key={`${team.leagueId}-${team.teamId}`}
                       focusId={`profile:team:${team.leagueId}:${team.teamId}`}
-                      accentColor={accentColor}
                       style={[
                         styles.currentTeamCard,
                         {

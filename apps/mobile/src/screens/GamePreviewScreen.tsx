@@ -266,7 +266,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <FocusScrollView contentContainerStyle={styles.scrollContent}>
         {/* Hero */}
-        <FocusCard focusId={`preview:${gameId}:hero`} accentColor={awayColor} style={styles.heroCard}>
+        <FocusCard focusId={`preview:${gameId}:hero`} style={styles.heroCard}>
           <View style={[styles.teamStrip, { backgroundColor: awayColor + '33' }]}>
             <Text style={[styles.teamHeroLabel, { color: awayColor }]}>AWAY</Text>
             <TeamLogo
@@ -328,7 +328,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
         {(status === 'Final' || status === 'Live') &&
           game.away_score != null &&
           game.home_score != null && (
-            <FocusCard focusId={`preview:${gameId}:score`} accentColor={homeColor} style={styles.scoreCard}>
+            <FocusCard focusId={`preview:${gameId}:score`} style={styles.scoreCard}>
               <View style={styles.scoreTeamCol}>
                 <Text style={styles.scoreTeamName}>{awayName}</Text>
                 <Text style={[styles.bigScore, { color: awayColor }]}>{game.away_score}</Text>

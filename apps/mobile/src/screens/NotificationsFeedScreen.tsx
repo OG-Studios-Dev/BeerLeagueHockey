@@ -681,7 +681,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
           {filteredStandings.length > 0 ? (
             <View style={styles.teamWatchGrid}>
               {filteredStandings.slice(0, 6).map((team) => (
-                <FocusCard key={team.teamId} focusId={`notifications:team:${team.leagueId}:${team.teamId}`} accentColor={team.teamPrimaryColor ?? colors.primary}>
+                <FocusCard key={team.teamId} focusId={`notifications:team:${team.leagueId}:${team.teamId}`}>
                   <Pressable
                     style={styles.teamWatchCard}
                     onPress={() => {

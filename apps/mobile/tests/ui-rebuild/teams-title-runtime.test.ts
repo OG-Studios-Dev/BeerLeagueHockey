@@ -10,12 +10,13 @@ function allNodes(root: unknown): TestNode[] {
   return [node, ...allNodes(node.props.children)];
 }
 
-it('mounts both the registered Teams navigator title and the handwritten Teams screen title', () => {
+it('mounts exactly one full-composition Teams title across every directory state', () => {
   const harness = createHookHarness();
   const passthrough = ({ children }: { children?: unknown }) => children ?? null;
   const teams = Array.from({ length: 4 }, (_, index) => ({
     id: `team-${index + 1}`, name: `Team ${index + 1}`, logoUrl: null, primaryColor: '#6046A8',
   }));
+  let pageState: Record<string, unknown> = { loading: false, error: null, retry: () => undefined, data: { league: { id: 'league-a' }, selectedSeason: { id: 'season-a' }, teams } };
   const TeamsDirectory = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
     new URL('../../src/screens/league-pages/TeamsDirectoryScreen.tsx', import.meta.url),
     {
@@ -27,7 +28,7 @@ it('mounts both the registered Teams navigator title and the handwritten Teams s
         LeaguePageFrame: ({ children }: { children?: unknown }) => createElement('LeaguePageFrame', null, children),
         PageLoadState: () => createElement('PageLoadState', null),
         useLeaguePageScope: () => ({ leagueId: 'league-a', leagueSlug: 'league-a' }),
-        useLeaguePage: () => ({ loading: false, error: null, retry: () => undefined, data: { league: { id: 'league-a' }, selectedSeason: { id: 'season-a' }, teams } }),
+        useLeaguePage: () => pageState,
       },
     },
   ).default;
@@ -68,7 +69,19 @@ it('mounts both the registered Teams navigator title and the handwritten Teams s
   const navigatorHeader = teamsRoute.props.options.header({ navigation: { goBack: () => undefined }, back: undefined });
   assert.equal(findNode(navigatorHeader, (node) => node.type === 'CutIceTitle')?.props.title, 'Teams');
 
-  const screen = teamsRoute.props.component({ route: { params: { leagueId: 'league-a' } }, navigation: { navigate: () => undefined } });
-  const handwrittenHeaders = allNodes(screen).filter((node) => node.props.accessibilityRole === 'header' && nodeText(node) === 'Teams');
-  assert.equal(handwrittenHeaders.length, 1);
+  const props = { route: { params: { leagueId: 'league-a' } }, navigation: { navigate: () => undefined } };
+  const render = () => teamsRoute.props.component(props);
+  const fullCompositionTitleCount = (screen: unknown) => 1 + allNodes(screen).filter((node) => node.props.accessibilityRole === 'header' && nodeText(node) === 'Teams').length;
+
+  const loaded = render();
+  assert.equal(fullCompositionTitleCount(loaded), 1);
+  const destinations = allNodes(loaded).filter((node) => node.props.accessibilityRole === 'button');
+  assert.equal(destinations.length, 4);
+  assert.deepEqual(destinations.map((node) => node.props.accessibilityLabel), teams.map((team) => team.name));
+
+  for (pageState of [
+    { loading: true, error: null, retry: () => undefined, data: null },
+    { loading: false, error: 'Unavailable', retry: () => undefined, data: null },
+    { loading: false, error: null, retry: () => undefined, data: { league: { id: 'league-a' }, selectedSeason: null, teams: [] } },
+  ]) assert.equal(fullCompositionTitleCount(render()), 1);
 });

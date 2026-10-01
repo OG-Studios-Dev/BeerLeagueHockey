@@ -184,7 +184,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
         <SectionHeader title="Your Teams" />
 
         {captainTeams.map((team) => (
-          <FocusCard key={`${team.teamId}-${team.leagueId}`} focusId={`captain-team:${team.leagueId}:${team.teamId}`} accentColor={team.teamPrimaryColor ?? colors.primary} style={styles.teamCard}>
+          <FocusCard key={`${team.teamId}-${team.leagueId}`} focusId={`captain-team:${team.leagueId}:${team.teamId}`} style={styles.teamCard}>
             <LinearGradient
               colors={[`${team.teamPrimaryColor ?? colors.primary}12`, 'transparent']}
               start={{ x: 0, y: 0 }}

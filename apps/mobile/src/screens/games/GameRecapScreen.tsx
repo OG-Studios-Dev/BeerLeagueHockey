@@ -170,7 +170,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Score Hero */}
-        <FocusCard focusId={`recap:${gameId}:score`} accentColor={awayColor} style={styles.scoreCard}>
+        <FocusCard focusId={`recap:${gameId}:score`} style={styles.scoreCard}>
           <LinearGradient
             colors={[`${awayColor}18`, 'transparent', `${homeColor}18`]}
             start={{ x: 0, y: 0 }}

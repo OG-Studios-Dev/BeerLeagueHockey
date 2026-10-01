@@ -97,11 +97,12 @@ async function renderStandings() {
 describe('league page polish runtime', () => {
   it('renders Teams as four canonical accessible logo destinations only', () => {
     const output = renderTeamsDirectory();
-    assert.equal(nodeText(output), 'Teams');
+    assert.equal(nodeText(output), '');
     const destinations = allNodes(output).filter((node) => node.props.accessibilityRole === 'button');
     assert.equal(destinations.length, 4);
     assert.deepEqual(destinations.map((node) => node.props.accessibilityLabel), teams.map((team) => team.name));
     assert.equal(allNodes(output).filter((node) => node.type === 'TeamLogo').length, 4);
+    assert.ok(allNodes(output).filter((node) => node.type === 'FocusCard').every((node) => node.props.accentColor === undefined));
   });
 
   it('renders standings with playoff picture, honest predictor, completion chart, and the single positioning chart', async () => {
