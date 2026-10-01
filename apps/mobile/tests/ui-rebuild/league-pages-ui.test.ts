@@ -27,19 +27,22 @@ describe('native league page source binding', () => {
     assert.doesNotMatch(teams, /WebView|Linking\.openURL/);
   });
 
-  it('renders a seasonal roster directory with native player/team drilldowns and resilient filters', () => {
+  it('renders the league-wide web-parity directory with virtualized photo cards and native drilldowns', () => {
     const players = source('../../src/screens/league-pages/PlayersDirectoryScreen.tsx');
-    assert.match(players, /filterPlayers/);
-    assert.match(players, /reconcilePlayerFilters/);
-    assert.match(players, /Search name or jersey/);
+    assert.match(players, /usePlayersDirectory/);
+    assert.match(players, /buildPlayersDirectoryView/);
+    assert.match(players, /Search players by name or jersey number/);
     assert.match(players, /All Teams/);
     assert.match(players, /All Positions/);
     assert.match(players, /jerseyNumber === null/);
     assert.match(players, /Captain|Alternate Captain/);
-    assert.match(players, /Avatar/);
+    assert.match(players, /FocusFlatList/);
+    assert.match(players, /numColumns=\{2\}/);
+    assert.match(players, /resizeMode="cover"/);
     assert.match(players, /TeamLogo/);
     assert.match(players, /LeaguePlayerCard/);
     assert.match(players, /LeagueTeamDetail/);
+    assert.doesNotMatch(players, /SeasonPicker|Seasonal roster/);
     assert.doesNotMatch(players, /WebView|Linking\.openURL/);
   });
 

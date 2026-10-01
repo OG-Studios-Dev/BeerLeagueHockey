@@ -1,110 +1,201 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import Avatar from '../../components/Avatar';
-import { FocusCard } from '../../components/CardFocus';
+import { FocusCard, FocusFlatList } from '../../components/CardFocus';
 import TeamLogo from '../../components/TeamLogo';
-import { filterPlayerMemberships, filterPlayers, reconcilePlayerFilters, type PlayerFilters } from '../../lib/leaguePagesModel';
+import { usePlayersDirectory } from '../../hooks/usePlayersDirectory';
+import { BLH_DEFAULT_PLAYER_AVATAR_URL } from '../../lib/imagePlaceholders';
+import { buildPlayersDirectoryView, type DirectoryFilters, type DirectoryMembership } from '../../lib/playersDirectory';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
-import { commonStyles, DivisionPicker, FilterChips, LeaguePageFrame, PageHeader, PageLoadState, SeasonPicker, useLeaguePage, useLeaguePageScope } from './LeaguePageCommon';
+import { LeaguePageFrame, PageLoadState, useLeaguePageScope } from './LeaguePageCommon';
 
 type Props = NativeStackScreenProps<LeaguePagesStackParamList, 'PlayersDirectory'>;
+type Option = { id: string | null; label: string };
+type PortraitState = { stage: 'photo' | 'placeholder' | 'fallback'; uri: string | null };
 
-function leadershipLabel(role: string | null) {
-  if (role === 'captain') return 'Captain';
-  if (role === 'alternate_captain') return 'Alternate Captain';
-  return role ? role.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : null;
+function portraitState(photoUrl: string | null): PortraitState {
+  if (photoUrl && photoUrl !== BLH_DEFAULT_PLAYER_AVATAR_URL) return { stage: 'photo', uri: photoUrl };
+  return { stage: 'placeholder', uri: BLH_DEFAULT_PLAYER_AVATAR_URL };
+}
+
+function PlayerPortrait({ player, size }: { player: DirectoryMembership; size: number }) {
+  const [portrait, setPortrait] = React.useState<PortraitState>(() => portraitState(player.photoUrl));
+  React.useEffect(() => setPortrait(portraitState(player.photoUrl)), [player.photoUrl]);
+  const initials = player.fullName.split(/\s+/).filter(Boolean).map((word) => word[0]).join('').toUpperCase().slice(0, 2) || '•';
+  const failedStage = portrait.stage;
+  const failedUri = portrait.uri;
+  return (
+    <View style={[styles.portraitFrame, { width: size, height: size }]}>
+      {portrait.stage === 'fallback' ? (
+        <View accessibilityRole="image" accessibilityLabel={`${player.fullName} photo`} style={styles.portraitFallback}>
+          <Text maxFontSizeMultiplier={1.4} style={[styles.portraitInitials, { fontSize: size * 0.28 }]}>{initials}</Text>
+        </View>
+      ) : (
+        <Image alt={`${player.fullName} photo`} accessibilityLabel={`${player.fullName} photo`} resizeMode="cover" source={{ uri: portrait.uri as string }} style={styles.portrait}
+          onError={() => setPortrait((current) => {
+            if (current.stage !== failedStage || current.uri !== failedUri) return current;
+            return current.stage === 'photo'
+              ? { stage: 'placeholder', uri: BLH_DEFAULT_PLAYER_AVATAR_URL }
+              : { stage: 'fallback', uri: null };
+          })} />
+      )}
+      {player.jerseyNumber === null ? null : <View style={styles.jerseyBadge}><Text style={styles.jerseyText}>#{player.jerseyNumber}</Text></View>}
+      {player.leadershipRole === 'captain' || player.leadershipRole === 'alternate_captain' ? (
+        <View style={styles.roleBadge} accessibilityLabel={player.leadershipRole === 'captain' ? 'Captain' : 'Alternate captain'}>
+          <Text style={styles.roleText}>{player.leadershipRole === 'captain' ? 'C' : 'A'}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function DirectorySelect({ label, selectedLabel, options, onSelect }: { label: string; selectedLabel: string; options: Option[]; onSelect: (id: string | null) => void }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${label}, ${selectedLabel}`} accessibilityHint="Opens selection list"
+        onPress={() => setOpen(true)} style={({ pressed }) => [styles.select, pressed && styles.pressed]}>
+        <Text numberOfLines={1} style={styles.selectText}>{selectedLabel}</Text>
+        <Ionicons name="chevron-down" size={16} color={colors.textPrimary} />
+      </Pressable>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <SafeAreaView style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text accessibilityRole="header" style={styles.modalTitle}>{label}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Close ${label}`} onPress={() => setOpen(false)} style={styles.modalClose}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+            <FocusFlatList data={options} keyExtractor={(item) => item.id ?? 'all'} initialNumToRender={12}
+              renderItem={({ item }) => {
+                const selected = item.label === selectedLabel;
+                return <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={() => { onSelect(item.id); setOpen(false); }}
+                  style={[styles.modalOption, selected && styles.modalOptionSelected]}>
+                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{item.label}</Text>
+                  {selected ? <Ionicons name="checkmark" size={20} color={colors.textInteractive} /> : null}
+                </Pressable>;
+              }} />
+          </View>
+        </SafeAreaView>
+      </Modal>
+    </>
+  );
+}
+
+function PlayerCard({ player, width, leagueId, navigation }: { player: DirectoryMembership; width: number; leagueId: string; navigation: Props['navigation'] }) {
+  return (
+    <FocusCard focusId={`league-players:${leagueId}:${player.id}`} style={[styles.card, { width }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${player.fullName}, view player card`}
+        onPress={() => navigation.navigate('LeaguePlayerCard', { playerId: player.id, leagueId })}>
+        <PlayerPortrait player={player} size={width} />
+        <View style={styles.cardBody}>
+          <Text numberOfLines={2} maxFontSizeMultiplier={1.5} style={styles.playerName}>{player.fullName}</Text>
+        </View>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${player.teamName}, view team`}
+        onPress={() => navigation.navigate('LeagueTeamDetail', { teamId: player.teamId, leagueId })} style={[styles.teamLink, !player.position && styles.teamLinkLast]}>
+        <TeamLogo teamId={player.teamId} logoUrl={player.teamLogoUrl} teamName={player.teamName} primaryColor={player.teamPrimaryColor} size={32} transparentBacking />
+        <Text numberOfLines={2} maxFontSizeMultiplier={1.4} style={styles.teamName}>{player.teamName}</Text>
+      </Pressable>
+      {player.position ? <View style={styles.positionPill}><Text style={styles.positionText}>{player.position}</Text></View> : null}
+    </FocusCard>
+  );
 }
 
 export default function PlayersDirectoryScreen({ route, navigation }: Props) {
   const scope = useLeaguePageScope(route.params);
-  const page = useLeaguePage(scope, 'players');
-  const [filters, setFilters] = React.useState<Required<PlayerFilters>>({ search: '', divisionId: null, teamId: null, position: null });
-  const playerRows = page.data?.players;
-  React.useEffect(() => {
-    setFilters((current) => playerRows ? reconcilePlayerFilters(playerRows, current) : { search: '', divisionId: null, teamId: null, position: null });
-  }, [playerRows, scope.leagueId]);
+  const directory = usePlayersDirectory(scope);
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth = (windowWidth - 32 - 16) / 2;
+  const [filters, setFilters] = React.useState<DirectoryFilters>({ search: '', divisionId: null, teamId: null, position: null });
+  React.useEffect(() => setFilters({ search: '', divisionId: null, teamId: null, position: null }), [scope.leagueId, scope.leagueSlug]);
 
-  if (!page.data) return <LeaguePageFrame><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
-  const data = page.data;
-  if (!data.selectedSeason) return <LeaguePageFrame><PageHeader eyebrow="Seasonal roster" title="Players" detail={data.league.name} /><SeasonPicker seasons={data.seasons} selected={null} onSelect={page.selectSeason} /><PageLoadState loading={false} error={null} noSeason retry={page.retry} /></LeaguePageFrame>;
-  const players = filterPlayers(data.players, filters);
-  const memberships = filterPlayerMemberships(data.players, filters);
-  const teamOptions = data.teams.filter((team) => !filters.divisionId || team.divisionId === filters.divisionId);
-  const positionOptions = [...new Set(data.players
-    .filter((row) => (!filters.divisionId || row.divisionId === filters.divisionId) && (!filters.teamId || row.teamId === filters.teamId))
-    .map((row) => row.position).filter((value): value is string => Boolean(value)))]
-    .sort().map((name) => ({ id: name, name }));
-  const historical = data.selectedSeason.id !== page.defaultSeasonId;
-  const update = (next: PlayerFilters) => setFilters((current) => reconcilePlayerFilters(data.players, { ...current, ...next }));
+  if (!directory.data) return <LeaguePageFrame><PageLoadState loading={directory.loading} error={directory.error} noSeason={false} retry={directory.retry} /></LeaguePageFrame>;
 
-  return (
-    <LeaguePageFrame>
-      <PageHeader eyebrow="Seasonal roster" title="Player Directory" detail={`${players.length} player${players.length === 1 ? '' : 's'} across ${new Set(memberships.map((row) => row.teamId)).size} team${new Set(memberships.map((row) => row.teamId)).size === 1 ? '' : 's'} — ${data.selectedSeason.name}`} />
-      <SeasonPicker seasons={data.seasons} selected={data.selectedSeason.id} onSelect={page.selectSeason} />
-      <View style={styles.searchWrap}>
-        <Text style={styles.controlLabel}>Search</Text>
-        <TextInput accessibilityLabel="Search name or jersey" placeholder="Search name or jersey" placeholderTextColor={colors.textSecondary} value={filters.search} onChangeText={(search) => setFilters((current) => ({ ...current, search }))} autoCapitalize="none" style={styles.search} />
-      </View>
-      <DivisionPicker divisions={data.divisions} selected={filters.divisionId} onSelect={(divisionId) => update({ divisionId, teamId: null })} />
-      <View style={styles.filterBlock}><Text style={styles.controlLabel}>Team</Text><FilterChips items={teamOptions} selectedId={filters.teamId} allLabel="All Teams" onSelect={(teamId) => update({ teamId })} /></View>
-      <View style={styles.filterBlock}><Text style={styles.controlLabel}>Position</Text><FilterChips items={positionOptions} selectedId={filters.position} allLabel="All Positions" onSelect={(position) => update({ position })} /></View>
-      {(filters.search || filters.divisionId || filters.teamId || filters.position) ? (
-        <Pressable accessibilityRole="button" onPress={() => setFilters({ search: '', divisionId: null, teamId: null, position: null })} style={styles.clear}><Text style={styles.clearText}>Clear filters</Text></Pressable>
-      ) : null}
+  const data = directory.data;
+  const view = buildPlayersDirectoryView(data, filters);
+  const selectedTeam = data.teams.find((team) => team.id === filters.teamId)?.name ?? 'All Teams';
+  const selectedPosition = filters.position ?? 'All Positions';
+  const teamOptions: Option[] = [{ id: null, label: 'All Teams' }, ...view.teamOptions.map((team) => ({ id: team.id, label: team.name }))];
+  const positionOptions: Option[] = [{ id: null, label: 'All Positions' }, ...view.positions.map((position) => ({ id: position, label: position }))];
+  const filtered = Boolean(filters.search || filters.teamId || filters.position || filters.divisionId);
+  const reset = () => setFilters({ search: '', divisionId: null, teamId: null, position: null });
+  const header = <View style={styles.header}>
+    <Text style={styles.summary}>{view.players.length} player{view.players.length === 1 ? '' : 's'} across {view.teamCount} team{view.teamCount === 1 ? '' : 's'}</Text>
+    {data.omittedOrphanRows ? <Text style={styles.integrityNote}>{data.omittedOrphanRows} roster {data.omittedOrphanRows === 1 ? 'entry is' : 'entries are'} unavailable because no canonical player profile is attached.</Text> : null}
+    <View style={styles.searchWrap}>
+      <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
+      <TextInput accessibilityLabel="Search players by name or jersey number" placeholder="Search players by name or jersey number…"
+        placeholderTextColor={colors.textSecondary} value={filters.search} onChangeText={(search) => setFilters((current) => ({ ...current, search }))}
+        autoCapitalize="none" returnKeyType="search" style={styles.search} />
+    </View>
+    <View style={styles.filterRow}>
+      <View style={styles.filterLabelWrap}><Ionicons name="filter-outline" size={17} color={colors.textSecondary} /><Text style={styles.filterLabel}>Filter by:</Text></View>
+      <DirectorySelect label="Filter by team" selectedLabel={selectedTeam} options={teamOptions} onSelect={(teamId) => setFilters((current) => ({ ...current, teamId }))} />
+      <DirectorySelect label="Filter by position" selectedLabel={selectedPosition} options={positionOptions} onSelect={(position) => setFilters((current) => ({ ...current, position }))} />
+    </View>
+    {filtered ? <Pressable accessibilityRole="button" onPress={reset} style={styles.clear}><Text style={styles.clearText}>Clear filters</Text></Pressable> : null}
+  </View>;
 
-      <View style={commonStyles.section}>
-        {historical ? <Text style={styles.historyLinks}>Player cards and team links below open current-season native detail pages.</Text> : null}
-        {players.length === 0 ? <View style={styles.empty}><Text style={styles.emptyTitle}>No players found</Text><Text style={styles.muted}>Try adjusting your roster filters.</Text></View> : players.map((player) => {
-          const playerMemberships = memberships.filter((row) => row.id === player.id);
-          return (
-            <FocusCard key={player.id} focusId={`league-players:${data.league.id}:${player.id}`} style={[commonStyles.card, styles.playerCard]}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`${player.fullName}, ${historical ? 'View current player card' : 'View player card'}`} onPress={() => navigation.navigate('LeaguePlayerCard', { playerId: player.id, leagueId: data.league.id })} style={styles.playerTop}>
-                <Avatar uri={player.photoUrl} name={player.fullName} size={62} borderColor={colors.glassStrokeStrong} />
-                <View style={styles.playerIdentity}>
-                  <Text style={styles.playerName}>{player.fullName}</Text>
-                  <Text style={styles.meta}>{player.jerseyNumber === null ? 'Jersey —' : `#${player.jerseyNumber}`} · {player.position ?? 'Position not listed'}</Text>
-                  {leadershipLabel(player.leadershipRole) ? <Text style={styles.captain}>{leadershipLabel(player.leadershipRole)}</Text> : null}
-                  {historical ? <Text style={styles.currentNote}>Opens current player card</Text> : null}
-                </View>
-              </Pressable>
-              <View style={styles.memberships}>
-                {playerMemberships.map((membership) => (
-                  <Pressable key={membership.teamId} accessibilityRole="button" accessibilityLabel={`${membership.teamName}, View current roster`} onPress={() => navigation.navigate('LeagueTeamDetail', { teamId: membership.teamId, leagueId: data.league.id })} style={styles.teamLink}>
-                    <TeamLogo teamId={membership.teamId} logoUrl={membership.teamLogoUrl} teamName={membership.teamName} size={30} transparentBacking />
-                    <Text numberOfLines={2} style={styles.teamLinkText}>{membership.teamName}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </FocusCard>
-          );
-        })}
-      </View>
-    </LeaguePageFrame>
-  );
+  return <LeaguePageFrame scrollable={false}>
+    <FocusFlatList data={view.players} numColumns={2} keyExtractor={(player) => player.id}
+      focusScopeKey={`league-players:${data.league.id}`} focusKeyExtractor={(player) => `league-players:${data.league.id}:${player.id}`}
+      ListHeaderComponent={header}
+      ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyTitle}>No players found</Text><Text style={styles.emptyText}>Try another name, jersey number, team, or position.</Text>{filtered ? <Pressable accessibilityRole="button" onPress={reset} style={styles.emptyReset}><Text style={styles.clearText}>Reset filters</Text></Pressable> : null}</View>}
+      columnWrapperStyle={styles.columns} contentContainerStyle={styles.content} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} removeClippedSubviews
+      renderItem={({ item }) => <PlayerCard player={item} width={cardWidth} leagueId={data.league.id} navigation={navigation} />} />
+  </LeaguePageFrame>;
 }
 
 const styles = StyleSheet.create({
-  searchWrap: { marginTop: 18 },
-  controlLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 1.3, textTransform: 'uppercase', marginBottom: 8 },
-  search: { minHeight: 50, borderRadius: 15, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgInteractive, color: colors.textPrimary, fontSize: 16, paddingHorizontal: 15 },
-  filterBlock: { marginTop: 18 },
-  clear: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', marginTop: 12, paddingHorizontal: 4 },
+  content: { paddingHorizontal: 16, paddingBottom: 24 },
+  header: { paddingTop: 8, paddingBottom: 24 },
+  summary: { color: colors.textSecondary, fontSize: 15, lineHeight: 22 },
+  integrityNote: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 5 },
+  searchWrap: { minHeight: 50, marginTop: 18, justifyContent: 'center' },
+  searchIcon: { position: 'absolute', left: 16, zIndex: 1 },
+  search: { minHeight: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: '#091423', color: colors.textPrimary, fontSize: 16, paddingLeft: 48, paddingRight: 16 },
+  filterRow: { marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  filterLabelWrap: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  filterLabel: { color: colors.textSecondary, fontSize: 14 },
+  select: { minHeight: 44, maxWidth: 230, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderRadius: 9, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: '#091423', paddingHorizontal: 14 },
+  selectText: { flexShrink: 1, color: colors.textPrimary, fontSize: 14 },
+  pressed: { opacity: 0.72 },
+  clear: { minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' },
   clearText: { color: colors.textInteractive, fontWeight: '800' },
-  playerCard: { marginBottom: 12 },
-  playerTop: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 13 },
-  playerIdentity: { flex: 1, minWidth: 0 },
-  playerName: { color: colors.textPrimary, fontSize: 18, lineHeight: 23, fontWeight: '900' },
-  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 3 },
-  captain: { color: colors.textInteractive, fontSize: 12, fontWeight: '900', marginTop: 4 },
-  currentNote: { color: colors.textSecondary, fontSize: 11, fontStyle: 'italic', marginTop: 4 },
-  memberships: { marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.glassStroke, paddingTop: 8, gap: 6 },
-  teamLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 12, paddingHorizontal: 6 },
-  teamLinkText: { flex: 1, color: colors.textInteractive, fontSize: 13, fontWeight: '800' },
-  empty: { minHeight: 220, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  columns: { justifyContent: 'space-between', gap: 16, marginBottom: 16 },
+  card: { overflow: 'hidden', borderRadius: 26, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: 'rgba(5, 12, 22, 0.96)' },
+  portraitFrame: { position: 'relative', overflow: 'hidden', backgroundColor: colors.bgInteractive },
+  portrait: { width: '100%', height: '100%' },
+  portraitFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgInteractive },
+  portraitInitials: { color: colors.textPrimary, fontWeight: '900' },
+  jerseyBadge: { position: 'absolute', top: 8, left: 8, borderRadius: 8, backgroundColor: 'rgba(3, 9, 18, 0.84)', paddingHorizontal: 8, paddingVertical: 4 },
+  jerseyText: { color: colors.textPrimary, fontSize: 14, fontWeight: '900' },
+  roleBadge: { position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brandGold },
+  roleText: { color: '#10141B', fontSize: 14, fontWeight: '900' },
+  cardBody: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+  playerName: { minHeight: 40, color: colors.textPrimary, fontSize: 16, lineHeight: 20, fontWeight: '600' },
+  positionPill: { alignSelf: 'flex-start', marginLeft: 16, marginBottom: 14, borderRadius: 5, backgroundColor: colors.bgInteractive, paddingHorizontal: 8, paddingVertical: 3 },
+  positionText: { color: colors.textSecondary, fontSize: 12 },
+  teamLink: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 10, paddingHorizontal: 6, borderRadius: 10 },
+  teamLinkLast: { marginBottom: 10 },
+  teamName: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 16 },
+  empty: { minHeight: 280, alignItems: 'center', justifyContent: 'center', padding: 24 },
   emptyTitle: { color: colors.textPrimary, fontSize: 19, fontWeight: '900' },
-  muted: { color: colors.textSecondary, textAlign: 'center', marginTop: 7 },
-  historyLinks: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, fontStyle: 'italic', marginBottom: 12 },
+  emptyText: { color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginTop: 7 },
+  emptyReset: { minHeight: 44, justifyContent: 'center', marginTop: 8 },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.72)' },
+  modalSheet: { maxHeight: '78%', minHeight: 260, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: '#0A1628', paddingHorizontal: 16, paddingBottom: 18 },
+  modalHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: { color: colors.textPrimary, fontSize: 19, fontWeight: '900' },
+  modalClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.bgInteractive },
+  modalOption: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 10, paddingHorizontal: 14 },
+  modalOptionSelected: { backgroundColor: colors.bgInteractive },
+  modalOptionText: { flex: 1, color: colors.textPrimary, fontSize: 16 },
+  modalOptionTextSelected: { color: colors.textInteractive, fontWeight: '800' },
 });

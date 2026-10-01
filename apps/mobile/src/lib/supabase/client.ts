@@ -108,3 +108,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false, // No URL-based auth in native
   },
 });
+
+// Public directory reads must never inherit, refresh, or persist the signed-in session.
+export const publicSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+    detectSessionInUrl: false,
+  },
+});
