@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL as NodeURL } from 'node:url';
 import { it } from 'node:test';
 import ts from 'typescript';
 
 function explicitFocusAccents(relativePath: string) {
-  const path = fileURLToPath(new URL(`../../src/${relativePath}`, import.meta.url));
+  const path = fileURLToPath(new NodeURL(`../../src/${relativePath}`, import.meta.url));
   const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const callers: string[] = [];
   const visit = (node: ts.Node) => {
