@@ -1,4 +1,4 @@
-import { supabase } from './supabase/client';
+import { publicSupabase } from './supabase/client';
 
 export const HOCKEY_LIFE_NEWSPAPER_LEAGUE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 export const HOCKEY_LIFE_NEWSPAPER_LEAGUE_SLUG = 'hockey-life';
@@ -90,7 +90,7 @@ export function validatePublishedNewspaperEdition(value: unknown, expectedLeague
 }
 
 async function queryPublishedEdition(articleId: string, leagueId: string) {
-  return (supabase as unknown as { from(table: string): QueryBuilder }).from('newspaper_editions')
+  return (publicSupabase as unknown as { from(table: string): QueryBuilder }).from('newspaper_editions')
     .select('article_id,league_id,status,published_at,edition_json')
     .eq('article_id', articleId).eq('league_id', leagueId).eq('status', 'published').maybeSingle();
 }

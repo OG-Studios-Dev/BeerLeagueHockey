@@ -39,7 +39,10 @@ describe('published newspaper structured read contract', () => {
       eq(column: string, value: string) { calls.push(['eq', column, value]); return query; },
       maybeSingle: async () => ({ data: { article_id: articleId, league_id: leagueId, status: 'published', published_at: '2026-09-21T12:00:00Z', edition_json: edition() }, error: null }),
     };
-    const reader = compileCommonJs<any>(new URL('../../src/lib/newspaperReader.ts', import.meta.url), { './supabase/client': { supabase: { from(table: string) { calls.push(['from', table]); return query; } } } });
+    const reader = compileCommonJs<any>(new URL('../../src/lib/newspaperReader.ts', import.meta.url), { './supabase/client': {
+      get supabase() { throw new Error('session client must not be accessed'); },
+      publicSupabase: { from(table: string) { calls.push(['from', table]); return query; } },
+    } });
     const result = await reader.loadPublishedNewspaperEdition(expected);
     assert.equal(result.status, 'ready');
     assert.equal(result.edition.lead.body[1], 'Lead paragraph two.');
@@ -47,7 +50,7 @@ describe('published newspaper structured read contract', () => {
   });
 
   it('distinguishes no edition from lookup failure and rejects malformed, draft, cross-league, and unsafe-media payloads', async () => {
-    const reader = compileCommonJs<any>(new URL('../../src/lib/newspaperReader.ts', import.meta.url), { './supabase/client': { supabase: {} } });
+    const reader = compileCommonJs<any>(new URL('../../src/lib/newspaperReader.ts', import.meta.url), { './supabase/client': { publicSupabase: {} } });
     assert.deepEqual(await reader.loadPublishedNewspaperEdition(expected, async () => ({ data: null, error: null })), { status: 'unavailable' });
     assert.equal((await reader.loadPublishedNewspaperEdition(expected, async () => ({ data: null, error: { message: 'read denied' } }))).status, 'error');
     for (const row of [
