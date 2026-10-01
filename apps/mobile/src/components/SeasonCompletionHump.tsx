@@ -17,9 +17,9 @@ export default function SeasonCompletionHump({ percentage, playoffMode, accentCo
     onLayout={onLayout}
     style={styles.container}
   >
-    <Image source={humpMask} resizeMode="stretch" tintColor={reduceTransparency ? colors.textSecondary : colors.bgInteractive} style={[styles.mask, { width }]} />
+    <Image alt="" source={humpMask} resizeMode="stretch" tintColor={reduceTransparency ? colors.textSecondary : colors.bgInteractive} style={[styles.mask, { width }]} />
     <View style={[styles.fillClip, { width: `${fill}%` }]}>
-      <Image source={humpMask} resizeMode="stretch" tintColor={accentColor} style={[styles.mask, { width, opacity: reduceTransparency ? 0.52 : 0.28 }]} />
+      <Image alt="" source={humpMask} resizeMode="stretch" tintColor={accentColor} style={[styles.mask, { width, opacity: reduceTransparency ? 0.52 : 0.28 }]} />
     </View>
     <View pointerEvents="none" style={styles.labelWrap}><Text style={[styles.label, playoffMode && { color: accentColor }]}>{playoffMode ? 'PLAYOFFS' : `${percentage}%`}</Text></View>
   </View>;

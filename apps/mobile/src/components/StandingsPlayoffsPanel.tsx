@@ -51,7 +51,7 @@ function ConnectedBracket({ group, accentColor }: { group: Extract<Picture, { st
           </View>)}
         </View>
         <View style={styles.semifinalColumn}>{group.matchups.map((matchup) => <ShieldNode key={matchup.highSeed.teamId} accentColor={accentColor} label="Unresolved next-round team" />)}</View>
-        <Image source={trophy} accessibilityLabel="Championship trophy" resizeMode="contain" style={styles.trophy} />
+        <Image alt="Championship trophy" source={trophy} accessibilityLabel="Championship trophy" resizeMode="contain" style={styles.trophy} />
         <View style={styles.winner}><ShieldNode accentColor={accentColor} label="Unresolved champion" /></View>
         <Connector accentColor={accentColor} style={{ left: 78, top: 84, width: 74, height: 2 }} />
         <Connector accentColor={accentColor} style={{ left: 78, top: 194, width: 74, height: 2 }} />
