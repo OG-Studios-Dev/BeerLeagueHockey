@@ -45,6 +45,7 @@ const snapshot = {
 
 function createRuntime({
   guest = false,
+  reduceMotion = false,
   updateResults = [] as Array<{ success: boolean }>,
   publicData = snapshot as any,
   publicResults = [] as any[],
@@ -59,6 +60,7 @@ function createRuntime({
   const linkCalls: string[] = [];
   const playerCalls: unknown[] = [];
   const checkinCalls: unknown[][] = [];
+  const animationCalls: unknown[] = [];
   const queryCalls: Array<[string, unknown[]]> = [];
   const chain: Record<string, any> = {};
   for (const method of ['select', 'eq', 'gte', 'or', 'order', 'limit']) chain[method] = (...args: unknown[]) => { queryCalls.push([method, args]); return chain; };
@@ -73,6 +75,7 @@ function createRuntime({
     'react-native': {
       ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', RefreshControl: 'RefreshControl', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
       StyleSheet: { create: <T>(value: T) => value, absoluteFill: {}, absoluteFillObject: { position: 'absolute', inset: 0 }, hairlineWidth: 1 },
+      LayoutAnimation: { Presets: { easeInEaseOut: 'ease' }, configureNext: (preset: unknown) => animationCalls.push(preset) },
       useWindowDimensions: () => ({ width: 320, height: 700 }),
     },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
@@ -87,7 +90,7 @@ function createRuntime({
     '../components/LeagueMarketplace': (props: Record<string, unknown>) => createElement('LeagueMarketplace', props),
     '../components/RevealView': ({ children, ...props }: Record<string, unknown>) => createElement('RevealView', props, children),
     '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
-    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
+    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion }) },
     '../context/AuthContext': { useAuth: () => ({ user: currentUser, isGuest: guest }) },
     '../context/LeagueContext': { useLeague: () => ({ activeLeague: currentLeague, activeTheme: { primaryColor: '#34D399' }, isGuestLeague: guest }) },
     '../navigation/playerCard': { navigateToPlayerCard: (_navigation: unknown, params: unknown) => playerCalls.push(params) },
@@ -123,7 +126,7 @@ function createRuntime({
   }).default;
   harness.mount(() => HomeScreen({ navigation: { navigate: (...args: unknown[]) => navigationCalls.push(args) } }));
   return {
-    harness, navigationCalls, linkCalls, playerCalls, checkinCalls, queryCalls,
+    harness, navigationCalls, linkCalls, playerCalls, checkinCalls, queryCalls, animationCalls,
     changeGame: (kind: 'game' | 'team') => {
       if (kind === 'team') {
         replacementTeam = assignmentB;
@@ -155,7 +158,7 @@ describe('Home web-structure runtime', () => {
     const runtime = createRuntime();
     const output = await settle(runtime);
     const nodes = allNodes(output);
-    const ids = ['home-news-section', 'home-personal-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-section', 'home-community-section', 'home-sponsors-section'];
+    const ids = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-section', 'home-community-section', 'home-sponsors-section'];
     const indexes = ids.map((id) => nodes.findIndex((node) => node.props.testID === id));
     assert.ok(indexes.every((index) => index >= 0));
     assert.deepEqual(indexes, [...indexes].sort((a, b) => a - b));
@@ -164,10 +167,8 @@ describe('Home web-structure runtime', () => {
     assert.match(nodeText(output), /Final/);
     assert.match(nodeText(output), /Alex Ace/);
     assert.match(nodeText(output), /Rink Shop/);
-    assert.equal(flattenStyle(findNode(output, (node) => node.props.testID === 'home-matchup-teams')?.props.style).flexDirection, 'column');
-    assert.ok(runtime.queryCalls.some(([method, args]) => method === 'eq' && args[0] === 'season_id' && args[1] === 'season-1'));
-    assert.ok(runtime.queryCalls.some(([method, args]) => method === 'eq' && args[0] === 'status' && args[1] === 'scheduled'));
-    assert.ok(runtime.queryCalls.some(([method, args]) => method === 'gte' && args[0] === 'scheduled_at'));
+    assert.equal(findNode(output, (node) => /^home-personal-(loading|error|section)$/.test(String(node.props.testID))), undefined);
+    assert.equal(runtime.queryCalls.length, 0);
   });
 
   it('preserves article, game, player, schedule, notifications, and sponsor routes', async () => {
@@ -185,18 +186,6 @@ describe('Home web-structure runtime', () => {
       ['Schedule', { screen: 'GamePreview', initial: false, params: { gameId: 'week-final' } }], ['Schedule'], ['Profile', { screen: 'NotificationsFeed' }],
     ]);
     assert.deepEqual(runtime.linkCalls, ['https://harbour-hockey.beerleaguehockey.ca/news/opening-night', 'https://rinkshop.test/']);
-  });
-
-  it('commits check-ins and restores the prior facts after a failed write', async () => {
-    const runtime = createRuntime({ updateResults: [{ success: true }, { success: false }] });
-    await settle(runtime);
-    const press = async (label: string) => { await findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === label)?.props.onPress(); runtime.harness.render(); };
-    await press('Check in for next game');
-    assert.match(nodeText(runtime.harness.output), /12 In · 2 Maybe · 0 Out/);
-    await press('Mark next game as maybe');
-    assert.match(nodeText(runtime.harness.output), /12 In · 2 Maybe · 0 Out/);
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Check in for next game')?.props.accessibilityState.selected, true);
-    assert.deepEqual(runtime.checkinCalls, [['next-1', 'wolves', 'confirmed'], ['next-1', 'wolves', 'tentative']]);
   });
 
   it('shows public sections to guests while omitting membership and check-in controls', async () => {
@@ -250,6 +239,18 @@ describe('Home web-structure runtime', () => {
       publicResults: [{ ...snapshot, articles: { status: 'ready', data: [snapshot.articles.data[0], secondStory] } }, oneStory],
     });
     await settle(runtime);
+    const pager = findNode(runtime.harness.output, (node) => node.props.testID === 'home-news-pager');
+    assert.ok(pager);
+    assert.equal(pager.props.horizontal, true);
+    assert.equal(pager.props.pagingEnabled, true);
+    assert.equal(pager.props.directionalLockEnabled, true);
+    assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Opening night'));
+    assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Championship recap'));
+    pager.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 320 }, layoutMeasurement: { width: 320 } } });
+    runtime.harness.render();
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.now, 2);
+    pager.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 }, layoutMeasurement: { width: 320 } } });
+    runtime.harness.render();
     const next = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story');
     assert.ok(next);
     assert.ok((flattenStyle(next.props.style).minHeight ?? flattenStyle(next.props.style).height) >= 44);
@@ -263,6 +264,15 @@ describe('Home web-structure runtime', () => {
     await refresh(runtime);
     assert.match(nodeText(runtime.harness.output), /Opening night/);
     assert.doesNotMatch(nodeText(runtime.harness.output), /Championship recap/);
+  });
+
+  it('does not animate Latest News position changes when Reduced Motion is enabled', async () => {
+    const secondStory = { ...snapshot.articles.data[0], id: 'story-2', title: 'Second story', slug: 'second-story' };
+    const runtime = createRuntime({ reduceMotion: true, publicData: { ...snapshot, articles: { status: 'ready', data: [snapshot.articles.data[0], secondStory] } } });
+    await settle(runtime);
+    findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story')?.props.onPress();
+    runtime.harness.render();
+    assert.equal(runtime.animationCalls.length, 0);
   });
 
   it('retains same-period facts with visible stale notes, including an independent photo reel when albums fail', async () => {
@@ -344,59 +354,10 @@ describe('Home web-structure runtime', () => {
     assert.deepEqual(runtime.linkCalls, ['https://harbour-hockey.beerleaguehockey.ca/gallery/covered']);
   });
 
-  it('contains an unexpected public loader rejection and still settles personal content', async () => {
+  it('contains an unexpected public loader rejection without restoring removed personal content', async () => {
     const runtime = createRuntime({ publicData: new Error('unexpected loader failure') });
     const output = await settle(runtime);
     assert.match(nodeText(output), /News is temporarily unavailable/);
-    assert.ok(findNode(output, (node) => node.props.testID === 'home-personal-section'));
+    assert.equal(findNode(output, (node) => /^home-personal-/.test(String(node.props.testID))), undefined);
   });
-
-  for (const kind of ['game', 'team'] as const) for (const success of [false, true]) {
-  it(`pins pending check-in ${success ? 'success' : 'failure'} when the same account refreshes to a different ${kind}`, async () => {
-    let settleA: ((value: { success: boolean }) => void) | undefined;
-    const runtime = createRuntime({ updateCheckinImpl: () => new Promise((resolve) => { settleA = resolve; }) });
-    await settle(runtime);
-    const pending = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Check in for next game')!.props.onPress();
-    runtime.harness.render();
-    runtime.changeGame(kind);
-    await refresh(runtime);
-    const button = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Check in for next game')!;
-    assert.equal(button.props.disabled, false, 'a new target must not inherit the old pending spinner');
-    const before = nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-personal-section'));
-    settleA?.({ success });
-    await pending;
-    runtime.harness.render();
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-personal-section')), before);
-    assert.deepEqual(runtime.checkinCalls, [['next-1', 'wolves', 'confirmed']]);
-  });
-
-  }
-  for (const lateResult of [{ success: false }, { success: true }]) {
-    it(`does not let a late league-A check-in ${lateResult.success ? 'success' : 'failure'} alter league B`, async () => {
-      let settleA: ((result: { success: boolean }) => void) | undefined;
-      const runtime = createRuntime({
-        updateCheckinImpl: () => new Promise<{ success: boolean }>((resolve) => { settleA = resolve; }),
-      });
-      await settle(runtime);
-      const firstPress = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Check in for next game')!;
-      const pendingA = firstPress.props.onPress();
-      firstPress.props.onPress();
-      runtime.harness.render();
-      assert.equal(runtime.checkinCalls.length, 1, 'an immediate double tap must not issue a second write');
-
-      runtime.switchIdentity();
-      await settle(runtime);
-      const before = nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-personal-section'));
-      assert.match(before, /3 In · 1 Maybe · 2 Out/);
-      assert.equal(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Mark next game as maybe')?.props.accessibilityState.selected, true);
-
-      settleA?.(lateResult);
-      await pendingA;
-      await settle(runtime);
-      const after = nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-personal-section'));
-      assert.equal(after, before);
-      assert.equal(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Mark next game as maybe')?.props.accessibilityState.selected, true);
-      assert.deepEqual(runtime.checkinCalls, [['next-1', 'wolves', 'confirmed']]);
-    });
-  }
 });

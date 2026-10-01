@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { compileCommonJs, createElement, createHookHarness, nodeText } from './component-harness';
+import * as standingsModel from '../../src/lib/standingsModel.ts';
 
 const leagueA = {
   id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null, city: null,
@@ -29,7 +30,7 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
     FlatList: ({ data = [], renderItem, ListHeaderComponent, ...props }: Record<string, any>) =>
       createElement('FlatList', props, ListHeaderComponent, ...data.map((item: unknown, index: number) => renderItem({ item, index }))),
     Pressable: 'Pressable',
-    StyleSheet: { create: <T>(value: T) => value },
+    StyleSheet: { create: <T>(value: T) => value, hairlineWidth: 1 },
     Text: 'Text',
     View: 'View',
   };
@@ -77,10 +78,30 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       react: harness.react,
       'react-native': reactNative,
       'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-      '../components/SectionHeader': ({ title }: { title: string }) => createElement('Text', null, title),
+      '../components/CardFocus': {
+        FocusCard: ({ children, ...props }: Record<string, unknown>) => createElement('FocusCard', props, children),
+        FocusScrollView: ({ children, ...props }: Record<string, unknown>) => createElement('FocusScrollView', props, children),
+      },
+      '../components/DivisionFilter': () => null,
+      '../components/GuestBanner': () => null,
+      '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
+      '../components/TeamPositioningChart': (props: Record<string, unknown>) => createElement('TeamPositioningChart', props),
       '../context/LeagueContext': { useLeague: leagueContext },
-      '../theme/colors': { default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', borderCard: '#222' } },
-      './ScheduleScreen': ScheduleScreen,
+      '../lib/leaguePages': { getLeaguePage: async (_slug: string, page: string) => page === 'playoffs'
+        ? { previewConfig: { playoffTeamsTotal: 2, playoffTeamsPerDivision: null, useDivisionPlayoffs: false } }
+        : { positioning: null } },
+      '../lib/leaguePagesModel': { filterAndRerankPositioning: (value: unknown) => value },
+      '../lib/standingsModel': standingsModel,
+      '../lib/supabase/data': {
+        getCurrentSeason: async () => ({ id: 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
+        getSchedule: async () => [{ id: 'game-1', home_team_id: 'team-owls', away_team_id: 'team-foxes', status: 'completed', game_type: 'regular' }],
+        getStandings: async () => {
+          standingsReads += 1;
+          return [{ team_id: 'team-owls', team_name: 'Ice Owls', primary_color: '#123456', logo_url: null, division_id: null, wins: 3, losses: 1, ties: 0, points: 6, goals_for: 10, goals_against: 4, games_played: 4 }];
+        },
+      },
+      '../navigation/cutIceSafeAreaPolicy': { cutIceContentEdges: (edges: unknown) => edges },
+      '../theme/colors': { default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', borderCard: '#222', glassStroke: '#333' } },
     },
   ).default;
   return { harness, ScheduleScreen, StandingsScreen, selected, counts: () => ({ authReads, standingsReads }) };
@@ -110,14 +131,16 @@ describe('native Standings dock destination', () => {
     assert.deepEqual(screen.selected, []);
   });
 
-  it('renders selected-league standings rows through the existing Schedule helpers', async () => {
+  it('renders selected-league standings and enhancement sections natively', async () => {
     const screen = createRenderedScreens(leagueA);
     screen.harness.mount(() => screen.StandingsScreen({ navigation: { navigate: () => {} } }));
     await settle(screen.harness);
 
-    assert.doesNotMatch(nodeText(screen.harness.output), /^Standings/);
+    assert.match(nodeText(screen.harness.output), /Standings/);
     assert.match(nodeText(screen.harness.output), /Ice Owls/);
-    assert.match(nodeText(screen.harness.output), /Ice Owls4316/);
+    assert.match(nodeText(screen.harness.output), /Playoff Picture/);
+    assert.match(nodeText(screen.harness.output), /Predictor/);
+    assert.match(nodeText(screen.harness.output), /Season Completion/);
     assert.ok(screen.counts().standingsReads > 0);
   });
 });

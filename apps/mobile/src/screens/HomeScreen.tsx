@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import React from 'react';
 import {
   ActivityIndicator,
   Image,
+  LayoutAnimation,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -24,16 +26,8 @@ import HomeLeagueHero from '../components/HomeLeagueHero';
 import RevealView from '../components/RevealView';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
-import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
 import { navigateToPlayerCard } from '../navigation/playerCard';
-import {
-  type CheckinStatus,
-  getGameCheckinSummary,
-  getMyCheckins,
-  updateCheckin,
-} from '../lib/supabase/checkins';
-import { supabase } from '../lib/supabase/client';
 import {
   type HomeArticle,
   type HomeLeader,
@@ -46,7 +40,6 @@ import {
   normalizeHomeGameStatus,
   toSafeWebUrl,
 } from '../lib/supabase/home';
-import { getActiveSeasonTeamForUser, getTeamActiveSeason } from '../lib/supabase/team';
 import colors from '../theme/colors';
 import { getHomeVisualPreferences, HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
 
@@ -56,34 +49,7 @@ type HomeNavigation = {
 };
 type HomeScreenProps = { navigation?: HomeNavigation };
 
-type UserTeam = {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  primary_color: string | null;
-};
-
-type NextGame = {
-  id: string;
-  league_id?: string;
-  scheduled_at: string;
-  location: string | null;
-  status: string;
-  home_team_id: string;
-  away_team_id: string;
-  home_team: { id: string; name: string; logo_url: string | null; primary_color: string | null } | null;
-  away_team: { id: string; name: string; logo_url: string | null; primary_color: string | null } | null;
-};
-type CheckinSummary = { confirmed: number; tentative: number; out: number };
-type PersonalState = { status: 'loading' | 'ready' | 'error'; team: UserTeam | null; game: NextGame | null; message?: string };
 type LeaderMetric = 'goals' | 'assists' | 'points';
-
-const EMPTY_SUMMARY: CheckinSummary = { confirmed: 0, tentative: 0, out: 0 };
-
-function formatGameDate(iso: string) {
-  const date = new Date(iso);
-  return `${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -105,16 +71,6 @@ function articleLabel(type: string | null) {
   return 'LEAGUE STORY';
 }
 
-function gameAccessibilityLabel(game: NextGame, summary: CheckinSummary, canCheckIn: boolean, isGuestLeague: boolean) {
-  const away = game.away_team?.name ?? game.away_team_id;
-  const home = game.home_team?.name ?? game.home_team_id;
-  return [
-    `My next game, ${away} at ${home}`,
-    formatGameDate(game.scheduled_at),
-    game.location,
-    canCheckIn ? `${summary.confirmed} In · ${summary.tentative} Maybe · ${summary.out} Out` : isGuestLeague ? 'Join this league to check in' : null,
-  ].filter(Boolean).join('. ');
-}
 
 function weeklyGameAccessibilityLabel(game: HomeWeeklyGame) {
   const away = game.away_team?.name ?? game.away_team_id;
@@ -190,36 +146,6 @@ function markSnapshotFailed(snapshot: HomePublicSnapshot): HomePublicSnapshot {
   };
 }
 
-function normalizeNextGame(value: unknown, leagueId: string, seasonId: string): NextGame | null {
-  if (value === null) return null;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid next game');
-  const row = value as Record<string, unknown>;
-  const required = (field: string) => {
-    const fieldValue = row[field];
-    if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) throw new TypeError(`Invalid ${field}`);
-    return fieldValue;
-  };
-  if (required('league_id') !== leagueId || required('season_id') !== seasonId) throw new TypeError('Next game scope mismatch');
-  const scheduledAt = required('scheduled_at');
-  if (!Number.isFinite(new Date(scheduledAt).getTime())) throw new TypeError('Invalid next game date');
-  const team = (joined: unknown) => {
-    const candidate = Array.isArray(joined) ? joined[0] : joined;
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) throw new TypeError('Invalid next game team');
-    const item = candidate as Record<string, unknown>;
-    if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name) throw new TypeError('Invalid next game team');
-    if (item.logo_url !== null && typeof item.logo_url !== 'string') throw new TypeError('Invalid next game logo');
-    if (item.primary_color !== null && typeof item.primary_color !== 'string') throw new TypeError('Invalid next game colour');
-    return { id: item.id, name: item.name, logo_url: item.logo_url as string | null, primary_color: item.primary_color as string | null };
-  };
-  if (row.location !== null && typeof row.location !== 'string') throw new TypeError('Invalid next game location');
-  return {
-    id: required('id'), league_id: leagueId, scheduled_at: scheduledAt,
-    location: row.location as string | null, status: required('status'),
-    home_team_id: required('home_team_id'), away_team_id: required('away_team_id'),
-    home_team: team(row.home_team), away_team: team(row.away_team),
-  };
-}
-
 function HomeArenaBackdrop({ accentColor, showAtmosphericGlow }: { accentColor: string; showAtmosphericGlow: boolean }) {
   return (
     <View testID="home-arena-backdrop" pointerEvents="none" style={styles.arenaBackdrop}>
@@ -264,80 +190,30 @@ function MetricTabs({ value, onChange }: { value: LeaderMetric; onChange: (value
 }
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
-  const { activeLeague, activeTheme, isGuestLeague } = useLeague();
-  const { user, isGuest } = useAuth();
+  const { activeLeague, activeTheme } = useLeague();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { width, height } = useWindowDimensions();
-  const compact = width < homeTokens.compactBreakpoint;
   const visuals = getHomeVisualPreferences(reduceTransparency, reduceMotion);
   const requestGeneration = React.useRef(0);
-  const identityKey = `${user?.id ?? 'guest'}:${activeLeague?.id ?? 'none'}`;
-  const currentIdentity = React.useRef(identityKey);
-  currentIdentity.current = identityKey;
-  const checkinOperation = React.useRef<{ id: number; identity: string; gameId: string; teamId: string } | null>(null);
-  const nextCheckinOperationId = React.useRef(0);
   const [publicHome, setPublicHome] = React.useState<HomePublicSnapshot | null>(null);
-  const [personal, setPersonal] = React.useState<PersonalState>({ status: 'loading', team: null, game: null });
   const [refreshing, setRefreshing] = React.useState(false);
   const [leaderMetric, setLeaderMetric] = React.useState<LeaderMetric>('goals');
   const [divisionId, setDivisionId] = React.useState<string | null>(null);
   const [storyIndex, setStoryIndex] = React.useState(0);
-  const [myCheckinStatus, setMyCheckinStatus] = React.useState<CheckinStatus | null>(null);
-  const [checkinSummary, setCheckinSummary] = React.useState<CheckinSummary>(EMPTY_SUMMARY);
-  const [checkinLoading, setCheckinLoading] = React.useState(false);
+  const storyPager = React.useRef<ScrollView>(null);
 
   const load = React.useCallback(async (preserve: boolean) => {
     if (!activeLeague) return;
     const generation = ++requestGeneration.current;
     if (!preserve) {
-      checkinOperation.current = null;
       setPublicHome(null);
-      setPersonal({ status: 'loading', team: null, game: null });
       setDivisionId(null);
       setStoryIndex(0);
-      setMyCheckinStatus(null);
-      setCheckinSummary(EMPTY_SUMMARY);
-      setCheckinLoading(false);
     }
 
-    const publicPromise = loadHomePublicSnapshot(activeLeague.id, activeLeague.slug);
-    const personalPromise = (async (): Promise<PersonalState> => {
-      if (!user?.id || isGuest) return { status: 'ready', team: null, game: null };
-      const activeSeason = await getTeamActiveSeason(activeLeague.id);
-      if (activeSeason.error) throw new Error(activeSeason.error);
-      if (!activeSeason.season) return { status: 'ready', team: null, game: null };
-      const assignment = await getActiveSeasonTeamForUser(user.id, activeLeague.id, activeSeason.season.id);
-      if (!assignment) return { status: 'ready', team: null, game: null };
-      if (!assignment.team_id?.trim() || !assignment.team_name?.trim()) throw new TypeError('Invalid team assignment');
-      const team: UserTeam = { id: assignment.team_id, name: assignment.team_name, logo_url: assignment.logo_url, primary_color: assignment.primary_color };
-      const result = await supabase.from('games').select(`id,league_id,season_id,scheduled_at,location,status,home_team_id,away_team_id,
-        home_team:teams!games_home_team_id_fkey(id,name,logo_url,primary_color),
-        away_team:teams!games_away_team_id_fkey(id,name,logo_url,primary_color)`)
-        .eq('league_id', activeLeague.id).eq('season_id', activeSeason.season.id).eq('status', 'scheduled')
-        .gte('scheduled_at', new Date().toISOString())
-        .or(`home_team_id.eq.${team.id},away_team_id.eq.${team.id}`)
-        .order('scheduled_at', { ascending: true }).limit(1).maybeSingle();
-      if (result.error) throw result.error;
-      const game = normalizeNextGame(result.data, activeLeague.id, activeSeason.season.id);
-      if (generation === requestGeneration.current && checkinOperation.current
-        && (checkinOperation.current.gameId !== game?.id || checkinOperation.current.teamId !== team.id)) {
-        checkinOperation.current = null;
-        setCheckinLoading(false);
-      }
-      if (game && !isGuestLeague) {
-        const [checkins, summary] = await Promise.all([getMyCheckins(team.id), getGameCheckinSummary(game.id, team.id)]);
-        if (generation === requestGeneration.current) {
-          setMyCheckinStatus(checkins[game.id] ?? null);
-          setCheckinSummary({ confirmed: summary.confirmed.length, tentative: summary.tentative.length, out: summary.out.length });
-        }
-      }
-      return { status: 'ready', team, game };
-    })().catch(() => ({ status: 'error' as const, team: null, game: null, message: 'Your current-team game is temporarily unavailable.' }));
-
-    const [publicResult, nextPersonal] = await Promise.all([
-      publicPromise.then((data) => ({ data, error: false as const })).catch(() => ({ data: null, error: true as const })),
-      personalPromise,
-    ]);
+    const publicResult = await loadHomePublicSnapshot(activeLeague.id, activeLeague.slug)
+      .then((data) => ({ data, error: false as const }))
+      .catch(() => ({ data: null, error: true as const }));
     if (generation !== requestGeneration.current) return;
     if (publicResult.error) {
       setPublicHome((current) => preserve && current?.leagueId === activeLeague.id && current.leagueSlug === activeLeague.slug
@@ -346,24 +222,16 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     } else {
       setPublicHome((current) => preserve ? mergeRefresh(current, publicResult.data) : publicResult.data);
     }
-    if (checkinOperation.current && (checkinOperation.current.gameId !== nextPersonal.game?.id
-      || checkinOperation.current.teamId !== nextPersonal.team?.id)) {
-      checkinOperation.current = null;
-      setCheckinLoading(false);
-    }
-    setPersonal(nextPersonal);
-  }, [activeLeague, isGuest, isGuestLeague, user?.id]);
+  }, [activeLeague]);
 
   React.useEffect(() => {
     if (!activeLeague) {
       requestGeneration.current += 1;
-      checkinOperation.current = null;
       setPublicHome(null);
-      setCheckinLoading(false);
       return;
     }
     void load(false);
-    return () => { requestGeneration.current += 1; checkinOperation.current = null; };
+    return () => { requestGeneration.current += 1; };
   }, [activeLeague, load]);
 
   const retry = React.useCallback(() => { void load(true); }, [load]);
@@ -372,13 +240,16 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     try { await load(true); } finally { setRefreshing(false); }
   }, [load]);
   const storyIds = (publicHome?.articles.data ?? []).map((story) => story.id).join('|');
-  React.useEffect(() => { setStoryIndex(0); }, [activeLeague?.id, publicHome?.presentationSeason?.id, storyIds]);
+  React.useEffect(() => {
+    setStoryIndex(0);
+    storyPager.current?.scrollTo({ x: 0, animated: false });
+  }, [activeLeague?.id, publicHome?.presentationSeason?.id, storyIds]);
 
   if (!activeLeague) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['top', 'left', 'right']}>
         <View style={styles.accessState}>
-          <Image source={hockeyLifeLogo} style={styles.accessStateLogo} resizeMode="contain" />
+          <Image source={hockeyLifeLogo} style={styles.accessStateLogo} resizeMode="contain" alt="Hockey Life" />
           <Text style={styles.accessStateTitle}>Hockey Life access required</Text>
           <Text style={styles.accessStateCopy}>This account does not have an accessible Hockey Life membership.</Text>
         </View>
@@ -386,10 +257,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     );
   }
 
-  const canCheckIn = Boolean(user && !isGuest && !isGuestLeague && personal.team && personal.game);
-  const accent = personal.team?.primary_color ?? activeTheme.primaryColor ?? colors.primary;
+  const accent = activeTheme.primaryColor ?? colors.primary;
   const stories = publicHome?.articles.data ?? [];
   const article = stories[storyIndex] ?? stories[0] ?? null;
+  const storyPageWidth = Math.max(1, width - homeTokens.contentPadding * 2);
   const heroAlbum = !article ? publicHome?.albums.data.find((album) => album.cover_photo_url) ?? publicHome?.albums.data[0] ?? null : null;
   const standings = publicHome?.standings.data ?? [];
   const divisions = publicHome?.divisions ?? [];
@@ -406,39 +277,17 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   };
   const origin = `https://${activeLeague.slug}.beerleaguehockey.ca`;
   const navigateToGame = (gameId: string) => navigation?.navigate?.('Schedule', { screen: 'GamePreview', initial: false, params: { gameId } });
-
-  const handleCheckin = async (status: CheckinStatus) => {
-    if (!personal.game || !personal.team || !canCheckIn || checkinOperation.current) return;
-    const operation = {
-      id: ++nextCheckinOperationId.current,
-      identity: identityKey,
-      gameId: personal.game.id,
-      teamId: personal.team.id,
-    };
-    checkinOperation.current = operation;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const previous = myCheckinStatus;
-    const previousSummary = checkinSummary;
-    const nextSummary = { ...checkinSummary };
-    if (previous) nextSummary[previous === 'confirmed' ? 'confirmed' : previous === 'tentative' ? 'tentative' : 'out'] = Math.max(0, nextSummary[previous === 'confirmed' ? 'confirmed' : previous === 'tentative' ? 'tentative' : 'out'] - 1);
-    nextSummary[status === 'confirmed' ? 'confirmed' : status === 'tentative' ? 'tentative' : 'out'] += 1;
-    setMyCheckinStatus(status);
-    setCheckinSummary(nextSummary);
-    setCheckinLoading(true);
-    let success = false;
-    try {
-      const result = await updateCheckin(operation.gameId, operation.teamId, status);
-      success = result.success;
-    } catch {
-      success = false;
-    }
-    const stillCurrent = checkinOperation.current?.id === operation.id
-      && checkinOperation.current.identity === operation.identity
-      && currentIdentity.current === operation.identity;
-    if (!stillCurrent) return;
-    checkinOperation.current = null;
-    setCheckinLoading(false);
-    if (!success) { setMyCheckinStatus(previous); setCheckinSummary(previousSummary); }
+  const selectStory = (nextIndex: number, scroll = true) => {
+    if (!stories.length) return;
+    const normalized = (nextIndex + stories.length) % stories.length;
+    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setStoryIndex(normalized);
+    if (scroll) storyPager.current?.scrollTo({ x: normalized * storyPageWidth, animated: !reduceMotion });
+  };
+  const handleStorySwipe = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const pageWidth = event.nativeEvent.layoutMeasurement.width || storyPageWidth;
+    const nextIndex = Math.max(0, Math.min(stories.length - 1, Math.round(event.nativeEvent.contentOffset.x / pageWidth)));
+    if (nextIndex !== storyIndex) selectStory(nextIndex, false);
   };
 
   const sectionCard = [styles.card, { backgroundColor: visuals.surface, borderColor: visuals.stroke }];
@@ -466,43 +315,49 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         <View testID="home-news-section">
           <SectionHeading eyebrow="LATEST" title="News" />
-          {!publicHome ? <SectionState loading onRetry={retry} /> : publicHome.articles.status === 'error' && !article ? <SectionState message={publicHome.articles.message} onRetry={retry} /> : (
-            <FocusCard focusId={`home:story:${article?.id ?? heroAlbum?.id ?? activeLeague.id}`} accentColor={accent}>
-              <Pressable testID="home-story-detail" accessibilityRole="link" accessibilityLabel={article ? `Read ${article.title}` : heroAlbum ? `Open ${heroAlbum.title} gallery` : `Open ${activeLeague.name} schedule`} style={[sectionCard, styles.hero]} onPress={() => openExternal(article ? `${origin}/news/${article.slug || article.id}` : heroAlbum ? `${origin}/gallery/${heroAlbum.id}` : `${origin}/schedule`)}>
-              {(article?.image_url || heroAlbum?.cover_photo_url) ? <Image source={{ uri: (article?.image_url || heroAlbum?.cover_photo_url)! }} style={styles.heroImage} alt={article?.title ?? heroAlbum?.title ?? ''} /> : <View style={styles.heroMark}><Image source={hockeyLifeLogo} style={styles.heroLogo} alt="" /></View>}
-              <LinearGradient colors={['transparent', 'rgba(3,8,16,0.96)']} style={styles.heroShade} />
-              <View style={styles.heroCopy}><Text style={[styles.heroEyebrow, { color: accent }]}>{article ? articleLabel(article.type) : heroAlbum ? 'FROM THE GALLERY' : 'LEAGUE CENTRAL'}</Text><Text style={styles.heroTitle}>{article?.title ?? heroAlbum?.title ?? activeLeague.name}</Text>{article && articleExcerpt(article) ? <Text style={styles.heroExcerpt}>{articleExcerpt(article)}</Text> : <Text style={styles.heroExcerpt}>{heroAlbum ? 'Open the latest league album.' : 'Scores, stories, and the full league schedule.'}</Text>}</View>
+          {!publicHome ? <SectionState loading onRetry={retry} /> : publicHome.articles.status === 'error' && !article ? <SectionState message={publicHome.articles.message} onRetry={retry} /> : stories.length > 0 ? (
+            <ScrollView
+              ref={storyPager}
+              testID="home-news-pager"
+              horizontal
+              pagingEnabled
+              directionalLockEnabled
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              onMomentumScrollEnd={handleStorySwipe}
+              style={styles.newsPager}
+            >
+              {stories.map((story) => (
+                <View key={story.id} style={{ width: storyPageWidth }}>
+                  <FocusCard focusId={`home:story:${story.id}`} accentColor={accent}>
+                    <Pressable accessibilityRole="link" accessibilityLabel={`Read ${story.title}`} style={[sectionCard, styles.hero]} onPress={() => openExternal(`${origin}/news/${story.slug || story.id}`)}>
+                      {story.image_url ? <Image source={{ uri: story.image_url }} style={styles.heroImage} alt={story.title} /> : <View style={styles.heroMark}><Image source={hockeyLifeLogo} style={styles.heroLogo} alt="" /></View>}
+                      <LinearGradient colors={['transparent', 'rgba(3,8,16,0.96)']} style={styles.heroShade} />
+                      <View style={styles.heroCopy}><Text style={[styles.heroEyebrow, { color: accent }]}>{articleLabel(story.type)}</Text><Text style={styles.heroTitle}>{story.title}</Text>{articleExcerpt(story) ? <Text style={styles.heroExcerpt}>{articleExcerpt(story)}</Text> : null}</View>
+                    </Pressable>
+                  </FocusCard>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <FocusCard focusId={`home:story:${heroAlbum?.id ?? activeLeague.id}`} accentColor={accent}>
+              <Pressable testID="home-story-detail" accessibilityRole="link" accessibilityLabel={heroAlbum ? `Open ${heroAlbum.title} gallery` : `Open ${activeLeague.name} schedule`} style={[sectionCard, styles.hero]} onPress={() => openExternal(heroAlbum ? `${origin}/gallery/${heroAlbum.id}` : `${origin}/schedule`)}>
+                {heroAlbum?.cover_photo_url ? <Image source={{ uri: heroAlbum.cover_photo_url }} style={styles.heroImage} alt={heroAlbum.title} /> : <View style={styles.heroMark}><Image source={hockeyLifeLogo} style={styles.heroLogo} alt="" /></View>}
+                <LinearGradient colors={['transparent', 'rgba(3,8,16,0.96)']} style={styles.heroShade} />
+                <View style={styles.heroCopy}><Text style={[styles.heroEyebrow, { color: accent }]}>{heroAlbum ? 'FROM THE GALLERY' : 'LEAGUE CENTRAL'}</Text><Text style={styles.heroTitle}>{heroAlbum?.title ?? activeLeague.name}</Text><Text style={styles.heroExcerpt}>{heroAlbum ? 'Open the latest league album.' : 'Scores, stories, and the full league schedule.'}</Text></View>
               </Pressable>
             </FocusCard>
           )}
           {stories.length > 1 ? <View testID="home-story-navigation" style={styles.storyNavigation}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Previous story" style={styles.storyNavigationButton} onPress={() => setStoryIndex((current) => (current - 1 + stories.length) % stories.length)}><Ionicons name="chevron-back" size={18} color={homeTokens.text} /></Pressable>
-            <Text style={styles.storyPosition}>{storyIndex + 1} of {stories.length}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Next story" style={styles.storyNavigationButton} onPress={() => setStoryIndex((current) => (current + 1) % stories.length)}><Ionicons name="chevron-forward" size={18} color={homeTokens.text} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Previous story" style={styles.storyNavigationButton} onPress={() => selectStory(storyIndex - 1)}><Ionicons name="chevron-back" size={18} color={homeTokens.text} /></Pressable>
+            <View testID="home-story-indicator" accessible accessibilityRole="adjustable" accessibilityLabel="Latest News position" accessibilityValue={{ min: 1, max: stories.length, now: storyIndex + 1, text: `${storyIndex + 1} of ${stories.length}` }} style={styles.storyDots}>
+              {stories.map((story, index) => <View key={story.id} style={[styles.storyDot, index === storyIndex && styles.storyDotActive, index === storyIndex && { backgroundColor: accent }]} />)}
+            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Next story" style={styles.storyNavigationButton} onPress={() => selectStory(storyIndex + 1)}><Ionicons name="chevron-forward" size={18} color={homeTokens.text} /></Pressable>
           </View> : null}
           {publicHome?.articles.status === 'error' && article ? <Text style={styles.staleNote}>{publicHome.articles.message} Showing the last loaded story.</Text> : null}
         </View>
-
-        {personal.status === 'loading' ? <View testID="home-personal-loading"><SectionHeading eyebrow="FOR YOU" title="My next game" /><SectionState loading onRetry={retry} /></View> : null}
-        {personal.status === 'error' ? <View testID="home-personal-error"><SectionHeading eyebrow="FOR YOU" title="My next game" /><SectionState message={personal.message} onRetry={retry} /></View> : null}
-        {personal.status === 'ready' && personal.team ? (
-          <View testID="home-personal-section">
-            <SectionHeading eyebrow="FOR YOU" title="My next game" />
-            {personal.game ? (
-              <FocusCard focusId={`home:personal-game:${personal.game.id}`} testID="home-next-game-panel" accentColor={accent} style={[sectionCard, styles.nextGame]}>
-                <LinearGradient testID="home-stage-glass-gradient" colors={[visuals.surfaceTop, visuals.surfaceBottom]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-                <Pressable testID="home-next-game-details" accessibilityRole="button" accessibilityLabel={gameAccessibilityLabel(personal.game, checkinSummary, canCheckIn, isGuestLeague)} accessibilityHint="Open next game details" style={styles.nextGameDetails} onPress={() => navigateToGame(personal.game!.id)}>
-                  <Text style={[styles.nextDate, { color: accent }]}>{formatGameDate(personal.game.scheduled_at)}</Text>
-                  <View testID="home-matchup-teams" style={[styles.matchup, compact && styles.matchupCompact]}>
-                    {([personal.game.away_team, personal.game.home_team] as const).map((team, index) => <React.Fragment key={team?.id ?? index}><View style={[styles.matchupTeam, compact && styles.matchupTeamCompact]}><TeamLogo teamId={team?.id} logoUrl={team?.logo_url ?? null} teamName={team?.name ?? '?'} primaryColor={team?.primary_color} size={compact ? 42 : 50} /><Text style={styles.matchupName}>{team?.name ?? '?'}</Text></View>{index === 0 ? <Text style={styles.vs}>VS</Text> : null}</React.Fragment>)}
-                  </View>
-                  {personal.game.location ? <Text style={styles.location}>{personal.game.location}</Text> : null}
-                </Pressable>
-                {canCheckIn ? <><View style={styles.checkinRow}>{([['confirmed', 'In'], ['tentative', 'Maybe'], ['out', 'Out']] as const).map(([status, label]) => <Pressable key={status} accessibilityRole="button" accessibilityLabel={status === 'confirmed' ? 'Check in for next game' : status === 'tentative' ? 'Mark next game as maybe' : 'Decline next game'} accessibilityState={{ selected: myCheckinStatus === status, disabled: checkinLoading }} disabled={checkinLoading} style={[styles.checkinButton, myCheckinStatus === status && { backgroundColor: status === 'confirmed' ? colors.accentGreen : status === 'tentative' ? '#F59E0B' : colors.accentRed }]} onPress={() => handleCheckin(status)}><Text style={[styles.checkinText, myCheckinStatus === status && styles.checkinTextSelected]}>{label}</Text></Pressable>)}</View><View style={styles.checkinPendingRow}><Text style={styles.checkinSummary}>{checkinSummary.confirmed} In · {checkinSummary.tentative} Maybe · {checkinSummary.out} Out</Text>{checkinLoading ? <ActivityIndicator size="small" color={accent} /> : null}</View></> : isGuestLeague ? <Text style={styles.checkinSummary}>Join this league to check in</Text> : null}
-              </FocusCard>
-            ) : <View testID="home-empty-game-panel" style={[sectionCard, styles.emptyCard]}><Text style={styles.emptyTitle}>No upcoming games</Text><Text style={styles.emptyCopy}>Your current team does not have a future game scheduled.</Text></View>}
-          </View>
-        ) : null}
 
         <View testID="home-weekly-games-section">
           <SectionHeading eyebrow="AROUND THE LEAGUE" title="This Week’s Games" action={<Pressable accessibilityRole="button" accessibilityLabel="Open full schedule" onPress={() => navigation?.navigate?.('Schedule')}><Text style={[styles.textLink, { color: accent }]}>Full schedule</Text></Pressable>} />
@@ -572,25 +427,12 @@ const styles = StyleSheet.create({
   heroEyebrow: { fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
   heroTitle: { color: colors.textPrimary, fontSize: 24, lineHeight: 28, fontWeight: '900', marginTop: 4 },
   heroExcerpt: { color: '#CCD6E5', fontSize: 13, lineHeight: 19, marginTop: 7 },
+  newsPager: { width: '100%' },
   storyNavigation: { minHeight: 44, marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
   storyNavigationButton: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, alignItems: 'center', justifyContent: 'center' },
-  storyPosition: { minWidth: 48, color: homeTokens.textSecondary, fontSize: 11, fontWeight: '800', textAlign: 'center' },
-  nextGame: { minHeight: 228, padding: 16 },
-  nextGameDetails: { minHeight: 132 },
-  nextDate: { fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
-  matchup: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, gap: 10 },
-  matchupCompact: { flexDirection: 'column', alignItems: 'stretch' },
-  matchupTeam: { flex: 1, alignItems: 'center', gap: 7 },
-  matchupTeamCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', flexDirection: 'row', justifyContent: 'flex-start' },
-  matchupName: { color: colors.textPrimary, textAlign: 'center', fontSize: 14, lineHeight: 18, fontWeight: '800' },
-  vs: { color: colors.textSecondary, fontSize: 11, fontWeight: '900' },
-  location: { color: colors.textSecondary, textAlign: 'center', fontSize: 12, marginTop: 14 },
-  checkinRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  checkinButton: { flex: 1, minHeight: 44, borderRadius: 14, backgroundColor: colors.bgInteractive, alignItems: 'center', justifyContent: 'center' },
-  checkinText: { color: colors.textSecondary, fontSize: 12, fontWeight: '800' },
-  checkinTextSelected: { color: '#07111F' },
-  checkinSummary: { color: colors.textSecondary, textAlign: 'center', fontSize: 11, marginTop: 9 },
-  checkinPendingRow: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  storyDots: { minWidth: 52, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  storyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.textSecondary },
+  storyDotActive: { width: 18 },
   emptyCard: { minHeight: 104, alignItems: 'center', justifyContent: 'center', padding: 18 },
   emptyTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '900', textAlign: 'center' },
   emptyCopy: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 5 },

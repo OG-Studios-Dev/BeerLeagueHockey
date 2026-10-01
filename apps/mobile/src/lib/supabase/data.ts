@@ -27,6 +27,7 @@ export type GameRow = {
   away_score: number | null;
   scheduled_at: string;
   status: string | null;
+  game_type?: string | null;
   location: string | null;
   season_id: string;
   division_id?: string | null;
@@ -427,7 +428,7 @@ export async function getSchedule(
     .from('games')
     .select(
       `id, home_team_id, away_team_id, home_score, away_score,
-       scheduled_at, status, location, season_id, division_id,
+       scheduled_at, status, game_type, location, season_id, division_id,
        home_team:teams!games_home_team_id_fkey(id, name, primary_color, logo_url),
        away_team:teams!games_away_team_id_fkey(id, name, primary_color, logo_url)`,
     )

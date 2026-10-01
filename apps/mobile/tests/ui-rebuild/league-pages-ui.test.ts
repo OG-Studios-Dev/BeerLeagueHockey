@@ -8,23 +8,27 @@ function source(path: string) {
 }
 
 describe('native league page source binding', () => {
-  it('binds Teams to the strict loader, grouped cards, season/division controls and five-metric positioning', () => {
+  it('binds Teams to the strict loader and renders only accessible canonical logo destinations', () => {
     const teams = source('../../src/screens/league-pages/TeamsDirectoryScreen.tsx');
     const common = source('../../src/screens/league-pages/LeaguePageCommon.tsx');
     assert.match(common, /getLeaguePage/);
     assert.match(common, /createLatestRequestGate/);
-    assert.match(teams, /buildTeamsDirectoryView/);
-    assert.match(teams, /POSITION_METRICS\.map/);
-    assert.match(teams, /Team Positioning/);
-    assert.match(teams, /Estimated from confirmed attendance plus roster appearances/);
-    assert.match(teams, /team-positioning-chart/);
-    assert.match(teams, /connected crest chart/i);
-    assert.match(teams, /buildBumpChartSegment/);
-    assert.match(teams, /horizontal/);
-    assert.doesNotMatch(teams, /rankBar|metricCard/);
-    assert.match(teams, /View (?:Current )?Roster/);
+    assert.match(teams, /useLeaguePage\(scope, 'teams'\)/);
+    assert.match(teams, /accessibilityLabel=\{team\.name\}/);
+    assert.match(teams, /LeagueTeamDetail/);
     assert.match(teams, /TeamLogo/);
+    assert.doesNotMatch(teams, /SeasonPicker|DivisionPicker|Team Positioning|View Roster/);
     assert.doesNotMatch(teams, /WebView|Linking\.openURL/);
+  });
+
+  it('owns the single Team Positioning chart implementation under Standings', () => {
+    const standings = source('../../src/screens/StandingsScreen.tsx');
+    const chart = source('../../src/components/TeamPositioningChart.tsx');
+    assert.match(standings, /Team Positioning/);
+    assert.match(standings, /TeamPositioningChart/);
+    assert.match(chart, /POSITION_METRICS\.map/);
+    assert.match(chart, /buildBumpChartSegment/);
+    assert.doesNotMatch(standings, /Compare each team|Estimated from confirmed|available only for/);
   });
 
   it('renders the league-wide web-parity directory with virtualized photo cards and native drilldowns', () => {

@@ -225,7 +225,7 @@ describe('Home editorial native render', () => {
     assert.ok(reveals.every((node) => node.props.duration === 0));
     assert.equal(nodes.some((node) => node.props.testID === 'home-atmospheric-glow'), false);
 
-    assert.ok(findNode(output, (node) => node.props.testID === 'home-personal-loading'));
+    assert.equal(findNode(output, (node) => /^home-personal-/.test(String(node.props.testID))), undefined);
   });
 
   it('shows an honest Hockey Life access state without a league marketplace', () => {

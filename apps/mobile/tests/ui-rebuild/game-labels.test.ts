@@ -166,9 +166,7 @@ const nextGame = {
 const failNetwork = () => { throw new Error('The render harness must not call Supabase'); };
 
 function renderHome({
-  game = nextGame as typeof nextGame | null,
   games = [] as GameRow[],
-  guest = false,
 } = {}) {
   const publicHome = {
     leagueId: league.id, leagueSlug: league.slug,
@@ -182,12 +180,7 @@ function renderHome({
   };
   // Seed the v2 component's state slots in declaration order; loading effects
   // stay disabled so this remains a pure accessibility-name test.
-  const state = [
-    publicHome,
-    { status: 'ready', team: homeTeam, game },
-    false, 'goals', null, 0,
-    'confirmed', { confirmed: 11, tentative: 2, out: 0 }, false,
-  ];
+  const state = [publicHome, false, 'goals', null, 0];
   let stateIndex = 0;
   const navigationCalls: unknown[][] = [];
   const checkinCalls: unknown[][] = [];
@@ -209,7 +202,7 @@ function renderHome({
     '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
     '../context/LeagueContext': {
       useLeague: () => ({
-        activeLeague: league, isGuestLeague: guest,
+        activeLeague: league, isGuestLeague: false,
         activeTheme: { primaryColor: '#22D3EE', secondaryColor: '#6366F1', backgroundColor: '#000000', textColor: '#FFFFFF' },
       }),
     },
@@ -239,52 +232,15 @@ function renderHome({
   return { tree, navigationCalls, checkinCalls };
 }
 
-function nextGameCard(tree: Tree): Element {
-  const card = elements(tree).find((node) => node.props.testID === 'home-next-game-panel');
-  assert.ok(card, 'Expected the rendered next-game card');
-  return card;
-}
-
 describe('HomeScreen game accessibility', () => {
-  it('announces next-game teams, date/time, venue and availability instead of only the detail instruction', async () => {
-    const { tree, navigationCalls, checkinCalls } = renderHome();
-    const card = nextGameCard(tree);
-    assert.equal(card.type, 'View');
-    assert.equal(card.props.accessibilityRole, undefined);
-    assert.equal(visibleText(card), 'Tue, Sep 8 · 8:30 PM River Otters VS Harbour Wolves North Forum In Maybe Out 11 In · 2 Maybe · 0 Out');
-    const detail = elements(card).find((node) => node.props.testID === 'home-next-game-details');
-    assert.ok(detail);
-    assert.equal(detail.props.accessibilityRole, 'button');
-    expectAnnounced(detail, ['River Otters', 'Harbour Wolves', 'Sep 8', '8:30 PM', 'North Forum', '11 In · 2 Maybe · 0 Out']);
-    assert.equal(detail.props.accessibilityHint, 'Open next game details');
-
-    const controls = elements(card).filter((node) => node.type === 'Pressable' && node !== detail);
-    assert.equal(elements(detail).filter((node) => node.type === 'Pressable' && node !== detail).length, 0);
-    assert.deepEqual(controls.map((node) => [node.props.accessibilityRole, node.props.accessibilityLabel, node.props.accessibilityState?.selected]), [
-      ['button', 'Check in for next game', true],
-      ['button', 'Mark next game as maybe', false],
-      ['button', 'Decline next game', false],
-    ]);
-    for (const control of controls) await control.props.onPress?.();
-    assert.deepEqual(navigationCalls, [], 'check-in controls must never navigate to game details');
-    detail.props.onPress?.();
-    assert.deepEqual(navigationCalls, [['Schedule', { screen: 'GamePreview', initial: false, params: { gameId: 'next-game-1' } }]]);
-    assert.deepEqual(checkinCalls, [
-      ['next-game-1', 'home-1', 'confirmed'], ['next-game-1', 'home-1', 'tentative'], ['next-game-1', 'home-1', 'out'],
-    ]);
-  });
-
-  it('retains the guest next-game join message in the accessible name', () => {
-    const { tree } = renderHome({ guest: true });
-    const card = nextGameCard(tree);
-    const detail = elements(card).find((node) => node.props.testID === 'home-next-game-details');
-    assert.ok(detail);
-    expectAnnounced(detail, ['River Otters', 'Harbour Wolves', 'North Forum', 'Sep 8', '8:30 PM', 'Join this league to check in']);
-    assert.equal(elements(card).filter((node) => node.type === 'Pressable').length, 1);
+  it('removes the For You next-game destination and its check-in controls', () => {
+    const { tree } = renderHome();
+    assert.equal(elements(tree).find((node) => node.props.testID === 'home-next-game-panel'), undefined);
+    assert.equal(elements(tree).find((node) => /next game/i.test(String(node.props.accessibilityLabel))), undefined);
   });
 
   it('keeps weekly final scores and venue readable on the native game destination', () => {
-    const { tree } = renderHome({ game: null, games: [{
+    const { tree } = renderHome({ games: [{
       ...nextGame, id: 'recent-game-1', season_id: 'season-1', status: 'completed', home_score: 4, away_score: 0,
     }] });
     const result = elements(tree).find((node) => node.type === 'Pressable' && visibleText(node).includes('Final'));
