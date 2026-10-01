@@ -195,11 +195,122 @@ export type PlayerCareerSeasonRow = {
   losses: number;
   ties: number;
   saves: number;
+  saves_known?: boolean;
   goals_against: number;
   save_percentage: number | null;
   goals_against_average: number | null;
   shutouts: number;
 };
+
+type StrictGoalieRawRow = {
+  id: string | null;
+  game_id: string | null;
+  season_id: string | null;
+  team_id: string | null;
+  saves: number | null;
+  shots_against: number | null;
+  goals_against: number | null;
+  game_result: string | null;
+  shutout: boolean | null;
+  provenance?: unknown;
+};
+
+type StrictGoalieBaseline = {
+  league_id: string;
+  player_id: string;
+  source_system: string;
+  source_batch_id: string;
+  games_played: number | null;
+  wins: number | null;
+  ties: number | null;
+  saves: number | null;
+  goals_against: number | null;
+  shutouts: number | null;
+  save_percentage: number | null;
+  goals_against_average: number | null;
+};
+
+type StrictSkaterRawRow = {
+  season_id: string | null;
+  team_id: string | null;
+  team_name: string | null;
+  position: string | null;
+  games_played: number | null;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
+};
+
+type StrictSkaterBaseline = {
+  league_id: string;
+  player_id: string;
+  source_system: string;
+  source_batch_id: string;
+  games_played: number | null;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
+};
+
+export function classifyStrictGoalieCareerSources(
+  rows: StrictGoalieRawRow[],
+  baseline: StrictGoalieBaseline | null,
+  historicalSeasonId: string | null,
+): StrictGoalieRawRow[] {
+  if (!baseline || !historicalSeasonId) return rows;
+  const historicalRows = rows.filter((row) => row.season_id === historicalSeasonId);
+  if (historicalRows.length === 0) return rows;
+  const approvedBaseline = baseline.source_system === 'hockeylifehl_legacy_players'
+    && baseline.source_batch_id === 'legacy_players_current';
+  const matchingCarrier = historicalRows.length === 1
+    && Number(historicalRows[0].goals_against ?? 0) === Number(baseline.goals_against ?? 0)
+    && Number(historicalRows[0].saves ?? 0) === Number(baseline.saves ?? 0);
+  if (!approvedBaseline || !matchingCarrier) {
+    throwCanonicalReadError(new Error('unresolved historical baseline overlap'), 'goalie career provenance');
+  }
+  return rows.filter((row) => row !== historicalRows[0]);
+}
+
+export function classifyStrictSkaterCareerSources(
+  rows: StrictSkaterRawRow[],
+  baseline: StrictSkaterBaseline | null,
+  historicalSeasonId: string | null,
+): StrictSkaterRawRow[] {
+  if (!baseline) return rows;
+  if (!historicalSeasonId
+    || baseline.source_system !== 'hockeylifehl_legacy_players'
+    || baseline.source_batch_id !== 'legacy_players_current') {
+    throwCanonicalReadError(new Error('unapproved historical baseline'), 'skater career provenance');
+  }
+  const historicalRows = rows.filter((row) => row.season_id === historicalSeasonId);
+  if (historicalRows.length > 1) {
+    throwCanonicalReadError(new Error('ambiguous historical baseline overlap'), 'skater career provenance');
+  }
+  if (historicalRows.length === 1) {
+    const carrier = historicalRows[0];
+    const matches = Number(carrier.goals ?? 0) === Number(baseline.goals ?? 0)
+      && Number(carrier.assists ?? 0) === Number(baseline.assists ?? 0)
+      && Number(carrier.points ?? ((carrier.goals ?? 0) + (carrier.assists ?? 0))) === Number(baseline.points ?? 0);
+    if (!matches) throwCanonicalReadError(new Error('unresolved historical baseline overlap'), 'skater career provenance');
+    return rows.map((row) => row === carrier ? {
+      ...row,
+      games_played: baseline.games_played,
+      goals: baseline.goals,
+      assists: baseline.assists,
+      points: baseline.points,
+    } : row);
+  }
+  return [...rows, {
+    season_id: historicalSeasonId,
+    team_id: null,
+    team_name: IMPORTED_ALL_TIME_TEAM_LABEL,
+    position: null,
+    games_played: baseline.games_played,
+    goals: baseline.goals,
+    assists: baseline.assists,
+    points: baseline.points,
+  }];
+}
 
 export function filterVisiblePlayerCareerTimelineRows(
   rows: PlayerCareerSeasonRow[],
@@ -726,11 +837,13 @@ export async function getDivisions(leagueId: string): Promise<Division[]> {
 export async function getSeasons(leagueId: string, options: CanonicalReadOptions = {}): Promise<Season[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('seasons')
-    .select('*')
+  const query = supabase.from('seasons');
+  const { data, error, count } = await (options.strict
+    ? query.select('*', { count: 'exact' })
+    : query.select('*'))
     .eq('league_id', leagueId)
     .order('start_date', { ascending: false });
+  assertStrictCompleteResult(data, count ?? null, error, options.strict, 'seasons');
 
   if (error || !data) {
     if (error && options.strict) throwCanonicalReadError(error, 'seasons');
@@ -1162,7 +1275,7 @@ export async function getConfirmedCheckinAppearanceRows(
 
   let query = supabase
     .from('game_checkins')
-    .select('player_id, team_id, game_id, game:games!inner(id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score)', { count: 'exact' })
+    .select('player_id, team_id, game_id, game:games!inner(id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score)', options.strict ? { count: 'exact' } : undefined)
     .eq('status', 'confirmed')
     .in('game.status', [...gameStatuses]);
 
@@ -1213,7 +1326,7 @@ export async function getFallbackRosterAppearanceRows(
 
   let rosterQuery = supabase
     .from('team_rosters')
-    .select('player_id, team_id, season_id, joined_at, end_date', { count: 'exact' })
+    .select('player_id, team_id, season_id, joined_at, end_date', options.strict ? { count: 'exact' } : undefined)
     .eq('season_id', options.seasonId)
     .eq('status', 'active');
 
@@ -1246,29 +1359,29 @@ export async function getFallbackRosterAppearanceRows(
   const [gamesResult, outCheckinsResult, outAvailabilityResult, skaterResult, goalieResult] = await Promise.all([
     supabase
       .from('games')
-      .select('id, season_id, scheduled_at, status, home_team_id, away_team_id, home_score, away_score', { count: 'exact' })
+      .select('id, season_id, scheduled_at, status, home_team_id, away_team_id, home_score, away_score', options.strict ? { count: 'exact' } : undefined)
       .eq('season_id', options.seasonId)
       .in('status', [...gameStatuses])
       .or(teamFilter),
     supabase
       .from('game_checkins')
-      .select('game_id, team_id, player_id', { count: 'exact' })
+      .select('game_id, team_id, player_id', options.strict ? { count: 'exact' } : undefined)
       .eq('status', 'out')
       .in('team_id', teamIds),
     supabase
       .from('player_availability')
-      .select('game_id, team_id, player_id', { count: 'exact' })
+      .select('game_id, team_id, player_id', options.strict ? { count: 'exact' } : undefined)
       .eq('season_id', options.seasonId)
       .eq('status', 'out')
       .in('team_id', teamIds),
     supabase
       .from('player_stats')
-      .select('game_id, team_id', { count: 'exact' })
+      .select('game_id, team_id', options.strict ? { count: 'exact' } : undefined)
       .eq('season_id', options.seasonId)
       .in('team_id', teamIds),
     supabase
       .from('goalie_stats')
-      .select('game_id, team_id', { count: 'exact' })
+      .select('game_id, team_id', options.strict ? { count: 'exact' } : undefined)
       .eq('season_id', options.seasonId)
       .in('team_id', teamIds),
   ]);
@@ -4966,6 +5079,7 @@ export function summarizePlayerCareerTotalsFromTimeline(
   );
   const latest = rows[rows.length - 1];
   const shotsAgainst = totals.saves + totals.goals_against;
+  const savesKnown = rows.every((row) => row.saves_known !== false);
 
   return {
     player_id: playerId,
@@ -4984,10 +5098,10 @@ export function summarizePlayerCareerTotalsFromTimeline(
           wins: totals.wins,
           losses: totals.losses,
           ties: totals.ties,
-          saves: totals.saves,
+          ...(savesKnown ? { saves: totals.saves } : {}),
           goals_against: totals.goals_against,
           shutouts: totals.shutouts,
-          save_percentage: shotsAgainst > 0 ? roundStatValue(totals.saves / shotsAgainst, 3) : 0,
+          ...(savesKnown ? { save_percentage: shotsAgainst > 0 ? roundStatValue(totals.saves / shotsAgainst, 3) : 0 } : {}),
           goals_against_average: totals.games_played > 0 ? roundStatValue(totals.goals_against / totals.games_played) : 0,
         }
       : {}),
@@ -5200,13 +5314,13 @@ async function loadTeamNameMap(
     return new Map<string, string>();
   }
 
-  const { data, error, count } = await supabase.from('teams').select('id, name', { count: 'exact' }).in('id', ids);
+  const { data, error, count } = await supabase.from('teams').select('id, name', options.strict ? { count: 'exact' } : undefined).in('id', ids);
   assertStrictCompleteResult(data, count, error, options.strict, 'career timeline team names');
   if (error && options.strict) throwCanonicalReadError(error, 'career timeline team names');
   return new Map((data || []).map((team) => [team.id, team.name]));
 }
 
-async function loadTeamGameCountsBySeasonTeam(
+export async function loadTeamGameCountsBySeasonTeam(
   supabase: Awaited<ReturnType<typeof createClient>>,
   leagueId: string,
   seasonIds: string[],
@@ -5220,13 +5334,21 @@ async function loadTeamGameCountsBySeasonTeam(
 
   const buildQuery = () => supabase
     .from('games')
-    .select('id, season_id, home_team_id, away_team_id', { count: 'exact' })
+    .select('id, season_id, home_team_id, away_team_id, location', { count: 'exact' })
     .eq('league_id', leagueId)
     .in('season_id', seasonIds)
     .in('status', [...PLAYED_GAME_STATUSES])
     .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`)
     .order('id', { ascending: true });
-  const first = options.strict ? await buildQuery().range(0, 999) : await buildQuery();
+  const first = options.strict
+    ? await buildQuery().range(0, 999)
+    : await supabase
+        .from('games')
+        .select('id, season_id, home_team_id, away_team_id')
+        .eq('league_id', leagueId)
+        .in('season_id', seasonIds)
+        .in('status', [...PLAYED_GAME_STATUSES])
+        .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`);
   if (first.error && options.strict) throwCanonicalReadError(first.error, 'career timeline team games');
   const data = [...(first.data || [])];
   if (options.strict) {
@@ -5243,6 +5365,7 @@ async function loadTeamGameCountsBySeasonTeam(
   }
   const counts = new Map<string, Set<string>>();
   for (const game of data || []) {
+    if (options.strict && ((game as { location?: string | null }).location ?? '').startsWith(AGGREGATE_STATS_GAME_LOCATION_PREFIX)) continue;
     const season = game.season_id;
     if (!season || !game.id) continue;
     for (const teamId of [game.home_team_id, game.away_team_id]) {
@@ -5459,14 +5582,21 @@ export async function getPlayerCareerStatsTimeline(
   const leagueSeasonIds = seasons.map((season) => season.id);
 
   if (isGoalie) {
-    const { data: rawRows, error, count } = leagueSeasonIds.length === 0
-      ? { data: [], error: null, count: 0 }
+    const rawResult = strict
+      ? leagueSeasonIds.length === 0
+        ? { data: [], error: null, count: 0 }
+        : await supabase
+            .from('goalie_stats')
+            .select('id, game_id, season_id, team_id, saves, shots_against, goals_against, game_result, shutout', { count: 'exact' })
+            .eq('league_id', leagueId)
+            .eq('player_id', playerId)
+            .in('season_id', leagueSeasonIds)
       : await supabase
-      .from('goalie_stats')
-      .select('season_id, team_id, saves, goals_against, game_result, shutout', { count: 'exact' })
-      .eq('league_id', leagueId)
-      .eq('player_id', playerId)
-      .in('season_id', leagueSeasonIds);
+          .from('goalie_stats')
+          .select('season_id, team_id, saves, goals_against, game_result, shutout')
+          .eq('player_id', playerId);
+    const { data: rawRows, error } = rawResult;
+    const count = 'count' in rawResult ? rawResult.count : null;
 
     if (error) {
       if (strict) throwCanonicalReadError(error, 'goalie career timeline');
@@ -5474,14 +5604,27 @@ export async function getPlayerCareerStatsTimeline(
     }
     if (strict && count !== (rawRows?.length ?? 0)) throwCanonicalReadError(new Error('incomplete goalie career timeline'), 'goalie career timeline completeness');
 
-    const rows = (rawRows || []) as Array<{
-      season_id: string | null;
-      team_id: string | null;
-      saves: number | null;
-      goals_against: number | null;
-      game_result: string | null;
-      shutout: boolean | null;
-    }>;
+    let baselineStats: StrictGoalieBaseline | null = null;
+    if (historicalBaselineSeason) {
+      const baselineResult = strict
+        ? await serviceSupabase
+            .from('player_career_baselines')
+            .select('league_id, player_id, source_system, source_batch_id, games_played, wins, ties, saves, goals_against, shutouts, save_percentage, goals_against_average')
+            .eq('league_id', leagueId)
+            .eq('player_id', playerId)
+            .maybeSingle()
+        : await serviceSupabase
+            .from('player_career_baselines')
+            .select('games_played, wins, losses, ties, saves, goals_against, shutouts, save_percentage, goals_against_average')
+            .eq('player_id', playerId)
+            .maybeSingle();
+      if (baselineResult.error && strict) throwCanonicalReadError(baselineResult.error, 'goalie career baseline');
+      baselineStats = baselineResult.data as StrictGoalieBaseline | null;
+    }
+
+    const rows = strict
+      ? classifyStrictGoalieCareerSources((rawRows || []) as StrictGoalieRawRow[], baselineStats, historicalBaselineSeason?.id ?? null)
+      : (rawRows || []) as StrictGoalieRawRow[];
 
     const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
     const [confirmedBuckets, fallbackBuckets] = await Promise.all([
@@ -5531,6 +5674,7 @@ export async function getPlayerCareerStatsTimeline(
         losses: 0,
         ties: 0,
         saves: 0,
+        saves_known: true,
         goals_against: 0,
         save_percentage: null,
         goals_against_average: null,
@@ -5547,20 +5691,19 @@ export async function getPlayerCareerStatsTimeline(
       seasonMap.set(key, existing);
     }
 
-    if (historicalBaselineSeason) {
-      const { data: baselineStats, error: baselineError } = await serviceSupabase
-        .from('player_career_baselines')
-        .select('games_played, wins, ties, saves, goals_against, shutouts, save_percentage, goals_against_average')
-        .eq('league_id', leagueId)
-        .eq('player_id', playerId)
-        .maybeSingle();
-      if (baselineError && strict) throwCanonicalReadError(baselineError, 'goalie career baseline');
-
-      if (baselineStats) {
+    if (historicalBaselineSeason && baselineStats) {
+      {
         const baselineGames = Number(baselineStats.games_played || 0);
         const baselineSaves = Number(baselineStats.saves || 0);
         const baselineGoalsAgainst = Number(baselineStats.goals_against || 0);
         const shotsAgainst = baselineSaves + baselineGoalsAgainst;
+        const normalizedBaseline = strict
+          ? normalizeImportedCareerBaselineRows([baselineStats as unknown as Record<string, unknown>], {
+              leagueId,
+              sourceTable: 'player_career_baselines',
+            })[0]
+          : null;
+        const savesKnown = strict ? normalizedBaseline?.saves_known === true : true;
 
         seasonMap.set(`${historicalBaselineSeason.id}:baseline`, {
           season_id: historicalBaselineSeason.id,
@@ -5578,11 +5721,14 @@ export async function getPlayerCareerStatsTimeline(
           goals_per_game: 0,
           points_per_game: 0,
           wins: Number(baselineStats.wins || 0),
-          losses: Math.max(0, baselineGames - Number(baselineStats.wins || 0) - Number(baselineStats.ties || 0)),
+          losses: strict
+            ? Math.max(0, baselineGames - Number(baselineStats.wins || 0) - Number(baselineStats.ties || 0))
+            : Number((baselineStats as unknown as Record<string, unknown>).losses || 0),
           ties: Number(baselineStats.ties || 0),
           saves: baselineSaves,
+          saves_known: savesKnown,
           goals_against: baselineGoalsAgainst,
-          save_percentage: baselineStats.save_percentage != null
+          save_percentage: !savesKnown ? null : baselineStats.save_percentage != null
             ? roundCareerMetric(Number(baselineStats.save_percentage), 1)
             : shotsAgainst > 0
               ? roundCareerMetric((baselineSaves / shotsAgainst) * 100, 1)
@@ -5610,20 +5756,27 @@ export async function getPlayerCareerStatsTimeline(
           games_played: gamesPlayed,
           team_games: teamGames,
           attendance_pct: teamGames > 0 ? roundCareerMetric((gamesPlayed / teamGames) * 100, 1) : 0,
-          save_percentage: shotsAgainst > 0 ? roundCareerMetric((season.saves / shotsAgainst) * 100, 1) : null,
+          save_percentage: season.saves_known === false ? null : shotsAgainst > 0 ? roundCareerMetric((season.saves / shotsAgainst) * 100, 1) : null,
           goals_against_average: gamesPlayed > 0 ? roundCareerMetric(season.goals_against / gamesPlayed, 2) : null,
         };
       })
       .sort((left, right) => new Date(left.sort_date || 0).getTime() - new Date(right.sort_date || 0).getTime());
   }
 
-  const { data: seasonRows, error, count } = leagueSeasonIds.length === 0
-    ? { data: [], error: null, count: 0 }
+  const seasonResult = strict
+    ? leagueSeasonIds.length === 0
+      ? { data: [], error: null, count: 0 }
+      : await supabase
+          .from('player_season_stats')
+          .select('season_id, team_id, team_name, position, games_played, goals, assists, points', { count: 'exact' })
+          .eq('player_id', playerId)
+          .in('season_id', leagueSeasonIds)
     : await supabase
-    .from('player_season_stats')
-    .select('season_id, team_id, team_name, position, games_played, goals, assists, points', { count: 'exact' })
-    .eq('player_id', playerId)
-    .in('season_id', leagueSeasonIds);
+        .from('player_season_stats')
+        .select('season_id, team_id, team_name, position, games_played, goals, assists, points')
+        .eq('player_id', playerId);
+  const { data: seasonRows, error } = seasonResult;
+  const count = 'count' in seasonResult ? seasonResult.count : null;
 
   if (error) {
     if (strict) throwCanonicalReadError(error, 'skater career timeline');
@@ -5631,16 +5784,21 @@ export async function getPlayerCareerStatsTimeline(
   }
   if (strict && count !== (seasonRows?.length ?? 0)) throwCanonicalReadError(new Error('incomplete skater career timeline'), 'skater career timeline completeness');
 
-  const rows = (seasonRows || []) as Array<{
-    season_id: string | null;
-    team_id: string | null;
-    team_name: string | null;
-    position: string | null;
-    games_played: number | null;
-    goals: number | null;
-    assists: number | null;
-    points: number | null;
-  }>;
+  let rows = (seasonRows || []) as StrictSkaterRawRow[];
+  if (strict) {
+    const baselineResult = await serviceSupabase
+      .from('player_career_baselines')
+      .select('league_id, player_id, source_system, source_batch_id, games_played, goals, assists, points')
+      .eq('league_id', leagueId)
+      .eq('player_id', playerId)
+      .maybeSingle();
+    if (baselineResult.error) throwCanonicalReadError(baselineResult.error, 'skater career baseline');
+    rows = classifyStrictSkaterCareerSources(
+      rows,
+      baselineResult.data as StrictSkaterBaseline | null,
+      historicalBaselineSeason?.id ?? null,
+    );
+  }
 
   const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
   const [confirmedBuckets, fallbackBuckets] = await Promise.all([
@@ -5909,7 +6067,7 @@ export async function getPlayerCareerStats(
   // penalty minutes), but repair GP from distinct appearances plus confirmed check-ins.
   let query = supabase
     .from('player_stats')
-    .select('game_id, goals, assists, penalty_minutes', { count: 'exact' })
+    .select('game_id, goals, assists, penalty_minutes', options.strict ? { count: 'exact' } : undefined)
     .eq('player_id', playerId);
 
   if (seasonId) {
@@ -7497,11 +7655,12 @@ export async function getPlayerBadges(
   const supabase = await createClient();
   let query = supabase
     .from('player_badges')
-    .select('*, season:seasons(name), team:teams(name, logo_url, slug)')
+    .select('*, season:seasons(name), team:teams(name, logo_url, slug)', options.strict ? { count: 'exact' } : undefined)
     .eq('player_id', playerId)
     .order('created_at', { ascending: false });
   if (options.leagueId) query = query.eq('league_id', options.leagueId);
-  const { data, error } = await query;
+  const { data, error, count } = await query;
+  assertStrictCompleteResult(data, count ?? null, error, options.strict, 'player badges');
   if (error || !data) {
     if (error && options.strict) throwCanonicalReadError(error, 'player badges');
     return [];
@@ -7557,7 +7716,7 @@ export async function getPlayerGoalieMatchups(
 
   let query = supabase
     .from('player_goalie_matchups')
-    .select('*, goalie:profiles!player_goalie_matchups_goalie_id_fkey(id, full_name)')
+    .select('*, goalie:profiles!player_goalie_matchups_goalie_id_fkey(id, full_name)', options.strict ? { count: 'exact' } : undefined)
     .eq('player_id', playerId)
     .order('points', { ascending: false });
 
@@ -7566,7 +7725,8 @@ export async function getPlayerGoalieMatchups(
   }
   if (options.leagueId) query = query.eq('league_id', options.leagueId);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
+  assertStrictCompleteResult(data, count ?? null, error, options.strict, 'player goalie matchups');
   if (error || !data) {
     if (error && options.strict) throwCanonicalReadError(error, 'player goalie matchups');
     return [];
@@ -7690,7 +7850,7 @@ export async function getGoaliePlayerMatchups(
 
   let query = supabase
     .from('player_goalie_matchups')
-    .select('*, player:profiles!player_goalie_matchups_player_id_fkey(id, full_name)')
+    .select('*, player:profiles!player_goalie_matchups_player_id_fkey(id, full_name)', options.strict ? { count: 'exact' } : undefined)
     .eq('goalie_id', goalieId)
     .order('goals', { ascending: false });
 
@@ -7699,7 +7859,8 @@ export async function getGoaliePlayerMatchups(
   }
   if (options.leagueId) query = query.eq('league_id', options.leagueId);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
+  assertStrictCompleteResult(data, count ?? null, error, options.strict, 'goalie player matchups');
   if (error || !data) {
     if (error && options.strict) throwCanonicalReadError(error, 'goalie player matchups');
     return [];

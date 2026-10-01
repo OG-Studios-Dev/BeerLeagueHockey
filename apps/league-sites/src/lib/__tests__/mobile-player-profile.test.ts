@@ -8,9 +8,19 @@ import {
 import {
   getConfirmedCheckinAppearanceRows,
   getFallbackRosterAppearanceRows,
+  classifyStrictGoalieCareerSources,
+  classifyStrictSkaterCareerSources,
+  getPlayerBadges,
+  getPlayerGoalieMatchups,
+  getSeasons,
+  loadTeamGameCountsBySeasonTeam,
   summarizePlayerCareerTotalsFromTimeline,
   type PlayerCareerSeasonRow,
 } from '@/lib/data';
+import { createClient } from '@/lib/supabase/server';
+
+jest.mock('@/lib/supabase/server', () => ({ createClient: jest.fn(), createServiceRoleClient: jest.fn() }));
+const mockedCreateClient = jest.mocked(createClient);
 
 const PROFILE_ID = 'add94b26-b344-459f-9727-8cddae9783de';
 const ROSTER_ID = '10000000-0000-4000-8000-000000000001';
@@ -150,7 +160,7 @@ describe('GET /api/mobile/player-profile', () => {
 
 function queryResult(result: { data: unknown[] | null; error: unknown; count: number | null }) {
   const query: Record<string, unknown> = {};
-  for (const method of ['select', 'eq', 'in', 'or']) query[method] = jest.fn(() => query);
+  for (const method of ['select', 'eq', 'in', 'or', 'order']) query[method] = jest.fn(() => query);
   query.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
   return query;
 }
@@ -161,6 +171,13 @@ describe('strict canonical appearance query completeness', () => {
     const client = { from: jest.fn(() => queryResult({ data: capped, error: null, count: 1001 })) };
     await expect(getConfirmedCheckinAppearanceRows(client as never, { playerIds: [PROFILE_ID], strict: true }))
       .rejects.toThrow('confirmed check-in appearances completeness');
+  });
+
+  it('preserves the original non-strict capped-query behavior and projection options', async () => {
+    const builder = queryResult({ data: [{ player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'one' }], error: null, count: 1001 });
+    const client = { from: jest.fn(() => builder) };
+    await expect(getConfirmedCheckinAppearanceRows(client as never, { playerIds: [PROFILE_ID] })).resolves.toHaveLength(1);
+    expect(builder.select).toHaveBeenCalledWith(expect.any(String), undefined);
   });
 
   it('propagates a later fallback-source query error after the roster query succeeds', async () => {
@@ -175,5 +192,102 @@ describe('strict canonical appearance query completeness', () => {
     const client = { from: jest.fn((table: string) => queryResult(results[table])) };
     await expect(getFallbackRosterAppearanceRows(client as never, { seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true }))
       .rejects.toThrow('fallback out availability');
+  });
+
+  it.each([
+    ['matchups', () => getPlayerGoalieMatchups(PROFILE_ID, SEASON_ID, { leagueId: HOCKEY_LIFE_ID, strict: true })],
+    ['badges', () => getPlayerBadges(PROFILE_ID, { leagueId: HOCKEY_LIFE_ID, strict: true })],
+    ['season catalog', () => getSeasons(HOCKEY_LIFE_ID, { strict: true })],
+  ])('fails closed for capped strict %s DTO reads', async (_label, read) => {
+    mockedCreateClient.mockResolvedValue({ from: jest.fn(() => queryResult({ data: [{}], error: null, count: 1001 })) } as never);
+    await expect(read()).rejects.toThrow('completeness');
+  });
+
+  it('fails closed when a later ordered team-game page errors', async () => {
+    const query: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'in', 'or', 'order']) query[method] = jest.fn(() => query);
+    query.range = jest.fn((from: number) => Promise.resolve(from === 0
+      ? { data: Array.from({ length: 1000 }, (_, index) => ({ id: `game-${index}`, season_id: SEASON_ID, home_team_id: TEAM_ID, away_team_id: null })), error: null, count: 1001 }
+      : { data: null, error: { code: 'PGRST500', message: 'later page failed' }, count: 1001 }));
+    const client = { from: jest.fn(() => query) };
+    await expect(loadTeamGameCountsBySeasonTeam(client as never, HOCKEY_LIFE_ID, [SEASON_ID], [TEAM_ID], { strict: true }))
+      .rejects.toThrow('career timeline team games page');
+    expect(query.range).toHaveBeenNthCalledWith(2, 1000, 1999);
+  });
+
+  it('excludes only explicitly marked aggregate carriers from a complete strict denominator', async () => {
+    const query: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'in', 'or', 'order']) query[method] = jest.fn(() => query);
+    query.range = jest.fn(() => Promise.resolve({ data: [
+      { id: 'real', season_id: SEASON_ID, home_team_id: TEAM_ID, away_team_id: null, location: 'Arena' },
+      { id: 'carrier', season_id: SEASON_ID, home_team_id: TEAM_ID, away_team_id: null, location: '[aggregate-only] historical aggregate stats carrier' },
+    ], error: null, count: 2 }));
+    const counts = await loadTeamGameCountsBySeasonTeam({ from: jest.fn(() => query) } as never, HOCKEY_LIFE_ID, [SEASON_ID], [TEAM_ID], { strict: true });
+    expect(counts.get(`${SEASON_ID}:${TEAM_ID}`)).toBe(1);
+  });
+});
+
+describe('strict goalie career provenance', () => {
+  const historicalSeasonId = 'e813368a-6389-4678-b596-294e70e89a9a';
+  const baseline = {
+    league_id: HOCKEY_LIFE_ID, player_id: '751c2f47-f0e8-4506-b10e-b39a7bbcd302',
+    source_system: 'hockeylifehl_legacy_players', source_batch_id: 'legacy_players_current',
+    games_played: 311, wins: 140, ties: 28, saves: 0, goals_against: 1324, shutouts: 7,
+    save_percentage: 0, goals_against_average: 4.26,
+  };
+  const carrier = {
+    id: '6cd8f793-089d-49a5-aea1-c3abd53fc932', game_id: '2ae5be6f-10df-4d52-8ffd-82fc4521f87a',
+    season_id: historicalSeasonId, team_id: null, saves: 0, shots_against: 1324,
+    goals_against: 1324, game_result: 'W', shutout: true, provenance: null,
+  };
+  const genuine = { ...carrier, id: 'genuine', game_id: 'game', season_id: SEASON_ID, goals_against: 2, shots_against: 20, saves: 18 };
+
+  it('supports baseline-only and raw-only sources without inventing another population', () => {
+    expect(classifyStrictGoalieCareerSources([], baseline, historicalSeasonId)).toEqual([]);
+    expect(classifyStrictGoalieCareerSources([carrier], null, historicalSeasonId)).toEqual([carrier]);
+  });
+
+  it.each([null, carrier.game_id])('removes a proven historical carrier whether game_id is %s', (gameId) => {
+    expect(classifyStrictGoalieCareerSources([{ ...carrier, game_id: gameId }, genuine], baseline, historicalSeasonId)).toEqual([genuine]);
+  });
+
+  it('fails closed on unresolved overlap while preserving genuine seasons and teams', () => {
+    expect(() => classifyStrictGoalieCareerSources([{ ...carrier, goals_against: 99 }, genuine], baseline, historicalSeasonId))
+      .toThrow('goalie career provenance');
+  });
+
+  it('keeps imported missing saves/SV unknown but retains a confirmed zero', () => {
+    const baseRow = {
+      season_id: historicalSeasonId, season_name: 'Historical Career Baseline (Pre-BLH)', sort_date: '2025-01-01',
+      team_id: null, team_name: null, position: 'Goalie', games_played: 311, team_games: 311, attendance_pct: 100,
+      goals: 0, assists: 0, points: 0, goals_per_game: 0, points_per_game: 0, wins: 140, losses: 143, ties: 28,
+      saves: 0, goals_against: 1324, save_percentage: null, goals_against_average: 4.26, shutouts: 7,
+    } as PlayerCareerSeasonRow;
+    const unknown = summarizePlayerCareerTotalsFromTimeline(PROFILE_ID, [{ ...baseRow, saves_known: false }], true)!;
+    const knownZero = summarizePlayerCareerTotalsFromTimeline(PROFILE_ID, [{ ...baseRow, saves_known: true }], true)!;
+    expect(unknown.saves).toBeUndefined();
+    expect(unknown.save_percentage).toBeUndefined();
+    expect(knownZero.saves).toBe(0);
+    expect(knownZero.save_percentage).toBe(0);
+  });
+});
+
+describe('strict skater career provenance', () => {
+  const historicalSeasonId = 'e813368a-6389-4678-b596-294e70e89a9a';
+  const baseline = {
+    league_id: HOCKEY_LIFE_ID, player_id: PROFILE_ID,
+    source_system: 'hockeylifehl_legacy_players', source_batch_id: 'legacy_players_current',
+    games_played: 72, goals: 105, assists: 45, points: 150,
+  };
+  const carrier = { season_id: historicalSeasonId, team_id: TEAM_ID, team_name: 'Legacy', position: 'C', games_played: 1, goals: 105, assists: 45, points: 150 };
+
+  it('replaces a proven one-appearance carrier with the authoritative imported baseline', () => {
+    expect(classifyStrictSkaterCareerSources([carrier], baseline, historicalSeasonId)[0]).toMatchObject({ games_played: 72, goals: 105, assists: 45, points: 150 });
+  });
+
+  it('supports baseline-only and raw-only sources and fails closed on an unresolved overlap', () => {
+    expect(classifyStrictSkaterCareerSources([], baseline, historicalSeasonId)).toHaveLength(1);
+    expect(classifyStrictSkaterCareerSources([carrier], null, historicalSeasonId)).toEqual([carrier]);
+    expect(() => classifyStrictSkaterCareerSources([{ ...carrier, points: 149 }], baseline, historicalSeasonId)).toThrow('skater career provenance');
   });
 });
