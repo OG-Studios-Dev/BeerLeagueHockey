@@ -93,6 +93,7 @@ function createRuntime({
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion }) },
     '../context/AuthContext': { useAuth: () => ({ user: currentUser, isGuest: guest }) },
     '../context/LeagueContext': { useLeague: () => ({ activeLeague: currentLeague, activeTheme: { primaryColor: '#34D399' }, isGuestLeague: guest }) },
+    '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) },
     '../navigation/playerCard': { navigateToPlayerCard: (_navigation: unknown, params: unknown) => playerCalls.push(params) },
     '../lib/supabase/checkins': {
       getGameCheckinSummary: async (_gameId: string, teamId: string) => teamId === assignmentB.team_id
@@ -169,6 +170,12 @@ describe('Home web-structure runtime', () => {
     assert.match(nodeText(output), /Rink Shop/);
     assert.equal(findNode(output, (node) => /^home-personal-(loading|error|section)$/.test(String(node.props.testID))), undefined);
     assert.equal(runtime.queryCalls.length, 0);
+  });
+
+  it('uses the installed shell viewer-team accent after removing the personal Home loader', async () => {
+    const output = await settle(createRuntime());
+    const story = findNode(output, (node) => node.props.testID === 'focus-card-home:story:story-1');
+    assert.equal(story?.props.accentColor, '#1F6A44');
   });
 
   it('preserves article, game, player, schedule, notifications, and sponsor routes', async () => {

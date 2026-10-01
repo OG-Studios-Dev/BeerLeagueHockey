@@ -254,6 +254,7 @@ function createRuntime({
       '../../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
       '../../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion, reduceTransparency }) },
+      '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) },
       '../../lib/supabase/checkins': { getGameCheckinSummary: async () => ({ confirmed: [], tentative: [], out: [], total: 0 }) },
       '../../lib/supabase/captain': {
         clearPlayerCheckinAsCaptain: async () => ({ success: true }), createGoalieRequest: async () => ({ success: true }),

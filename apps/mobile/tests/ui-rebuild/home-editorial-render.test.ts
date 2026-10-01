@@ -135,6 +135,7 @@ function makeScreen({
         useAccessibilityPreferences: () => ({ reduceTransparency, reduceMotion }),
       },
       '../context/AuthContext': { useAuth: () => ({ user: { id: 'player-1' }, isGuest: false }) },
+      '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#34D399' }) },
       '../context/LeagueContext': {
         useLeague: () => ({
           activeLeague,

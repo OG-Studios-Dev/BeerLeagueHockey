@@ -48,11 +48,11 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
         ? animated.View : 'AnimatedView';
       const FocusScrollView = native.ScrollView ?? 'ScrollView';
       const FocusFlatList = native.FlatList ?? 'FlatList';
-      const FocusCard = ({ children, focusId, style, testID }: TestProps) => {
+      const FocusCard = ({ children, focusId, style, testID, accentColor }: TestProps) => {
         const wrapperTestID = testID ?? `focus-card-${focusId}`;
         return createElement(
           native.View ?? 'View',
-          { style, testID: wrapperTestID },
+          { style, testID: wrapperTestID, accentColor },
           children ?? null,
           createElement(animatedView ?? 'AnimatedView', {
             testID: `${wrapperTestID}-emphasis`,

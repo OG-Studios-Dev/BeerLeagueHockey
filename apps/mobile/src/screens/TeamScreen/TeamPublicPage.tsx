@@ -9,6 +9,7 @@ import TeamLogo from '../../components/TeamLogo';
 import type { TeamLeaderMetric, TeamPageGame, TeamPageLeader, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { formatPublicMetric } from '../../lib/supabase/publicStats';
 import colors from '../../theme/colors';
+import { resolveFocusAccent } from '../../theme/focusAccent';
 import { ui } from '../../theme/ui';
 
 /* eslint-disable @typescript-eslint/no-require-imports -- Metro requires static image requires. */
@@ -449,7 +450,7 @@ function CaptainContact({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPage
 export default function TeamPublicPage({ snapshot, reduceTransparency, onOpenPlayer, onOpenGame }: { snapshot: TeamPageSnapshot; reduceTransparency: boolean; onOpenPlayer: (playerId: string) => void; onOpenGame: (gameId: string) => void }) {
   const { width } = useWindowDimensions();
   const compact = width < 360;
-  const accent = snapshot.team.primaryColor ?? snapshot.league.primaryColor ?? colors.primary;
+  const accent = resolveFocusAccent(snapshot.team.primaryColor, snapshot.league.primaryColor);
   return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><Hero snapshot={snapshot} compact={compact} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} />{snapshot.sponsors.length > 0 ? <View testID="team-partners" style={styles.partners}><Text style={styles.partnersLabel}>FEATURED PARTNERS</Text><View style={styles.partnerLogos}>{snapshot.sponsors.filter((sponsor) => sponsor.logoUrl).map((sponsor) => <Image key={sponsor.id} source={{ uri: sponsor.logoUrl! }} resizeMode="contain" alt={sponsor.name} style={styles.partnerLogo} />)}</View></View> : null}</View>;
 }
 

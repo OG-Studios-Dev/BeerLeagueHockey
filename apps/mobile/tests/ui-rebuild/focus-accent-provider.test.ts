@@ -51,4 +51,15 @@ describe('focus accent provider', () => {
     fixture.setData({ identityKey: 'viewer:league-a', team: { primary_color: '#1F6A44' } });
     assert.equal(fixture.accent(), '#1F6A44');
   });
+
+  it('moves viewer green to viewed purple to league-home green without leaking the page accent', () => {
+    const fixture = createProviderFixture(
+      { identityKey: 'viewer:league-home', team: { primary_color: '#1F6A44' } },
+      '#237A3B',
+    );
+    assert.equal(fixture.accent(), '#1F6A44');
+    assert.equal(resolveFocusAccent('#6046A8', fixture.accent()), '#6046A8');
+    fixture.setData({ identityKey: 'guest:league-home', team: null });
+    assert.equal(fixture.accent(), '#237A3B');
+  });
 });

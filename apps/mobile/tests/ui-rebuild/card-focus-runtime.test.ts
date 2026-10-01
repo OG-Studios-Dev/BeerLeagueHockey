@@ -240,4 +240,22 @@ describe('focus coordinator animation lifecycle', () => {
     assert.equal(emphasisStyle().borderColor, '#6046A8');
     harness.unmount();
   });
+
+  it('preserves old-rest and new-outline colours while focus transfers on scroll', () => {
+    const { exports, harness } = compileFocusRuntime(true, false, '#1F6A44');
+    const output = harness.mount(() => exports.FocusScrollView({
+      accentColor: '#6046A8',
+      children: [
+        exports.FocusCard({ focusId: 'old', accentColor: '#6046A8', children: 'old' }),
+        exports.FocusCard({ focusId: 'new', accentColor: '#6046A8', children: 'new' }),
+      ],
+    }));
+    const emphases = [
+      findNode(output, (node) => node.props.testID === 'focus-card-old-emphasis'),
+      findNode(output, (node) => node.props.testID === 'focus-card-new-emphasis'),
+    ];
+    assert.deepEqual(emphases.map((node) => flattenStyle(node?.props.style).borderColor), ['#6046A8', '#6046A8']);
+    assert.deepEqual(emphases.map((node) => flattenStyle(node?.props.style).shadowColor), ['#6046A8', '#6046A8']);
+    harness.unmount();
+  });
 });

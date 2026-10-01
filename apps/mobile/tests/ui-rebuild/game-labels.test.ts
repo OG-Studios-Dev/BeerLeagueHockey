@@ -207,6 +207,7 @@ function renderHome({
       }),
     },
     '../context/AuthContext': { useAuth: () => ({ user: { id: 'player-1' }, isGuest: false }) },
+    '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#22D3EE' }) },
     '../lib/supabase/client': { supabase: { from: failNetwork } },
     '../lib/supabase/home': {
       loadHomePublicSnapshot: failNetwork,

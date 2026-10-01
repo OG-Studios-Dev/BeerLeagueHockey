@@ -28,6 +28,7 @@ import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
 import { navigateToPlayerCard } from '../navigation/playerCard';
+import { useMobileShellData } from '../navigation/MobileShellDataContext';
 import {
   type HomeArticle,
   type HomeLeader,
@@ -191,6 +192,7 @@ function MetricTabs({ value, onChange }: { value: LeaderMetric; onChange: (value
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { activeLeague, activeTheme } = useLeague();
+  const { focusAccent } = useMobileShellData();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { width, height } = useWindowDimensions();
   const visuals = getHomeVisualPreferences(reduceTransparency, reduceMotion);
@@ -257,7 +259,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     );
   }
 
-  const accent = activeTheme.primaryColor ?? colors.primary;
+  const accent = focusAccent;
   const stories = publicHome?.articles.data ?? [];
   const article = stories[storyIndex] ?? stories[0] ?? null;
   const storyPageWidth = Math.max(1, width - homeTokens.contentPadding * 2);
@@ -295,7 +297,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['top', 'left', 'right']}>
       <HomeArenaBackdrop accentColor={accent} showAtmosphericGlow={visuals.showAtmosphericGlow} />
       <GuestBanner />
-      <FocusScrollView focusScopeKey={`home:${activeLeague.id}`} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />} showsVerticalScrollIndicator={false}>
+      <FocusScrollView accentColor={accent} focusScopeKey={`home:${activeLeague.id}`} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />} showsVerticalScrollIndicator={false}>
         <HomeLeagueHero
           leagueId={activeLeague.id}
           leagueName={activeLeague.name}

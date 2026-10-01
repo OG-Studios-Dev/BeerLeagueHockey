@@ -44,8 +44,10 @@ import { getMetricsOperationalSeason, getTeamActiveSeason } from '../../lib/supa
 import { loadTeamPageSnapshot, type TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
 import { navigateToGamePreview } from '../../navigation/gamePreview';
+import { useMobileShellData } from '../../navigation/MobileShellDataContext';
 import { TeamStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
+import { resolveFocusAccent } from '../../theme/focusAccent';
 import { ui } from '../../theme/ui';
 import TeamPublicPage from './TeamPublicPage';
 
@@ -283,6 +285,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const { teamId, leagueId } = route.params;
   const { width } = useWindowDimensions();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
+  const { focusAccent } = useMobileShellData();
   const _isCompact = width < 390;
 
   const [team, setTeam] = React.useState<TeamInfo | null>(null);
@@ -320,7 +323,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [publicRetryToken, setPublicRetryToken] = React.useState(0);
 
   const nextGame = upcomingGames[0] ?? null;
-  const primaryColor = team?.primary_color ?? colors.primary;
+  const primaryColor = resolveFocusAccent(team?.primary_color, focusAccent);
   const _publicSurface = reduceTransparency
     ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
     : { backgroundColor: 'rgba(10, 22, 40, 0.30)', borderColor: 'rgba(125, 190, 255, 0.22)' };
@@ -845,6 +848,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
       <FocusScrollView
+        accentColor={primaryColor}
         focusEnabled={!subModalVisible && !goalieModalVisible}
         focusScopeKey={`team:${leagueId}:${teamId}:${presentationSeason.id}`}
         contentContainerStyle={styles.scrollContent}
@@ -909,6 +913,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
               </View>
             ) : (
               <FocusScrollView
+                accentColor={primaryColor}
                 focusEnabled={subModalVisible}
                 focusScopeKey={`team-modal:sub:${leagueId}:${teamId}`}
                 includeBottomTabInset={false}

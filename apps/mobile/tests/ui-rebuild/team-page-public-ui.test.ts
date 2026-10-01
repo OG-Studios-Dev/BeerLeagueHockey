@@ -265,8 +265,16 @@ describe('native Team public composition', () => {
   });
 
   it('uses the viewed team color for Team-page emphasis instead of a hard-coded cyan', () => {
-    const output = runtime(390, { ...snapshot, league: { ...snapshot.league, primaryColor: '#03299B' } }).harness.output;
-    assert.equal(flattenStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.style).backgroundColor, '#36A852');
+    const output = runtime(390, { ...snapshot, team: { ...snapshot.team, primaryColor: '#6046A8' }, league: { ...snapshot.league, primaryColor: '#1F6A44' } }).harness.output;
+    assert.equal(flattenStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.style).backgroundColor, '#6046A8');
+    const leaders = findNode(output, (node) => node.props.testID === 'focus-card-team-public:team-a:leaders');
+    assert.equal(leaders?.props.accentColor, '#6046A8');
+  });
+
+  it('rejects a malformed viewed-team colour and falls back to the validated league accent', () => {
+    const output = runtime(390, { ...snapshot, team: { ...snapshot.team, primaryColor: 'purple' }, league: { ...snapshot.league, primaryColor: '#1F6A44' } }).harness.output;
+    const leaders = findNode(output, (node) => node.props.testID === 'focus-card-team-public:team-a:leaders');
+    assert.equal(leaders?.props.accentColor, '#1F6A44');
   });
 
   it('treats jersey lettering as fixed artwork while the button exposes the complete identity', () => {

@@ -148,9 +148,11 @@ describe('shell form exits', () => {
         '../components/PlayerProfile/PlayerPortrait': () => null,
         '../components/PlayerProfile/SeasonPicker': () => null,
         '../components/SectionHeader': () => null, '../components/TeamLogo': () => null,
+        '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#03299B' }) },
         '../lib/supabase/playerPage': { loadHockeyLifePlayerPage: async () => ({
           playerId: 'synthetic-player', rosterId: 'roster-1', fullName: 'Synthetic Player', photoUrl: null,
-          position: null, leadershipRole: null, jerseyNumber: null, isGoalie: false, team: null,
+          position: null, leadershipRole: null, jerseyNumber: null, isGoalie: false,
+          team: { id: 'viewed-team', name: 'Viewed Purple', logoUrl: null, primaryColor: '#6046A8' },
           seasons: [], selectedSeasonId: null, selectedSeasonName: null, isCareer: true, metrics: null,
           careerRows: [], badges: [], games: [], matchups: [], articles: [],
         }) },
@@ -163,6 +165,10 @@ describe('shell form exits', () => {
     harness.render();
     const share = findNode(harness.output, (node) => node.props.accessibilityLabel === 'Share player card');
     assert.ok(share);
+    const playerSurface = findNode(harness.output, (node) => node.type === 'ScrollView');
+    assert.equal(playerSurface?.props.accentColor, '#6046A8');
+    const playerHero = findNode(harness.output, (node) => node.props.testID === 'focus-card-player:synthetic-player:identity');
+    assert.equal(playerHero?.props.accentColor, '#6046A8');
     await share.props.onPress();
     assert.deepEqual(shares, [{ title: 'Synthetic Player · Hockey Life Player', message: 'Synthetic Player · Hockey Life Player\nCareer stats and history: https://hockey-life.beerleaguehockey.ca/hockey-life/players/synthetic-player?season=all' }]);
   });

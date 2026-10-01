@@ -15,8 +15,10 @@ import { createPlayerRequestGate, getPlayerMetricDefinitions } from '../lib/play
 import { loadHockeyLifePlayerPage, type HockeyLifePlayerPage, type PlayerMetricValues } from '../lib/supabase/playerPage';
 import type { PlayerCardParams } from '../navigation/types';
 import { navigateToTeamDetail } from '../navigation/teamDetail';
+import { useMobileShellData } from '../navigation/MobileShellDataContext';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
+import { resolveFocusAccent } from '../theme/focusAccent';
 
 type Props = { route: { params: PlayerCardParams }; navigation: { goBack: () => void; navigate: (screen: string, params?: unknown) => void } };
 
@@ -50,6 +52,7 @@ function DataCell({ children, wide }: { children: React.ReactNode; wide?: boolea
 }
 
 export default function PlayerCardScreen({ route, navigation }: Props) {
+  const { focusAccent } = useMobileShellData();
   const playerId = route.params.playerId;
   const gate = React.useMemo(() => createPlayerRequestGate(), []);
   const [selection, setSelection] = React.useState<{ playerId: string; seasonId: string | null | undefined }>({ playerId, seasonId: undefined });
@@ -72,7 +75,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
   React.useEffect(() => { void load(); return () => gate.invalidate(); }, [gate, load]);
 
   const data = state.data;
-  const accent = data?.team?.primaryColor && /^#[0-9a-f]{6}$/i.test(data.team.primaryColor) ? data.team.primaryColor : HOCKEY_LIFE_PRIMARY;
+  const accent = resolveFocusAccent(data?.team?.primaryColor, focusAccent);
   if (state.status === 'loading' && !data) return <SafeAreaView style={styles.safeArea} edges={['left', 'right']}><View style={styles.centered}><ActivityIndicator color={accent} /><Text style={styles.stateText}>Loading Hockey Life player</Text></View></SafeAreaView>;
   if (state.status === 'empty') return <SafeAreaView style={styles.safeArea} edges={['left', 'right']}><View style={styles.centered}><Ionicons name="person-circle-outline" size={42} color={colors.textSecondary} /><Text style={styles.stateTitle}>Player unavailable</Text><Text style={styles.stateText}>This player is not accessible in Hockey Life.</Text></View></SafeAreaView>;
   if (!data) return <SafeAreaView style={styles.safeArea} edges={['left', 'right']}><View style={styles.centered}><Text style={styles.stateTitle}>Unable to load player</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retry}><Text style={styles.retryText}>Retry</Text></Pressable></View></SafeAreaView>;
@@ -92,7 +95,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
 
   return <SafeAreaView style={styles.safeArea} edges={['left', 'right']} onAccessibilityEscape={navigation.goBack}>
     <BrandAtmosphere accentColor={accent} secondaryColor={HOCKEY_LIFE_PRIMARY} intensity="medium" />
-    <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <FocusScrollView accentColor={accent} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <FocusCard focusId={`player:${data.playerId}:identity`} accentColor={accent} style={[styles.hero, { borderTopColor: accent }]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Share player card" onPress={() => void sharePlayer()} style={styles.shareButton}><Ionicons name="share-outline" size={20} color={colors.textPrimary} /></Pressable>
         <View style={styles.portraitWrap}><PlayerPortrait uri={data.photoUrl} name={data.fullName} accent={accent} />{data.jerseyNumber != null ? <View style={[styles.jerseyBadge, { backgroundColor: accent }]}><Text style={[styles.jerseyBadgeText, { color: getContrastTextColor(accent) }]}>#{data.jerseyNumber}</Text></View> : null}</View>
