@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { PlayerSeason } from '../../lib/supabase/playerPage';
 import colors from '../../theme/colors';
@@ -8,6 +9,7 @@ import colors from '../../theme/colors';
 type Props = { seasons: PlayerSeason[]; selectedSeasonId: string | null; isCareer: boolean; accent: string; onSelect: (seasonId: string | null) => void };
 
 export default function SeasonPicker({ seasons, selectedSeasonId, isCareer, accent, onSelect }: Props) {
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = React.useState(false);
   const selectedLabel = isCareer ? 'Career Stats' : seasons.find((season) => season.id === selectedSeasonId)?.name ?? 'Choose season';
   const choose = (value: string | null) => { setOpen(false); onSelect(value); };
@@ -17,7 +19,7 @@ export default function SeasonPicker({ seasons, selectedSeasonId, isCareer, acce
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
       <Pressable accessibilityRole="button" accessibilityLabel="Close season picker" style={styles.backdrop} onPress={() => setOpen(false)}>
-        <View style={styles.sheet} onStartShouldSetResponder={() => true}>
+        <View testID="player-season-picker-sheet" style={[styles.sheet, { paddingBottom: 18 + insets.bottom }]} onStartShouldSetResponder={() => true}>
           <Text style={styles.title}>Choose stats view</Text>
           <ScrollView style={styles.list}>
             <Pressable accessibilityRole="button" accessibilityLabel="View Career Stats" accessibilityState={{ selected: isCareer }} onPress={() => choose(null)} style={[styles.option, isCareer && { borderColor: accent }]}><Text style={[styles.optionText, isCareer && { color: accent }]}>Career Stats</Text>{isCareer ? <Ionicons name="checkmark-circle" size={20} color={accent} /> : null}</Pressable>

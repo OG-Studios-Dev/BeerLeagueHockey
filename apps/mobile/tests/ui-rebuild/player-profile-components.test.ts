@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness.ts';
+import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness.ts';
 
 function nativeMock() {
   return {
@@ -40,7 +40,7 @@ describe('player profile native controls', () => {
     const selections: Array<string | null> = [];
     const Picker = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
       new URL('../../src/components/PlayerProfile/SeasonPicker.tsx', import.meta.url),
-      { react: harness.react, 'react-native': nativeMock(), '@expo/vector-icons': { Ionicons: () => null } },
+      { react: harness.react, 'react-native': nativeMock(), 'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }, '@expo/vector-icons': { Ionicons: () => null } },
     ).default;
     harness.mount(() => Picker({
       seasons: [{ id: 'season-one', name: 'Fall 2026' }], selectedSeasonId: 'season-one', isCareer: false,
@@ -54,6 +54,28 @@ describe('player profile native controls', () => {
     assert.ok(career);
     career.props.onPress();
     assert.deepEqual(selections, [null]);
+  });
+
+  it('adds the physical bottom safe area to the existing modal sheet padding', () => {
+    const sheetPadding = (bottom: number) => {
+      const harness = createHookHarness();
+      const Picker = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
+        new URL('../../src/components/PlayerProfile/SeasonPicker.tsx', import.meta.url),
+        {
+          react: harness.react, 'react-native': nativeMock(),
+          'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom, left: 0 }) },
+          '@expo/vector-icons': { Ionicons: () => null },
+        },
+      ).default;
+      harness.mount(() => Picker({ seasons: [], selectedSeasonId: null, isCareer: true, accent: '#7026D9', onSelect: () => undefined }));
+      findNode(harness.output, (node) => node.props.accessibilityLabel === 'Change season, Career Stats selected')?.props.onPress();
+      harness.render();
+      const sheet = findNode(harness.output, (node) => node.props.testID === 'player-season-picker-sheet');
+      assert.ok(sheet);
+      return flattenStyle(sheet.props.style).paddingBottom;
+    };
+    assert.equal(sheetPadding(0), 18);
+    assert.equal(sheetPadding(34), 52);
   });
 });
 
