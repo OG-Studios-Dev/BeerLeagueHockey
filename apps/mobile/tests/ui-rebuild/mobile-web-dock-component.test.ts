@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
 type DockState = {
+  focusAccent: string;
   identityKey: string;
   isLoading: boolean;
   hasError: boolean;
@@ -25,6 +26,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
   let reportedDockHeight: number | undefined;
   let activeLeague: any = { id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null };
   let data: DockState = {
+    focusAccent: '#00FFFF',
     identityKey: 'guest:league-a', isLoading: false, hasError: false, websiteStatus: 'ready',
     seasonId: null, isPlayoffs: false, registrationOpen: false, visiblePages: undefined,
     customNavItems: [], team: null, retry: () => { retryCount += 1; }, ...initialData,
@@ -266,6 +268,7 @@ describe('MobileWebDock component integration', () => {
 
   it('uses only the current team colour for the active crest and safely falls back across identity states', () => {
     const fixture = createDockFixture({
+      focusAccent: '#123456',
       team: { team_id: 'team-a', team_name: 'Team A', logo_url: null, primary_color: '#123456' },
     }, { member: true });
     fixture.mount();
@@ -275,7 +278,7 @@ describe('MobileWebDock component integration', () => {
     assert.equal(crestStyle().borderColor, '#123456');
     assert.equal(crestStyle().shadowColor, '#123456');
 
-    fixture.setData({ team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color: '#A1B2C3' } });
+    fixture.setData({ focusAccent: '#A1B2C3', team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color: '#A1B2C3' } });
     assert.equal(crestStyle().borderColor, '#A1B2C3', 'team identity changes must update the crest accent');
     assert.equal(crestStyle().shadowColor, '#A1B2C3');
 
@@ -289,7 +292,7 @@ describe('MobileWebDock component integration', () => {
     assert.equal(crestStyle().borderColor, '#00ffff', 'no-team active state uses the safe league accent');
     assert.equal(crestStyle().shadowColor, '#00ffff');
 
-    fixture.setData({ team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color: '#A1B2C3' } });
+    fixture.setData({ focusAccent: '#A1B2C3', team: { team_id: 'team-b', team_name: 'Team B', logo_url: null, primary_color: '#A1B2C3' } });
     fixture.setFocusedRoute('Schedule');
     assert.equal(crestStyle().borderColor, 'rgba(255,255,255,0.22)');
     assert.equal(crestStyle().shadowColor, '#000000');
@@ -297,8 +300,8 @@ describe('MobileWebDock component integration', () => {
     fixture.setFocusedRoute('Standings');
     const standings = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-standings');
     const standingsStyle = flattenStyle(standings?.props.style({ pressed: false }));
-    assert.equal(standingsStyle.borderColor, '#00ffff48', 'other active tabs retain league theming');
-    assert.equal(standingsStyle.shadowColor, '#00ffff');
+    assert.equal(standingsStyle.borderColor, '#A1B2C348', 'league-wide active controls use the viewer team emphasis colour');
+    assert.equal(standingsStyle.shadowColor, '#A1B2C3');
   });
 
   it('renders every eligible action once and reserves the outbound icon for external destinations', () => {

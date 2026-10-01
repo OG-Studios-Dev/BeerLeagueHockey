@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { URL } from 'node:url';
 
-import { compileCommonJs, createHookHarness, findNode, forwardTestRef, type TestFocusModule } from './component-harness.ts';
+import { compileCommonJs, createHookHarness, findNode, flattenStyle, forwardTestRef, type TestFocusModule } from './component-harness.ts';
 import * as focusMath from '../../src/components/cardFocusMath.ts';
 
 class AnimatedValue {
@@ -12,7 +12,7 @@ class AnimatedValue {
   interpolate() { return this; }
 }
 
-function compileFocusRuntime(isFocused = true, isGloballyPaused = false) {
+function compileFocusRuntime(isFocused = true, isGloballyPaused = false, focusAccent = '#2457D6') {
   const harness = createHookHarness();
   const timingCalls: Array<{ value: AnimatedValue; config: Record<string, unknown>; stopped: boolean }> = [];
   const react = {
@@ -47,6 +47,7 @@ function compileFocusRuntime(isFocused = true, isGloballyPaused = false) {
     },
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: false }) },
     '../context/FocusPauseContext': { useFocusPaused: () => isGloballyPaused },
+    '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent }) },
     '../theme/colors': { default: { primary: '#34d399' } },
     './cardFocusMath': focusMath,
   });
@@ -215,6 +216,28 @@ describe('focus coordinator animation lifecycle', () => {
     assert.equal(emphasis?.props.testID, 'supplied-card-emphasis');
     assert.equal(emphasis?.props.pointerEvents, 'none');
     assert.doesNotMatch(JSON.stringify(output), /translateY|scale/);
+    harness.unmount();
+  });
+
+  it('renders a league-wide card emphasis with the viewer team accent from the installed shell provider', () => {
+    const { exports, harness } = compileFocusRuntime(true, false, '#B31B34');
+    const output = harness.mount(() => exports.FocusCard({ focusId: 'viewer-team-card', children: 'content' }));
+    const emphasis = findNode(output, (node) => node.type === 'AnimatedView');
+    const style = flattenStyle(emphasis?.props.style);
+    assert.equal(style.borderColor, '#B31B34');
+    assert.equal(style.shadowColor, '#B31B34');
+    harness.unmount();
+  });
+
+  it('keeps a viewed page team or semantic explicit accent ahead of the viewer-team default', () => {
+    const { exports, harness } = compileFocusRuntime(true, false, '#B31B34');
+    let pageTeamAccent = '#1F6A44';
+    harness.mount(() => exports.FocusCard({ focusId: 'viewed-team-card', accentColor: pageTeamAccent, children: 'content' }));
+    const emphasisStyle = () => flattenStyle(findNode(harness.output, (node) => node.type === 'AnimatedView')?.props.style);
+    assert.equal(emphasisStyle().borderColor, '#1F6A44');
+    pageTeamAccent = '#6046A8';
+    harness.render();
+    assert.equal(emphasisStyle().borderColor, '#6046A8');
     harness.unmount();
   });
 });

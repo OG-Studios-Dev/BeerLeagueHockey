@@ -20,6 +20,7 @@ import {
 
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useFocusPaused } from '../context/FocusPauseContext';
+import { useMobileShellData } from '../navigation/MobileShellDataContext';
 import colors from '../theme/colors';
 import { chooseFocusCandidate, createFocusScheduler, readVerticalScrollOffset } from './cardFocusMath';
 
@@ -368,7 +369,7 @@ export function createCardFocusCoordinator(options: CoordinatorOptions = {}) {
   return api;
 }
 
-type CardFocusContextValue = { coordinator: CardFocusCoordinator; scopeKey: string };
+type CardFocusContextValue = { coordinator: CardFocusCoordinator; scopeKey: string; accentColor?: string };
 const CardFocusContext = React.createContext<CardFocusContextValue | CardFocusCoordinator | null>(null);
 const InsideFocusCardContext = React.createContext(false);
 
@@ -399,7 +400,7 @@ function routeScope(route: { key?: string; name?: string; params?: unknown }, fo
   return `${route.key ?? route.name ?? 'route'}:${params}:${focusScopeKey ?? 'default'}`;
 }
 
-function useFocusSurface<T>(forwardedRef: React.ForwardedRef<T>, focusScopeKey?: string, focusEnabled = true) {
+function useFocusSurface<T>(forwardedRef: React.ForwardedRef<T>, focusScopeKey?: string, focusEnabled = true, accentColor?: string) {
   const isFocused = useIsFocused();
   const route = useRoute() as { key?: string; name?: string; params?: unknown };
   const { reduceMotion } = useAccessibilityPreferences();
@@ -407,7 +408,7 @@ function useFocusSurface<T>(forwardedRef: React.ForwardedRef<T>, focusScopeKey?:
   const nativeRef = React.useRef<T | null>(null);
   const coordinator = React.useMemo(() => createCardFocusCoordinator(), []);
   const ownerKey = routeScope(route, focusScopeKey);
-  const contextValue = React.useMemo(() => ({ coordinator, scopeKey: ownerKey }), [coordinator, ownerKey]);
+  const contextValue = React.useMemo(() => ({ coordinator, scopeKey: ownerKey, accentColor }), [accentColor, coordinator, ownerKey]);
 
   const setRef = React.useCallback((node: T | null) => {
     nativeRef.current = node;
@@ -440,7 +441,7 @@ function useFocusSurface<T>(forwardedRef: React.ForwardedRef<T>, focusScopeKey?:
   return { contextValue, coordinator, measureSurface, setRef };
 }
 
-type FocusSurfaceProps = { focusScopeKey?: string; focusEnabled?: boolean; includeBottomTabInset?: boolean };
+type FocusSurfaceProps = { focusScopeKey?: string; focusEnabled?: boolean; includeBottomTabInset?: boolean; accentColor?: string };
 
 export function useBottomTabContentInset() {
   return React.useContext(BottomTabBarHeightContext) ?? 0;
@@ -458,10 +459,10 @@ function useInsetContentContainerStyle(contentContainerStyle: ScrollViewProps['c
 }
 
 export const FocusScrollView = React.forwardRef<ScrollView, ScrollViewProps & FocusSurfaceProps>(function FocusScrollView(
-  { children, contentContainerStyle, focusEnabled, focusScopeKey, includeBottomTabInset = true, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props },
+  { accentColor, children, contentContainerStyle, focusEnabled, focusScopeKey, includeBottomTabInset = true, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props },
   forwardedRef,
 ) {
-  const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<ScrollView>(forwardedRef, focusScopeKey, focusEnabled);
+  const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<ScrollView>(forwardedRef, focusScopeKey, focusEnabled, accentColor);
   const insetContentContainerStyle = useInsetContentContainerStyle(contentContainerStyle, includeBottomTabInset);
   const handleLayout = React.useCallback((event: LayoutChangeEvent) => {
     coordinator.setViewportHeight(event.nativeEvent.layout.height);
@@ -492,10 +493,10 @@ type FocusFlatListProps<ItemT> = FlatListProps<ItemT> & FocusSurfaceProps & {
 };
 
 function FocusFlatListInner<ItemT>(
-  { contentContainerStyle, focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, includeBottomTabInset = true, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusFlatListProps<ItemT>,
+  { accentColor, contentContainerStyle, focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, includeBottomTabInset = true, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusFlatListProps<ItemT>,
   forwardedRef: React.ForwardedRef<FlatList<ItemT>>,
 ) {
-  const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<FlatList<ItemT>>(forwardedRef, focusScopeKey, focusEnabled);
+  const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<FlatList<ItemT>>(forwardedRef, focusScopeKey, focusEnabled, accentColor);
   const insetContentContainerStyle = useInsetContentContainerStyle(contentContainerStyle, includeBottomTabInset);
   const wrappedRenderItem = React.useCallback((info: Parameters<NonNullable<FlatListProps<ItemT>['renderItem']>>[0]) => {
     const rendered = renderItem?.(info) ?? null;
@@ -526,10 +527,10 @@ type FocusSectionListProps<ItemT, SectionT> = SectionListProps<ItemT, SectionT> 
 };
 
 function FocusSectionListInner<ItemT, SectionT>(
-  { contentContainerStyle, focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, includeBottomTabInset = true, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusSectionListProps<ItemT, SectionT>,
+  { accentColor, contentContainerStyle, focusEnabled, focusItems = true, focusKeyExtractor, focusScopeKey, includeBottomTabInset = true, keyExtractor, renderItem, onContentSizeChange, onLayout, onScroll, scrollEventThrottle, ...props }: FocusSectionListProps<ItemT, SectionT>,
   forwardedRef: React.ForwardedRef<SectionList<ItemT, SectionT>>,
 ) {
-  const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<SectionList<ItemT, SectionT>>(forwardedRef, focusScopeKey, focusEnabled);
+  const { contextValue, coordinator, measureSurface, setRef } = useFocusSurface<SectionList<ItemT, SectionT>>(forwardedRef, focusScopeKey, focusEnabled, accentColor);
   const insetContentContainerStyle = useInsetContentContainerStyle(contentContainerStyle, includeBottomTabInset);
   const wrappedRenderItem = React.useCallback((info: Parameters<NonNullable<SectionListProps<ItemT, SectionT>['renderItem']>>[0]) => {
     const rendered = renderItem?.(info) ?? null;
@@ -554,7 +555,7 @@ function FocusSectionListInner<ItemT, SectionT>(
 
 export const FocusSectionList = React.forwardRef(FocusSectionListInner) as <ItemT, SectionT>(props: FocusSectionListProps<ItemT, SectionT> & { ref?: React.ForwardedRef<SectionList<ItemT, SectionT>> }) => React.ReactElement;
 
-export function FocusCard({ children, focusId, focusScopeKey, accentColor = colors.primary, style, testID }: {
+export function FocusCard({ children, focusId, focusScopeKey, accentColor, style, testID }: {
   children: React.ReactNode;
   focusId: string;
   focusScopeKey?: string;
@@ -563,6 +564,7 @@ export function FocusCard({ children, focusId, focusScopeKey, accentColor = colo
   testID?: string;
 }) {
   const context = React.useContext(CardFocusContext);
+  const { focusAccent } = useMobileShellData();
   const insideFocusCard = React.useContext(InsideFocusCardContext);
   const coordinator = context && 'coordinator' in context ? context.coordinator : context;
   const inheritedScopeKey = context && 'scopeKey' in context ? context.scopeKey : 'default';
@@ -572,6 +574,10 @@ export function FocusCard({ children, focusId, focusScopeKey, accentColor = colo
   const [progress] = React.useState(() => new Animated.Value(0));
   const candidateId = `${inheritedScopeKey}:${focusScopeKey ?? 'card'}:${focusId}`;
   const wrapperTestID = testID ?? `focus-card-${focusId}`;
+  const resolvedAccentColor = accentColor
+    ?? (context && 'accentColor' in context ? context.accentColor : undefined)
+    ?? focusAccent
+    ?? colors.primary;
 
   const measure = React.useCallback((suppliedToken?: number) => {
     const token = suppliedToken ?? registrationTokenRef.current;
@@ -594,7 +600,7 @@ export function FocusCard({ children, focusId, focusScopeKey, accentColor = colo
     <View ref={nodeRef} collapsable={false} testID={wrapperTestID} onLayout={() => measure()} style={style}>
       <InsideFocusCardContext.Provider value>{children}</InsideFocusCardContext.Provider>
       <Animated.View testID={`${wrapperTestID}-emphasis`} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-        style={[styles.focusEdge, { borderColor: accentColor, shadowColor: accentColor, opacity: progress }, reduceMotion && styles.reducedMotionEdge]}
+        style={[styles.focusEdge, { borderColor: resolvedAccentColor, shadowColor: resolvedAccentColor, opacity: progress }, reduceMotion && styles.reducedMotionEdge]}
       />
     </View>
   );

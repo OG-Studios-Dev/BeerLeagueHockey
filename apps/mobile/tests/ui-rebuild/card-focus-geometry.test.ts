@@ -39,6 +39,7 @@ function fixture() {
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: true }) },
     // This isolated geometry fixture has no overlay; real pause integration stays in focus-pause.test.ts.
     '../context/FocusPauseContext': { useFocusPaused: () => false },
+    '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#B31B34' }) },
     '../theme/colors': { default: { primary: '#abc' } },
     './cardFocusMath': math,
   });

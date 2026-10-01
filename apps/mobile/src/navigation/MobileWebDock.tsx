@@ -246,6 +246,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const primary = safeOpaqueHex(activeTheme.primaryColor, colors.primary);
   const secondary = safeOpaqueHex(activeTheme.secondaryColor, colors.brandArena);
   const teamAccent = safeOpaqueHex(data.team?.primary_color, primary);
+  const emphasisAccent = safeOpaqueHex(data.focusAccent, teamAccent);
   const categories = React.useMemo(() => {
     const grouped = new Map<MoreMenuItem['category'], MoreMenuItem[]>();
     for (const item of items) {
@@ -300,7 +301,7 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
                 style={({ pressed }) => [
                   styles.control,
                   { minWidth: layout.touchMin, minHeight: layout.touchMin },
-                  !isTeam && active && [styles.controlActive, { borderColor: `${primary}48`, shadowColor: primary }],
+                  !isTeam && active && [styles.controlActive, { borderColor: `${emphasisAccent}48`, shadowColor: emphasisAccent }],
                   isTeam && [styles.teamControl, {
                     flexBasis: layout.teamColumnWidth,
                     width: layout.teamColumnWidth,

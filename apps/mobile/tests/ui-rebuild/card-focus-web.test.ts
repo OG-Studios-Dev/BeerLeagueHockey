@@ -31,6 +31,7 @@ describe('RN-web card focus production boundary', () => {
       },
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: false }) },
       '../context/FocusPauseContext': { useFocusPaused: () => false },
+      '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#B31B34' }) },
       '../theme/colors': { default: { primary: '#34d399' } },
       './cardFocusMath': require('../../src/components/cardFocusMath.ts'),
     });
@@ -91,6 +92,7 @@ describe('RN-web card focus production boundary', () => {
       },
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: true }) },
       '../context/FocusPauseContext': { useFocusPaused: () => false },
+      '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#B31B34' }) },
       '../theme/colors': { default: { primary: '#34d399' } },
       './cardFocusMath': require('../../src/components/cardFocusMath.ts'),
     });

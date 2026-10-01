@@ -2,10 +2,12 @@ import React from 'react';
 
 import { HOCKEY_LIFE_PRIMARY } from '../config/hockeyLife';
 import { resolveCutIceAccent } from '../components/cutIceTitleModel';
+import { resolveFocusAccent } from '../theme/focusAccent';
 import { useMobileDockData, type MobileDockData } from './useMobileDockData';
 
 type MobileShellData = MobileDockData & {
   retry: () => void;
+  focusAccent: string;
   titleAccent: string;
 };
 
@@ -21,6 +23,7 @@ const EMPTY: MobileShellData = {
   customNavItems: [],
   team: null,
   retry: () => undefined,
+  focusAccent: HOCKEY_LIFE_PRIMARY,
   titleAccent: HOCKEY_LIFE_PRIMARY,
 };
 
@@ -40,6 +43,7 @@ export function MobileShellDataProvider({
   const data = useMobileDockData(leagueId, userId);
   const value = React.useMemo(() => ({
     ...data,
+    focusAccent: resolveFocusAccent(data.team?.primary_color, leaguePrimary),
     titleAccent: resolveCutIceAccent(data.team?.primary_color ?? leaguePrimary),
   }), [data, leaguePrimary]);
   return <MobileShellDataContext.Provider value={value}>{children}</MobileShellDataContext.Provider>;
