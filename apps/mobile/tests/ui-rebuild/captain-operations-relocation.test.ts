@@ -64,6 +64,9 @@ function mountAvailability(options: {
   goalie?: (...args: any[]) => Promise<any>; invitations?: (...args: any[]) => Promise<any>;
   goalieLoad?: (...args: any[]) => Promise<any>;
   getRole?: (...args: any[]) => Promise<'captain' | 'alternate_captain' | null>;
+  status?: (...args: any[]) => Promise<any>; clear?: (...args: any[]) => Promise<any>;
+  rosterData?: any[]; checkins?: (...args: any[]) => Promise<Record<string, any>>;
+  gameLoader?: () => Promise<any>;
 } = {}) {
   const h = createHookHarness();
   let currentParams = options.params ?? routeParams;
@@ -73,12 +76,12 @@ function mountAvailability(options: {
   };
   const services = {
     getCaptainRole: async (...args: any[]) => { calls.role.push(args); return options.getRole ? options.getRole(...args) : options.role === undefined ? 'captain' : options.role; },
-    getGameCheckinStatusMap: async (...args: any[]) => { calls.checkins.push(args); return { 'player-1': 'confirmed' }; },
+    getGameCheckinStatusMap: async (...args: any[]) => { calls.checkins.push(args); return options.checkins ? options.checkins(...args) : { 'player-1': 'confirmed' }; },
     getLeagueSubPlayers: async (...args: any[]) => { calls.subs.push(args); return options.getSubs ? options.getSubs(...args) : { success: true, error: null, data: [{ id: 'sub-7', full_name: 'Sam Sub', email: 'sam@example.test' }] }; },
     getTeamSubInvitations: async (...args: any[]) => { calls.invitations.push(args); return options.invitations ? options.invitations(...args) : { success: true, error: null, data: [] }; },
     getOpenGoalieRequest: async (...args: any[]) => { calls.goalieLoad.push(args); return options.goalieLoad ? options.goalieLoad(...args) : null; },
-    updatePlayerCheckinAsCaptain: async (...args: any[]) => { calls.status.push(args); return options.statusResults?.shift() ?? options.statusResult ?? { success: true }; },
-    clearPlayerCheckinAsCaptain: async (...args: any[]) => { calls.clear.push(args); return { success: true }; },
+    updatePlayerCheckinAsCaptain: async (...args: any[]) => { calls.status.push(args); return options.status ? options.status(...args) : options.statusResults?.shift() ?? options.statusResult ?? { success: true }; },
+    clearPlayerCheckinAsCaptain: async (...args: any[]) => { calls.clear.push(args); return options.clear ? options.clear(...args) : { success: true }; },
     inviteSub: async (...args: any[]) => { calls.invite.push(args); return options.invite ? options.invite(...args) : options.inviteResult ?? { success: true }; },
     createGoalieRequest: async (...args: any[]) => { calls.goalie.push(args); return options.goalie ? options.goalie(...args) : options.goalieResult ?? { success: true, notifiedGoalies: 2 }; },
   };
@@ -92,9 +95,11 @@ function mountAvailability(options: {
     '../../config/hockeyLife': { HOCKEY_LIFE_ID },
     '../../lib/supabase/client': { supabase: { from: (table: string) => {
       assert.equal(table, 'games');
-      return resultBuilder({ data: options.game === undefined ? validGame : options.game, error: null });
+      const builder = resultBuilder({ data: options.game === undefined ? validGame : options.game, error: null });
+      if (options.gameLoader) builder.maybeSingle = options.gameLoader;
+      return builder;
     } } },
-    '../../lib/supabase/data': { getTeamRoster: async (...args: any[]) => { calls.roster.push(args); return roster; } },
+    '../../lib/supabase/data': { getTeamRoster: async (...args: any[]) => { calls.roster.push(args); return options.rosterData ?? roster; } },
     '../../lib/supabase/captain': services,
     '../../theme/colors': { __esModule: true, default: {
       bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333', glassStroke: '#444',
@@ -421,5 +426,144 @@ describe('private captain operations relocation', () => {
     goalieRun.setParams({ ...routeParams, teamId: 'team-2' }); await settle(goalieRun.h);
     pendingGoalie.resolve({ success: true, notifiedGoalies: 3 }); await settle(goalieRun.h);
     assert.equal(goalieRun.calls.alert.length, 0, 'route A completion does not alert or navigate route B');
+  });
+});
+
+function press(run: ReturnType<typeof mountAvailability>, testID: string) {
+  const node = findNode(run.h.output, candidate => candidate.props.testID === testID);
+  assert.ok(node, `missing ${testID}`);
+  assert.notEqual(node.props.disabled, true, `${testID} should be enabled`);
+  node.props.onPress();
+}
+
+describe('captain attendance lifecycle correction v3', () => {
+  it('supports repeated successful In/Out and Waiting/Out cycles without duplicate pending writes', async () => {
+    const run = mountAvailability();
+    await settle(run.h);
+    for (const status of ['confirmed', 'out', 'confirmed', 'out', 'confirmed']) {
+      press(run, `captain-status-player-1-${status}`);
+      await settle(run.h);
+    }
+    assert.deepEqual(run.calls.status.map(args => args[3]), ['confirmed', 'out', 'confirmed', 'out', 'confirmed']);
+
+    press(run, 'captain-status-player-1-waiting'); await settle(run.h);
+    press(run, 'captain-status-player-1-out'); await settle(run.h);
+    press(run, 'captain-status-player-1-waiting'); await settle(run.h);
+    assert.equal(run.calls.clear.length, 2);
+    assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-status-player-1-waiting')?.props.accessibilityState.selected, true);
+
+    let attempts = 0;
+    const retry = mountAvailability({ status: async () => ++attempts === 1 ? { success: false, error: 'retry me' } : { success: true } });
+    await settle(retry.h);
+    press(retry, 'captain-status-player-1-out'); await settle(retry.h);
+    press(retry, 'captain-status-player-1-out'); await settle(retry.h);
+    assert.equal(retry.calls.status.length, 2);
+    assert.equal(findNode(retry.h.output, node => node.props.testID === 'captain-status-player-1-out')?.props.accessibilityState.selected, true);
+  });
+
+  it('settles a candidate read invalidated during same-route refresh and allows a fresh reopen query', async () => {
+    const candidate = deferred<any>();
+    const refreshedGame = deferred<any>();
+    let gameReads = 0;
+    let subReads = 0;
+    const run = mountAvailability({
+      gameLoader: async () => ++gameReads === 1 ? { data: validGame, error: null } : refreshedGame.promise,
+      getSubs: async () => ++subReads === 1
+        ? candidate.promise
+        : { success: true, error: null, data: [{ id: 'fresh-sub', full_name: 'Fresh Sub', email: null }] },
+    });
+    await settle(run.h);
+    press(run, 'captain-request-sub'); await settle(run.h);
+    const scroll = findNode(run.h.output, node => node.type === 'ScrollView');
+    const refreshPromise = scroll?.props.refreshControl.props.onRefresh();
+    await settle(run.h);
+    candidate.resolve({ success: true, error: null, data: [{ id: 'old-sub', full_name: 'Old Sub', email: null }] });
+    await settle(run.h);
+    refreshedGame.resolve({ data: validGame, error: null });
+    await refreshPromise; await settle(run.h);
+    press(run, 'captain-request-sub'); await settle(run.h);
+    assert.equal(run.calls.subs.length, 2);
+    assert.match(nodeText(run.h.output), /Fresh Sub/);
+    assert.doesNotMatch(nodeText(run.h.output), /Old Sub/);
+  });
+
+  it('reloads candidates when the invalidated read finishes before or after same-route validation', async () => {
+    for (const timing of ['before', 'after'] as const) {
+      const oldRead = deferred<any>();
+      let subReads = 0;
+      const run = mountAvailability({
+        getSubs: async () => ++subReads === 1
+          ? oldRead.promise
+          : { success: true, error: null, data: [{ id: `fresh-${timing}`, full_name: `Fresh ${timing}`, email: null }] },
+      });
+      await settle(run.h);
+      press(run, 'captain-request-sub'); await settle(run.h);
+      if (timing === 'before') { oldRead.resolve({ success: true, error: null, data: [{ id: 'old', full_name: 'Old', email: null }] }); await settle(run.h); }
+      await refresh(run);
+      if (timing === 'after') { oldRead.resolve({ success: true, error: null, data: [{ id: 'old', full_name: 'Old', email: null }] }); await settle(run.h); }
+      press(run, 'captain-request-sub'); await settle(run.h);
+      assert.equal(run.calls.subs.length, 2);
+      assert.match(nodeText(run.h.output), new RegExp(`Fresh ${timing}`));
+    }
+  });
+
+  it('merges parallel per-player success and failure in both completion orders', async () => {
+    const rosterTwo = [
+      ...roster,
+      { id: 'roster-2', player_id: 'player-2', team_id: 'team-1', jersey_number: 10, position: 'D', is_goalie: false, player_name: 'Blake Defender', avatar_url: null },
+    ];
+    for (const outcome of ['both-success', 'second-failure'] as const) for (const order of ['second-first', 'first-first'] as const) {
+      const first = deferred<any>();
+      const second = deferred<any>();
+      const run = mountAvailability({
+        rosterData: rosterTwo,
+        checkins: async () => ({ 'player-1': 'confirmed', 'player-2': 'confirmed' }),
+        status: async (_gameId, _teamId, playerId) => playerId === 'player-1' ? first.promise : second.promise,
+      });
+      await settle(run.h);
+      press(run, 'captain-status-player-1-out');
+      press(run, 'captain-status-player-2-out');
+      if (order === 'second-first') {
+        second.resolve(outcome === 'both-success' ? { success: true } : { success: false, error: 'player two failed' }); await settle(run.h);
+        first.resolve({ success: true });
+      } else {
+        first.resolve({ success: true }); await settle(run.h);
+        second.resolve(outcome === 'both-success' ? { success: true } : { success: false, error: 'player two failed' });
+      }
+      await settle(run.h);
+      assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-status-player-1-out')?.props.accessibilityState.selected, true);
+      assert.equal(findNode(run.h.output, node => node.props.testID === `captain-status-player-2-${outcome === 'both-success' ? 'out' : 'confirmed'}`)?.props.accessibilityState.selected, true);
+    }
+  });
+
+  it('does not let an older refresh status read overwrite a write confirmed after that read began', async () => {
+    const staleRefresh = deferred<Record<string, any>>();
+    const pendingWrite = deferred<any>();
+    let checkinReads = 0;
+    const run = mountAvailability({
+      checkins: async () => ++checkinReads === 1 ? { 'player-1': 'confirmed' } : staleRefresh.promise,
+      status: async () => pendingWrite.promise,
+    });
+    await settle(run.h);
+    press(run, 'captain-status-player-1-out');
+    const scroll = findNode(run.h.output, node => node.type === 'ScrollView');
+    const refreshPromise = scroll?.props.refreshControl.props.onRefresh();
+    await settle(run.h);
+    pendingWrite.resolve({ success: true }); await settle(run.h);
+    staleRefresh.resolve({ 'player-1': 'confirmed' });
+    await refreshPromise; await settle(run.h);
+    assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-status-player-1-out')?.props.accessibilityState.selected, true);
+    assert.equal(run.calls.status.length, 1);
+  });
+
+  it('does not publish a stale successful status result into another validated entity', async () => {
+    const oldWrite = deferred<any>();
+    const run = mountAvailability({ status: async () => oldWrite.promise });
+    await settle(run.h);
+    press(run, 'captain-status-player-1-out');
+    run.setParams({ ...routeParams, teamId: 'team-2' }); await settle(run.h);
+    oldWrite.resolve({ success: true }); await settle(run.h);
+    assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-status-player-1-confirmed')?.props.accessibilityState.selected, true);
+    assert.equal(run.calls.status.length, 1);
   });
 });
