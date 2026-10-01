@@ -50,7 +50,6 @@ export default function CareerTrendChart({ rows, isGoalie, accent, hotFacts }: P
       </View>
       <View style={styles.labels}>{rows.map((row) => <Text key={`${row.seasonId}:${row.teamId ?? ''}`} numberOfLines={2} style={styles.axisLabel}>{row.seasonName}</Text>)}</View>
     </View>
-    <Text style={styles.accessibleSummary}>{summary}</Text>
     {hotFacts.length ? <View style={styles.factCard}>
       <Pressable accessibilityRole="button" accessibilityLabel="Previous hot take" disabled={hotFacts.length < 2} onPress={() => setFactIndex((factIndex - 1 + hotFacts.length) % hotFacts.length)} style={styles.factButton}><Text style={styles.factArrow}>‹</Text></Pressable>
       <Text style={styles.fact}>{hotFacts[factIndex % hotFacts.length]}</Text>
@@ -71,7 +70,6 @@ const styles = StyleSheet.create({
   point: { position: 'absolute', width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: colors.bgSurface },
   labels: { flexDirection: 'row', justifyContent: 'space-between', gap: 4, marginTop: 10, paddingBottom: 12 },
   axisLabel: { flex: 1, color: colors.textSecondary, fontSize: 9, lineHeight: 12, textAlign: 'center' },
-  accessibleSummary: { color: colors.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 10 },
   factCard: { minHeight: 70, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, marginTop: 12 },
   factButton: { width: 44, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   factArrow: { color: colors.textPrimary, fontSize: 27 },

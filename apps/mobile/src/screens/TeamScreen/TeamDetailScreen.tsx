@@ -163,11 +163,11 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatDateTime(iso: string): string {
+function _formatDateTime(iso: string): string {
   return `${formatDate(iso)} · ${formatTime(iso)}`;
 }
 
-function formatRosterPosition(position: string | null, isGoalie: boolean) {
+function _formatRosterPosition(position: string | null, isGoalie: boolean) {
   if (isGoalie) return 'G';
   if (!position) return '—';
 
@@ -204,7 +204,7 @@ function formatRosterPosition(position: string | null, isGoalie: boolean) {
   return normalized.startsWith('d') ? 'D' : normalized.startsWith('g') ? 'G' : 'F';
 }
 
-function formatCaptainRole(role: CaptainRole | null) {
+function _formatCaptainRole(role: CaptainRole | null) {
   if (role === 'captain') return 'Captain';
   if (role === 'alternate_captain') return 'Alternate';
   return null;
@@ -230,7 +230,7 @@ function buildAvailabilityCounts(
   };
 }
 
-function getLineupPillStyle(selected: boolean, tone: 'in' | 'maybe' | 'out' | 'wait') {
+function _getLineupPillStyle(selected: boolean, tone: 'in' | 'maybe' | 'out' | 'wait') {
   if (!selected) {
     return {
       backgroundColor: colors.bgInteractive,
@@ -270,7 +270,7 @@ function getLineupPillStyle(selected: boolean, tone: 'in' | 'maybe' | 'out' | 'w
   };
 }
 
-function StatBox({ label, value, compact = false }: { label: string; value: string | number; compact?: boolean }) {
+function _StatBox({ label, value, compact = false }: { label: string; value: string | number; compact?: boolean }) {
   return (
     <View style={[styles.statBox, compact && styles.statBoxCompact]}>
       <Text style={styles.statValue}>{value}</Text>
@@ -283,7 +283,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const { teamId, leagueId } = route.params;
   const { width } = useWindowDimensions();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
-  const isCompact = width < 390;
+  const _isCompact = width < 390;
 
   const [team, setTeam] = React.useState<TeamInfo | null>(null);
   const [league, setLeague] = React.useState<LeagueInfo | null>(null);
@@ -292,17 +292,17 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [_standing, setStanding] = React.useState<StandingInfo | null>(null);
   const [roster, setRoster] = React.useState<RosterPlayer[]>([]);
   const [upcomingGames, setUpcomingGames] = React.useState<UpcomingGame[]>([]);
-  const [nextGameAvailability, setNextGameAvailability] = React.useState<NextGameAvailability | null>(null);
+  const [_nextGameAvailability, setNextGameAvailability] = React.useState<NextGameAvailability | null>(null);
   const [captainRole, setCaptainRole] = React.useState<CaptainRole | null>(null);
   const [lineupStatuses, setLineupStatuses] = React.useState<Record<string, CheckinStatus>>({});
   const [subInvitations, setSubInvitations] = React.useState<TeamSubInvitation[]>([]);
-  const [goalieRequest, setGoalieRequest] = React.useState<GoalieRequestRow | null>(null);
+  const [_goalieRequest, setGoalieRequest] = React.useState<GoalieRequestRow | null>(null);
   const [subCandidates, setSubCandidates] = React.useState<SubCandidate[]>([]);
   const [loadingSubCandidates, setLoadingSubCandidates] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [lineupSavingPlayerId, setLineupSavingPlayerId] = React.useState<string | null>(null);
-  const [captainError, setCaptainError] = React.useState<string | null>(null);
+  const [_lineupSavingPlayerId, setLineupSavingPlayerId] = React.useState<string | null>(null);
+  const [_captainError, setCaptainError] = React.useState<string | null>(null);
 
   const [subModalVisible, setSubModalVisible] = React.useState(false);
   const [subSearch, setSubSearch] = React.useState('');
@@ -321,7 +321,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   const nextGame = upcomingGames[0] ?? null;
   const primaryColor = team?.primary_color ?? colors.primary;
-  const publicSurface = reduceTransparency
+  const _publicSurface = reduceTransparency
     ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
     : { backgroundColor: 'rgba(10, 22, 40, 0.30)', borderColor: 'rgba(125, 190, 255, 0.22)' };
   const nextOpponent = nextGame
@@ -645,7 +645,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     };
   }, [leagueId, publicRetryToken, refreshCaptainData, teamId]);
 
-  const pendingPlayers = React.useMemo(
+  const _pendingPlayers = React.useMemo(
     () => roster.filter((player) => !lineupStatuses[player.player_id]),
     [lineupStatuses, roster],
   );
@@ -665,12 +665,12 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     });
   }, [invitedPlayerIds, subCandidates, subSearch]);
 
-  const openLeagueSite = () => {
+  const _openLeagueSite = () => {
     if (!league?.slug) return;
     Linking.openURL(`https://${league.slug}.beerleaguehockey.ca`).catch(() => {});
   };
 
-  const openSubModal = async () => {
+  const _openSubModal = async () => {
     if (!captainRole || !nextGame) return;
     const generation = loadGenerationRef.current;
     const operationLeagueId = leagueId;
@@ -697,7 +697,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     setSubCandidates(result.data ?? []);
   };
 
-  const handleCaptainStatusChange = async (
+  const _handleCaptainStatusChange = async (
     playerId: string,
     nextStatus: CheckinStatus | 'waiting',
   ) => {
@@ -881,217 +881,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {activeSeason ? <View testID="team-operations-wrapper" style={styles.operationsWrapper}>
-        {(nextGame || league?.slug) && (
-          <FocusCard focusId={`team:${teamId}:operations`} testID="team-operations-card" accentColor={primaryColor} style={[styles.opsCard, publicSurface]}>
-            <Text style={styles.sectionTitle}>Team Operations</Text>
-
-            {nextGame ? (
-              <>
-                <View style={[styles.opsHeaderRow, isCompact && styles.opsHeaderRowCompact]}>
-                  <View style={styles.opsTextWrap}>
-                    <Text style={styles.opsTitle}>Next up: {nextOpponent}</Text>
-                    <Text style={styles.opsMeta}>
-                      {formatDate(nextGame.scheduled_at)} · {formatTime(nextGame.scheduled_at)}
-                      {nextGame.location ? ` · ${nextGame.location}` : ''}
-                    </Text>
-                  </View>
-                  <Pressable
-                    testID="team-open-game-action"
-                    accessibilityRole="button"
-                    accessibilityLabel="Open next game"
-                    style={[styles.opsPrimaryButton, isCompact && styles.opsPrimaryButtonCompact]}
-                    onPress={() => navigateToGame(nextGame.id)}
-                  >
-                    <Text style={styles.opsPrimaryButtonText}>Open Game</Text>
-                  </Pressable>
-                </View>
-
-                {nextGameAvailability ? (
-                  <>
-                    <View style={[styles.opsCountsRow, isCompact && styles.opsCountsRowCompact]}>
-                      <StatBox label="IN" value={nextGameAvailability.confirmed} compact={isCompact} />
-                      <StatBox label="MAYBE" value={nextGameAvailability.tentative} compact={isCompact} />
-                      <StatBox label="OUT" value={nextGameAvailability.out} compact={isCompact} />
-                      <StatBox label="WAITING" value={nextGameAvailability.pending} compact={isCompact} />
-                    </View>
-                    <Text style={styles.opsHint}>
-                      Use this to spot lineup risk early before players have all responded.
-                    </Text>
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <Text style={styles.opsMeta}>No scheduled games are posted for this team yet.</Text>
-            )}
-
-            {league?.slug ? (
-              <Pressable testID="team-league-site-action" accessibilityRole="button" accessibilityLabel="Open league site" style={styles.opsSecondaryButton} onPress={openLeagueSite}>
-                <Ionicons name="globe-outline" size={16} color={colors.textPrimary} />
-                <Text style={styles.opsSecondaryButtonText}>Open League Site</Text>
-              </Pressable>
-            ) : null}
-          </FocusCard>
-        )}
-
-        {captainRole && nextGame ? (
-          <FocusCard focusId={`team:${teamId}:captain`} accentColor={primaryColor} style={styles.captainCard}>
-            <View style={[styles.captainHeaderRow, isCompact && styles.captainHeaderRowCompact]}>
-              <View style={styles.captainHeaderCopy}>
-                <Text style={styles.sectionTitle}>Captain Center</Text>
-                <Text style={styles.cardMeta}>
-                  {formatCaptainRole(captainRole)} tools for {formatDateTime(nextGame.scheduled_at)}
-                </Text>
-              </View>
-              <View style={styles.captainRoleBadge}>
-                <Ionicons name="shield-checkmark-outline" size={14} color={colors.primary} />
-                <Text style={styles.captainRoleText}>{formatCaptainRole(captainRole)}</Text>
-              </View>
-            </View>
-
-            <View style={[styles.captainActionRow, isCompact && styles.captainActionRowCompact]}>
-              <Pressable testID="team-captain-sub-action" accessibilityRole="button" style={styles.captainActionButton} onPress={() => void openSubModal()}>
-                <Ionicons name="person-add-outline" size={16} color={colors.primary} />
-                <Text style={styles.captainActionTitle}>Request Sub</Text>
-                <Text style={styles.captainActionMeta}>{subInvitations.length} invites for this game</Text>
-              </Pressable>
-
-              <Pressable testID="team-captain-goalie-action" accessibilityRole="button" style={styles.captainActionButton} onPress={() => setGoalieModalVisible(true)}>
-                <Ionicons name="shield-half-outline" size={16} color={colors.primary} />
-                <Text style={styles.captainActionTitle}>Request Goalie</Text>
-                <Text style={styles.captainActionMeta}>{goalieRequest ? goalieRequest.status : 'No open request'}</Text>
-              </Pressable>
-            </View>
-
-            {captainError ? (
-              <View style={styles.errorCard}>
-                <Ionicons name="alert-circle-outline" size={16} color={colors.accentRed} />
-                <Text style={styles.errorText}>{captainError}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.inlineSection}>
-              <Text style={styles.inlineSectionTitle}>Lineup Watch</Text>
-              {pendingPlayers.length > 0 ? (
-                <View style={styles.pendingPlayersWrap}>
-                  {pendingPlayers.map((player) => (
-                    <View key={player.id} style={styles.pendingPlayerChip}>
-                      <Text style={styles.pendingPlayerText}>
-                        {player.player_name}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.inlineSectionBody}>Everyone on the roster has responded for this game.</Text>
-              )}
-            </View>
-
-            {subInvitations.length > 0 ? (
-              <View style={styles.inlineSection}>
-                <Text style={styles.inlineSectionTitle}>Sub Requests</Text>
-                <View style={styles.statusList}>
-                  {subInvitations.slice(0, 4).map((invite) => (
-                    <View key={invite.id} style={styles.statusListRow}>
-                      <Text style={styles.statusListTitle}>
-                        {invite.invitedPlayer?.fullName ?? 'Invited player'}
-                      </Text>
-                      <View style={[styles.statusBadge, invite.status === 'accepted' ? styles.statusBadgeSuccess : styles.statusBadgeNeutral]}>
-                        <Text style={styles.statusBadgeText}>{invite.status}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {goalieRequest ? (
-              <View style={styles.inlineSection}>
-                <Text style={styles.inlineSectionTitle}>Goalie Request</Text>
-                <View style={styles.goalieStatusCard}>
-                  <View style={styles.statusListRow}>
-                    <Text style={styles.statusListTitle}>Status</Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        goalieRequest.status === 'filled' ? styles.statusBadgeSuccess : styles.statusBadgeNeutral,
-                      ]}
-                    >
-                      <Text style={styles.statusBadgeText}>{goalieRequest.status}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.cardMeta}>
-                    Skill: {goalieRequest.skillLevelNeeded ?? 'intermediate'}
-                    {goalieRequest.compensation ? ` · ${goalieRequest.compensation}` : ''}
-                  </Text>
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.inlineSection}>
-              <Text style={styles.inlineSectionTitle}>Lineup Board</Text>
-              <View style={styles.lineupBoard}>
-                {roster.map((player) => {
-                  const status = lineupStatuses[player.player_id] ?? null;
-                  const isSaving = lineupSavingPlayerId === player.player_id;
-
-                  return (
-                    <View key={player.id} style={[styles.lineupRow, isCompact && styles.lineupRowCompact]}>
-                      <View style={styles.lineupPlayerCopy}>
-                        <Text style={styles.lineupPlayerName}>
-                          {player.player_name}
-                        </Text>
-                        <Text style={styles.lineupPlayerMeta}>
-                          {player.jersey_number != null ? `#${player.jersey_number}` : 'No #'} ·{' '}
-                          {formatRosterPosition(player.position, player.is_goalie)}
-                          {player.leadership_role ? ` · ${player.leadership_role === 'captain' ? 'C' : 'A'}` : ''}
-                        </Text>
-                      </View>
-
-                      <View style={styles.lineupActions}>
-                        {[
-                          { key: 'confirmed', label: 'IN', tone: 'in' as const },
-                          { key: 'tentative', label: 'MAYBE', tone: 'maybe' as const },
-                          { key: 'out', label: 'OUT', tone: 'out' as const },
-                          { key: 'waiting', label: 'WAIT', tone: 'wait' as const },
-                        ].map((option) => {
-                          const selected =
-                            option.key === 'waiting' ? status == null : status === (option.key as CheckinStatus);
-                          const tone = getLineupPillStyle(selected, option.tone);
-
-                          return (
-                            <Pressable
-                              key={option.key}
-                              disabled={isSaving}
-                              style={[
-                                styles.lineupActionPill,
-                                {
-                                  backgroundColor: tone.backgroundColor,
-                                  borderColor: tone.borderColor,
-                                  opacity: isSaving ? 0.5 : 1,
-                                },
-                              ]}
-                              onPress={() =>
-                                void handleCaptainStatusChange(
-                                  player.player_id,
-                                  option.key === 'waiting' ? 'waiting' : (option.key as CheckinStatus),
-                                )
-                              }
-                            >
-                              <Text style={[styles.lineupActionText, { color: tone.color }]}>{option.label}</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          </FocusCard>
-        ) : null}
-
-        </View> : null}
       </FocusScrollView>
 
       <Modal visible={subModalVisible} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setSubModalVisible(false)}>

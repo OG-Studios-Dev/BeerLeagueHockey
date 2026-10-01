@@ -330,16 +330,13 @@ describe('Team active-season data boundary', () => {
     assert.doesNotMatch(nodeText(output), /No active season/);
   });
 
-  it('gives public composition sole page inset ownership and preserves operations spacing below it', async () => {
+  it('gives public composition sole page inset ownership without appending an operations wrapper', async () => {
     const output = await settle(createRuntime({ width: 320 }));
     const scroll = findNode(output, (node) => node.type === 'ScrollView' && node.props.contentContainerStyle);
     const inset = flattenStyle(scroll?.props.contentContainerStyle);
     assert.equal(inset.paddingHorizontal ?? inset.padding ?? 0, 0);
     assert.ok((inset.paddingBottom ?? 0) >= 40);
-    const ops = findNode(output, (node) => node.props.testID === 'team-operations-wrapper');
-    assert.ok(ops);
-    assert.equal(flattenStyle(ops.props.style).paddingHorizontal, 16);
-    assert.ok(findNode(ops, (node) => node.props.testID === 'team-operations-card'));
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-operations-wrapper'), undefined);
   });
 
   it('loads the actual public composition entry and retries a scoped public snapshot failure', async () => {
@@ -504,7 +501,7 @@ describe('Team active-season data boundary', () => {
     assert.doesNotMatch(text, /Old Captain Bulletin|Old team only|Captain Center/);
   });
 
-  it('clears open structured dialogs, caches, saving state, and public A data when the route becomes B', async () => {
+  it('clears public A data and keeps duplicated dialogs closed when the route becomes B', async () => {
     let releaseBRole!: (role: string) => void;
     let markBRoleStarted!: () => void;
     const bRoleStarted = new Promise<void>((resolve) => { markBRoleStarted = resolve; });
@@ -522,11 +519,8 @@ describe('Team active-season data boundary', () => {
       },
     });
     let output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-sub-action')?.props.onPress();
-    findNode(output, (node) => node.props.testID === 'team-captain-goalie-action')?.props.onPress();
-    output = await settle(runtime);
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Search by name or email...')?.props.onChangeText('Alpha');
-    runtime.harness.render();
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-captain-sub-action'), undefined);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-captain-goalie-action'), undefined);
 
     routeParams.teamId = 'team-b';
     routeParams.leagueId = 'league-b';
@@ -538,63 +532,33 @@ describe('Team active-season data boundary', () => {
 
     releaseBRole('captain');
     output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-goalie-action')?.props.onPress();
-    output = runtime.harness.render();
-    assert.match(nodeText(output), /CompensationFreePaid/);
+    assert.match(nodeText(output), /Bay Blades|Beta Blake/);
+    assert.equal(findNode(output, (node) => node.type === 'Modal' && node.props.visible === true), undefined);
     assert.doesNotMatch(nodeText(output), /Alpha Sub/);
   });
 
-  it('ignores delayed A sub candidates and refetches B candidates with clean defaults', async () => {
-    let releaseACandidates!: (result: Row) => void;
-    let markACandidatesStarted!: () => void;
-    const aCandidatesStarted = new Promise<void>((resolve) => { markACandidatesStarted = resolve; });
+  it('does not fetch sub candidates without a visible TeamDetail entry point', async () => {
     const calls: string[][] = [];
-    const routeParams = { teamId: 'team-current', leagueId: 'league-a' };
-    const runtime = createRuntime({
-      dataset: fixturesWithSecondRoute(),
-      routeParams,
-      captainApi: {
-        getCaptainRole: async () => 'captain',
-        getLeagueSubPlayers: async (leagueId: string, teamId: string) => {
-          calls.push([leagueId, teamId]);
-          if (teamId === 'team-current') {
-            markACandidatesStarted();
-            return new Promise<Row>((resolve) => { releaseACandidates = resolve; });
-          }
-          return { success: true, data: [{ id: 'sub-b', full_name: 'Beta Sub', email: 'beta@example.invalid' }] };
-        },
+    const runtime = createRuntime({ captainApi: {
+      getCaptainRole: async () => 'captain',
+      getLeagueSubPlayers: async (leagueId: string, teamId: string) => {
+        calls.push([leagueId, teamId]);
+        return { success: true, data: [] };
       },
-    });
-    let output = await settle(runtime);
-    findNode(output, (node) => node.props.testID === 'team-captain-sub-action')?.props.onPress();
-    await aCandidatesStarted;
-    output = runtime.harness.render();
-    findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Search by name or email...')?.props.onChangeText('Alpha');
-    runtime.harness.render();
-
-    routeParams.teamId = 'team-b';
-    routeParams.leagueId = 'league-b';
-    runtime.harness.render();
-    await settle(runtime);
-    releaseACandidates({ success: true, data: [{ id: 'sub-a', full_name: 'Alpha Sub', email: 'alpha@example.invalid' }] });
-    output = await settle(runtime);
-    assert.doesNotMatch(nodeText(output), /Alpha Sub/);
-
-    findNode(output, (node) => node.props.testID === 'team-captain-sub-action')?.props.onPress();
-    output = await settle(runtime);
-    assert.deepEqual(calls, [['league-a', 'team-current'], ['league-b', 'team-b']]);
-    assert.match(nodeText(output), /Beta Sub/);
-    assert.equal(findNode(output, (node) => node.type === 'TextInput' && node.props.placeholder === 'Search by name or email...')?.props.value, '');
+    } });
+    const output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-captain-sub-action'), undefined);
+    assert.deepEqual(calls, []);
   });
 
-  it('renders the current web public composition with its identity, roster and near-black surface at 320pt', async () => {
+  it('renders the current public composition with its identity, roster and atmosphere-visible surface at 320pt', async () => {
     const runtime = createRuntime({ width: 320 });
     let output = await settle(runtime);
     const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
     assert.ok(hero);
     assert.match(nodeText(hero), /North Stars8-2-1/);
     const composition = findNode(output, (node) => node.props.testID === 'team-public-composition');
-    assert.equal(flattenStyle(composition?.props.style).backgroundColor, '#03070D');
+    assert.equal(flattenStyle(composition?.props.style).backgroundColor, 'transparent');
     const props = findNode(output, (node) => node.type === 'TeamPublicPage')?.props;
     assert.ok(props);
     assert.equal(props.snapshot.season.id, 'season-current');
@@ -615,9 +579,7 @@ describe('Team active-season data boundary', () => {
     assert.ok(hero);
     assert.equal(flattenStyle(hero.props.style).backgroundColor, '#03070D');
     assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.reduceTransparency, true);
-    const modal = findNode(output, (node) => node.type === 'Modal');
-    assert.ok(modal);
-    assert.equal(modal.props.animationType, 'none');
+    assert.equal(findNode(output, (node) => node.type === 'Modal' && node.props.visible === true), undefined);
   });
 
   it('renders explicit active-season empty and missing-team states', async () => {
@@ -632,18 +594,13 @@ describe('Team active-season data boundary', () => {
     assert.match(missingText, /selected league/);
   });
 
-  it('retains member, captain, game, and player actions while Team Chat stays removed', async () => {
+  it('retains public game and player actions while duplicated captain and chat controls stay removed', async () => {
     const member = createRuntime({
       userId: 'player-current',
       captainApi: { getCaptainRole: async () => 'captain' },
     });
     const memberOutput = await settle(member);
-    for (const testID of [
-      'team-open-game-action',
-      'team-captain-sub-action',
-      'team-captain-goalie-action',
-      'team-roster-player-player-current',
-    ]) {
+    for (const testID of ['team-schedule-game-game-current', 'team-roster-player-player-current']) {
       const action = findNode(memberOutput, (node) => node.props.testID === testID);
       assert.ok(action, `Missing preserved action: ${testID}`);
       const style = typeof action.props.style === 'function' ? action.props.style({ pressed: false }) : action.props.style;
@@ -651,6 +608,9 @@ describe('Team active-season data boundary', () => {
     }
 
     assert.equal(findNode(memberOutput, (node) => node.props.testID === 'team-chat-action'), undefined);
+    assert.equal(findNode(memberOutput, (node) => node.props.testID === 'team-operations-card'), undefined);
+    assert.equal(findNode(memberOutput, (node) => node.props.testID === 'team-captain-sub-action'), undefined);
+    assert.equal(findNode(memberOutput, (node) => node.props.testID === 'team-captain-goalie-action'), undefined);
 
     const guest = createRuntime({ userId: null });
     const guestOutput = await settle(guest);
@@ -660,27 +620,19 @@ describe('Team active-season data boundary', () => {
     assert.ok(guest.navigationCalls.length > 0, 'Read-only visitors retain player-card navigation');
   });
 
-  it('opens Invite a Sub without applying the dock inset inside its native modal', async () => {
+  it('does not expose the duplicated Invite a Sub modal entry point on TeamDetail', async () => {
     const runtime = createRuntime({
       captainApi: {
         getCaptainRole: async () => 'captain',
         getLeagueSubPlayers: async () => ({ success: true, data: [{ id: 'sub-one', full_name: 'Fixture Sub' }] }),
       },
     });
-    let output = await settle(runtime);
-    const trigger = findNode(output, (node) => node.props.testID === 'team-captain-sub-action');
-    assert.ok(trigger, 'captain substitute action should be available');
-    trigger.props.onPress();
-    output = await settle(runtime);
-
-    const modal = findNode(output, (node) => node.type === 'Modal' && node.props.visible === true && nodeText(node).includes('Invite a Sub'));
-    assert.ok(modal, 'Invite a Sub modal should open on the actual TeamDetail route');
-    const scroller = findNode(modal, (node) => node.type === 'ScrollView' && String(node.props.focusScopeKey).startsWith('team-modal:sub:'));
-    assert.ok(scroller, 'Invite a Sub should render its focus scroller');
-    assert.equal(scroller.props.includeBottomTabInset, false);
+    const output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-captain-sub-action'), undefined);
+    assert.equal(findNode(output, (node) => node.type === 'Modal' && node.props.visible === true), undefined);
   });
 
-  it('keeps game-specific substitute check-ins out of active-roster availability counts', async () => {
+  it('does not render duplicated availability counts from game-specific substitute check-ins', async () => {
     const output = await settle(createRuntime({
       captainApi: {
         getCaptainRole: async () => 'captain',
@@ -691,7 +643,8 @@ describe('Team active-season data boundary', () => {
       },
     }));
 
-    assert.match(nodeText(output), /1IN0MAYBE0OUT1WAITING/);
+    assert.doesNotMatch(nodeText(output), /1IN0MAYBE0OUT1WAITING/);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-operations-card'), undefined);
   });
 
   it('uses public schedule facts while preserving full native GamePreview navigation', async () => {

@@ -95,7 +95,7 @@ function runtime(width = 390, sourceSnapshot: any = snapshot) {
         StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: { position: 'absolute', inset: 0 } },
         useWindowDimensions: () => ({ width, height: 844 }),
       },
-      '@expo/vector-icons': { Ionicons: 'Ionicon' },
+      '@expo/vector-icons': { Ionicons: 'Ionicon', MaterialCommunityIcons: 'MaterialCommunityIcon' },
       'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       '../../components/Avatar': (props: any) => createElement('Avatar', props),
       '../../components/TeamLogo': (props: any) => createElement('TeamLogo', props),
@@ -120,6 +120,38 @@ function findNodes(root: unknown, predicate: (node: any) => boolean): any[] {
 }
 
 describe('native Team public composition', () => {
+  it('leaves the normal page composition transparent so the route atmosphere remains visible', () => {
+    const normal = findNode(runtime(390).harness.output, (node) => node.props.testID === 'team-public-composition');
+    assert.equal(flattenStyle(normal?.props.style).backgroundColor, 'transparent');
+
+    const opaqueHarness = createHookHarness();
+    const Component = compileCommonJs<{ default: (props: any) => unknown }>(
+      new URL('../../src/screens/TeamScreen/TeamPublicPage.tsx', import.meta.url),
+      {
+        react: opaqueHarness.react,
+        'react-native': {
+          Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', Text: 'Text', View: 'View',
+          StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: { position: 'absolute', inset: 0 } },
+          useWindowDimensions: () => ({ width: 390, height: 844 }),
+        },
+        '@expo/vector-icons': { Ionicons: 'Ionicon', MaterialCommunityIcons: 'MaterialCommunityIcon' },
+        'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
+        '../../components/Avatar': (props: any) => createElement('Avatar', props),
+        '../../components/TeamLogo': (props: any) => createElement('TeamLogo', props),
+        '../../theme/colors': { __esModule: true, default: { primary: '#22D3EE', bgBase: '#03070D', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8', borderCard: 'rgba(255,255,255,.12)', bgInteractive: '#111927', accentGreen: '#22C55E' } },
+        '../../theme/ui': { ui: { minTouchTarget: 44 } },
+        '../../assets/team-page/weekly-games-bg.jpg': 1,
+        '../../assets/team-page/trophy.png': 2,
+        '../../assets/team-page/jersey-primary.png': 3,
+        '../../assets/team-page/jersey-secondary.png': 4,
+        '../../assets/team-page/jersey-detail.png': 5,
+      },
+    ).default;
+    opaqueHarness.mount(() => Component({ snapshot, reduceTransparency: true, onOpenPlayer: () => undefined, onOpenGame: () => undefined }));
+    const opaque = findNode(opaqueHarness.output, (node) => node.props.testID === 'team-public-composition');
+    assert.equal(flattenStyle(opaque?.props.style).backgroundColor, '#03070D');
+  });
+
   it('renders all five roster statistics with honest zero and unknown values and player navigation', () => {
     const source = { ...snapshot, roster: [roster[0],
       { ...roster[1], gamesPlayed: 0, goals: 0, assists: 0, points: 0, penaltyMinutes: 0 },
@@ -140,7 +172,7 @@ describe('native Team public composition', () => {
     }
     const current = findNode(list, (node) => node.props.testID === 'team-roster-player-p1');
     assert.match(current?.props.accessibilityLabel, /Matt Grossi.*11 games played.*12 goals.*13 assists.*25 points.*4 penalty minutes/i);
-    assert.match(nodeText(run.harness.output), /~GP is estimated.*Needs review/i);
+    assert.doesNotMatch(nodeText(run.harness.output), /~GP is estimated.*Needs review/i);
     current?.props.onPress();
     assert.deepEqual(run.openedPlayers, ['p1']);
   });
@@ -232,9 +264,9 @@ describe('native Team public composition', () => {
     }
   });
 
-  it('keeps web cyan controls separate from league and jersey colors', () => {
+  it('uses the viewed team color for Team-page emphasis instead of a hard-coded cyan', () => {
     const output = runtime(390, { ...snapshot, league: { ...snapshot.league, primaryColor: '#03299B' } }).harness.output;
-    assert.equal(flattenStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.style).backgroundColor, '#22D3EE');
+    assert.equal(flattenStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.style).backgroundColor, '#36A852');
   });
 
   it('treats jersey lettering as fixed artwork while the button exposes the complete identity', () => {
@@ -368,7 +400,12 @@ describe('native Team public composition', () => {
     const jerseys = findNode(output, (node) => node.props.testID === 'team-roster-jerseys');
     const ids = findNodes(jerseys, (node) => typeof node.props.testID === 'string' && node.props.testID.startsWith('team-roster-player-')).map((node) => node.props.testID);
     assert.deepEqual(ids, ['team-roster-player-p1', 'team-roster-player-accepted-sub']);
-    assert.match(nodeText(findNode(output, (node) => node.props.testID === 'team-substitution-notes')), /Accepted Baker subbing in for Matt Grossi/);
+    const sectionText = nodeText(findNode(output, (node) => node.props.testID === 'team-roster-section'));
+    const substitutions = findNode(output, (node) => node.props.testID === 'team-substitution-notes');
+    assert.match(nodeText(substitutions), /Accepted Baker subbing in for Matt Grossi/);
+    assert.ok(sectionText.indexOf('Accepted Baker subbing in') > sectionText.indexOf('GROSSI'), 'accepted subs follow the jersey board');
+    assert.ok(findNode(substitutions, (node) => node.type === 'MaterialCommunityIcon' && node.props.name === 'submarine'));
+    assert.doesNotMatch(nodeText(substitutions), /🥖/);
     const jerseyText = nodeText(jerseys);
     assert.match(jerseyText, /96/);
     assert.match(jerseyText, /00/);
@@ -382,11 +419,23 @@ describe('native Team public composition', () => {
   it('keeps a valid published empty lineup empty and renders the full 6F/4D/1G board', () => {
     const output = runtime(390, { ...snapshot, publishedLineup: { status: 'published', layout_json: { roster: [], placedPlayers: [] } } }).harness.output;
     const section = findNode(output, (node) => node.props.testID === 'team-roster-section');
-    assert.match(nodeText(section), /Published next-game lineup/);
+    assert.doesNotMatch(nodeText(section), /Published next-game lineup|~ indicates an estimate|Needs review.*conflicting records/i);
     assert.doesNotMatch(nodeText(section), /GROSSI|MOORE|KOWLES/);
     assert.equal(findNodes(section, (node) => /^team-lineup-forward-slot-\d+$/.test(node.props.testID ?? '')).length, 6);
     assert.equal(findNodes(section, (node) => /^team-lineup-defence-slot-\d+$/.test(node.props.testID ?? '')).length, 4);
     assert.equal(findNodes(section, (node) => node.props.testID === 'team-lineup-goalie-slot-0').length, 1);
+  });
+
+  it('gives the jersey board breathing room at 320 and 390 widths without hiding truthful facts', () => {
+    for (const width of [320, 390]) {
+      const output = runtime(width).harness.output;
+      const board = findNode(output, (node) => node.props.testID === 'team-roster-jerseys');
+      const style = flattenStyle(board?.props.style);
+      assert.ok(style.paddingHorizontal >= 8);
+      assert.ok(style.paddingVertical >= 12);
+      assert.match(findNode(output, (node) => node.props.testID === 'team-leader-p1')?.props.accessibilityLabel, /approximately 11 games played/i);
+      assert.doesNotMatch(nodeText(findNode(output, (node) => node.props.testID === 'team-leaders-section')), /~GP is estimated/);
+    }
   });
 
   it('renders compact two-team schedule cards with both transparent crests and omits an empty Schedule section', () => {

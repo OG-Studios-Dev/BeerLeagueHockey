@@ -31,7 +31,9 @@ describe('player profile native controls', () => {
     assert.ok(assists);
     assists.props.onPress();
     harness.render();
-    assert.match(nodeText(harness.output), /Assists: Spring 2, Summer 5/);
+    const chart = findNode(harness.output, (node) => node.props.accessibilityRole === 'image');
+    assert.equal(chart?.props.accessibilityLabel, 'Assists: Spring 2, Summer 5');
+    assert.doesNotMatch(nodeText(harness.output), /Assists: Spring 2, Summer 5/);
     assert.match(nodeText(harness.output), /Fixture player improved in Summer/);
   });
 
