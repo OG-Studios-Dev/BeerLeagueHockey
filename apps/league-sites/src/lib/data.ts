@@ -141,6 +141,20 @@ function throwCanonicalReadError(error: unknown, context: string): never {
   throw new Error(`Canonical read failed: ${context}`, { cause });
 }
 
+export function assertStrictCompleteResult(
+  data: unknown[] | null,
+  count: number | null,
+  error: unknown,
+  strict: boolean | undefined,
+  context: string,
+): void {
+  if (!strict) return;
+  if (error) throwCanonicalReadError(error, context);
+  if (!Number.isSafeInteger(count) || count! < 0 || (data?.length ?? 0) !== count) {
+    throwCanonicalReadError(new Error('provider result was incomplete'), `${context} completeness`);
+  }
+}
+
 type LegacyPlayerRow = {
   id: string;
   first_name: string;
@@ -1132,7 +1146,7 @@ type ConfirmedCheckinAppearanceRow = {
   }[] | null;
 };
 
-async function getConfirmedCheckinAppearanceRows(
+export async function getConfirmedCheckinAppearanceRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   options: {
     leagueId?: string;
@@ -1148,7 +1162,7 @@ async function getConfirmedCheckinAppearanceRows(
 
   let query = supabase
     .from('game_checkins')
-    .select('player_id, team_id, game_id, game:games!inner(id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score)')
+    .select('player_id, team_id, game_id, game:games!inner(id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score)', { count: 'exact' })
     .eq('status', 'confirmed')
     .in('game.status', [...gameStatuses]);
 
@@ -1170,7 +1184,8 @@ async function getConfirmedCheckinAppearanceRows(
     query = query.in('player_id', options.playerIds);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
+  assertStrictCompleteResult(data, count, error, options.strict, 'confirmed check-in appearances');
   if (error || !data) {
     if (error && options.strict) throwCanonicalReadError(error, 'confirmed check-in appearances');
     return [];
@@ -1179,7 +1194,7 @@ async function getConfirmedCheckinAppearanceRows(
   return data as unknown as ConfirmedCheckinAppearanceRow[];
 }
 
-async function getFallbackRosterAppearanceRows(
+export async function getFallbackRosterAppearanceRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   options: {
     seasonId?: string;
@@ -1198,7 +1213,7 @@ async function getFallbackRosterAppearanceRows(
 
   let rosterQuery = supabase
     .from('team_rosters')
-    .select('player_id, team_id, season_id, joined_at, end_date')
+    .select('player_id, team_id, season_id, joined_at, end_date', { count: 'exact' })
     .eq('season_id', options.seasonId)
     .eq('status', 'active');
 
@@ -1212,7 +1227,8 @@ async function getFallbackRosterAppearanceRows(
     rosterQuery = rosterQuery.in('player_id', options.playerIds);
   }
 
-  const { data: rosterRows, error: rosterError } = await rosterQuery;
+  const { data: rosterRows, error: rosterError, count: rosterCount } = await rosterQuery;
+  assertStrictCompleteResult(rosterRows, rosterCount, rosterError, options.strict, 'fallback roster appearances');
   if (rosterError || !rosterRows || rosterRows.length === 0) {
     if (rosterError && options.strict) throwCanonicalReadError(rosterError, 'fallback roster appearances');
     return [];
@@ -1227,35 +1243,46 @@ async function getFallbackRosterAppearanceRows(
     .map((teamId) => `home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
     .join(',');
 
-  const [{ data: gameRows, error: gamesError }, { data: outCheckinRows, error: outCheckinError }, { data: outAvailabilityRows, error: outAvailabilityError }, { data: skaterRows, error: skaterError }, { data: goalieRows, error: goalieError }] = await Promise.all([
+  const [gamesResult, outCheckinsResult, outAvailabilityResult, skaterResult, goalieResult] = await Promise.all([
     supabase
       .from('games')
-      .select('id, season_id, scheduled_at, status, home_team_id, away_team_id, home_score, away_score')
+      .select('id, season_id, scheduled_at, status, home_team_id, away_team_id, home_score, away_score', { count: 'exact' })
       .eq('season_id', options.seasonId)
       .in('status', [...gameStatuses])
       .or(teamFilter),
     supabase
       .from('game_checkins')
-      .select('game_id, team_id, player_id')
+      .select('game_id, team_id, player_id', { count: 'exact' })
       .eq('status', 'out')
       .in('team_id', teamIds),
     supabase
       .from('player_availability')
-      .select('game_id, team_id, player_id')
+      .select('game_id, team_id, player_id', { count: 'exact' })
       .eq('season_id', options.seasonId)
       .eq('status', 'out')
       .in('team_id', teamIds),
     supabase
       .from('player_stats')
-      .select('game_id, team_id')
+      .select('game_id, team_id', { count: 'exact' })
       .eq('season_id', options.seasonId)
       .in('team_id', teamIds),
     supabase
       .from('goalie_stats')
-      .select('game_id, team_id')
+      .select('game_id, team_id', { count: 'exact' })
       .eq('season_id', options.seasonId)
       .in('team_id', teamIds),
   ]);
+
+  const { data: gameRows, error: gamesError } = gamesResult;
+  const { data: outCheckinRows, error: outCheckinError } = outCheckinsResult;
+  const { data: outAvailabilityRows, error: outAvailabilityError } = outAvailabilityResult;
+  const { data: skaterRows, error: skaterError } = skaterResult;
+  const { data: goalieRows, error: goalieError } = goalieResult;
+  for (const [result, context] of [
+    [gamesResult, 'fallback games'], [outCheckinsResult, 'fallback out check-ins'],
+    [outAvailabilityResult, 'fallback out availability'], [skaterResult, 'fallback skater signals'],
+    [goalieResult, 'fallback goalie signals'],
+  ] as const) assertStrictCompleteResult(result.data, result.count, result.error, options.strict, context);
 
   const supportingError = gamesError || outCheckinError || outAvailabilityError || skaterError || goalieError;
   if (supportingError && options.strict) throwCanonicalReadError(supportingError, 'fallback appearance sources');
@@ -5173,7 +5200,8 @@ async function loadTeamNameMap(
     return new Map<string, string>();
   }
 
-  const { data, error } = await supabase.from('teams').select('id, name').in('id', ids);
+  const { data, error, count } = await supabase.from('teams').select('id, name', { count: 'exact' }).in('id', ids);
+  assertStrictCompleteResult(data, count, error, options.strict, 'career timeline team names');
   if (error && options.strict) throwCanonicalReadError(error, 'career timeline team names');
   return new Map((data || []).map((team) => [team.id, team.name]));
 }
@@ -5190,15 +5218,29 @@ async function loadTeamGameCountsBySeasonTeam(
     return new Map<string, number>();
   }
 
-  const { data, error } = await supabase
+  const buildQuery = () => supabase
     .from('games')
-    .select('id, season_id, home_team_id, away_team_id')
+    .select('id, season_id, home_team_id, away_team_id', { count: 'exact' })
     .eq('league_id', leagueId)
     .in('season_id', seasonIds)
     .in('status', [...PLAYED_GAME_STATUSES])
-    .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`);
-  if (error && options.strict) throwCanonicalReadError(error, 'career timeline team games');
-
+    .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`)
+    .order('id', { ascending: true });
+  const first = options.strict ? await buildQuery().range(0, 999) : await buildQuery();
+  if (first.error && options.strict) throwCanonicalReadError(first.error, 'career timeline team games');
+  const data = [...(first.data || [])];
+  if (options.strict) {
+    if (!Number.isSafeInteger(first.count) || (first.count ?? -1) < 0) {
+      throwCanonicalReadError(new Error('provider count missing'), 'career timeline team games completeness');
+    }
+    for (let offset = 1000; offset < (first.count as number); offset += 1000) {
+      const page = await buildQuery().range(offset, offset + 999);
+      if (page.error) throwCanonicalReadError(page.error, 'career timeline team games page');
+      if (page.count !== first.count) throwCanonicalReadError(new Error('provider count changed'), 'career timeline team games completeness');
+      data.push(...(page.data || []));
+    }
+    assertStrictCompleteResult(data, first.count, null, true, 'career timeline team games');
+  }
   const counts = new Map<string, Set<string>>();
   for (const game of data || []) {
     const season = game.season_id;
@@ -5867,14 +5909,15 @@ export async function getPlayerCareerStats(
   // penalty minutes), but repair GP from distinct appearances plus confirmed check-ins.
   let query = supabase
     .from('player_stats')
-    .select('game_id, goals, assists, penalty_minutes')
+    .select('game_id, goals, assists, penalty_minutes', { count: 'exact' })
     .eq('player_id', playerId);
 
   if (seasonId) {
     query = query.eq('season_id', seasonId);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
+  assertStrictCompleteResult(data, count, error, options.strict, 'player stats');
 
   if (error) {
     if (options.strict) throwCanonicalReadError(error, 'player stats');

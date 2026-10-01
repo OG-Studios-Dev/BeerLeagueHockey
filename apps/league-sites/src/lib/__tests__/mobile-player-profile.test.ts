@@ -5,7 +5,12 @@ import {
   handleMobilePlayerProfileRequest,
   type MobilePlayerProfileDependencies,
 } from '@/lib/mobile-player-profile';
-import { summarizePlayerCareerTotalsFromTimeline, type PlayerCareerSeasonRow } from '@/lib/data';
+import {
+  getConfirmedCheckinAppearanceRows,
+  getFallbackRosterAppearanceRows,
+  summarizePlayerCareerTotalsFromTimeline,
+  type PlayerCareerSeasonRow,
+} from '@/lib/data';
 
 const PROFILE_ID = 'add94b26-b344-459f-9727-8cddae9783de';
 const ROSTER_ID = '10000000-0000-4000-8000-000000000001';
@@ -140,5 +145,35 @@ describe('GET /api/mobile/player-profile', () => {
     d.getStats.mockRejectedValue(new Error('schema read failed'));
     const response = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
     expect(response.status).toBe(502);
+  });
+});
+
+function queryResult(result: { data: unknown[] | null; error: unknown; count: number | null }) {
+  const query: Record<string, unknown> = {};
+  for (const method of ['select', 'eq', 'in', 'or']) query[method] = jest.fn(() => query);
+  query.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
+  return query;
+}
+
+describe('strict canonical appearance query completeness', () => {
+  it('fails closed when an actual confirmed-checkin query is capped below its exact count', async () => {
+    const capped = Array.from({ length: 1000 }, (_, index) => ({ player_id: PROFILE_ID, team_id: TEAM_ID, game_id: `game-${index}` }));
+    const client = { from: jest.fn(() => queryResult({ data: capped, error: null, count: 1001 })) };
+    await expect(getConfirmedCheckinAppearanceRows(client as never, { playerIds: [PROFILE_ID], strict: true }))
+      .rejects.toThrow('confirmed check-in appearances completeness');
+  });
+
+  it('propagates a later fallback-source query error after the roster query succeeds', async () => {
+    const results: Record<string, { data: unknown[] | null; error: unknown; count: number | null }> = {
+      team_rosters: { data: [{ player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID, joined_at: null, end_date: null }], error: null, count: 1 },
+      games: { data: [], error: null, count: 0 },
+      game_checkins: { data: [], error: null, count: 0 },
+      player_availability: { data: null, error: { code: 'PGRST500', message: 'later query failed' }, count: null },
+      player_stats: { data: [], error: null, count: 0 },
+      goalie_stats: { data: [], error: null, count: 0 },
+    };
+    const client = { from: jest.fn((table: string) => queryResult(results[table])) };
+    await expect(getFallbackRosterAppearanceRows(client as never, { seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true }))
+      .rejects.toThrow('fallback out availability');
   });
 });
