@@ -5,6 +5,7 @@ import {
   handleMobilePlayerProfileRequest,
   type MobilePlayerProfileDependencies,
 } from '@/lib/mobile-player-profile';
+import { summarizePlayerCareerTotalsFromTimeline, type PlayerCareerSeasonRow } from '@/lib/data';
 
 const PROFILE_ID = 'add94b26-b344-459f-9727-8cddae9783de';
 const ROSTER_ID = '10000000-0000-4000-8000-000000000001';
@@ -106,6 +107,15 @@ describe('GET /api/mobile/player-profile', () => {
     expect(body.data.careerRows[0].metrics.save_percentage).toBe(90);
   });
 
+  it('normalizes the actual canonical career goalie summarizer ratio to the DTO percentage unit', async () => {
+    const d = deps();
+    d.resolvePlayer.mockResolvedValue({ ...(await d.resolvePlayer(PROFILE_ID))!, position: 'G', is_goalie: true });
+    const row = (await d.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, true, true))[0] as PlayerCareerSeasonRow;
+    d.getStats.mockResolvedValue(summarizePlayerCareerTotalsFromTimeline(PROFILE_ID, [{ ...row, games_played: 1, saves: 18, goals_against: 2, save_percentage: 90 }], true));
+    const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}&season=all`), d)).json();
+    expect(body.data.metrics.save_percentage).toBe(90);
+  });
+
   it('projects the captured Matt career facts from canonical dependencies without recomputing them', async () => {
     const d = deps();
     d.getStats.mockResolvedValue({ games_played: 37, goals: 156, assists: 75, points: 231, penalty_minutes: 0, plus_minus: 0 });
@@ -117,9 +127,9 @@ describe('GET /api/mobile/player-profile', () => {
     const d = deps();
     d.resolvePlayer.mockResolvedValue({ ...(await d.resolvePlayer(PROFILE_ID))!, player_id: '751c2f47-f0e8-4506-b10e-b39a7bbcd302', position: 'Goalie', is_goalie: true });
     d.getSeasons.mockResolvedValue([{ id: WINTER_2026_ID, name: 'Winter 2026', start_date: '2026-01-01', status: 'completed', league_id: HOCKEY_LIFE_ID }]);
-    d.getStats.mockResolvedValue({ games_played: 10, wins: 5, losses: 4, ties: 1, saves: 165, goals_against: 33, save_percentage: 83.3, shutouts: 0 });
+    d.getStats.mockResolvedValue({ games_played: 10, wins: 5, losses: 4, ties: 0, saves: 330, goals_against: 33, save_percentage: 90.9, shutouts: 0 });
     const body = await (await handleMobilePlayerProfileRequest(req(`playerId=751c2f47-f0e8-4506-b10e-b39a7bbcd302&season=${WINTER_2026_ID}`), d)).json();
-    expect(body.data.metrics).toMatchObject({ games_played: 10, wins: 5, losses: 4, ties: 1, save_percentage: 83.3 });
+    expect(body.data.metrics).toMatchObject({ games_played: 10, wins: 5, losses: 4, ties: 0, save_percentage: 90.9 });
     expect(body.data.aggregateOnly).toBe(true);
     expect(d.getGames).not.toHaveBeenCalled();
     expect(d.getMatchups).not.toHaveBeenCalled();

@@ -608,7 +608,7 @@ function matchesDivisionFilter(
 /**
  * Fetch league by slug for public display
  */
-export async function getLeagueBySlug(slug: string): Promise<League | null> {
+export async function getLeagueBySlug(slug: string, options: CanonicalReadOptions = {}): Promise<League | null> {
   noStore();
   const supabase = await createClient();
 
@@ -620,6 +620,7 @@ export async function getLeagueBySlug(slug: string): Promise<League | null> {
     .single();
 
   if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'league by slug');
     return null;
   }
 
@@ -1140,6 +1141,7 @@ async function getConfirmedCheckinAppearanceRows(
     teamIds?: string[];
     playerIds?: string[];
     gameStatuses?: readonly string[];
+    strict?: boolean;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   const gameStatuses = options.gameStatuses ?? PLAYED_GAME_STATUSES;
@@ -1170,6 +1172,7 @@ async function getConfirmedCheckinAppearanceRows(
 
   const { data, error } = await query;
   if (error || !data) {
+    if (error && options.strict) throwCanonicalReadError(error, 'confirmed check-in appearances');
     return [];
   }
 
@@ -1184,6 +1187,7 @@ async function getFallbackRosterAppearanceRows(
     teamIds?: string[];
     playerIds?: string[];
     gameStatuses?: readonly string[];
+    strict?: boolean;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   if (!options.seasonId) {
@@ -1210,6 +1214,7 @@ async function getFallbackRosterAppearanceRows(
 
   const { data: rosterRows, error: rosterError } = await rosterQuery;
   if (rosterError || !rosterRows || rosterRows.length === 0) {
+    if (rosterError && options.strict) throwCanonicalReadError(rosterError, 'fallback roster appearances');
     return [];
   }
 
@@ -1222,7 +1227,7 @@ async function getFallbackRosterAppearanceRows(
     .map((teamId) => `home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
     .join(',');
 
-  const [{ data: gameRows, error: gamesError }, { data: outCheckinRows }, { data: outAvailabilityRows }, { data: skaterRows }, { data: goalieRows }] = await Promise.all([
+  const [{ data: gameRows, error: gamesError }, { data: outCheckinRows, error: outCheckinError }, { data: outAvailabilityRows, error: outAvailabilityError }, { data: skaterRows, error: skaterError }, { data: goalieRows, error: goalieError }] = await Promise.all([
     supabase
       .from('games')
       .select('id, season_id, scheduled_at, status, home_team_id, away_team_id, home_score, away_score')
@@ -1251,6 +1256,9 @@ async function getFallbackRosterAppearanceRows(
       .eq('season_id', options.seasonId)
       .in('team_id', teamIds),
   ]);
+
+  const supportingError = gamesError || outCheckinError || outAvailabilityError || skaterError || goalieError;
+  if (supportingError && options.strict) throwCanonicalReadError(supportingError, 'fallback appearance sources');
 
   if (gamesError || !gameRows || gameRows.length === 0) {
     return [];
@@ -5158,13 +5166,15 @@ export async function generatePlayerCareerHotFacts(input: {
 async function loadTeamNameMap(
   supabase: Awaited<ReturnType<typeof createClient>>,
   teamIds: Array<string | null | undefined>,
+  options: CanonicalReadOptions = {},
 ) {
   const ids = [...new Set(teamIds.filter((teamId): teamId is string => Boolean(teamId)))];
   if (ids.length === 0) {
     return new Map<string, string>();
   }
 
-  const { data } = await supabase.from('teams').select('id, name').in('id', ids);
+  const { data, error } = await supabase.from('teams').select('id, name').in('id', ids);
+  if (error && options.strict) throwCanonicalReadError(error, 'career timeline team names');
   return new Map((data || []).map((team) => [team.id, team.name]));
 }
 
@@ -5173,19 +5183,21 @@ async function loadTeamGameCountsBySeasonTeam(
   leagueId: string,
   seasonIds: string[],
   teamIds: Array<string | null | undefined>,
+  options: CanonicalReadOptions = {},
 ) {
   const normalizedTeamIds = [...new Set(teamIds.filter((teamId): teamId is string => Boolean(teamId)))];
   if (seasonIds.length === 0 || normalizedTeamIds.length === 0) {
     return new Map<string, number>();
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('games')
     .select('id, season_id, home_team_id, away_team_id')
     .eq('league_id', leagueId)
     .in('season_id', seasonIds)
     .in('status', [...PLAYED_GAME_STATUSES])
     .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`);
+  if (error && options.strict) throwCanonicalReadError(error, 'career timeline team games');
 
   const counts = new Map<string, Set<string>>();
   for (const game of data || []) {
@@ -5402,17 +5414,23 @@ export async function getPlayerCareerStatsTimeline(
   const seasonNameById = new Map(seasons.map((season) => [season.id, season.name]));
   const seasonSortById = new Map(seasons.map((season) => [season.id, season.start_date ?? null]));
   const historicalBaselineSeason = seasons.find((season) => isHistoricalCareerBaselineSeasonName(season.name));
+  const leagueSeasonIds = seasons.map((season) => season.id);
 
   if (isGoalie) {
-    const { data: rawRows, error } = await supabase
+    const { data: rawRows, error, count } = leagueSeasonIds.length === 0
+      ? { data: [], error: null, count: 0 }
+      : await supabase
       .from('goalie_stats')
-      .select('season_id, team_id, saves, goals_against, game_result, shutout')
-      .eq('player_id', playerId);
+      .select('season_id, team_id, saves, goals_against, game_result, shutout', { count: 'exact' })
+      .eq('league_id', leagueId)
+      .eq('player_id', playerId)
+      .in('season_id', leagueSeasonIds);
 
     if (error) {
       if (strict) throwCanonicalReadError(error, 'goalie career timeline');
       return [];
     }
+    if (strict && count !== (rawRows?.length ?? 0)) throwCanonicalReadError(new Error('incomplete goalie career timeline'), 'goalie career timeline completeness');
 
     const rows = (rawRows || []) as Array<{
       season_id: string | null;
@@ -5425,18 +5443,18 @@ export async function getPlayerCareerStatsTimeline(
 
     const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
     const [confirmedBuckets, fallbackBuckets] = await Promise.all([
-      Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { seasonId, playerIds: [playerId] }))),
-      Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId] }))),
+      Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId], strict }))),
+      Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))),
     ]);
     const confirmedCheckins = confirmedBuckets.flat();
     const fallbackAppearances = fallbackBuckets.flat();
 
-    const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id));
+    const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
     const teamGameCountBySeasonTeam = await loadTeamGameCountsBySeasonTeam(supabase, leagueId, activeSeasonIds, [
       ...rows.map((row) => row.team_id),
       ...confirmedCheckins.map((row) => row.team_id),
       ...fallbackAppearances.map((row) => row.team_id),
-    ]);
+    ], { strict });
 
     const appearancesBySeasonTeam = new Map<string, Set<string>>();
     for (const row of [...confirmedCheckins, ...fallbackAppearances]) {
@@ -5490,7 +5508,7 @@ export async function getPlayerCareerStatsTimeline(
     if (historicalBaselineSeason) {
       const { data: baselineStats, error: baselineError } = await serviceSupabase
         .from('player_career_baselines')
-        .select('games_played, wins, losses, ties, saves, goals_against, shutouts, save_percentage, goals_against_average')
+        .select('games_played, wins, ties, saves, goals_against, shutouts, save_percentage, goals_against_average')
         .eq('league_id', leagueId)
         .eq('player_id', playerId)
         .maybeSingle();
@@ -5518,7 +5536,7 @@ export async function getPlayerCareerStatsTimeline(
           goals_per_game: 0,
           points_per_game: 0,
           wins: Number(baselineStats.wins || 0),
-          losses: Number(baselineStats.losses || 0),
+          losses: Math.max(0, baselineGames - Number(baselineStats.wins || 0) - Number(baselineStats.ties || 0)),
           ties: Number(baselineStats.ties || 0),
           saves: baselineSaves,
           goals_against: baselineGoalsAgainst,
@@ -5557,15 +5575,19 @@ export async function getPlayerCareerStatsTimeline(
       .sort((left, right) => new Date(left.sort_date || 0).getTime() - new Date(right.sort_date || 0).getTime());
   }
 
-  const { data: seasonRows, error } = await supabase
+  const { data: seasonRows, error, count } = leagueSeasonIds.length === 0
+    ? { data: [], error: null, count: 0 }
+    : await supabase
     .from('player_season_stats')
-    .select('season_id, team_id, team_name, position, games_played, goals, assists, points')
-    .eq('player_id', playerId);
+    .select('season_id, team_id, team_name, position, games_played, goals, assists, points', { count: 'exact' })
+    .eq('player_id', playerId)
+    .in('season_id', leagueSeasonIds);
 
   if (error) {
     if (strict) throwCanonicalReadError(error, 'skater career timeline');
     return [];
   }
+  if (strict && count !== (seasonRows?.length ?? 0)) throwCanonicalReadError(new Error('incomplete skater career timeline'), 'skater career timeline completeness');
 
   const rows = (seasonRows || []) as Array<{
     season_id: string | null;
@@ -5580,18 +5602,18 @@ export async function getPlayerCareerStatsTimeline(
 
   const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
   const [confirmedBuckets, fallbackBuckets] = await Promise.all([
-    Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { seasonId, playerIds: [playerId] }))),
-    Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId] }))),
+    Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId], strict }))),
+    Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))),
   ]);
   const confirmedCheckins = confirmedBuckets.flat();
   const fallbackAppearances = fallbackBuckets.flat();
 
-  const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id));
+  const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
   const teamGameCountBySeasonTeam = await loadTeamGameCountsBySeasonTeam(supabase, leagueId, activeSeasonIds, [
     ...rows.map((row) => row.team_id),
     ...confirmedCheckins.map((row) => row.team_id),
     ...fallbackAppearances.map((row) => row.team_id),
-  ]);
+  ], { strict });
 
   const appearancesBySeasonTeam = new Map<string, Set<string>>();
   for (const row of [...confirmedCheckins, ...fallbackAppearances]) {
@@ -5782,11 +5804,13 @@ export async function getPlayerCareerStats(
           plus_minus: 0,
           wins: importedGoalie.wins,
           losses: importedGoalie.losses,
+          ties: 0,
           saves: importedGoalie.saves,
           goals_against: importedGoalie.goalsAgainst,
           save_percentage: shotsAgainst > 0 ? roundStatValue((importedGoalie.saves / shotsAgainst) * 100, 1) : 0,
           goals_against_average:
             importedGoalie.gamesPlayed > 0 ? roundStatValue(importedGoalie.goalsAgainst / importedGoalie.gamesPlayed) : 0,
+          shutouts: importedGoalie.shutouts,
         };
       }
     }

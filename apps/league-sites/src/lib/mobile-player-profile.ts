@@ -122,7 +122,7 @@ export async function resolveScopedPlayer(playerOrRosterId: string, leagueId: st
 }
 
 export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = {
-  getLeague: () => getLeagueBySlug(HOCKEY_LIFE_SLUG),
+  getLeague: () => getLeagueBySlug(HOCKEY_LIFE_SLUG, { strict: true }),
   resolvePlayer: resolveScopedPlayer,
   getSeasons: (leagueId) => getSeasons(leagueId, { strict: true }),
   getCurrentSeason: (leagueId) => getCurrentSeason(leagueId, { strict: true }),
@@ -204,7 +204,7 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
     const safeArticles = articles.filter((article) => article.league_id === league.id);
     const achievementSummary = summarizePlayerCareerAchievements({ importedChampionships: achievements.championships, nativeChampionships: countChampionshipBadges(safeBadges) });
     const hotFacts = await deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie });
-    const ordinaryRatio = !isCareer && !isImportedAggregateSeasonId(selectedSeasonId ?? undefined);
+    const ordinaryRatio = isCareer || !isImportedAggregateSeasonId(selectedSeasonId ?? undefined);
 
     const data = {
       playerId: profileId, rosterId: player.id, fullName: player.profile?.full_name?.trim() || 'Unknown Player',
