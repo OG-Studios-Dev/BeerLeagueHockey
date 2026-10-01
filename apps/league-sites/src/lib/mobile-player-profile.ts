@@ -43,7 +43,7 @@ export interface MobilePlayerProfileDependencies {
   getImportedAchievements(playerId: string, leagueId: string): Promise<{ championships: number }>;
   getArticles(playerId: string): Promise<NewsArticle[]>;
   getMatchups(playerId: string, seasonId: string, isGoalie: boolean): Promise<Matchup[]>;
-  generateHotFacts(input: { playerName: string; seasons: PlayerCareerSeasonRow[]; careerTotalsSeasons: PlayerCareerSeasonRow[]; isGoalie: boolean }): Promise<string[]>;
+  generateHotFacts(input: { playerName: string; seasons: PlayerCareerSeasonRow[]; careerTotalsSeasons: PlayerCareerSeasonRow[]; isGoalie: boolean; distinctSeasonComparisons?: boolean }): Promise<string[]>;
   assertHealthy?(leagueId: string, playerId: string, seasonId: string | null): Promise<void>;
 }
 
@@ -203,7 +203,7 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
     const safeBadges = badges.filter((badge) => badge.league_id === league.id && leagueSeasonIds.has(badge.season_id));
     const safeArticles = articles.filter((article) => article.league_id === league.id);
     const achievementSummary = summarizePlayerCareerAchievements({ importedChampionships: achievements.championships, nativeChampionships: countChampionshipBadges(safeBadges) });
-    const hotFacts = await deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie });
+    const hotFacts = await deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie, distinctSeasonComparisons: true });
     const ordinaryRatio = isCareer || !isImportedAggregateSeasonId(selectedSeasonId ?? undefined);
 
     const data = {

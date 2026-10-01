@@ -257,8 +257,14 @@ export function classifyStrictGoalieCareerSources(
   baseline: StrictGoalieBaseline | null,
   historicalSeasonId: string | null,
 ): StrictGoalieRawRow[] {
-  if (!baseline || !historicalSeasonId) return rows;
+  if (!historicalSeasonId) return rows;
   const historicalRows = rows.filter((row) => row.season_id === historicalSeasonId);
+  if (!baseline) {
+    if (historicalRows.length > 0) {
+      throwCanonicalReadError(new Error('historical aggregate carrier has no authoritative baseline'), 'goalie career provenance');
+    }
+    return rows;
+  }
   if (historicalRows.length === 0) return rows;
   const approvedBaseline = baseline.source_system === 'hockeylifehl_legacy_players'
     && baseline.source_batch_id === 'legacy_players_current';
@@ -5197,9 +5203,42 @@ export async function generatePlayerCareerHotFacts(input: {
   seasons: PlayerCareerSeasonRow[];
   careerTotalsSeasons?: PlayerCareerSeasonRow[];
   isGoalie: boolean;
+  distinctSeasonComparisons?: boolean;
 }): Promise<string[]> {
-  const { playerName, seasons, careerTotalsSeasons, isGoalie } = input;
-  const ordered = [...seasons].sort((left, right) => {
+  const { playerName, seasons, careerTotalsSeasons, isGoalie, distinctSeasonComparisons = false } = input;
+  const comparisonRows = distinctSeasonComparisons
+    ? [...seasons.reduce((bySeason, row) => {
+        const existing = bySeason.get(row.season_id);
+        if (!existing) {
+          bySeason.set(row.season_id, { ...row });
+          return bySeason;
+        }
+        const gamesPlayed = existing.games_played + row.games_played;
+        const teamGames = existing.team_games + row.team_games;
+        const saves = existing.saves + row.saves;
+        const goalsAgainst = existing.goals_against + row.goals_against;
+        Object.assign(existing, {
+          games_played: gamesPlayed,
+          team_games: teamGames,
+          attendance_pct: teamGames > 0 ? roundCareerMetric((gamesPlayed / teamGames) * 100, 1) : 0,
+          goals: existing.goals + row.goals,
+          assists: existing.assists + row.assists,
+          points: existing.points + row.points,
+          wins: existing.wins + row.wins,
+          losses: existing.losses + row.losses,
+          ties: existing.ties + row.ties,
+          saves,
+          saves_known: existing.saves_known !== false && row.saves_known !== false,
+          goals_against: goalsAgainst,
+          shutouts: existing.shutouts + row.shutouts,
+          save_percentage: existing.saves_known !== false && row.saves_known !== false && saves + goalsAgainst > 0
+            ? roundCareerMetric((saves / (saves + goalsAgainst)) * 100, 1) : null,
+          goals_against_average: gamesPlayed > 0 ? roundCareerMetric(goalsAgainst / gamesPlayed, 2) : null,
+        });
+        return bySeason;
+      }, new Map<string, PlayerCareerSeasonRow>()).values()]
+    : seasons;
+  const ordered = [...comparisonRows].sort((left, right) => {
     const leftTime = left.sort_date ? new Date(left.sort_date).getTime() : 0;
     const rightTime = right.sort_date ? new Date(right.sort_date).getTime() : 0;
     return leftTime - rightTime;
@@ -5569,11 +5608,13 @@ export async function getPlayerCareerStatsTimeline(
   const { includeHistoricalBaseline = false, strict = false } = options;
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
-  const { data: seasonRecords, error: seasonRecordsError } = await supabase
-    .from('seasons')
-    .select('id, name, start_date')
+  const seasonQuery = supabase.from('seasons');
+  const { data: seasonRecords, error: seasonRecordsError, count: seasonRecordsCount } = await (strict
+    ? seasonQuery.select('id, name, start_date', { count: 'exact' })
+    : seasonQuery.select('id, name, start_date'))
     .eq('league_id', leagueId)
     .order('start_date', { ascending: false });
+  assertStrictCompleteResult(seasonRecords, seasonRecordsCount ?? null, seasonRecordsError, strict, 'player timeline seasons');
   if (seasonRecordsError && strict) throwCanonicalReadError(seasonRecordsError, 'player timeline seasons');
   const seasons = (seasonRecords || []) as Array<{ id: string; name: string; start_date: string | null }>;
   const seasonNameById = new Map(seasons.map((season) => [season.id, season.name]));
@@ -6004,13 +6045,13 @@ export async function getPlayerCareerStats(
           plus_minus: 0,
           wins: importedGoalie.wins,
           losses: importedGoalie.losses,
-          ties: 0,
-          saves: importedGoalie.saves,
+          ...(options.strict ? { ties: importedGoalie.ties } : {}),
+          ...(!options.strict ? { saves: importedGoalie.saves } : {}),
           goals_against: importedGoalie.goalsAgainst,
-          save_percentage: shotsAgainst > 0 ? roundStatValue((importedGoalie.saves / shotsAgainst) * 100, 1) : 0,
+          ...(!options.strict ? { save_percentage: shotsAgainst > 0 ? roundStatValue((importedGoalie.saves / shotsAgainst) * 100, 1) : 0 } : {}),
           goals_against_average:
             importedGoalie.gamesPlayed > 0 ? roundStatValue(importedGoalie.goalsAgainst / importedGoalie.gamesPlayed) : 0,
-          shutouts: importedGoalie.shutouts,
+          ...(options.strict ? { shutouts: importedGoalie.shutouts } : {}),
         };
       }
     }
@@ -6117,13 +6158,20 @@ export async function getPlayerCareerStats(
           shutout,
           game_result,
           game:games(id, status, home_team_id, away_team_id, home_score, away_score)
-        `)
+        `, options.strict ? { count: 'exact' } : undefined)
         .eq('player_id', playerId)
         .eq('season_id', seasonId),
     ]);
     if (options.strict && (rosterSummaryResult.error || goalieStatsResult.error)) {
       throwCanonicalReadError(rosterSummaryResult.error || goalieStatsResult.error, 'player roster or goalie stats');
     }
+    assertStrictCompleteResult(
+      goalieStatsResult.data,
+      goalieStatsResult.count ?? null,
+      goalieStatsResult.error,
+      options.strict,
+      'selected goalie stats',
+    );
 
     for (const row of [...confirmedCheckins, ...fallbackRosterAppearances]) {
       if (row.game_id) {

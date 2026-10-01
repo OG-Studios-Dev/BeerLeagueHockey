@@ -13,6 +13,7 @@ import {
   getPlayerBadges,
   getPlayerGoalieMatchups,
   getSeasons,
+  generatePlayerCareerHotFacts,
   loadTeamGameCountsBySeasonTeam,
   summarizePlayerCareerTotalsFromTimeline,
   type PlayerCareerSeasonRow,
@@ -142,9 +143,9 @@ describe('GET /api/mobile/player-profile', () => {
     const d = deps();
     d.resolvePlayer.mockResolvedValue({ ...(await d.resolvePlayer(PROFILE_ID))!, player_id: '751c2f47-f0e8-4506-b10e-b39a7bbcd302', position: 'Goalie', is_goalie: true });
     d.getSeasons.mockResolvedValue([{ id: WINTER_2026_ID, name: 'Winter 2026', start_date: '2026-01-01', status: 'completed', league_id: HOCKEY_LIFE_ID }]);
-    d.getStats.mockResolvedValue({ games_played: 10, wins: 5, losses: 4, ties: 0, saves: 330, goals_against: 33, save_percentage: 90.9, shutouts: 0 });
+    d.getStats.mockResolvedValue({ games_played: 10, wins: 5, losses: 4, ties: 1, goals_against: 33, goals_against_average: 3.3, shutouts: 0 });
     const body = await (await handleMobilePlayerProfileRequest(req(`playerId=751c2f47-f0e8-4506-b10e-b39a7bbcd302&season=${WINTER_2026_ID}`), d)).json();
-    expect(body.data.metrics).toMatchObject({ games_played: 10, wins: 5, losses: 4, ties: 0, save_percentage: 90.9 });
+    expect(body.data.metrics).toMatchObject({ games_played: 10, wins: 5, losses: 4, ties: 1, saves: null, save_percentage: null });
     expect(body.data.aggregateOnly).toBe(true);
     expect(d.getGames).not.toHaveBeenCalled();
     expect(d.getMatchups).not.toHaveBeenCalled();
@@ -242,9 +243,10 @@ describe('strict goalie career provenance', () => {
   };
   const genuine = { ...carrier, id: 'genuine', game_id: 'game', season_id: SEASON_ID, goals_against: 2, shots_against: 20, saves: 18 };
 
-  it('supports baseline-only and raw-only sources without inventing another population', () => {
+  it('supports baseline-only and rejects a raw-only historical aggregate carrier', () => {
     expect(classifyStrictGoalieCareerSources([], baseline, historicalSeasonId)).toEqual([]);
-    expect(classifyStrictGoalieCareerSources([carrier], null, historicalSeasonId)).toEqual([carrier]);
+    expect(() => classifyStrictGoalieCareerSources([carrier], null, historicalSeasonId)).toThrow('goalie career provenance');
+    expect(classifyStrictGoalieCareerSources([genuine], null, historicalSeasonId)).toEqual([genuine]);
   });
 
   it.each([null, carrier.game_id])('removes a proven historical carrier whether game_id is %s', (gameId) => {
@@ -269,6 +271,24 @@ describe('strict goalie career provenance', () => {
     expect(unknown.save_percentage).toBeUndefined();
     expect(knownZero.saves).toBe(0);
     expect(knownZero.save_percentage).toBe(0);
+  });
+});
+
+describe('strict mobile hot-fact comparisons', () => {
+  it('aggregates team rows within one season before comparison', async () => {
+    const row = {
+      season_id: SEASON_ID, season_name: 'Native season', sort_date: '2026-01-01', team_id: TEAM_ID,
+      team_name: 'A', position: 'Goalie', games_played: 1, team_games: 1, attendance_pct: 100,
+      goals: 0, assists: 0, points: 0, goals_per_game: 0, points_per_game: 0,
+      wins: 1, losses: 0, ties: 0, saves: 18, saves_known: true, goals_against: 2,
+      save_percentage: 90, goals_against_average: 2, shutouts: 0,
+    } as PlayerCareerSeasonRow;
+    const facts = await generatePlayerCareerHotFacts({
+      playerName: 'Fixture', seasons: [row, { ...row, team_id: 'team-b', team_name: 'B', games_played: 4, team_games: 4, wins: 4, saves: 72, goals_against: 8 }],
+      careerTotalsSeasons: [row], isGoalie: true, distinctSeasonComparisons: true,
+    });
+    expect(facts.join(' ')).not.toContain('year-over-year');
+    expect(facts.join(' ')).not.toContain('than Native season');
   });
 });
 
