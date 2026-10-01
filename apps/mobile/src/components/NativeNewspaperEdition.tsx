@@ -4,10 +4,28 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import type { NewspaperBrief, NewspaperEdition } from '../lib/newspaperReader';
 import colors from '../theme/colors';
 
-function Artwork({ uri, label }: { uri?: string; label: string }) {
-  return uri
-    ? <Image source={{ uri }} accessibilityLabel={label} alt={label} resizeMode="cover" style={styles.artwork} />
-    : <View accessibilityLabel={`${label}; artwork not supplied`} style={styles.artFallback}><Text style={styles.fallbackSmall}>HOCKEY LIFE</Text><Text style={styles.fallbackLarge}>TIMES</Text></View>;
+export function Artwork({ uri, label }: { uri?: string; label: string }) {
+  const [media, setMedia] = React.useState({ uri, aspectRatio: 1, failed: false });
+  const current = media.uri === uri ? media : { uri, aspectRatio: 1, failed: false };
+  React.useEffect(() => {
+    let active = true;
+    setMedia({ uri, aspectRatio: 1, failed: false });
+    if (uri && typeof Image.getSize === 'function') Image.getSize(uri,
+      (width, height) => { if (active && width > 0 && height > 0) setMedia({ uri, aspectRatio: width / height, failed: false }); },
+      () => { if (active) setMedia({ uri, aspectRatio: 1, failed: true }); });
+    return () => { active = false; };
+  }, [uri]);
+  if (!uri) return <View accessibilityLabel={`${label}; artwork not supplied`} style={styles.artFallback}><Text style={styles.fallbackSmall}>HOCKEY LIFE</Text><Text style={styles.fallbackLarge}>TIMES</Text></View>;
+  if (current.failed) return <View accessibilityLabel={`${label}; artwork unavailable`} style={styles.artFallback}><Text style={styles.fallbackSmall}>ARTWORK</Text><Text style={styles.fallbackLarge}>UNAVAILABLE</Text></View>;
+  return <Image source={{ uri }} accessibilityLabel={label} alt={label} resizeMode="contain" onError={() => setMedia((value) => value.uri === uri ? { ...value, failed: true } : value)} style={[styles.artwork, { aspectRatio: current.aspectRatio }]} />;
+}
+
+export function formatEditionScheduled(value: string, timezone: NewspaperEdition['timezone']) {
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return value;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(instant);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? '';
+  return `${part('month')} ${part('day')}, ${part('year')} · ${part('hour')}:${part('minute')}`;
 }
 
 function SectionTitle({ children, accentColor }: { children: React.ReactNode; accentColor: string }) {
@@ -30,7 +48,7 @@ export default function NativeNewspaperEdition({ edition, accentColor }: { editi
     <View style={styles.section}><SectionTitle accentColor={accentColor}>Standings</SectionTitle>{edition.standings.map((row, index) => <View key={row.teamId} style={styles.standing}>{row.logoUrl ? <Image source={{ uri: row.logoUrl }} accessibilityLabel={`${row.name} logo`} alt={`${row.name} logo`} resizeMode="contain" style={styles.logo} /> : null}<Text style={styles.place}>{index + 1}</Text><View style={styles.grow}><Text style={styles.teamName}>{row.name}</Text><Text style={styles.statLine}>{row.gp} GP · {row.w}-{row.l}-{row.otl}-{row.t} · {row.gf} GF · {row.ga} GA</Text></View><Text style={[styles.points, { color: accentColor }]}>{row.pts} PTS</Text></View>)}<Text style={styles.copy}>{edition.standingsNote}</Text></View>
     <Briefs title="The Heater" items={edition.hot} accentColor={accentColor} />
     <Briefs title="The Cold Tub" items={edition.cold} accentColor={accentColor} />
-    <View style={styles.section}><SectionTitle accentColor={accentColor}>Next Week</SectionTitle>{edition.upcoming.length ? edition.upcoming.map((game) => <View key={game.gameId} style={styles.card}><Text style={styles.cardTitle}>{game.headline}</Text><Text style={styles.statLine}>{game.awayName} at {game.homeName} · {new Date(game.scheduledAt).toLocaleString('en-CA')}{game.venue ? ` · ${game.venue}` : ''}</Text><Text style={styles.copy}>{game.body}</Text></View>) : <Text style={styles.copy}>{edition.upcomingNote}</Text>}</View>
+    <View style={styles.section}><SectionTitle accentColor={accentColor}>Next Week</SectionTitle>{edition.upcoming.length ? edition.upcoming.map((game) => <View key={game.gameId} style={styles.card}><Text style={styles.cardTitle}>{game.headline}</Text><Text style={styles.statLine}>{game.awayName} at {game.homeName} · {formatEditionScheduled(game.scheduledAt, edition.timezone)}{game.venue ? ` · ${game.venue}` : ''}</Text><Text style={styles.copy}>{game.body}</Text></View>) : <Text style={styles.copy}>{edition.upcomingNote}</Text>}</View>
     {edition.aroundRink ? <Briefs title="Around the Rink" items={edition.aroundRink} accentColor={accentColor} /> : null}
     <View style={styles.section}><SectionTitle accentColor={accentColor}>Source Notes</SectionTitle><Text style={styles.muted}>Verified {edition.source.verifiedAt}{edition.source.standingsAsOf ? ` · standings as of ${edition.source.standingsAsOf}` : ''}</Text>{edition.source.warnings.map((warning, index) => <Text key={index} style={styles.copy}>• {warning}</Text>)}</View>
   </View>;
@@ -41,7 +59,7 @@ const styles = StyleSheet.create({
   masthead: { borderTopWidth: 5, borderBottomWidth: 2, paddingVertical: 12 }, mastTitle: { color: '#181712', fontSize: 36, lineHeight: 41, fontWeight: '900' }, mastMeta: { color: '#514B42', fontSize: 13, lineHeight: 19, marginTop: 5 },
   kicker: { fontSize: 10, lineHeight: 15, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' }, section: { gap: 10 }, sectionTitle: { color: '#181712', fontSize: 25, lineHeight: 31, fontWeight: '900', borderBottomWidth: 4, paddingBottom: 6 },
   leadTitle: { color: '#181712', fontSize: 34, lineHeight: 38, fontWeight: '900' }, dek: { color: '#363129', fontSize: 18, lineHeight: 26, fontWeight: '700' }, copy: { color: '#24211B', fontSize: 17, lineHeight: 27 }, caption: { color: '#625B50', fontSize: 12, lineHeight: 17, fontStyle: 'italic' },
-  artwork: { width: '100%', aspectRatio: 16 / 9, borderRadius: 10, backgroundColor: colors.bgElevated }, artFallback: { width: '100%', aspectRatio: 16 / 9, borderRadius: 10, borderWidth: 1, borderColor: '#867C6B', alignItems: 'center', justifyContent: 'center', backgroundColor: '#DDD0B7' }, fallbackSmall: { color: '#181712', fontSize: 13, fontWeight: '900', letterSpacing: 2 }, fallbackLarge: { color: '#A4161A', fontSize: 30, fontWeight: '900', letterSpacing: 2 },
+  artwork: { width: '100%', borderRadius: 10, backgroundColor: colors.bgElevated }, artFallback: { width: '100%', aspectRatio: 16 / 9, borderRadius: 10, borderWidth: 1, borderColor: '#867C6B', alignItems: 'center', justifyContent: 'center', backgroundColor: '#DDD0B7' }, fallbackSmall: { color: '#181712', fontSize: 13, fontWeight: '900', letterSpacing: 2 }, fallbackLarge: { color: '#A4161A', fontSize: 30, fontWeight: '900', letterSpacing: 2 },
   card: { gap: 9, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#9C9383' }, cardTitle: { color: '#181712', fontSize: 23, lineHeight: 28, fontWeight: '900' }, score: { gap: 8, paddingVertical: 8, borderTopWidth: 2, borderBottomWidth: 2, borderColor: '#181712' }, team: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }, logo: { width: 34, height: 34 }, teamName: { flex: 1, color: '#181712', fontSize: 15, lineHeight: 20, fontWeight: '800' }, scoreValue: { fontSize: 28, fontWeight: '900' }, final: { color: '#514B42', fontSize: 10, fontWeight: '900', textAlign: 'center' }, subhead: { color: '#181712', fontSize: 16, fontWeight: '900', textTransform: 'uppercase' }, statLine: { color: '#514B42', fontSize: 13, lineHeight: 19 }, muted: { color: '#625B50', fontSize: 13, lineHeight: 19 },
   numberGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, number: { minWidth: '46%', flex: 1, padding: 11, borderWidth: 1, borderColor: '#9C9383' }, numberValue: { fontSize: 28, fontWeight: '900' }, numberLabel: { color: '#181712', fontSize: 13, fontWeight: '900', textTransform: 'uppercase' },
   standing: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: '#9C9383' }, place: { color: '#625B50', fontWeight: '900' }, grow: { flex: 1, minWidth: 0 }, points: { fontSize: 15, fontWeight: '900' }, brief: { gap: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#9C9383' },

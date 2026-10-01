@@ -37,10 +37,11 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
     currentKeyRef.current = readerKey;
     setShowTextFallback(false);
     setReader({ key: readerKey, status: 'loading' });
-    void loadPublishedNewspaperEdition({ articleId, articleSlug, leagueId: scope.leagueId, leagueSlug: scope.leagueSlug }).then((result) => {
+    const controller = typeof AbortController === 'undefined' ? undefined : new AbortController();
+    void loadPublishedNewspaperEdition({ articleId, articleSlug, leagueId: scope.leagueId, leagueSlug: scope.leagueSlug }, undefined, { signal: controller?.signal }).then((result) => {
       if (generationRef.current === generation && currentKeyRef.current === readerKey) setReader({ key: readerKey, ...result });
     });
-    return () => { generationRef.current += 1; currentKeyRef.current = ''; };
+    return () => { controller?.abort(); generationRef.current += 1; currentKeyRef.current = ''; };
   }, [articleId, articleSlug, readerKey, retryKey, scope.leagueId, scope.leagueSlug]);
 
   React.useEffect(() => () => { generationRef.current += 1; }, []);

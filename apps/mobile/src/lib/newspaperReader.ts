@@ -2,11 +2,13 @@ import { publicSupabase } from './supabase/client';
 
 export const HOCKEY_LIFE_NEWSPAPER_LEAGUE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 export const HOCKEY_LIFE_NEWSPAPER_LEAGUE_SLUG = 'hockey-life';
+export const HOCKEY_LIFE_PUBLIC_ORIGIN = 'https://hockey-life.beerleaguehockey.ca';
+export const MAX_PAYLOAD_BYTES = 512 * 1024;
+export const NEWSPAPER_LOOKUP_TIMEOUT_MS = 8000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_PAYLOAD_BYTES = 512 * 1024;
 
 export interface NewspaperTeam { id: string; name: string; logoUrl?: string }
 export interface NewspaperContributor { playerId: string; name: string; teamName: string; goals: number; assists: number; points: number }
@@ -26,8 +28,8 @@ export interface NewspaperEdition {
 }
 
 export type PublishedEditionResult = { status: 'ready'; edition: NewspaperEdition } | { status: 'unavailable' } | { status: 'error'; message: string };
-export type NewspaperEditionQuery = (articleId: string, leagueId: string) => Promise<{ data: unknown; error: unknown }>;
-type QueryBuilder = { select(columns: string): QueryBuilder; eq(column: string, value: string): QueryBuilder; maybeSingle(): Promise<{ data: unknown; error: unknown }> };
+export type NewspaperEditionQuery = (articleId: string, leagueId: string, signal?: AbortSignal) => Promise<{ data: unknown; error: unknown }>;
+type QueryBuilder = { select(columns: string): QueryBuilder; eq(column: string, value: string): QueryBuilder; abortSignal?(signal: AbortSignal): QueryBuilder; maybeSingle(): Promise<{ data: unknown; error: unknown }> };
 
 function record(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${path} must be an object`);
@@ -45,9 +47,11 @@ function optionalString(value: unknown, path: string) { return value === undefin
 function media(value: unknown, path: string) {
   if (value === undefined) return undefined;
   const raw = string(value, path);
+  const isTrustedRelative = raw.startsWith('/') && !raw.startsWith('//') && !raw.includes('\\');
   let parsed: URL;
-  try { parsed = new URL(raw); } catch { throw new TypeError(`${path} must be an absolute media URL`); }
+  try { parsed = isTrustedRelative ? new URL(raw, HOCKEY_LIFE_PUBLIC_ORIGIN) : new URL(raw); } catch { throw new TypeError(`${path} must be a safe media URL`); }
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new TypeError(`${path} must be a safe HTTP media URL`);
+  if (raw.startsWith('/') && (!isTrustedRelative || parsed.origin !== HOCKEY_LIFE_PUBLIC_ORIGIN)) throw new TypeError(`${path} must be a safe media URL`);
   return parsed.toString();
 }
 function strings(value: unknown, path: string, options: { min?: number; max?: number } = {}) {
@@ -64,8 +68,27 @@ function team(value: unknown, path: string): NewspaperTeam { const row = record(
 function contributor(value: unknown, path: string): NewspaperContributor { const row = record(value, path); return { playerId: string(row.playerId, `${path}.playerId`), name: string(row.name, `${path}.name`), teamName: string(row.teamName, `${path}.teamName`), goals: number(row.goals, `${path}.goals`), assists: number(row.assists, `${path}.assists`), points: number(row.points, `${path}.points`) }; }
 function brief(value: unknown, path: string): NewspaperBrief { const row = record(value, path); return { headline: string(row.headline, `${path}.headline`), body: string(row.body, `${path}.body`), imageUrl: media(row.imageUrl, `${path}.imageUrl`) }; }
 
+type TextEncoderConstructor = new () => { encode(value: string): { byteLength: number } };
+
+export function utf8ByteLength(value: string, Encoder: TextEncoderConstructor | null = typeof TextEncoder === 'undefined' ? null : TextEncoder) {
+  if (Encoder) return new Encoder().encode(value).byteLength;
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const point = value.codePointAt(index)!;
+    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+    if (point > 0xffff) index += 1;
+  }
+  return bytes;
+}
+
+export function serializedUtf8ByteLength(value: unknown) {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError('edition cannot be serialized');
+  return utf8ByteLength(serialized);
+}
+
 export function validatePublishedNewspaperEdition(value: unknown, expectedLeagueId: string): NewspaperEdition {
-  if (JSON.stringify(value).length > MAX_PAYLOAD_BYTES) throw new TypeError('edition exceeds the native reader size limit');
+  if (serializedUtf8ByteLength(value) > MAX_PAYLOAD_BYTES) throw new TypeError('edition exceeds the native reader size limit');
   const row = record(value, 'edition');
   if (row.schemaVersion !== 1 || row.title !== 'Hockey Life Times') throw new TypeError('edition schema or title is invalid');
   const issueNumber = typeof row.issueNumber === 'number' ? number(row.issueNumber, 'edition.issueNumber') : string(row.issueNumber, 'edition.issueNumber');
@@ -89,23 +112,39 @@ export function validatePublishedNewspaperEdition(value: unknown, expectedLeague
   };
 }
 
-async function queryPublishedEdition(articleId: string, leagueId: string) {
-  return (publicSupabase as unknown as { from(table: string): QueryBuilder }).from('newspaper_editions')
+async function queryPublishedEdition(articleId: string, leagueId: string, signal?: AbortSignal) {
+  let query = (publicSupabase as unknown as { from(table: string): QueryBuilder }).from('newspaper_editions')
     .select('article_id,league_id,status,published_at,edition_json')
-    .eq('article_id', articleId).eq('league_id', leagueId).eq('status', 'published').maybeSingle();
+    .eq('article_id', articleId).eq('league_id', leagueId).eq('status', 'published');
+  if (signal && typeof query.abortSignal === 'function') query = query.abortSignal(signal);
+  return query.maybeSingle();
 }
 
-export async function loadPublishedNewspaperEdition(expected: { articleId: string; leagueId: string; leagueSlug: string; articleSlug: string }, query: NewspaperEditionQuery = queryPublishedEdition): Promise<PublishedEditionResult> {
+export async function loadPublishedNewspaperEdition(expected: { articleId: string; leagueId: string; leagueSlug: string; articleSlug: string }, query: NewspaperEditionQuery = queryPublishedEdition, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<PublishedEditionResult> {
   if (!UUID.test(expected.articleId) || !UUID.test(expected.leagueId) || !SLUG.test(expected.articleSlug) || !SLUG.test(expected.leagueSlug)) return { status: 'error', message: 'Invalid newspaper article identity.' };
   if (expected.leagueId !== HOCKEY_LIFE_NEWSPAPER_LEAGUE_ID || expected.leagueSlug !== HOCKEY_LIFE_NEWSPAPER_LEAGUE_SLUG) return { status: 'unavailable' };
+  const controller = typeof AbortController === 'undefined' ? undefined : new AbortController();
+  const timeoutMs = options.timeoutMs ?? NEWSPAPER_LOOKUP_TIMEOUT_MS;
+  let rejectCancellation: ((reason: Error) => void) | undefined;
+  const cancelled = new Promise<never>((_, reject) => { rejectCancellation = reject; });
+  const onExternalAbort = () => { controller?.abort(); rejectCancellation?.(new Error('newspaper lookup cancelled')); };
+  options.signal?.addEventListener('abort', onExternalAbort, { once: true });
+  if (options.signal?.aborted) onExternalAbort();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const { data, error } = await query(expected.articleId, expected.leagueId);
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { controller?.abort(); reject(new Error('newspaper lookup timed out')); }, timeoutMs);
+    });
+    const { data, error } = await Promise.race([query(expected.articleId, expected.leagueId, controller?.signal ?? options.signal), timeout, cancelled]);
     if (error) return { status: 'error', message: 'The published edition could not be checked. Retry, or read the article text.' };
     if (data === null) return { status: 'unavailable' };
     const row = record(data, 'newspaper edition row');
     if (row.article_id !== expected.articleId || row.league_id !== expected.leagueId || row.status !== 'published' || typeof row.published_at !== 'string' || !Number.isFinite(Date.parse(row.published_at))) throw new TypeError('newspaper edition association mismatch');
     return { status: 'ready', edition: validatePublishedNewspaperEdition(row.edition_json, expected.leagueId) };
-  } catch {
-    return { status: 'error', message: 'The published edition is unavailable because its data could not be safely validated.' };
+  } catch (error) {
+    return { status: 'error', message: error instanceof Error && error.message === 'newspaper lookup timed out' ? 'The published edition took too long to load. Retry, or read the article text.' : 'The published edition is unavailable because its data could not be safely validated.' };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    options.signal?.removeEventListener('abort', onExternalAbort);
   }
 }

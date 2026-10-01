@@ -1,0 +1,587 @@
+{
+  "article_id": "eba668e9-dc66-47b4-92c1-dff9cf4d6b5d",
+  "league_id": "d6e55507-6eae-4d94-978c-47c6c30a36f1",
+  "status": "published",
+  "published_at": "2026-09-27T20:59:12.839292+00:00",
+  "edition_json": {
+    "hot": [
+      {
+        "body": "Matt Grossi scored five and assisted on two more in a 9–3 championship-game win. Premier’s whole team scored three. There are difficult individual matchups, and then there is losing the scoring comparison to one bloke.",
+        "headline": "Grossi: five goals, absolutely no subtlety",
+        "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png"
+      },
+      {
+        "body": "Eric Mortson and Jeff Lobodzinski each had a goal and four assists in a win. Mortson’s team conceded three; Lobodzinski’s conceded eight. Same output, wildly different amounts of nonsense for the attack to subsidize.",
+        "headline": "Mortson and Lobodzinski: four helpers apiece",
+        "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/1dc8d717a67aa3d238508be6fd125f43acf2033726acd3612558e112a8b06fa0.png"
+      },
+      {
+        "body": "Tristan Hatfield’s three goals and two assists ought to make for pleasant reading. Then you get to the 9–8 loss. A hat trick should buy you something better than a front-row seat in the team-defence complaint department.",
+        "headline": "Hatfield: five points, no team win",
+        "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/b2a0e566364d472cf946bea27614f3434761a23be4c3f087cc86b2556b63d229.png"
+      }
+    ],
+    "cold": [
+      {
+        "body": "FitzRays Premier conceded nine in the championship game. Five belonged to Matt Grossi. At some point the word Premier stops being aspirational and becomes evidence. The team defending was bargain-basement stuff at full championship-game prices.",
+        "headline": "Premier: nine against, branding under review"
+      },
+      {
+        "body": "Score eight, lose anyway. FitzRays Flyers found a way to make a hat trick from Tristan Hatfield and two goals from Adrian Hartley insufficient. That attack deserved better than a team-defence bill marked “please send another.”",
+        "headline": "Flyers: apparently eight was asking too much"
+      },
+      {
+        "body": "Kyle Geraghty had three useful assists; Cameron Milne had one. Neither scored in London Eco Metal’s nine-goal win. Nine goals to go around and these two stuck to the side dishes. Productive helpers, yes. Their goal columns still look like they came with the free trial.",
+        "headline": "Geraghty and Milne: the pass-only club"
+      }
+    ],
+    "lead": {
+      "dek": "London Eco Metal wins the championship game 9–3. Matt Grossi scores five; FitzRays Premier makes a compelling case for a name change.",
+      "body": [
+        "London Eco Metal beat FitzRays Premier 9–3 in Thursday, September 24’s championship game, a result that makes “Premier” look less like a team name than a complaint for the advertising regulator. Nine goals against with the championship game on the line. That is a hell of a time to offer wholesale pricing.",
+        "Matt Grossi scored five goals and added two assists. Premier managed three goals as an entire team. Grossi beat their collective output himself and still found time to help with somebody else’s. Eric Mortson contributed a goal and four assists to a result Premier will struggle to describe without using the word “shit.”",
+        "First General London, meanwhile, beat FitzRays Flyers 9–8 in the third-place game. Tristan Hatfield had a hat trick and five points for the losing side. Apparently eight goals now buys you a valuable lesson about team defence.",
+        "Twenty-nine goals across two games gives the first Hockey Life Times plenty to print. The defending gives us considerably less to praise. Eco Metal gets the championship-game win; everyone conceding nine gets the large type."
+      ],
+      "caption": "Matt Grossi, illustrated from his player portrait: five goals and two assists in London Eco Metal’s 9–3 championship-game win.",
+      "headline": "ECO METAL TURNS PREMIER INTO SCRAP",
+      "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png"
+    },
+    "games": [
+      {
+        "body": [
+          "FitzRays Premier lost the championship game 9–3 to London Eco Metal, and there is no respectable way to dress that up. Put a tie on nine goals against and you still have nine goals against. Premier is a lovely name for a team that would prefer you not read the score.",
+          "Matt Grossi supplied five goals and two assists. Eric Mortson had a goal and four assists; Cooper Hatfield added a goal and two helpers. Craig Bettridge and Ash Moore also scored. Eco Metal had plenty of contributors, even with Grossi treating the goal column like his personal property.",
+          "Dan MacGillivray and Adrian Kwasek scored for Premier, while Jack Foote had an assist. Three goals ought to give a team something to work with. Premier’s defending turned them into a footnote.",
+          "Eco Metal earned the championship-game win by six goals. Premier earned a long, uncomfortable look at a result in which one opponent scored more than its entire team. Start the review there. Bring a red pen with a spare cartridge."
+        ],
+        "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+        "awayTeam": {
+          "id": "346833e0-2780-492d-86db-94df0b0cb3e1",
+          "name": "FitzRays Premier",
+          "logoUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/346833e0-2780-492d-86db-94df0b0cb3e1-manual-fitzrays-red.png"
+        },
+        "headline": "PREMIER PRICE. CLEARANCE-RACK DEFENCE.",
+        "homeTeam": {
+          "id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+          "name": "London Eco Metal",
+          "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-manual-flat-v2.png"
+        },
+        "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png",
+        "awayScore": 3,
+        "homeScore": 9,
+        "contributors": [
+          {
+            "name": "Cooper Hatfield",
+            "goals": 1,
+            "points": 3,
+            "assists": 2,
+            "playerId": "067b1497-a6fb-4376-afd2-acae6033c3db",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Eric Mortson",
+            "goals": 1,
+            "points": 5,
+            "assists": 4,
+            "playerId": "7ccabe9e-1623-49f4-bf44-0b7e922d1174",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Matt Grossi",
+            "goals": 5,
+            "points": 7,
+            "assists": 2,
+            "playerId": "add94b26-b344-459f-9727-8cddae9783de",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Craig Bettridge",
+            "goals": 1,
+            "points": 2,
+            "assists": 1,
+            "playerId": "4b8f52d1-6333-4001-a3d4-bddd081e0f36",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Kyle Geraghty",
+            "goals": 0,
+            "points": 3,
+            "assists": 3,
+            "playerId": "aaa60b0c-f913-4b5b-b0cc-d50c7d3c359c",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Cameron Milne",
+            "goals": 0,
+            "points": 1,
+            "assists": 1,
+            "playerId": "132b77f8-68e7-467a-acd5-df66fe767f1e",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Ash Moore",
+            "goals": 1,
+            "points": 1,
+            "assists": 0,
+            "playerId": "36391d0c-504c-4807-9b3f-4b71b46a3b00",
+            "teamName": "London Eco Metal"
+          },
+          {
+            "name": "Jack Foote",
+            "goals": 0,
+            "points": 1,
+            "assists": 1,
+            "playerId": "5dfcbbd7-5fde-41a7-8557-bea05e71a692",
+            "teamName": "FitzRays Premier"
+          },
+          {
+            "name": "Dan MacGillivray",
+            "goals": 1,
+            "points": 1,
+            "assists": 0,
+            "playerId": "169e8dd5-8489-43d8-9341-e96e4a32177d",
+            "teamName": "FitzRays Premier"
+          },
+          {
+            "name": "Adrian Kwasek",
+            "goals": 1,
+            "points": 1,
+            "assists": 0,
+            "playerId": "f1d544c2-da60-42cd-a22c-51a3c5085d15",
+            "teamName": "FitzRays Premier"
+          }
+        ]
+      },
+      {
+        "body": [
+          "First General London beat FitzRays Flyers 9–8 in Thursday’s third-place game. Seventeen goals is a generous serving of hockey and a damning review of the defending. First General gets the win. Anyone proposing a team-defence clinic on the strength of it should have their whiteboard confiscated.",
+          "Jeff Lobodzinski had a goal and four assists for First General. Cameron Sheppard scored twice, while Drew Fess, Vince Carducci and Adam Klimowicz each supplied a goal and two assists. That is a lot of useful attacking work to need just to win by one.",
+          "Tristan Hatfield scored three goals and added two assists for the Flyers. Adrian Hartley chipped in two goals and an assist. Hatfield produced a hat trick and still belongs in a losing game report, which feels like being charged extra for assembling your own furniture.",
+          "The Flyers scored eight. Eight! A team should be embarrassed to make that insufficient. First General can enjoy the third-place win, but conceding eight does rather spoil any attempt to act superior about the defending."
+        ],
+        "gameId": "6b1c1dd7-a1b5-4c6c-b914-08aeee68a729",
+        "awayTeam": {
+          "id": "453d62d9-80b4-4f26-a2ee-861f0c063402",
+          "name": "First General London",
+          "logoUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-manual-flat.png"
+        },
+        "headline": "EIGHT GOALS SHOULD NOT REQUIRE AN APOLOGY",
+        "homeTeam": {
+          "id": "e4be829d-952c-4531-8376-215907fab3b7",
+          "name": "FitzRays Flyers",
+          "logoUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-manual-flat.png"
+        },
+        "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/48995c80844c1310ca80410b0adccfe83c98114c57283475d45c0d1fc1f64e55.png",
+        "awayScore": 9,
+        "homeScore": 8,
+        "contributors": [
+          {
+            "name": "Cameron Wallace",
+            "goals": 1,
+            "points": 2,
+            "assists": 1,
+            "playerId": "089e60ba-0216-4fdc-961f-a33a782a4371",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Lyndon Bulda",
+            "goals": 1,
+            "points": 3,
+            "assists": 2,
+            "playerId": "485e0cec-cbaa-44d1-a103-215888c5f555",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Tristan Hatfield",
+            "goals": 3,
+            "points": 5,
+            "assists": 2,
+            "playerId": "ad0291eb-6575-4e7c-b39a-495eb972d5ff",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Sonny Teale",
+            "goals": 0,
+            "points": 2,
+            "assists": 2,
+            "playerId": "7cdfa67c-be7e-453d-889d-2bb8444adea9",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Daryl Patterson",
+            "goals": 0,
+            "points": 1,
+            "assists": 1,
+            "playerId": "215355fc-c80b-41da-a92d-71e27498bb63",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Adrian Hartley",
+            "goals": 2,
+            "points": 3,
+            "assists": 1,
+            "playerId": "fc235c43-f6da-422c-8fea-dbb8307cde79",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Andrew Sawchuk",
+            "goals": 0,
+            "points": 1,
+            "assists": 1,
+            "playerId": "b25ffd12-0978-4f4c-89fd-e6928c0896fc",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "name": "Terry Drew",
+            "goals": 0,
+            "points": 2,
+            "assists": 2,
+            "playerId": "38d6064e-a1dd-4365-9fcf-57ca929bf4c8",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Drew Fess",
+            "goals": 1,
+            "points": 3,
+            "assists": 2,
+            "playerId": "a566077e-1653-4342-9a07-6ac5d1c56357",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Vince Carducci",
+            "goals": 1,
+            "points": 3,
+            "assists": 2,
+            "playerId": "d248c3aa-a93e-4b94-acda-cdfee85ec3c4",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Jeff Lobodzinski",
+            "goals": 1,
+            "points": 5,
+            "assists": 4,
+            "playerId": "09d59568-8eb3-4588-80c4-30562c8e174e",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Adam Klimowicz",
+            "goals": 1,
+            "points": 3,
+            "assists": 2,
+            "playerId": "d9f346ab-516a-4f9b-b34c-7eb0bfd4b5c0",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Cory Nott",
+            "goals": 0,
+            "points": 2,
+            "assists": 2,
+            "playerId": "c1fe6bc7-4898-4378-92af-3c56379dd3fc",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Trevor Paterson",
+            "goals": 1,
+            "points": 1,
+            "assists": 0,
+            "playerId": "6ba6425b-95a4-4ad9-9279-a60194ff9efe",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Nathan Zaplatar",
+            "goals": 0,
+            "points": 1,
+            "assists": 1,
+            "playerId": "b2f1a7e7-7c54-43fa-bb20-d4386b9437d6",
+            "teamName": "First General London"
+          },
+          {
+            "name": "Cameron Sheppard",
+            "goals": 2,
+            "points": 2,
+            "assists": 0,
+            "playerId": "a70bb86b-2338-4279-b08c-92f32ce2f8b5",
+            "teamName": "First General London"
+          }
+        ]
+      }
+    ],
+    "media": {
+      "assets": [
+        {
+          "playerId": "add94b26-b344-459f-9727-8cddae9783de",
+          "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png",
+          "outputMime": "image/png",
+          "provenance": "trusted-reviewed-import-v1",
+          "publicPath": "approved/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png",
+          "outputBytes": 3834193,
+          "privatePath": "outputs/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png",
+          "outputSha256": "33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c",
+          "approvedPdfSha256": "2bf55864bcf76f12904e865d2bbadff2dbb5112f7c9bb3adb6d45314d5da2152",
+          "decodedPixelSha256": "0eda27090aff355d9b94a6b330b812ef3957ef5717d071f1c23400425295d009",
+          "sourceArtifactSha256": "72bcb86690dce8afea9b6fdd59c5c47618535bf51609b89d512b8825dd7fb328",
+          "approvedEditionSha256": "cbd4e1a06a158c85e0784933ba47b6b56294fd37af9537d51ebccc12759c41e6"
+        },
+        {
+          "playerId": "09d59568-8eb3-4588-80c4-30562c8e174e",
+          "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/48995c80844c1310ca80410b0adccfe83c98114c57283475d45c0d1fc1f64e55.png",
+          "outputMime": "image/png",
+          "provenance": "trusted-reviewed-import-v1",
+          "publicPath": "approved/v1/48995c80844c1310ca80410b0adccfe83c98114c57283475d45c0d1fc1f64e55.png",
+          "outputBytes": 3948130,
+          "privatePath": "outputs/v1/48995c80844c1310ca80410b0adccfe83c98114c57283475d45c0d1fc1f64e55.png",
+          "outputSha256": "48995c80844c1310ca80410b0adccfe83c98114c57283475d45c0d1fc1f64e55",
+          "approvedPdfSha256": "2bf55864bcf76f12904e865d2bbadff2dbb5112f7c9bb3adb6d45314d5da2152",
+          "decodedPixelSha256": "b015edda229abb279ca2f542b313aafebbc3178394d0e923141b4c70cd972962",
+          "sourceArtifactSha256": "842c7ea3a3df542429ce961dd41c1962a49875896fc9cc410df97bcb87725bb0",
+          "approvedEditionSha256": "cbd4e1a06a158c85e0784933ba47b6b56294fd37af9537d51ebccc12759c41e6"
+        },
+        {
+          "playerId": "7ccabe9e-1623-49f4-bf44-0b7e922d1174",
+          "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/1dc8d717a67aa3d238508be6fd125f43acf2033726acd3612558e112a8b06fa0.png",
+          "outputMime": "image/png",
+          "provenance": "trusted-reviewed-import-v1",
+          "publicPath": "approved/v1/1dc8d717a67aa3d238508be6fd125f43acf2033726acd3612558e112a8b06fa0.png",
+          "outputBytes": 4125361,
+          "privatePath": "outputs/v1/1dc8d717a67aa3d238508be6fd125f43acf2033726acd3612558e112a8b06fa0.png",
+          "outputSha256": "1dc8d717a67aa3d238508be6fd125f43acf2033726acd3612558e112a8b06fa0",
+          "approvedPdfSha256": "2bf55864bcf76f12904e865d2bbadff2dbb5112f7c9bb3adb6d45314d5da2152",
+          "decodedPixelSha256": "c6811cd2f0d0db4a56707a16d37ab3884685fa6abb23a4eba904925a270576d2",
+          "sourceArtifactSha256": "bb44348f519def16cab6bf688a37a72a9e996dad1df5b8d3828a0f05a9b97d31",
+          "approvedEditionSha256": "cbd4e1a06a158c85e0784933ba47b6b56294fd37af9537d51ebccc12759c41e6"
+        },
+        {
+          "playerId": "ad0291eb-6575-4e7c-b39a-495eb972d5ff",
+          "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/b2a0e566364d472cf946bea27614f3434761a23be4c3f087cc86b2556b63d229.png",
+          "outputMime": "image/png",
+          "provenance": "trusted-reviewed-import-v1",
+          "publicPath": "approved/v1/b2a0e566364d472cf946bea27614f3434761a23be4c3f087cc86b2556b63d229.png",
+          "outputBytes": 3786765,
+          "privatePath": "outputs/v1/b2a0e566364d472cf946bea27614f3434761a23be4c3f087cc86b2556b63d229.png",
+          "outputSha256": "b2a0e566364d472cf946bea27614f3434761a23be4c3f087cc86b2556b63d229",
+          "approvedPdfSha256": "2bf55864bcf76f12904e865d2bbadff2dbb5112f7c9bb3adb6d45314d5da2152",
+          "decodedPixelSha256": "7bb5cc6b6ad733f6bbe5327d5bd96e67f88783fdc0d7b13e458836bd8308960c",
+          "sourceArtifactSha256": "e8be070c4b724254bb8325a3d440b9779c1cb07ef60ee4eb7888b4c0a06971e9",
+          "approvedEditionSha256": "cbd4e1a06a158c85e0784933ba47b6b56294fd37af9537d51ebccc12759c41e6"
+        }
+      ],
+      "bindings": [
+        {
+          "field": "lead.imageUrl",
+          "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+          "playerId": "add94b26-b344-459f-9727-8cddae9783de"
+        },
+        {
+          "field": "games.ba197a51-cd61-4fad-9a2d-21eab83c6915.imageUrl",
+          "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+          "playerId": "add94b26-b344-459f-9727-8cddae9783de"
+        },
+        {
+          "field": "games.6b1c1dd7-a1b5-4c6c-b914-08aeee68a729.imageUrl",
+          "gameId": "6b1c1dd7-a1b5-4c6c-b914-08aeee68a729",
+          "playerId": "09d59568-8eb3-4588-80c4-30562c8e174e"
+        },
+        {
+          "field": "stars.add94b26-b344-459f-9727-8cddae9783de.illustrationUrl",
+          "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+          "playerId": "add94b26-b344-459f-9727-8cddae9783de"
+        },
+        {
+          "field": "stars.7ccabe9e-1623-49f4-bf44-0b7e922d1174.illustrationUrl",
+          "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+          "playerId": "7ccabe9e-1623-49f4-bf44-0b7e922d1174"
+        },
+        {
+          "field": "stars.09d59568-8eb3-4588-80c4-30562c8e174e.illustrationUrl",
+          "gameId": "6b1c1dd7-a1b5-4c6c-b914-08aeee68a729",
+          "playerId": "09d59568-8eb3-4588-80c4-30562c8e174e"
+        },
+        {
+          "field": "hot.0.imageUrl",
+          "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+          "playerId": "add94b26-b344-459f-9727-8cddae9783de"
+        },
+        {
+          "field": "hot.1.imageUrl",
+          "gameId": "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+          "playerId": "7ccabe9e-1623-49f4-bf44-0b7e922d1174"
+        },
+        {
+          "field": "hot.2.imageUrl",
+          "gameId": "6b1c1dd7-a1b5-4c6c-b914-08aeee68a729",
+          "playerId": "ad0291eb-6575-4e7c-b39a-495eb972d5ff"
+        }
+      ],
+      "schemaVersion": 2
+    },
+    "stage": "playoffs",
+    "stars": [
+      {
+        "name": "Matt Grossi",
+        "goals": 5,
+        "points": 7,
+        "reason": "EDITORIAL FIRST STAR — Five goals and two assists in the championship-game win. Matt Grossi led the week with seven points and outscored Premier by himself. Usually a team at least makes you bring teammates to that argument.",
+        "assists": 2,
+        "playerId": "add94b26-b344-459f-9727-8cddae9783de",
+        "teamName": "London Eco Metal",
+        "illustrationUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/33f7becbf9c8aa5e87264c4fd47668ef38ae72c5f6f67d0eccbe5c359f27245c.png"
+      },
+      {
+        "name": "Eric Mortson",
+        "goals": 1,
+        "points": 5,
+        "reason": "EDITORIAL SECOND STAR — A goal and four assists in the 9–3 championship-game win. Eric Mortson supplied enough help to qualify as a public service, provided the public was wearing London Eco Metal colours.",
+        "assists": 4,
+        "playerId": "7ccabe9e-1623-49f4-bf44-0b7e922d1174",
+        "teamName": "London Eco Metal",
+        "illustrationUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/1dc8d717a67aa3d238508be6fd125f43acf2033726acd3612558e112a8b06fa0.png"
+      },
+      {
+        "name": "Jeff Lobodzinski",
+        "goals": 1,
+        "points": 5,
+        "reason": "EDITORIAL THIRD STAR — A goal and four assists in First General London’s 9–8 third-place win. Jeff Lobodzinski made a substantial contribution to an attack that, regrettably, really did need nine.",
+        "assists": 4,
+        "playerId": "09d59568-8eb3-4588-80c4-30562c8e174e",
+        "teamName": "First General London",
+        "illustrationUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/48995c80844c1310ca80410b0adccfe83c98114c57283475d45c0d1fc1f64e55.png"
+      }
+    ],
+    "title": "Hockey Life Times",
+    "source": {
+      "gameIds": [
+        "ba197a51-cd61-4fad-9a2d-21eab83c6915",
+        "6b1c1dd7-a1b5-4c6c-b914-08aeee68a729"
+      ],
+      "warnings": [
+        "Goal timing is not authoritative: league scorekeeper_tracks_time_periods=false. No chronology claims.",
+        "Both games completed but scorekeeper_verified=false and stats submission/lock timestamps null.",
+        "Season remains playoffs; champion_team_id is null. Championship designation comes from game location field and public schedule, not season champion metadata.",
+        "No goalie_stats rows exist for either game: no saves, save percentage or individual goalie performance claims.",
+        "Missing skater rows do not establish zero points or attendance.",
+        "Official current standings include playoff games; First General won the third-place game despite remaining fourth in the aggregate points table.",
+        "Location strings are game designations, not verified arena names.",
+        "Four uncredited team goals remain unassigned; do not invent individual scorers.",
+        "Three Stars are editorial selections; Mortson, Lobodzinski and Tristan Hatfield tie at five points."
+      ],
+      "verifiedAt": "2026-09-27T14:40:16.653538+00:00",
+      "factPackDigest": "91c890a1707e8915f14910a0d1e074d5707ab09f6dd988e36eebf9e00482d1c8"
+    },
+    "status": "published",
+    "numbers": [
+      {
+        "label": "Goals this week",
+        "value": "29",
+        "detail": "Two playoff games. Plenty of scoring; defending sold separately."
+      },
+      {
+        "label": "Grossi’s haul",
+        "value": "5 G · 2 A · 7 P",
+        "detail": "The week’s points leader scored five goals to Premier’s three."
+      },
+      {
+        "label": "Championship margin",
+        "value": "6",
+        "detail": "London Eco Metal 9, FitzRays Premier 3. That name is doing a lot of heavy lifting."
+      },
+      {
+        "label": "Third-place goals",
+        "value": "17",
+        "detail": "First General London 9, FitzRays Flyers 8. Nobody is framing this as a defensive masterpiece."
+      },
+      {
+        "label": "Five-point club",
+        "value": "3 players",
+        "detail": "Eric Mortson 1 G, 4 A; Jeff Lobodzinski 1 G, 4 A; Tristan Hatfield 3 G, 2 A. Our editorial star picks favour the wins, then the championship-game contribution."
+      },
+      {
+        "label": "Uncredited team goals",
+        "value": "4",
+        "detail": "FitzRays Premier 1, FitzRays Flyers 1, First General London 2. These count in the scores without an individual scorer."
+      },
+      {
+        "label": "Upcoming fixtures",
+        "value": "0",
+        "detail": "Fixtures are unscheduled. Defensive homework remains readily available."
+      }
+    ],
+    "issuedAt": "2026-09-27T14:40:16.653538+00:00",
+    "leagueId": "d6e55507-6eae-4d94-978c-47c6c30a36f1",
+    "seasonId": "1df8f917-a87e-4053-8650-f55aff2c0fcb",
+    "timezone": "America/Toronto",
+    "upcoming": [],
+    "periodEnd": "2026-09-27",
+    "standings": [
+      {
+        "l": 2,
+        "t": 2,
+        "w": 9,
+        "ga": 48,
+        "gf": 77,
+        "gp": 13,
+        "otl": 0,
+        "pts": 20,
+        "name": "London Eco Metal",
+        "teamId": "093f611c-0cdc-4509-afde-9c661b5833c9",
+        "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-manual-flat-v2.png"
+      },
+      {
+        "l": 5,
+        "t": 3,
+        "w": 5,
+        "ga": 65,
+        "gf": 68,
+        "gp": 13,
+        "otl": 0,
+        "pts": 13,
+        "name": "FitzRays Premier",
+        "teamId": "346833e0-2780-492d-86db-94df0b0cb3e1",
+        "logoUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/346833e0-2780-492d-86db-94df0b0cb3e1-manual-fitzrays-red.png"
+      },
+      {
+        "l": 7,
+        "t": 1,
+        "w": 5,
+        "ga": 68,
+        "gf": 48,
+        "gp": 13,
+        "otl": 0,
+        "pts": 11,
+        "name": "FitzRays Flyers",
+        "teamId": "e4be829d-952c-4531-8376-215907fab3b7",
+        "logoUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-manual-flat.png"
+      },
+      {
+        "l": 8,
+        "t": 2,
+        "w": 3,
+        "ga": 63,
+        "gf": 51,
+        "gp": 13,
+        "otl": 0,
+        "pts": 8,
+        "name": "First General London",
+        "teamId": "453d62d9-80b4-4f26-a2ee-861f0c063402",
+        "logoUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-manual-flat.png"
+      }
+    ],
+    "aroundRink": [
+      {
+        "body": "First General London has three wins and eight points in the current season table. Its 9–8 third-place win does not magically turn that into a glorious campaign, but it is a result worth enjoying. Just keep the celebration speech about the attack. Eight goals against is an awkward number to wave around as proof that the whole operation is fixed.",
+        "headline": "First General wins something. Let it enjoy it."
+      },
+      {
+        "body": "Cooper Hatfield had a goal and two assists for London Eco Metal; Craig Bettridge added a goal and an assist, and Ash Moore scored once. Grossi gets the enormous headline, but the smaller type matters. Over at First General London, Drew Fess, Vince Carducci and Adam Klimowicz each had a goal and two assists. Plenty of players earned space in this paper without needing the entire front page.",
+        "headline": "The supporting cast gets some ink"
+      }
+    ],
+    "leagueName": "Hockey Life",
+    "seasonName": "Summer 2026",
+    "issueNumber": 1,
+    "periodStart": "2026-09-21",
+    "upcomingNote": "Fixtures are unscheduled. Until there is a game to circle, our next-edition watch list is simple: Premier making its name less sarcastic, the Flyers finding out whether defending is cheaper than scoring nine, and Geraghty and Milne considering a goal of their own. Eco Metal can enjoy the championship-game win while the rest ponder the homework.",
+    "schemaVersion": 1,
+    "standingsNote": "Current Summer 2026 season points include playoffs; this is not the playoff finishing order. Each team has played 13 games: 11 regular-season games and two playoff games. First General London won the third-place game but remains fourth in points."
+  }
+}
