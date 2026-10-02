@@ -23,6 +23,10 @@ describe('shared Cut Ice title treatment', () => {
     for (const [route, title] of Object.entries(CUT_ICE_ROUTE_TITLES)) {
       const registrationName = route === 'Standings' || route === 'Schedule' ? 'ScheduleList' : route;
       const source = ['Splash', 'Login', 'ForgotPassword', 'SignUp'].includes(route) ? app : navigation;
+      if (route === 'NewsArticle') {
+        assert.match(source, /name="NewsArticle"[^>]+createNewsArticleOptions/);
+        continue;
+      }
       assert.match(source, new RegExp(`name="${registrationName}"[^>]+(?:authCutIceOptions|cutIceOptions)\\('${title!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\)`));
     }
   });

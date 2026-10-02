@@ -30,6 +30,7 @@ import TeamDetailScreen from '../screens/TeamScreen/TeamDetailScreen';
 import PlayerCardScreen from '../screens/PlayerCardScreen';
 import CutIceTitle from '../components/CutIceTitle';
 import { cutIceScreenLayout } from './CutIceScreenBoundary';
+import { createNewsArticleOptions } from './newsArticleHeader';
 
 // New screens
 import CareerStatsScreen from '../screens/stats/CareerStatsScreen';
@@ -158,7 +159,7 @@ function LeaguePagesNavigator() {
       <LeaguePagesStack.Screen name="PlayersDirectory" component={PlayersDirectoryScreen} options={cutIceOptions('Players')} />
       <LeaguePagesStack.Screen name="PlayoffsDirectory" component={PlayoffsDirectoryScreen} options={cutIceOptions('Playoffs')} />
       <LeaguePagesStack.Screen name="NewsFeed" component={NewsFeedScreen} options={cutIceOptions('News')} />
-      <LeaguePagesStack.Screen name="NewsArticle" component={NewsArticleScreen} options={cutIceOptions('News Article')} />
+      <LeaguePagesStack.Screen name="NewsArticle" component={NewsArticleScreen} options={createNewsArticleOptions} />
       <LeaguePagesStack.Screen name="LeagueHistory" component={LeagueHistoryScreen} options={cutIceOptions('League History')} />
       <LeaguePagesStack.Screen name="GalleryAlbums" component={GalleryAlbumsScreen} options={cutIceOptions('Gallery')} />
       <LeaguePagesStack.Screen name="GalleryAlbum" component={GalleryAlbumScreen} options={cutIceOptions('Gallery Album')} />

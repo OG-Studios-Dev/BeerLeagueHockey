@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { compileCommonJs, createElement, findNode, flattenStyle, nodeText } from './component-harness.ts';
 
-function renderTitle(topInset: number) {
+function renderTitle(topInset: number, onBack?: () => void) {
   const react = { createElement };
   const CutIceTitle = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
     new URL('../../src/components/CutIceTitle.tsx', import.meta.url),
@@ -21,7 +21,7 @@ function renderTitle(topInset: number) {
     },
   ).default;
 
-  return CutIceTitle({ title: 'Notification Settings' });
+  return CutIceTitle({ title: 'Notification Settings', onBack });
 }
 
 describe('CutIceTitle component', () => {
@@ -41,5 +41,12 @@ describe('CutIceTitle component', () => {
       assert.equal(style.paddingTop, topInset, `top inset ${topInset}`);
       assert.equal(style.height, 62 + topInset, `top inset ${topInset}`);
     }
+  });
+
+  it('renders Back as an accessible 44 by 44 point control when supplied', () => {
+    const tree = renderTitle(47, () => undefined);
+    const back = findNode(tree, (node) => node.props.accessibilityLabel === 'Back');
+    assert.equal(back?.props.accessibilityRole, 'button');
+    assert.deepEqual({ width: flattenStyle(back?.props.style).width, height: flattenStyle(back?.props.style).height }, { width: 44, height: 44 });
   });
 });

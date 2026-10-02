@@ -9,6 +9,7 @@ import TeamLogo from '../../components/TeamLogo';
 import { classifyArticleHref, parseArticleBlocks, parseInlineMarkdown } from '../../lib/leagueContentModel';
 import { loadPublishedNewspaperEdition, type PublishedEditionResult } from '../../lib/newspaperReader';
 import { useMobileShellData } from '../../navigation/MobileShellDataContext';
+import { returnFromNewsArticle } from '../../navigation/newsArticleBack';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
 import { commonStyles, LeaguePageFrame, PageLoadState, useLeaguePageScope } from './LeaguePageCommon';
@@ -54,7 +55,8 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
     else if (target.kind === 'game') navigation.navigate('LeagueGamePreview', { gameId: target.id });
     else if (target.kind === 'article') navigation.push('NewsArticle', { ...scope, articleSlug: target.slug });
   };
-  if (!page.data || !article) return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
+  const returnToArticleOrigin = React.useCallback(() => returnFromNewsArticle(navigation), [navigation]);
+  if (!page.data || !article) return <LeaguePageFrame onAccessibilityEscape={returnToArticleOrigin}><PageLoadState loading={page.loading} error={page.error} noSeason={false} retry={page.retry} /></LeaguePageFrame>;
 
   const currentReader = reader?.key === readerKey ? reader : null;
   const showArticleBody = currentReader?.status === 'unavailable' || (currentReader?.status === 'error' && showTextFallback);
@@ -63,7 +65,7 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
     else if (kind === 'team') navigation.navigate('LeagueTeamDetail', { teamId: id, leagueId: scope.leagueId });
     else navigation.navigate('LeagueGamePreview', { gameId: id });
   };
-  return <LeaguePageFrame onAccessibilityEscape={() => navigation.goBack()}>
+  return <LeaguePageFrame onAccessibilityEscape={returnToArticleOrigin}>
     {article.imageUrl && currentReader?.status !== 'ready' ? <Image source={{ uri: article.imageUrl }} resizeMode="cover" style={styles.hero} accessibilityLabel={article.title} alt={article.title} /> : null}
     {currentReader?.status !== 'ready' ? <><Text accessibilityRole="header" style={styles.title}>{article.title}</Text><Text style={styles.meta}>{new Date(article.publishedAt).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}{article.authorName ? ` · ${article.authorName}` : ''}</Text></> : null}
     {currentReader?.status === 'loading' || !currentReader ? <View testID="newspaper-loading" style={styles.readerState}><ActivityIndicator color={focusAccent} /><Text style={styles.readerCopy}>Checking for the published Hockey Life Times edition…</Text></View> : null}
