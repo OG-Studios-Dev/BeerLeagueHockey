@@ -72,13 +72,12 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
       <SubscriptionWall>
         <div className="container mx-auto px-2 py-6 sm:px-4 sm:py-8">
           <div className="mx-auto max-w-[1200px]">
-            <Link
-              href={`/${leagueSlug}/news`}
-              className="mb-5 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] transition-colors hover:text-[var(--league-primary)]"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back to News
-            </Link>
-            <NewspaperEditionViewer edition={newspaperEdition} displayTitle={article.title} />
+            <NewspaperEditionViewer
+              edition={newspaperEdition}
+              displayTitle={article.title}
+              newsPath={`/${leagueSlug}/news`}
+              articlePath={`/${leagueSlug}/news/${slug}`}
+            />
             <noscript>
               <div className="mt-6 whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-[var(--color-text-primary)]">
                 {article.content}

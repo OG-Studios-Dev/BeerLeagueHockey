@@ -4,10 +4,12 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   adjustNewspaperZoom,
+  buildCanonicalArticleUrl,
   buildNewspaperViewerHtml,
   calculateNewspaperFitScale,
   clampNewspaperZoom,
   getNewspaperViewerStyle,
+  shareNewspaperArticle,
   wrapNewspaperPages,
   NewspaperEditionViewer,
 } from '../NewspaperEditionViewer';
@@ -19,23 +21,38 @@ describe('NewspaperEditionViewer sizing', () => {
     const edition = JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as NewspaperEdition;
     const before = JSON.stringify(edition);
     const displayTitle = 'HLT: Week 1 - Fall 2026';
-    const html = renderToStaticMarkup(React.createElement(NewspaperEditionViewer, { edition, displayTitle }));
+    const html = renderToStaticMarkup(React.createElement(NewspaperEditionViewer, {
+      edition,
+      displayTitle,
+      newsPath: '/london/news',
+      articlePath: '/london/news/hlt-week-1',
+    }));
 
     expect(html).toContain(`<h1`);
     expect(html).toContain(displayTitle);
     expect(html).toContain(`aria-label="${displayTitle}"`);
     expect(html).toContain(`title="${displayTitle}"`);
     expect(html).toContain('Hockey Life Times · Issue');
+    expect(html).toContain('href="/london/news"');
+    expect(html).toContain('Back to News');
+    expect(html).toContain('Share');
+    expect(html).not.toContain('Newspaper zoom controls');
+    expect(html).not.toContain('Zoom in');
+    expect(html).not.toContain('Zoom out');
+    expect(html).not.toContain('>Fit<');
+    expect(html).not.toMatch(/>\d+%?</);
     expect(JSON.stringify(edition)).toBe(before);
     expect(edition.title).toBe('Hockey Life Times');
   });
 
-  it('passes the article title from the actual route without rewriting the edition', () => {
+  it('passes explicit league-scoped Back and clean article paths from the actual route', () => {
     const route = fs.readFileSync(
       path.resolve(__dirname, '../../../app/[leagueSlug]/news/[slug]/page.tsx'),
       'utf8',
     );
-    expect(route).toMatch(/<NewspaperEditionViewer\s+edition=\{newspaperEdition\}\s+displayTitle=\{article\.title\}\s*\/>/);
+    expect(route).toMatch(/<NewspaperEditionViewer[\s\S]*?edition=\{newspaperEdition\}[\s\S]*?displayTitle=\{article\.title\}[\s\S]*?newsPath=\{`\/\$\{leagueSlug\}\/news`\}[\s\S]*?articlePath=\{`\/\$\{leagueSlug\}\/news\/\$\{slug\}`\}[\s\S]*?\/>/);
+    const newspaperBranch = route.slice(route.indexOf('if (newspaperEdition)'), route.indexOf('const articleLinkContext'));
+    expect(newspaperBranch.match(/Back to News/g)).toBeNull();
     expect(route).not.toMatch(/newspaperEdition\.(?:title|lead\.headline)\s*=/);
   });
 
@@ -98,5 +115,64 @@ describe('NewspaperEditionViewer sizing', () => {
     expect(adjustNewspaperZoom(0.75, 0.55, 1)).toBe(1);
     expect(adjustNewspaperZoom(null, 0.38, -1)).toBeCloseTo(0.13);
     expect(adjustNewspaperZoom(0.75, 0.3, -1)).toBe(0.5);
+  });
+});
+
+describe('NewspaperEditionViewer sharing', () => {
+  const title = 'HLT: Week 1';
+  const canonicalUrl = 'https://london.beerleaguehockey.ca/london/news/hlt-week-1';
+
+  it('builds a same-origin canonical URL without query or hash', () => {
+    expect(buildCanonicalArticleUrl(
+      'https://london.beerleaguehockey.ca',
+      '/london/news/hlt-week-1?notification=123#page-2',
+    )).toBe(canonicalUrl);
+    expect(() => buildCanonicalArticleUrl(
+      'https://london.beerleaguehockey.ca',
+      'https://example.com/stolen',
+    )).toThrow('must use the current origin');
+  });
+
+  it('uses native share with the display title and canonical URL', async () => {
+    const share = jest.fn().mockResolvedValue(undefined);
+    const writeText = jest.fn().mockResolvedValue(undefined);
+
+    await expect(shareNewspaperArticle({ share, clipboard: { writeText } }, title, canonicalUrl))
+      .resolves.toBe('shared');
+    expect(share).toHaveBeenCalledWith({ title, url: canonicalUrl });
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('treats native share cancellation as silent and never copies', async () => {
+    const share = jest.fn().mockRejectedValue({ name: 'AbortError' });
+    const writeText = jest.fn().mockResolvedValue(undefined);
+
+    await expect(shareNewspaperArticle({ share, clipboard: { writeText } }, title, canonicalUrl))
+      .resolves.toBe('cancelled');
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('falls back to clipboard after a non-cancellation native share failure', async () => {
+    const share = jest.fn().mockRejectedValue(new Error('Share failed'));
+    const writeText = jest.fn().mockResolvedValue(undefined);
+
+    await expect(shareNewspaperArticle({ share, clipboard: { writeText } }, title, canonicalUrl))
+      .resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(canonicalUrl);
+  });
+
+  it('uses clipboard when native share is unsupported', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+
+    await expect(shareNewspaperArticle({ clipboard: { writeText } }, title, canonicalUrl))
+      .resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(canonicalUrl);
+  });
+
+  it('returns the honest manual-copy state when clipboard is absent or rejects', async () => {
+    await expect(shareNewspaperArticle({}, title, canonicalUrl)).resolves.toBe('manual');
+    await expect(shareNewspaperArticle({
+      clipboard: { writeText: jest.fn().mockRejectedValue(new Error('Permission denied')) },
+    }, title, canonicalUrl)).resolves.toBe('manual');
   });
 });
