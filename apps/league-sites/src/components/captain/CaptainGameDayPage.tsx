@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
+import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
@@ -105,13 +105,9 @@ export function CaptainGameDayPage({
   // "Our Lineup" reflects the captain's placed/published lineup (the same source
   // the lineup editor renders), NOT raw attendance — otherwise a just-set lineup
   // would not show here. Availability is layered on top only to colour players.
-  const { skaters, goalies } = useMemo(
-    () =>
-      data?.lineup?.layout
-        ? buildLineupDisplay(data.lineup.layout)
-        : { skaters: [], goalies: [] },
-    [data?.lineup?.layout],
-  );
+  const { skaters, goalies } = data?.lineup?.layout
+    ? buildLineupDisplay(data.lineup.layout)
+    : { skaters: [], goalies: [] };
 
   const availabilityMap = Object.fromEntries(
     (data?.attendance ?? [])

@@ -68,12 +68,15 @@ jobs:
       XCODE_APP_PATH: /Applications/Xcode_26.3.app
       IOS_SIMULATOR_DEVICE: iPhone 16
       IOS_RUNTIME_NAME: iOS 26.2
-      IOS_ARTIFACTS_DIR: ${{ runner.temp }}/ios-smoke-artifacts
-      IOS_DERIVED_DATA_PATH: ${{ runner.temp }}/ios-derived-data
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Configure iOS artifact paths
+        run: |
+          echo "IOS_ARTIFACTS_DIR=${RUNNER_TEMP}/ios-smoke-artifacts" >> "$GITHUB_ENV"
+          echo "IOS_DERIVED_DATA_PATH=${RUNNER_TEMP}/ios-derived-data" >> "$GITHUB_ENV"
 
       - name: Install XcodeGen
         run: brew install xcodegen

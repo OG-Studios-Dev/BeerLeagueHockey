@@ -57,7 +57,8 @@ export function buildRegistrationPaymentQuote(input: {
   const baseAmountPaidCents = Math.max(0, Math.min(input.baseAmountPaidCents || 0, baseFeeCents));
   const baseAmountDueCents = Math.max(0, baseFeeCents - baseAmountPaidCents);
   const playerFeeSharePercent = input.playerFeeSharePercent ?? 100;
-  const chargeIncludesPlatformFee = playerFeeSharePercent > 0;
+  const chargeIncludesPlatformFee =
+    input.platformFeeMode === 'pass_to_player' && playerFeeSharePercent > 0;
   const applicationFeeCents = calculatePlatformFeeCents(baseAmountDueCents, input.platformFeeBps);
   const platformFeeOnFullFeeCents = chargeIncludesPlatformFee
     ? Math.round(calculatePlatformFeeCents(baseFeeCents, input.platformFeeBps) * playerFeeSharePercent / 100)

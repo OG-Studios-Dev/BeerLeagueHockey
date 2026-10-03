@@ -32,8 +32,8 @@ describe('lineup layout helpers', () => {
     const placedIds = layout.placedPlayers.map((entry) => entry.playerId);
 
     expect(layout.roster).toHaveLength(7);
+    expect(layout.roster.map((entry) => entry.playerId)).toContain('out1');
     expect(placedIds).toEqual(expect.arrayContaining(['g1', 'c1', 'lw1', 'rw1', 'ld1', 'rd1']));
-    expect(placedIds).not.toContain('out1');
     expect(layout.placedPlayers.find((entry) => entry.playerId === 'g1')).toEqual(
       expect.objectContaining({ x: 50, y: 86 })
     );

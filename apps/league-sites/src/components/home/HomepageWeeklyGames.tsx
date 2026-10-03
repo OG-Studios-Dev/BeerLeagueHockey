@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Calendar,
   ChevronLeft,
@@ -650,18 +650,14 @@ export function HomepageWeeklyGames({
   const [view, setView] = useState<WeeklyGamesView>('cool');
   const [activeIndex, setActiveIndex] = useState(0);
   const isCompactView = view === 'compact';
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [games.length]);
+  const safeIndex = games.length === 0 ? 0 : activeIndex % games.length;
 
   const handleNavigate = (direction: number) => {
     if (games.length === 0 || direction === 0) {
       return;
     }
 
-    const currentIndex = activeIndex;
-    const nextIndex = (currentIndex + direction) % games.length;
+    const nextIndex = (safeIndex + direction) % games.length;
     setActiveIndex(nextIndex >= 0 ? nextIndex : games.length + nextIndex);
   };
 
@@ -705,7 +701,7 @@ export function HomepageWeeklyGames({
         view === 'cool' ? (
           <CoolView
             games={games}
-            activeIndex={activeIndex}
+            activeIndex={safeIndex}
             onNavigate={handleNavigate}
             leagueSlug={leagueSlug}
             timezone={timezone}

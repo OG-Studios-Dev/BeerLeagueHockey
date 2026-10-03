@@ -13,34 +13,14 @@ export default async function LeagueFinancePage({ params, searchParams }: Props)
   const { locale, id: leagueId } = awaited;
   setRequestLocale(locale);
 
+  let workspace: Awaited<ReturnType<typeof getFinancialWorkspaceData>>;
   try {
-    const workspace = await getFinancialWorkspaceData({
+    workspace = await getFinancialWorkspaceData({
       leagueId,
       locale,
       route: 'finance',
       searchParams: await searchParams,
     });
-
-    return (
-      <FinancialWorkspaceShell common={workspace.common} overview={workspace.overview}>
-        {workspace.accounting ? (
-          <FinanceDashboard
-            locale={locale}
-            leagueId={leagueId}
-            requestedSeason={workspace.common.requestedSeason}
-            data={workspace.accounting.data}
-            ledgerRows={workspace.accounting.ledgerRows}
-            ledgerTotal={workspace.accounting.ledgerTotal}
-            ledgerPage={workspace.accounting.ledgerPage}
-            ledgerLimit={workspace.accounting.ledgerLimit}
-            ledgerFilters={workspace.accounting.ledgerFilters}
-            ledgerError={workspace.accounting.ledgerError}
-            quickBooksStatus={workspace.accounting.quickBooksStatus}
-            quickBooksToast={workspace.accounting.quickBooksToast}
-          />
-        ) : null}
-      </FinancialWorkspaceShell>
-    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown finance error';
     return (
@@ -52,4 +32,25 @@ export default async function LeagueFinancePage({ params, searchParams }: Props)
       </div>
     );
   }
+
+  return (
+    <FinancialWorkspaceShell common={workspace.common} overview={workspace.overview}>
+      {workspace.accounting ? (
+        <FinanceDashboard
+          locale={locale}
+          leagueId={leagueId}
+          requestedSeason={workspace.common.requestedSeason}
+          data={workspace.accounting.data}
+          ledgerRows={workspace.accounting.ledgerRows}
+          ledgerTotal={workspace.accounting.ledgerTotal}
+          ledgerPage={workspace.accounting.ledgerPage}
+          ledgerLimit={workspace.accounting.ledgerLimit}
+          ledgerFilters={workspace.accounting.ledgerFilters}
+          ledgerError={workspace.accounting.ledgerError}
+          quickBooksStatus={workspace.accounting.quickBooksStatus}
+          quickBooksToast={workspace.accounting.quickBooksToast}
+        />
+      ) : null}
+    </FinancialWorkspaceShell>
+  );
 }

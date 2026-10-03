@@ -19,8 +19,9 @@ const ICON_MAP: Record<string, typeof BarChart3> = {
   win_pct: Percent,
 };
 
-function getIcon(key: string) {
-  return ICON_MAP[key] || BarChart3;
+function InsightIcon({ insightKey, className }: { insightKey: string; className?: string }) {
+  const Icon = ICON_MAP[insightKey] || BarChart3;
+  return <Icon className={className} />;
 }
 
 export function PointInsightsCarousel({ insights, asBanner = false }: { insights: PointInsight[]; asBanner?: boolean }) {
@@ -43,7 +44,6 @@ export function PointInsightsCarousel({ insights, asBanner = false }: { insights
   if (insights.length === 0) return null;
 
   const insight = insights[index];
-  const Icon = getIcon(insight.key);
 
   return (
     <div className={asBanner ? 'mt-6' : 'mt-8 border-t border-[var(--color-border)]/50 pt-6'}>
@@ -61,7 +61,7 @@ export function PointInsightsCarousel({ insights, asBanner = false }: { insights
       }`}>
         <div className="flex items-start gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--league-primary)]/12">
-            <Icon className="h-5 w-5 text-[var(--league-primary)]" />
+            <InsightIcon insightKey={insight.key} className="h-5 w-5 text-[var(--league-primary)]" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--league-primary)]">

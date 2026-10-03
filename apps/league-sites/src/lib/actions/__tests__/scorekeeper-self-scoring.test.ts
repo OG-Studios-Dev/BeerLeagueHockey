@@ -5,6 +5,14 @@ jest.mock('next/headers', () => ({
   headers: jest.fn(),
 }));
 
+jest.mock('next/cache', () => ({
+  revalidatePath: jest.fn(),
+}));
+
+jest.mock('next/server', () => ({
+  after: (callback: () => unknown) => callback(),
+}));
+
 jest.mock('@/lib/supabase/server', () => ({
   createAuthClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
