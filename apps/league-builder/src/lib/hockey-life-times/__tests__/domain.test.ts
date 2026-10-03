@@ -186,8 +186,11 @@ describe('Hockey Life Times fact preparation', () => {
     expect(edition.source.standingsAsOf).toBe('2026-09-27');
     expect(edition.hot[0]?.headline).toContain('Home');
     expect(edition.cold[0]?.headline).toContain('Home');
+    edition.upcoming.push({ gameId: 'future', homeName: 'Home', awayName: 'Away', scheduledAt: '2026-10-01T01:00:00Z', headline: 'Future game', body: 'Preview.' });
+    edition.upcomingNote = 'Fictional lines are not sportsbook prices.';
     const fallback = editionToArticleFallback(edition);
     expect(fallback).toContain('THIS WEEK ON THE ICE');
+    expect(fallback).toContain('Fictional lines are not sportsbook prices.');
     expect(fallback).not.toContain('"schemaVersion"');
   });
 

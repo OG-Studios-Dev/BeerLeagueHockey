@@ -1,0 +1,116 @@
+{
+  "scope": {
+    "league": {"id": "d6e55507-6eae-4d94-978c-47c6c30a36f1", "name": "Hockey Life"},
+    "season": {"id": "145ac7ee-99fb-4a50-a0b5-37f24e9991f3", "name": "FALL 2026"},
+    "covered_period_local": {"start": "2026-09-28", "end": "2026-10-04"},
+    "sample_size": "One completed game per team; no established current-season trends or slumps."
+  },
+  "sources": {
+    "S1": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/games/972a6b35-292e-5cc0-9888-c1db6490a6b2", "use": "Flyers at Liuna final, team assignment, contributor box score, positions, game capture fields"},
+    "S2": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/games/508ee689-b548-518e-b083-5e896533bf25", "use": "Bad Bunny at First General final, team assignment, contributor box score, positions, game capture fields"},
+    "S3": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/stats?season=145ac7ee-99fb-4a50-a0b5-37f24e9991f3", "use": "Current-season skater GP, goals, assists, points, team, and position, including zero-point participants"},
+    "S4": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/stats?mode=goalies&season=145ac7ee-99fb-4a50-a0b5-37f24e9991f3", "use": "Current-season goalie leaderboard rows"},
+    "S5": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/standings?season=145ac7ee-99fb-4a50-a0b5-37f24e9991f3", "use": "Canonical Fall 2026 standings and schedule payload"},
+    "S6": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/games/743fa5ad-5aae-522d-b820-f80fbd7a5f5b", "use": "Oct. 8 Liuna at Bad Bunny fixture, home/away, UTC time, venue"},
+    "S7": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/games/d2b3e1f1-b6d6-5973-98ae-10a837dcb1ae", "use": "Oct. 8 First General at Flyers fixture, home/away, UTC time, venue"},
+    "S8": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/teams/fitzrays-flyers", "use": "Flyers roster and positions"},
+    "S9": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/teams/fitzrays-premier", "use": "Liuna roster and positions"},
+    "S10": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/teams/london-eco-metal", "use": "Bad Bunny roster and positions"},
+    "S11": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/teams/first-general-london", "use": "First General roster and positions"},
+    "S12": {"url": "https://hockey-life.beerleaguehockey.ca/hockey-life/players/c4aade43-67a7-4e73-9909-c49c9d9ff766", "use": "Connor Geraghty profile identifies goalie role, not Week 1 participation"}
+  },
+  "completed_games": [
+    {
+      "source": "S1",
+      "scheduled_at_utc": "2026-10-02T02:15:00+00:00",
+      "local_time": "2026-10-01 10:15 p.m. EDT",
+      "venue": "Chick-Fil-A Wharncliffe & Wonderland Rink",
+      "status": "completed",
+      "home": {"team": "Liuna Premier", "score": 3},
+      "away": {"team": "FitzRays Flyers", "score": 4},
+      "capture_status": {"skater": null, "goalie": null, "penalty": null},
+      "contributors": [
+        {"player": "Jack Foote", "team": "FitzRays Flyers", "position": "Forward", "gp": 1, "g": 2, "a": 1, "pts": 3},
+        {"player": "Steve Almond", "team": "FitzRays Flyers", "position": "Forward", "gp": 1, "g": 1, "a": 1, "pts": 2},
+        {"player": "Cooper Hatfield", "team": "FitzRays Flyers", "position": "Forward", "gp": 1, "g": 1, "a": 0, "pts": 1},
+        {"player": "Paul Gibson", "team": "FitzRays Flyers", "position": "Forward", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Dhurim Ismaili", "team": "FitzRays Flyers", "position": "Forward", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Mitch Bedard", "team": "FitzRays Flyers", "position": "Forward", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Daryl Patterson", "team": "FitzRays Flyers", "position": "Defense", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Jeff Lobodzinski", "team": "FitzRays Flyers", "position": "Defense", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Stefan Kowlessar", "team": "Liuna Premier", "position": "Forward", "gp": 1, "g": 1, "a": 0, "pts": 1},
+        {"player": "Cameron Sheppard", "team": "Liuna Premier", "position": "Forward", "gp": 1, "g": 1, "a": 0, "pts": 1},
+        {"player": "Dan MacGillivray", "team": "Liuna Premier", "position": "Forward", "gp": 1, "g": 1, "a": 0, "pts": 1},
+        {"player": "Lyndon Bulda", "team": "Liuna Premier", "position": "Forward", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Eric Mortson", "team": "Liuna Premier", "position": "Forward", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Jim Bloxam", "team": "Liuna Premier", "position": "Defense", "gp": 1, "g": 0, "a": 1, "pts": 1}
+      ]
+    },
+    {
+      "source": "S2",
+      "scheduled_at_utc": "2026-10-02T02:30:00+00:00",
+      "local_time": "2026-10-01 10:30 p.m. EDT",
+      "venue": "Collins Clothiers Rink",
+      "status": "completed",
+      "home": {"team": "First General London", "score": 2},
+      "away": {"team": "Bad Bunny", "score": 6},
+      "capture_status": {"skater": null, "goalie": null, "penalty": null},
+      "contributors": [
+        {"player": "Trevor Paterson", "team": "Bad Bunny", "position": "Forward", "gp": 1, "g": 2, "a": 1, "pts": 3},
+        {"player": "Eric Hartley", "team": "Bad Bunny", "position": "Forward", "gp": 1, "g": 1, "a": 1, "pts": 2},
+        {"player": "Matt Grossi", "team": "Bad Bunny", "position": "Forward", "gp": 1, "g": 1, "a": 1, "pts": 2},
+        {"player": "Adrian Hartley", "team": "Bad Bunny", "position": "Defense", "gp": 1, "g": 1, "a": 1, "pts": 2},
+        {"player": "Ash Moore", "team": "Bad Bunny", "position": "Forward", "gp": 1, "g": 1, "a": 0, "pts": 1},
+        {"player": "Kyle Geraghty", "team": "Bad Bunny", "position": "Defense", "gp": 1, "g": 0, "a": 2, "pts": 2},
+        {"player": "Cameron Wallace", "team": "Bad Bunny", "position": "Forward", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Vince Carducci", "team": "Bad Bunny", "position": "Defense", "gp": 1, "g": 0, "a": 1, "pts": 1},
+        {"player": "Jonathan Brougham", "team": "First General London", "position": "Forward", "gp": 1, "g": 1, "a": 1, "pts": 2},
+        {"player": "Garrett Mcinerney", "team": "First General London", "position": "Forward", "gp": 1, "g": 1, "a": 0, "pts": 1}
+      ]
+    }
+  ],
+  "recorded_zero_point_participants": {
+    "source": "S3",
+    "FitzRays Flyers": ["Sonny Teale (Defense)", "Andre Carruthers (Defense)"],
+    "Liuna Premier": ["Craig Bettridge (Forward)", "David Watson (Defense)", "Sean Teasdale (Defense)", "Andrew Sawchuk (Defense)"],
+    "Bad Bunny": ["Ethan Pomp (Forward)", "Ben Rogala (Defense)"],
+    "First General London": ["Cory Nott (Defense)", "Jamie DiTomaso (Defense)", "Nathan Zaplatar (Defense)", "Ryan Bowers (Defense)", "Tristan Hatfield (Forward)", "Adam Klimowicz (Forward)", "Aidan Murphy (Forward)", "Marty Hanke (Forward)"],
+    "excluded": "Terry Drew has GP 0 and is not treated as a participant."
+  },
+  "goalies": {
+    "source": "S4",
+    "recorded_rows": [
+      {"player": "Steven Wild", "team": "FitzRays Flyers", "position": "Goalie", "gp": 1, "wins": 1, "losses": 0, "saves": 17, "goals_against": 3, "save_percentage_percent": 85},
+      {"player": "Aaron Buehler", "team": "Liuna Premier", "position": "Goalie", "gp": 1, "wins": 0, "losses": 1, "saves": 16, "goals_against": 4, "save_percentage_percent": 80},
+      {"player": "Cody Bolman", "team": "First General London", "position": "Goalie", "gp": 1, "wins": 0, "losses": 1, "saves": 14, "goals_against": 6, "save_percentage_percent": 70}
+    ],
+    "bad_bunny": "No Fall 2026 goalie leaderboard row. Connor Geraghty is a rostered/profiled goalie, but neither Week 1 participation nor a Week 1 goalie stat line is public.",
+    "limitations": "Each recorded row reconciles to that team's only completed game, but the game pages render no goalie table and goalie_capture_status is null. Use 'recorded season line,' not capture-verified or eyewitness claims. Do not infer Bad Bunny's goalie identity or performance from two team goals against."
+  },
+  "standings": {
+    "source": "S5",
+    "rows": [
+      {"rank": 1, "team": "Bad Bunny", "gp": 1, "w": 1, "l": 0, "t": 0, "otl": 0, "pts": 2, "gf": 6, "ga": 2, "gd": 4},
+      {"rank": 2, "team": "FitzRays Flyers", "gp": 1, "w": 1, "l": 0, "t": 0, "otl": 0, "pts": 2, "gf": 4, "ga": 3, "gd": 1},
+      {"rank": 3, "team": "Liuna Premier", "gp": 1, "w": 0, "l": 1, "t": 0, "otl": 0, "pts": 0, "gf": 3, "ga": 4, "gd": -1},
+      {"rank": 4, "team": "First General London", "gp": 1, "w": 0, "l": 1, "t": 0, "otl": 0, "pts": 0, "gf": 2, "ga": 6, "gd": -4}
+    ]
+  },
+  "upcoming_fixtures": [
+    {"source": "S6", "local_time": "2026-10-08 10:15 p.m. EDT", "scheduled_at_utc": "2026-10-09T02:15:00+00:00", "away": "Liuna Premier", "home": "Bad Bunny", "venue": "Chick-Fil-A Wharncliffe & Wonderland Rink", "status": "scheduled", "attendance_and_starting_goalies": "unknown"},
+    {"source": "S7", "local_time": "2026-10-08 10:30 p.m. EDT", "scheduled_at_utc": "2026-10-09T02:30:00+00:00", "away": "First General London", "home": "FitzRays Flyers", "venue": "Collins Clothiers Rink", "status": "scheduled", "attendance_and_starting_goalies": "unknown"}
+  ],
+  "editorial_model": {
+    "source_artifact": "/Users/tonysoprano/workspaces/tony/artifacts/hlt-editorial-colour-20261003/odds-receipt.json",
+    "label": "HLT fictional Vegas-style lines; tie no bet; not real sportsbook odds",
+    "lines": ["Bad Bunny -150 / Liuna Premier +150", "FitzRays Flyers -150 / First General London +150"],
+    "method": "Independent Poisson exact summation with three neutral-prior games at 3.75 league goals per team-game, no home advantage, no goalie/attendance adjustment, no vig; one-game inputs and uncalibrated.",
+    "picks": ["Bad Bunny 5-3 over Liuna Premier", "FitzRays Flyers 5-2 over First General London"]
+  },
+  "global_caveats": [
+    "No scoring-event chronology is public for these games; do not claim comeback timing, periods, or individual mistakes.",
+    "The skater leaderboard establishes GP 1 for named zero-point rows, allowing narrow participation-grounded commentary.",
+    "No prior Fall 2026 form exists beyond one game per team; all hot/cold language must be explicitly Week 1 or early-sample commentary.",
+    "No sportsbook odds were researched or claimed."
+  ]
+}

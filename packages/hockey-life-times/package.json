@@ -7,7 +7,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --test tests/renderer.test.ts tests/approved-import.test.mjs",
+    "test": "node --test tests/renderer.test.ts tests/approved-import.test.mjs tests/approved-revision.test.mjs",
+    "revision:approved": "node scripts/prepare-approved-revision.mjs",
     "export:fixture": "node scripts/export-newspaper.mjs --edition fixtures/validation-edition.json --output output/fixture",
     "import:approved": "node scripts/import-approved-issue.mjs"
   }

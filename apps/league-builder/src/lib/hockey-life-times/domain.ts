@@ -105,8 +105,16 @@ export interface EditionShape {
     venue?: string;
     headline: string;
     body: string;
+    line?: string;
+    pick?: string;
+    bodyParagraphs?: string[];
   }>;
   upcomingNote: string;
+  editorial?: {
+    standings?: { headline: string; body: string[] };
+    upcoming?: { heading: string };
+    sourceNote?: string[];
+  };
   aroundRink?: Array<{ headline: string; body: string; imageUrl?: string }>;
   source: { gameIds: string[]; verifiedAt: string; standingsAsOf?: string; factPackDigest?: string; warnings: string[] };
 }
@@ -543,13 +551,15 @@ export function editionToArticleFallback(edition: EditionShape): string {
     ...edition.numbers.map((number) => `${number.label}: ${number.value}${number.detail ? ` — ${number.detail}` : ''}`),
     'STANDINGS',
     ...edition.standings.map((team) => `${team.name}: ${team.gp} GP, ${team.w}-${team.l}-${team.otl}-${team.t}, ${team.pts} PTS, ${team.gf} GF, ${team.ga} GA`),
-    edition.standingsNote,
+    ...(edition.editorial?.standings ? [edition.editorial.standings.headline, ...edition.editorial.standings.body] : [edition.standingsNote]),
     'THE HEATER',
     ...(edition.hot.length ? edition.hot.map((item) => `${item.headline}: ${item.body}`) : ['No supported heater item was available.']),
     'THE COLD TUB',
     ...(edition.cold.length ? edition.cold.map((item) => `${item.headline}: ${item.body}`) : ['No supported cold-tub item was available.']),
-    'NEXT WEEK HEADLINES',
-    ...(edition.upcoming.length ? edition.upcoming.map((item) => `${item.headline}: ${item.body}`) : [edition.upcomingNote]),
+    edition.editorial?.upcoming?.heading || 'NEXT WEEK HEADLINES',
+    edition.upcomingNote,
+    ...edition.upcoming.flatMap((item) => [item.headline, item.line, item.pick, ...(item.bodyParagraphs || [item.body])]),
+    ...(edition.editorial?.sourceNote?.length ? ['EDITORIAL SOURCE NOTE', ...edition.editorial.sourceNote] : []),
   ];
   return lines.filter(Boolean).join('\n\n');
 }
