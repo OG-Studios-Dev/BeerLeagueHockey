@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { getNewsArticle, updateNewsArticle, deleteNewsArticle } from '@/lib/actions/news';
 import { getArticleEntityEditorContext, suggestArticleEntities } from '@/lib/actions/article-entities';
 import { uploadNewsImage, deleteNewsImage } from '@/lib/actions/image-upload';
@@ -33,6 +34,7 @@ function filterIds<T extends { id: string }>(ids: string[], options: T[]) {
 }
 
 export default function EditNewsArticlePage() {
+  const t = useTranslations('news');
   const router = useRouter();
   const params = useParams();
   const locale = params.locale as string;
@@ -40,11 +42,13 @@ export default function EditNewsArticlePage() {
   const articleId = params.articleId as string;
 
   const [title, setTitle] = useState('');
+  const [loadedTitle, setLoadedTitle] = useState<string | null>(null);
   const [slug, setSlug] = useState('');
   const [content, setContent] = useState('');
   const [excerpt, setExcerpt] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [articleType, setArticleType] = useState('news');
+  const [newspaperLinked, setNewspaperLinked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,11 +90,13 @@ export default function EditNewsArticlePage() {
       const resolvedSeasonId = nextSeasonId ?? context.seasonId ?? context.resolvedSeasonId ?? null;
 
       setTitle(article.title);
+      setLoadedTitle(article.title);
       setSlug(article.slug || '');
       setContent(article.content || '');
       setExcerpt(article.excerpt || '');
       setImageUrl(article.image_url || '');
       setArticleType(article.type || 'news');
+      setNewspaperLinked(Boolean(article.newspaper_linked));
       setSeasonOptions(context.seasons);
       setActiveSeasonId(context.activeSeasonId);
       setSeasonId(resolvedSeasonId);
@@ -114,7 +120,7 @@ export default function EditNewsArticlePage() {
       setLinkedGameIds(nextGameIds);
       setPrimaryGameId(nextPrimaryGameId);
 
-      if (!preserveSelection && article.type !== 'news' && nextPlayerIds.length === 0) {
+      if (!preserveSelection && !article.newspaper_linked && article.type !== 'news' && nextPlayerIds.length === 0) {
         const suggestion = await suggestArticleEntities({
           leagueId,
           seasonId: resolvedSeasonId,
@@ -174,33 +180,40 @@ export default function EditNewsArticlePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) {
-      setError('Title is required');
+      setError(t('titleRequired'));
       return;
     }
 
     setSaving(true);
     setError(null);
 
-    const result = await updateNewsArticle(articleId, {
-      title: title.trim(),
-      content: serializeArticleEditorContent(content),
-      excerpt: excerpt.trim() || undefined,
-      imageUrl: imageUrl.trim() || undefined,
-      slug: (slug.trim() || generateSlug(title)).trim(),
-      seasonId,
-      linkedPlayerIds,
-      linkedTeamIds,
-      linkedGameIds,
-      primaryGameId,
-    });
+    try {
+      const result = await updateNewsArticle(articleId, newspaperLinked ? {
+        title: title.trim(),
+        expectedTitle: loadedTitle ?? undefined,
+      } : {
+        title: title.trim(),
+        content: serializeArticleEditorContent(content),
+        excerpt: excerpt.trim() || undefined,
+        imageUrl: imageUrl.trim() || undefined,
+        slug: (slug.trim() || generateSlug(title)).trim(),
+        seasonId,
+        linkedPlayerIds,
+        linkedTeamIds,
+        linkedGameIds,
+        primaryGameId,
+      });
 
-    if (result.success) {
-      router.push(`/${locale}/dashboard/leagues/${leagueId}/news`);
-      return;
+      if (result.success) {
+        router.push(`/${locale}/dashboard/leagues/${leagueId}/news`);
+        return;
+      }
+      setError(result.error);
+    } catch {
+      setError(t('saveFailed'));
+    } finally {
+      setSaving(false);
     }
-
-    setError(result.error);
-    setSaving(false);
   }
 
   async function handleDelete() {
@@ -254,7 +267,7 @@ export default function EditNewsArticlePage() {
             <button
               type="button"
               onClick={handleDelete}
-              disabled={saving}
+              disabled={saving || newspaperLinked}
               className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
             >
               <Trash2 className="w-4 h-4" />
@@ -264,13 +277,12 @@ export default function EditNewsArticlePage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">
-              {error}
-            </div>
-          )}
-
           <div className="bg-white/[0.04] border border-white/10 backdrop-blur-xl rounded-2xl p-6 space-y-5">
+            {newspaperLinked && (
+              <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+                {t('newspaperProtectedBanner')}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Article Type</p>
@@ -281,7 +293,7 @@ export default function EditNewsArticlePage() {
               <button
                 type="button"
                 onClick={() => void runAutoSuggest()}
-                disabled={saving || suggestingLinks || loadingLinks}
+                disabled={saving || suggestingLinks || loadingLinks || newspaperLinked}
                 className="inline-flex items-center gap-2 rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-sm font-semibold text-purple-200 transition-colors hover:bg-purple-500/20 disabled:opacity-50"
               >
                 <Sparkles className="h-4 w-4" />
@@ -291,7 +303,7 @@ export default function EditNewsArticlePage() {
 
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-neutral-300 mb-2">
-                Title *
+                {newspaperLinked ? t('newspaperTitleLabel') : t('articleTitle')} *
               </label>
               <input
                 id="title"
@@ -313,6 +325,7 @@ export default function EditNewsArticlePage() {
                 type="text"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
+                disabled={newspaperLinked}
                 placeholder="url-slug"
                 className="w-full px-4 py-3 bg-neutral-900 border border-white/10 rounded-xl text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-rink-500/50 focus:border-rink-500"
               />
@@ -326,25 +339,32 @@ export default function EditNewsArticlePage() {
                 id="excerpt"
                 value={excerpt}
                 onChange={(e) => setExcerpt(e.target.value)}
+                disabled={newspaperLinked}
                 placeholder="Brief summary for article cards..."
                 rows={2}
                 className="w-full px-4 py-3 bg-neutral-900 border border-white/10 rounded-xl text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-rink-500/50 focus:border-rink-500 resize-y"
               />
             </div>
 
-            <div>
+            <fieldset disabled={newspaperLinked} aria-label={t('featuredImage')}>
               <label className="block text-sm font-medium text-neutral-300 mb-2">
-                Featured Image
+                {t('featuredImage')}
               </label>
+              <div className={newspaperLinked ? 'opacity-60' : undefined}>
               <LogoUploader
                 value={imageUrl}
-                onChange={(url) => setImageUrl(url)}
+                disabled={newspaperLinked}
+                onChange={(url) => {
+                  if (!newspaperLinked) setImageUrl(url);
+                }}
                 onUpload={async (file) => {
+                  if (newspaperLinked) throw new Error(t('newspaperProtectedImage'));
                   const result = await uploadNewsImage(leagueId, file);
                   if (!result.success) throw new Error(result.error);
                   return result.data;
                 }}
                 onRemove={async () => {
+                  if (newspaperLinked) return;
                   if (imageUrl) {
                     await deleteNewsImage(leagueId, imageUrl);
                     setImageUrl('');
@@ -354,17 +374,18 @@ export default function EditNewsArticlePage() {
                 outputSize={1600}
                 outputHeight={900}
                 maxSizeBytes={5 * 1024 * 1024}
-                placeholder="Upload Featured Image"
+                placeholder={t('uploadFeaturedImage')}
                 shape="square"
               />
-            </div>
+              </div>
+            </fieldset>
           </div>
 
           <ArticleFormatEditor
             value={content}
             onChange={setContent}
             title={title}
-            disabled={saving}
+            disabled={saving || newspaperLinked}
           />
 
           <ArticleEntityLinksEditor
@@ -389,10 +410,15 @@ export default function EditNewsArticlePage() {
               void runAutoSuggest();
             }}
             suggesting={suggestingLinks || loadingLinks}
-            disabled={saving || loadingLinks}
+            disabled={saving || loadingLinks || newspaperLinked}
           />
 
           <div className="flex items-center justify-end gap-3">
+            {error && (
+              <div role="alert" className="mr-auto rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
+                {error}
+              </div>
+            )}
             <Link
               href={`/${locale}/dashboard/leagues/${leagueId}/news`}
               className="px-5 py-2.5 rounded-xl font-medium text-sm text-neutral-400 hover:text-white transition-colors"

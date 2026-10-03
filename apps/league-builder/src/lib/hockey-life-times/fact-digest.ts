@@ -21,8 +21,21 @@ interface PublicationFacts {
 
 export function canonicalFactDigest(input: PublicationFacts): string {
   const byId = <T extends { id: string }>(values: T[]) => [...values].sort((a, b) => a.id.localeCompare(b.id));
+  const canonicalGames = byId(input.games).map((game) => ({
+    id: game.id,
+    leagueId: game.leagueId,
+    seasonId: game.seasonId,
+    scheduledAt: game.scheduledAt,
+    status: game.status,
+    gameType: game.gameType,
+    location: game.location,
+    homeScore: game.homeScore,
+    awayScore: game.awayScore,
+    homeTeam: game.homeTeam,
+    awayTeam: game.awayTeam,
+  }));
   const canonical = {
-    games: byId(input.games),
+    games: canonicalGames,
     goals: byId(input.goals),
     profiles: byId(input.profiles).map(({ id, name, photoUrl }) => ({ id, name, photoUrl: photoUrl || null })),
     standings: [...input.standings].sort((a, b) => a.teamId.localeCompare(b.teamId)),

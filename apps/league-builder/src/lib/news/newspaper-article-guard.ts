@@ -33,3 +33,8 @@ export function isVisibilityOnlyUpdate(updates: object): boolean {
   const keys = Object.entries(updates).filter(([, value]) => value !== undefined).map(([key]) => key);
   return keys.length === 1 && keys[0] === 'published';
 }
+
+export function isTitleOnlyUpdate(updates: object): boolean {
+  const keys = Object.entries(updates).filter(([, value]) => value !== undefined).map(([key]) => key);
+  return keys.includes('title') && keys.every((key) => key === 'title' || key === 'expectedTitle');
+}

@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   adjustNewspaperZoom,
   buildNewspaperViewerHtml,
@@ -5,9 +9,36 @@ import {
   clampNewspaperZoom,
   getNewspaperViewerStyle,
   wrapNewspaperPages,
+  NewspaperEditionViewer,
 } from '../NewspaperEditionViewer';
+import type { NewspaperEdition } from '../../../../../../packages/hockey-life-times/src/index';
 
 describe('NewspaperEditionViewer sizing', () => {
+  it('renders the independent article display title without mutating the frozen edition payload', () => {
+    const fixturePath = path.resolve(__dirname, '../../../../../../packages/hockey-life-times/fixtures/validation-edition.json');
+    const edition = JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as NewspaperEdition;
+    const before = JSON.stringify(edition);
+    const displayTitle = 'HLT: Week 1 - Fall 2026';
+    const html = renderToStaticMarkup(React.createElement(NewspaperEditionViewer, { edition, displayTitle }));
+
+    expect(html).toContain(`<h1`);
+    expect(html).toContain(displayTitle);
+    expect(html).toContain(`aria-label="${displayTitle}"`);
+    expect(html).toContain(`title="${displayTitle}"`);
+    expect(html).toContain('Hockey Life Times · Issue');
+    expect(JSON.stringify(edition)).toBe(before);
+    expect(edition.title).toBe('Hockey Life Times');
+  });
+
+  it('passes the article title from the actual route without rewriting the edition', () => {
+    const route = fs.readFileSync(
+      path.resolve(__dirname, '../../../app/[leagueSlug]/news/[slug]/page.tsx'),
+      'utf8',
+    );
+    expect(route).toMatch(/<NewspaperEditionViewer\s+edition=\{newspaperEdition\}\s+displayTitle=\{article\.title\}\s*\/>/);
+    expect(route).not.toMatch(/newspaperEdition\.(?:title|lead\.headline)\s*=/);
+  });
+
   it('fits the fixed-layout renderer to its iframe without forcing a desktop width', () => {
     const style = getNewspaperViewerStyle(null);
 

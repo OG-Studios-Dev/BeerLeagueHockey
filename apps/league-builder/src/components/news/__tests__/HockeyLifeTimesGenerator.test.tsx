@@ -14,6 +14,12 @@ jest.mock('@/lib/actions/hockey-life-times', () => ({
   publishHockeyLifeTimesEdition: jest.fn(),
   saveHockeyLifeTimesNarrativeDraft: jest.fn(),
 }));
+jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => ({
+  playoffTitlePhaseLabel: 'Article title phase',
+  playoffTitlePhasePlaceholder: 'Choose a playoff phase',
+  playoffTitlePhaseSemis: 'Semis',
+  playoffTitlePhaseChampionships: 'Championships',
+}[key] || key) }));
 
 import { useState } from 'react';
 import { HockeyLifeTimesGenerator } from '../HockeyLifeTimesGenerator';
@@ -24,13 +30,14 @@ import type {
 
 const mockUseState = useState as jest.MockedFunction<typeof useState>;
 
-function renderGenerator(edition: NewspaperEditionRecord) {
+function renderGenerator(edition: NewspaperEditionRecord, playoffTitlePhaseRequired = false) {
   const readiness: NewspaperReadiness = {
     ready: true,
     errors: [],
     warnings: [],
     games: [],
     existingEdition: edition,
+    playoffTitlePhaseRequired,
   };
   const states: unknown[] = [
     'season-1',
@@ -42,6 +49,7 @@ function renderGenerator(edition: NewspaperEditionRecord) {
     null,
     null,
     null,
+    '',
   ];
   mockUseState.mockReset();
   for (const value of states) {
@@ -125,5 +133,16 @@ describe('Hockey Life Times stored-edition states', () => {
     expect(html).toMatch(/<iframe/i);
     expect(html).toMatch(/Publish reviewed edition/i);
     expect(html).not.toMatch(/stored draft does not satisfy the newspaper render contract/i);
+  });
+
+  it('requires an explicit bounded playoff phase for an unresolved legacy bracket', () => {
+    const fixturePath = path.resolve(__dirname, '../../../../../../packages/hockey-life-times/fixtures/validation-edition.json');
+    const edition = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const html = renderGenerator(editionRecord({ edition_json: edition }), true);
+
+    expect(html).toMatch(/Article title phase/);
+    expect(html).toMatch(/<select[^>]*required/);
+    expect(html).toMatch(/value="Semis"/);
+    expect(html).toMatch(/value="Championships"/);
   });
 });

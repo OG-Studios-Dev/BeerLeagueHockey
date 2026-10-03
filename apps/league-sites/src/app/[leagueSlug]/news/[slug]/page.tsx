@@ -78,7 +78,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             >
               <ArrowLeft className="h-4 w-4" /> Back to News
             </Link>
-            <NewspaperEditionViewer edition={newspaperEdition} />
+            <NewspaperEditionViewer edition={newspaperEdition} displayTitle={article.title} />
             <noscript>
               <div className="mt-6 whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-[var(--color-text-primary)]">
                 {article.content}
