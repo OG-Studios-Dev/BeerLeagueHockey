@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check, LoaderCircle, Share2 } from 'lucide-react';
 import {
   renderNewspaperHtml,
   validateNewspaperEdition,
@@ -78,40 +79,121 @@ export function buildNewspaperViewerHtml(renderedHtml: string, manualZoom: numbe
   return html.replace('</head>', `${getNewspaperViewerStyle(manualZoom)}</head>`);
 }
 
+export type NewspaperShareOutcome = 'shared' | 'copied' | 'cancelled' | 'manual';
+
+export interface NewspaperShareNavigator {
+  share?: (data: { title: string; url: string }) => Promise<void>;
+  clipboard?: { writeText: (text: string) => Promise<void> };
+}
+
+export function buildCanonicalArticleUrl(origin: string, articlePath: string) {
+  const canonicalOrigin = new URL(origin).origin;
+  const url = new URL(articlePath, canonicalOrigin);
+  if (url.origin !== canonicalOrigin) {
+    throw new Error('The newspaper article path must use the current origin.');
+  }
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function isShareCancellation(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && error.name === 'AbortError';
+}
+
+export async function shareNewspaperArticle(
+  shareNavigator: NewspaperShareNavigator,
+  title: string,
+  canonicalUrl: string,
+): Promise<NewspaperShareOutcome> {
+  if (typeof shareNavigator.share === 'function') {
+    try {
+      await shareNavigator.share({ title, url: canonicalUrl });
+      return 'shared';
+    } catch (error) {
+      if (isShareCancellation(error)) return 'cancelled';
+    }
+  }
+
+  if (typeof shareNavigator.clipboard?.writeText === 'function') {
+    try {
+      await shareNavigator.clipboard.writeText(canonicalUrl);
+      return 'copied';
+    } catch {
+      // The selectable manual-copy state below is the honest final fallback.
+    }
+  }
+
+  return 'manual';
+}
+
+type ShareState = 'idle' | 'sharing' | NewspaperShareOutcome;
+
 export function NewspaperEditionViewer({
   edition,
   displayTitle,
+  newsPath,
+  articlePath,
 }: {
   edition: NewspaperEdition;
   displayTitle: string;
+  newsPath: string;
+  articlePath: string;
 }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [manualZoom, setManualZoom] = useState<number | null>(null);
-  const [fitScale, setFitScale] = useState(1);
+  const [shareState, setShareState] = useState<ShareState>('idle');
+  const [manualCopyUrl, setManualCopyUrl] = useState('');
+  const shareInProgressRef = useRef(false);
+  const manualCopyRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
-    const updateFitScale = () => setFitScale(calculateNewspaperFitScale(iframe.clientWidth));
-    updateFitScale();
-
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(updateFitScale);
-    observer.observe(iframe);
-    return () => observer.disconnect();
-  }, []);
-
-  const adjustZoom = useCallback((direction: -1 | 1) => {
-    setManualZoom((current) => adjustNewspaperZoom(current, fitScale, direction));
-  }, [fitScale]);
+    if (shareState !== 'manual') return;
+    manualCopyRef.current?.focus();
+    manualCopyRef.current?.select();
+  }, [shareState]);
 
   const html = useMemo(() => {
     validateNewspaperEdition(edition);
-    return buildNewspaperViewerHtml(renderNewspaperHtml(edition), manualZoom);
-  }, [edition, manualZoom]);
+    return buildNewspaperViewerHtml(renderNewspaperHtml(edition), null);
+  }, [edition]);
 
-  const displayedScale = manualZoom ?? fitScale;
+  const shareLabel = shareState === 'sharing'
+    ? 'Sharing…'
+    : shareState === 'shared'
+      ? 'Shared'
+      : shareState === 'copied'
+        ? 'Link copied'
+        : 'Share';
+
+  const shareFeedback = shareState === 'sharing'
+    ? 'Opening share options.'
+    : shareState === 'shared'
+      ? 'Article shared.'
+      : shareState === 'copied'
+        ? 'Article link copied to the clipboard.'
+        : shareState === 'manual'
+          ? 'Automatic sharing is unavailable. Select and copy the article link manually.'
+          : '';
+
+  const handleShare = async () => {
+    if (shareInProgressRef.current) return;
+    shareInProgressRef.current = true;
+    setShareState('sharing');
+    setManualCopyUrl('');
+
+    const canonicalUrl = buildCanonicalArticleUrl(window.location.origin, articlePath);
+    const outcome = await shareNewspaperArticle(window.navigator, displayTitle, canonicalUrl);
+
+    if (outcome === 'cancelled') {
+      setShareState('idle');
+    } else {
+      if (outcome === 'manual') setManualCopyUrl(canonicalUrl);
+      setShareState(outcome);
+    }
+    shareInProgressRef.current = false;
+  };
 
   return (
     <section aria-label={displayTitle}>
@@ -124,16 +206,50 @@ export function NewspaperEditionViewer({
           <p className="text-sm font-black text-[var(--color-text-primary)]">Hockey Life Times · Issue {edition.issueNumber}</p>
           <p className="text-xs text-[var(--color-text-secondary)]">{edition.periodStart} to {edition.periodEnd} · Published edition</p>
         </div>
-        <div className="flex items-center gap-2" role="group" aria-label="Newspaper zoom controls">
-          <button type="button" onClick={() => adjustZoom(-1)} disabled={manualZoom !== null && manualZoom <= MIN_ZOOM} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--color-border)] p-2 disabled:opacity-50" aria-label="Zoom out"><Minus className="h-4 w-4" aria-hidden="true" /></button>
-          <output className="min-w-16 text-center text-xs font-bold" aria-live="polite">{manualZoom === null ? 'Fit · ' : ''}{Math.round(displayedScale * 100)}%</output>
-          <button type="button" onClick={() => setManualZoom(null)} aria-pressed={manualZoom === null} className="min-h-11 rounded-lg border border-[var(--color-border)] px-3 text-xs font-bold">Fit</button>
-          <button type="button" onClick={() => adjustZoom(1)} disabled={manualZoom !== null && manualZoom >= MAX_ZOOM} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--color-border)] p-2 disabled:opacity-50" aria-label="Zoom in"><Plus className="h-4 w-4" aria-hidden="true" /></button>
+        <div className="flex items-center gap-2" role="group" aria-label="Newspaper actions">
+          <Link
+            href={newsPath}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 text-sm font-bold text-[var(--color-text-primary)] transition-colors hover:border-[var(--league-primary)]/40 hover:text-[var(--league-primary)]"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to News
+          </Link>
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={shareState === 'sharing'}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--league-primary)] px-3 text-sm font-bold text-[var(--color-accent-text)] transition-opacity disabled:cursor-wait disabled:opacity-70"
+          >
+            {shareState === 'sharing' ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : shareState === 'shared' || shareState === 'copied' ? (
+              <Check className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Share2 className="h-4 w-4" aria-hidden="true" />
+            )}
+            {shareLabel}
+          </button>
+          <span className="sr-only" role="status" aria-live="polite">{shareFeedback}</span>
         </div>
       </div>
+      {shareState === 'manual' ? (
+        <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" role="alert">
+          <label htmlFor="newspaper-manual-copy-url" className="mb-2 block text-sm font-bold text-[var(--color-text-primary)]">
+            Select and copy this article link
+          </label>
+          <input
+            ref={manualCopyRef}
+            id="newspaper-manual-copy-url"
+            type="text"
+            readOnly
+            value={manualCopyUrl}
+            onClick={(event) => event.currentTarget.select()}
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+          />
+        </div>
+      ) : null}
       <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-neutral-800 p-2 sm:p-4">
         <iframe
-          ref={iframeRef}
           title={displayTitle}
           srcDoc={html}
           sandbox=""
