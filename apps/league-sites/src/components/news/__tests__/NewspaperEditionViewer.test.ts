@@ -16,7 +16,7 @@ import {
 import type { NewspaperEdition } from '../../../../../../packages/hockey-life-times/src/index';
 
 describe('NewspaperEditionViewer sizing', () => {
-  it('renders the independent article display title without mutating the frozen edition payload', () => {
+  it('renders one title and the exact actions together without the removed metadata card', () => {
     const fixturePath = path.resolve(__dirname, '../../../../../../packages/hockey-life-times/fixtures/validation-edition.json');
     const edition = JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as NewspaperEdition;
     const before = JSON.stringify(edition);
@@ -28,14 +28,21 @@ describe('NewspaperEditionViewer sizing', () => {
       articlePath: '/london/news/hlt-week-1',
     }));
 
-    expect(html).toContain(`<h1`);
+    const outerContent = html.slice(0, html.indexOf('<iframe'));
+    expect(outerContent.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain(displayTitle);
     expect(html).toContain(`aria-label="${displayTitle}"`);
     expect(html).toContain(`title="${displayTitle}"`);
-    expect(html).toContain('Hockey Life Times · Issue');
+    expect(outerContent).toMatch(/<div[^>]*data-newspaper-header="true"[^>]*>[\s\S]*?<h1[\s\S]*?<div[^>]*aria-label="Newspaper actions"[^>]*data-newspaper-actions="true"/);
+    expect(outerContent).not.toContain('Hockey Life Times · Issue');
+    expect(outerContent).not.toContain('Published edition');
+    expect(outerContent).not.toContain(edition.periodStart);
+    expect(outerContent).not.toContain(edition.periodEnd);
+    expect(outerContent).not.toContain('sticky');
     expect(html).toContain('href="/london/news"');
-    expect(html).toContain('Back to News');
-    expect(html).toContain('Share');
+    expect(outerContent.match(/>Back<\/a>/g)).toHaveLength(1);
+    expect(outerContent.match(/>Share<\/button>/g)).toHaveLength(1);
+    expect(outerContent).not.toContain('Back to News');
     expect(html).not.toContain('Newspaper zoom controls');
     expect(html).not.toContain('Zoom in');
     expect(html).not.toContain('Zoom out');

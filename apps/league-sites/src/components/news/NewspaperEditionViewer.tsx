@@ -159,14 +159,6 @@ export function NewspaperEditionViewer({
     return buildNewspaperViewerHtml(renderNewspaperHtml(edition), null);
   }, [edition]);
 
-  const shareLabel = shareState === 'sharing'
-    ? 'Sharing…'
-    : shareState === 'shared'
-      ? 'Shared'
-      : shareState === 'copied'
-        ? 'Link copied'
-        : 'Share';
-
   const shareFeedback = shareState === 'sharing'
     ? 'Opening share options.'
     : shareState === 'shared'
@@ -197,28 +189,23 @@ export function NewspaperEditionViewer({
 
   return (
     <section aria-label={displayTitle}>
-      <h1 className="mb-4 text-2xl font-black tracking-tight text-[var(--color-text-primary)] sm:text-3xl">
-        {displayTitle}
-      </h1>
-      <div className="sticky top-3 z-20 mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-3 shadow-lg backdrop-blur">
-        <div>
-          <p className="text-sm font-black text-[var(--color-text-primary)]">{displayTitle}</p>
-          <p className="text-sm font-black text-[var(--color-text-primary)]">Hockey Life Times · Issue {edition.issueNumber}</p>
-          <p className="text-xs text-[var(--color-text-secondary)]">{edition.periodStart} to {edition.periodEnd} · Published edition</p>
-        </div>
-        <div className="flex items-center gap-2" role="group" aria-label="Newspaper actions">
+      <div className="mb-4 flex items-center gap-2 sm:gap-4" data-newspaper-header>
+        <h1 className="min-w-0 flex-1 text-2xl font-black tracking-tight text-[var(--color-text-primary)] sm:text-3xl">
+          {displayTitle}
+        </h1>
+        <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-2" role="group" aria-label="Newspaper actions" data-newspaper-actions>
           <Link
             href={newsPath}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 text-sm font-bold text-[var(--color-text-primary)] transition-colors hover:border-[var(--league-primary)]/40 hover:text-[var(--league-primary)]"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 text-sm font-bold text-[var(--color-text-primary)] transition-colors hover:border-[var(--league-primary)]/40 hover:text-[var(--league-primary)] sm:gap-2 sm:px-3"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to News
+            Back
           </Link>
           <button
             type="button"
             onClick={handleShare}
             disabled={shareState === 'sharing'}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--league-primary)] px-3 text-sm font-bold text-[var(--color-accent-text)] transition-opacity disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg bg-[var(--league-primary)] px-2 text-sm font-bold text-[var(--color-accent-text)] transition-opacity disabled:cursor-wait disabled:opacity-70 sm:gap-2 sm:px-3"
           >
             {shareState === 'sharing' ? (
               <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -227,7 +214,7 @@ export function NewspaperEditionViewer({
             ) : (
               <Share2 className="h-4 w-4" aria-hidden="true" />
             )}
-            {shareLabel}
+            Share
           </button>
           <span className="sr-only" role="status" aria-live="polite">{shareFeedback}</span>
         </div>
