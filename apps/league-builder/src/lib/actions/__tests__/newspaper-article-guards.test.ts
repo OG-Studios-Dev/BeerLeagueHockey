@@ -36,17 +36,80 @@ describe('newspaper-linked generic article guards', () => {
   });
 
   it('rejects generic body mutation of a linked newspaper article before writing', async () => {
-    const article = queryResult({ league_id: 'league-1', type: 'weekly_wrap' });
+    const article = queryResult({ league_id: 'league-1', type: 'weekly_wrap', title: 'Original' });
     const linked = queryResult({ id: 'edition-1' });
     const service = { from: jest.fn((table: string) => table === 'articles' ? article : linked) };
     createService.mockReturnValue(service as never);
     createUser.mockResolvedValue({} as never);
 
-    await expect(updateNewsArticle('article-1', { title: 'Tampered' })).resolves.toEqual({
+    await expect(updateNewsArticle('article-1', { content: 'Tampered' })).resolves.toEqual({
       success: false,
       error: expect.stringMatching(/newspaper.*frozen/i),
     });
     expect(article.update).not.toHaveBeenCalled();
+  });
+
+  it('renames a linked newspaper article through the scoped audited RPC only', async () => {
+    const existing = queryResult({ league_id: 'league-1', type: 'weekly_wrap', title: 'Original' });
+    const linked = queryResult({ id: 'edition-1' });
+    const renamed = { id: 'article-1', league_id: 'league-1', type: 'weekly_wrap', title: 'HLT: Week 1 - Fall 2026', published: true };
+    const rpc = jest.fn(async () => ({ data: renamed, error: null }));
+    const service = { from: jest.fn((table: string) => table === 'articles' ? existing : linked), rpc };
+    createService.mockReturnValue(service as never);
+    createUser.mockResolvedValue({ auth: { getUser: jest.fn(async () => ({ data: { user: { id: 'admin-1' } } })) } } as never);
+
+    await expect(updateNewsArticle('article-1', { title: '  HLT: Week 1 - Fall 2026  ', expectedTitle: 'Original' })).resolves.toEqual({
+      success: true,
+      data: expect.objectContaining({ title: 'HLT: Week 1 - Fall 2026' }),
+    });
+    expect(rpc).toHaveBeenCalledWith('rename_newspaper_article', {
+      p_article_id: 'article-1',
+      p_league_id: 'league-1',
+      p_changed_by: 'admin-1',
+      p_expected_title: 'Original',
+      p_title: 'HLT: Week 1 - Fall 2026',
+    });
+    expect(existing.update).not.toHaveBeenCalled();
+  });
+
+  it('requires the protected editor to supply its originally loaded title', async () => {
+    const existing = queryResult({ league_id: 'league-1', type: 'weekly_wrap' });
+    const linked = queryResult({ id: 'edition-1' });
+    const rpc = jest.fn();
+    createService.mockReturnValue({ from: jest.fn((table: string) => table === 'articles' ? existing : linked), rpc } as never);
+
+    await expect(updateNewsArticle('article-1', { title: 'Renamed' })).resolves.toEqual({
+      success: false,
+      error: expect.stringMatching(/reload/i),
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a linked title rename when the authenticated transport has no user', async () => {
+    const existing = queryResult({ league_id: 'league-1', type: 'weekly_wrap', title: 'Original' });
+    const linked = queryResult({ id: 'edition-1' });
+    const rpc = jest.fn();
+    createService.mockReturnValue({ from: jest.fn((table: string) => table === 'articles' ? existing : linked), rpc } as never);
+    createUser.mockResolvedValue({ auth: { getUser: jest.fn(async () => ({ data: { user: null } })) } } as never);
+
+    await expect(updateNewsArticle('article-1', { title: 'Renamed', expectedTitle: 'Original' })).resolves.toEqual({
+      success: false,
+      error: 'Not authenticated',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a linked title save when immutable fields are also submitted', async () => {
+    const article = queryResult({ league_id: 'league-1', type: 'weekly_wrap', title: 'Original' });
+    const linked = queryResult({ id: 'edition-1' });
+    const service = { from: jest.fn((table: string) => table === 'articles' ? article : linked), rpc: jest.fn() };
+    createService.mockReturnValue(service as never);
+
+    await expect(updateNewsArticle('article-1', { title: 'Renamed', slug: 'changed' })).resolves.toEqual({
+      success: false,
+      error: expect.stringMatching(/newspaper.*frozen/i),
+    });
+    expect(service.rpc).not.toHaveBeenCalled();
   });
 
   it('allows a linked article visibility-only update without touching entity tags', async () => {
@@ -69,6 +132,7 @@ describe('newspaper-linked generic article guards', () => {
     const result = await updateNewsArticle('article-1', { published: false });
     expect(result.success).toBe(true);
     expect(updated.update).toHaveBeenCalledWith(expect.objectContaining({ published: false }));
+    expect(updated.update.mock.calls[0][0]).not.toHaveProperty('title');
     expect(service.from).not.toHaveBeenCalledWith('article_game_tags');
     expect(service.from).not.toHaveBeenCalledWith('article_player_tags');
     expect(service.from).not.toHaveBeenCalledWith('article_team_tags');

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Eye, FileCheck2, Loader2, Newspaper, Pencil, RefreshCw, Save } from 'lucide-react';
 import {
   generateHockeyLifeTimesDraft,
@@ -10,6 +11,7 @@ import {
   type NewspaperEditionRecord,
   type NewspaperReadiness,
   type NewspaperSeasonOption,
+  type HockeyLifeTimesPlayoffTitlePhase,
 } from '@/lib/actions/hockey-life-times';
 import {
   editorStateFromEdition,
@@ -56,6 +58,7 @@ export function HockeyLifeTimesGenerator({
   leagueId: string;
   seasons: NewspaperSeasonOption[];
 }) {
+  const t = useTranslations('news');
   const activeSeason = seasons.find((season) => season.status === 'active' || season.status === 'playoffs') || seasons[0];
   const initialStart = mondayOfWeek(localDateInToronto());
   const [seasonId, setSeasonId] = useState(activeSeason?.id || '');
@@ -67,6 +70,7 @@ export function HockeyLifeTimesGenerator({
   const [narrative, setNarrative] = useState<HockeyLifeTimesEditorState | null>(null);
   const [busy, setBusy] = useState<'check' | 'generate' | 'save' | 'publish' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [playoffTitlePhase, setPlayoffTitlePhase] = useState<HockeyLifeTimesPlayoffTitlePhase | ''>('');
 
   const periodEnd = useMemo(() => addDays(periodStart, 6), [periodStart]);
   const activeGeneration = edition?.status === 'generating'
@@ -89,6 +93,7 @@ export function HockeyLifeTimesGenerator({
     try {
       const result = await getHockeyLifeTimesReadiness({ leagueId, seasonId, periodStart, periodEnd });
       if (result.success) {
+        setPlayoffTitlePhase('');
         setReadiness(result.data);
         setEdition(result.data.existingEdition);
         setNarrative(result.data.existingEdition?.edition_json
@@ -136,6 +141,7 @@ export function HockeyLifeTimesGenerator({
         leagueId,
         editionId: edition.id,
         expectedVersion: edition.version,
+        playoffTitlePhase: playoffTitlePhase || undefined,
       });
       if (result.success) {
         await checkReadiness();
@@ -288,6 +294,22 @@ export function HockeyLifeTimesGenerator({
                     >
                       <Pencil className="h-4 w-4" /> {editing ? 'Close editor' : 'Edit narrative'}
                     </button>
+                    {readiness?.playoffTitlePhaseRequired && (
+                      <label className="text-sm text-neutral-300">
+                        {t('playoffTitlePhaseLabel')}
+                        <select
+                          value={playoffTitlePhase}
+                          required
+                          disabled={Boolean(busy)}
+                          onChange={(event) => setPlayoffTitlePhase(event.target.value as HockeyLifeTimesPlayoffTitlePhase | '')}
+                          className="ml-2 rounded-lg border border-white/10 bg-neutral-900 px-3 py-2 text-white"
+                        >
+                          <option value="">{t('playoffTitlePhasePlaceholder')}</option>
+                          <option value="Semis">{t('playoffTitlePhaseSemis')}</option>
+                          <option value="Championships">{t('playoffTitlePhaseChampionships')}</option>
+                        </select>
+                      </label>
+                    )}
                     <label className="flex items-center gap-2 text-sm text-neutral-300">
                       <input type="checkbox" checked={reviewed} disabled={editing || Boolean(busy)} onChange={(event) => setReviewed(event.target.checked)} />
                       I reviewed all five pages
@@ -295,7 +317,7 @@ export function HockeyLifeTimesGenerator({
                     <button
                       type="button"
                       onClick={publishEdition}
-                      disabled={Boolean(busy) || !reviewed || editing}
+                      disabled={Boolean(busy) || !reviewed || editing || Boolean(readiness?.playoffTitlePhaseRequired && !playoffTitlePhase)}
                       className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-black text-black hover:bg-emerald-400 disabled:opacity-40"
                     >
                       {busy === 'publish' ? 'Publishing…' : 'Publish reviewed edition'}

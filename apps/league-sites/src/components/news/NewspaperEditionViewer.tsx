@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import {
@@ -77,7 +78,13 @@ export function buildNewspaperViewerHtml(renderedHtml: string, manualZoom: numbe
   return html.replace('</head>', `${getNewspaperViewerStyle(manualZoom)}</head>`);
 }
 
-export function NewspaperEditionViewer({ edition }: { edition: NewspaperEdition }) {
+export function NewspaperEditionViewer({
+  edition,
+  displayTitle,
+}: {
+  edition: NewspaperEdition;
+  displayTitle: string;
+}) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [manualZoom, setManualZoom] = useState<number | null>(null);
   const [fitScale, setFitScale] = useState(1);
@@ -107,9 +114,13 @@ export function NewspaperEditionViewer({ edition }: { edition: NewspaperEdition 
   const displayedScale = manualZoom ?? fitScale;
 
   return (
-    <section aria-label={`${edition.title} issue ${edition.issueNumber}`}>
+    <section aria-label={displayTitle}>
+      <h1 className="mb-4 text-2xl font-black tracking-tight text-[var(--color-text-primary)] sm:text-3xl">
+        {displayTitle}
+      </h1>
       <div className="sticky top-3 z-20 mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-3 shadow-lg backdrop-blur">
         <div>
+          <p className="text-sm font-black text-[var(--color-text-primary)]">{displayTitle}</p>
           <p className="text-sm font-black text-[var(--color-text-primary)]">Hockey Life Times · Issue {edition.issueNumber}</p>
           <p className="text-xs text-[var(--color-text-secondary)]">{edition.periodStart} to {edition.periodEnd} · Published edition</p>
         </div>
@@ -123,7 +134,7 @@ export function NewspaperEditionViewer({ edition }: { edition: NewspaperEdition 
       <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-neutral-800 p-2 sm:p-4">
         <iframe
           ref={iframeRef}
-          title={`${edition.title} issue ${edition.issueNumber}`}
+          title={displayTitle}
           srcDoc={html}
           sandbox=""
           className="block h-[82vh] w-full border-0 bg-neutral-800"

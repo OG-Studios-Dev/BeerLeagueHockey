@@ -6,6 +6,7 @@ import { verifyLeagueOwnerAccess } from './permissions';
 import { syncArticleEntityTags } from '@/lib/news/sync-article-entity-tags';
 import {
   isNewspaperLinkedArticle,
+  isTitleOnlyUpdate,
   isVisibilityOnlyUpdate,
   NEWSPAPER_ARTICLE_FROZEN_ERROR,
 } from '@/lib/news/newspaper-article-guard';
@@ -33,6 +34,7 @@ export interface NewsArticle {
   game_id: string | null;
   created_at: string;
   updated_at: string;
+  newspaper_linked?: boolean;
 }
 
 export interface CreateNewsArticleParams {
@@ -51,6 +53,7 @@ export interface CreateNewsArticleParams {
 
 export interface UpdateNewsArticleParams {
   title?: string;
+  expectedTitle?: string;
   content?: string;
   excerpt?: string;
   imageUrl?: string;
@@ -148,7 +151,8 @@ export async function getNewsArticle(articleId: string): Promise<ActionResult<Ne
     if (!access.authorized) {
       return { success: false, error: access.error || 'Not authorized' };
     }
-    return { success: true, data: normalizeNewsArticle(article) };
+    const newspaperLinked = await isNewspaperLinkedArticle(supabase as never, articleId);
+    return { success: true, data: { ...normalizeNewsArticle(article), newspaper_linked: newspaperLinked } };
   } catch (error) {
     if (isDevelopment) {
       console.error('Unexpected error in getNewsArticle:', error);
@@ -304,8 +308,35 @@ export async function updateNewsArticle(
       return { success: false, error: access.error || 'Not authorized' };
     }
     const newspaperLinked = await isNewspaperLinkedArticle(serviceSupabase as never, articleId);
-    if (newspaperLinked && !isVisibilityOnlyUpdate(updates)) {
+    if (newspaperLinked && !isVisibilityOnlyUpdate(updates) && !isTitleOnlyUpdate(updates)) {
       return { success: false, error: NEWSPAPER_ARTICLE_FROZEN_ERROR };
+    }
+    if (newspaperLinked && isTitleOnlyUpdate(updates)) {
+      const title = updates.title?.trim() || '';
+      if (typeof updates.expectedTitle !== 'string') {
+        return { success: false, error: 'Reload this article before changing its title.' };
+      }
+      if (!title) return { success: false, error: 'Title is required' };
+      if (title.length > 200) return { success: false, error: 'Title must be 200 characters or fewer' };
+      const client = await createClient();
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return { success: false, error: 'Not authenticated' };
+      const renamed = await (serviceSupabase.rpc as any)('rename_newspaper_article', {
+        p_article_id: articleId,
+        p_league_id: existingArticle.league_id,
+        p_changed_by: user.id,
+        p_expected_title: updates.expectedTitle,
+        p_title: title,
+      });
+      if (renamed.error) {
+        const message = String(renamed.error.message || renamed.error);
+        if (message.includes('STALE_NEWSPAPER_ARTICLE_TITLE')) {
+          return { success: false, error: 'The article title changed while you were editing. Reload and try again.' };
+        }
+        return { success: false, error: 'Failed to update article title' };
+      }
+      revalidatePath(`/dashboard/leagues/${existingArticle.league_id}/news`);
+      return { success: true, data: normalizeNewsArticle(renamed.data) };
     }
     if (
       updates.content !== undefined &&

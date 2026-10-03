@@ -20,6 +20,7 @@ import {
   type NewspaperStandingInput,
 } from '@/lib/hockey-life-times/domain';
 import { assertFreshPublicationFacts, canonicalFactDigest } from '@/lib/hockey-life-times/fact-digest';
+import { bindHockeyLifeTimesBracketFacts, buildHockeyLifeTimesArticleTitle } from '@/lib/hockey-life-times/article-title';
 import {
   illustrationFailureMessage,
   isIllustrationFailureCode,
@@ -84,7 +85,10 @@ export interface NewspaperReadiness {
     score: string | null;
   }>;
   existingEdition: NewspaperEditionRecord | null;
+  playoffTitlePhaseRequired: boolean;
 }
+
+export type HockeyLifeTimesPlayoffTitlePhase = 'Semis' | 'Championships';
 
 function publicError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -92,6 +96,8 @@ function publicError(error: unknown, fallback: string) {
   if (message.includes('NEWSPAPER_GENERATION_IN_PROGRESS')) return 'Generation is already in progress for this week.';
   if (message.includes('NEWSPAPER_PREVIEW_STALE')) return 'This preview is stale. Review the latest draft before publishing.';
   if (message.includes('NEWSPAPER_FACTS_CHANGED')) return 'Source facts changed after this draft was reviewed. Regenerate the draft and review every page again before publishing.';
+  if (message.includes('HLT_PLAYOFF_TITLE_PHASE_REQUIRED')) return 'Choose Semis or Championships for these legacy playoff games before publishing.';
+  if (message.startsWith('HLT title')) return message;
   if (message.includes('SEASON_TENANT_MISMATCH')) return 'The selected season does not belong to this league.';
   if (message.includes('Covered week must')) return message;
   if (message.includes('INVALID_NEWSPAPER_PERIOD')) return 'The issue must cover one canonical Monday-through-Sunday week.';
@@ -162,6 +168,48 @@ async function loadPeriodGames(
   return (data || []).map(normalizeGame);
 }
 
+interface ArticleTitleGameMetadata {
+  id: string;
+  leagueId: string;
+  seasonId: string;
+  gameType: string | null;
+  roundNumber: number | null;
+  playoffSeriesId: string | null;
+}
+
+async function loadArticleTitleGameMetadata(
+  service: ReturnType<typeof createServiceRoleClient>,
+  leagueId: string,
+  seasonId: string,
+  gameIds: string[],
+): Promise<ArticleTitleGameMetadata[]> {
+  if (gameIds.length === 0 || new Set(gameIds).size !== gameIds.length) {
+    throw new Error('HLT title requires a unique covered game set.');
+  }
+  const { data, error } = await service
+    .from('games')
+    .select('id, league_id, season_id, game_type, round_number, playoff_series_id')
+    .eq('league_id', leagueId)
+    .eq('season_id', seasonId)
+    .in('id', gameIds);
+  if (error) throw new Error('HLT title game metadata is unavailable.');
+  const rows = (data || []).map((row: any) => ({
+    id: row.id,
+    leagueId: row.league_id,
+    seasonId: row.season_id,
+    gameType: row.game_type,
+    roundNumber: row.round_number == null ? null : Number(row.round_number),
+    playoffSeriesId: row.playoff_series_id || null,
+  }));
+  if (
+    JSON.stringify(rows.map((row) => row.id).sort()) !== JSON.stringify([...gameIds].sort())
+    || rows.some((row) => row.leagueId !== leagueId || row.seasonId !== seasonId)
+  ) {
+    throw new Error('HLT title game metadata does not match the reviewed tenant and source set.');
+  }
+  return rows;
+}
+
 async function loadExistingEdition(
   service: ReturnType<typeof createServiceRoleClient>,
   leagueId: string,
@@ -190,6 +238,92 @@ async function loadExistingEdition(
       && typeof data.lease_expires_at === 'string'
       && Date.parse(data.lease_expires_at) > Date.now(),
   } as NewspaperEditionRecord;
+}
+
+async function loadArticleTitleFacts(
+  service: ReturnType<typeof createServiceRoleClient>,
+  leagueId: string,
+  seasonId: string,
+  periodStart: string,
+  games: NewspaperGameInput[],
+  reviewedGameIds: string[],
+  playoffTitlePhase?: HockeyLifeTimesPlayoffTitlePhase,
+) {
+  const actualGameIds = games.map((game) => game.id).sort();
+  const expectedGameIds = [...reviewedGameIds].sort();
+  if (
+    actualGameIds.length === 0
+    || new Set(actualGameIds).size !== actualGameIds.length
+    || JSON.stringify(actualGameIds) !== JSON.stringify(expectedGameIds)
+    || games.some((game) => game.leagueId !== leagueId || game.seasonId !== seasonId)
+  ) {
+    throw new Error('HLT title source game set does not match the reviewed edition.');
+  }
+  const { data: season, error: seasonError } = await service
+    .from('seasons')
+    .select('id, league_id, name, start_date')
+    .eq('id', seasonId)
+    .eq('league_id', leagueId)
+    .single();
+  if (seasonError || !season) throw new Error('HLT title season facts are unavailable.');
+
+  const titleMetadata = await loadArticleTitleGameMetadata(service, leagueId, seasonId, reviewedGameIds);
+  const validatedGameTypes = new Map(games.map((game) => [game.id, game.gameType ?? null]));
+  if (titleMetadata.some((game) => game.gameType !== validatedGameTypes.get(game.id))) {
+    throw new Error('HLT title game type changed after the publication facts were validated.');
+  }
+  const titleStages = new Set(titleMetadata.map((game) => game.gameType === 'playoff' ? 'playoffs' : game.gameType == null || game.gameType === 'regular' ? 'regular' : 'unknown'));
+  if (titleStages.has('playoffs') && titleStages.size !== 1) {
+    throw new Error('HLT title cannot represent mixed regular-season and playoff games.');
+  }
+
+  let titleGames: ReturnType<typeof bindHockeyLifeTimesBracketFacts> = titleMetadata.map((game) => ({
+    gameType: game.gameType,
+    roundNumber: null,
+    bracketRoundCount: null,
+  }));
+  if (titleStages.size === 1 && titleStages.has('playoffs')) {
+    const missingSeriesCount = titleMetadata.filter((game) => !game.playoffSeriesId).length;
+    if (missingSeriesCount > 0 && missingSeriesCount < titleMetadata.length) {
+      throw new Error('HLT title cannot resolve a playoff edition with mixed linked and unlinked bracket series.');
+    }
+    if (missingSeriesCount === titleMetadata.length) {
+      if (!playoffTitlePhase) throw new Error('HLT_PLAYOFF_TITLE_PHASE_REQUIRED');
+      return buildHockeyLifeTimesArticleTitle({
+        seasonName: season.name,
+        seasonStart: season.start_date,
+        periodStart,
+        games: titleGames,
+        playoffPhase: playoffTitlePhase,
+      });
+    }
+    const { data: seriesRows, error: seriesError } = await service
+      .from('playoff_series')
+      .select('id, league_id, season_id, division_id, round_number')
+      .eq('league_id', leagueId)
+      .eq('season_id', seasonId);
+    if (seriesError) throw new Error('HLT title playoff bracket facts are unavailable.');
+    titleGames = bindHockeyLifeTimesBracketFacts(
+      titleMetadata.map((game) => ({
+        id: game.id,
+        gameType: game.gameType,
+        roundNumber: game.roundNumber ?? null,
+        playoffSeriesId: game.playoffSeriesId ?? null,
+      })),
+      ((seriesRows || []) as Array<{ id: string; division_id: string | null; round_number: number }>).map((series) => ({
+        id: series.id,
+        divisionId: series.division_id,
+        roundNumber: Number(series.round_number),
+      })),
+    );
+  }
+
+  return buildHockeyLifeTimesArticleTitle({
+    seasonName: season.name,
+    seasonStart: season.start_date,
+    periodStart,
+    games: titleGames,
+  });
 }
 
 export async function getHockeyLifeTimesSetup(leagueId: string): Promise<ActionResult<{
@@ -234,6 +368,16 @@ export async function getHockeyLifeTimesReadiness(input: {
     const { service } = await requireHockeyLifeAdmin(input.leagueId);
     const games = await loadPeriodGames(service, input.leagueId, input.seasonId, input.periodStart, input.periodEnd);
     const readiness = assessReadiness(games, input.leagueId, input.seasonId);
+    const titleMetadata = readiness.ready && games.length > 0 && games.every((game) => game.gameType === 'playoff')
+      ? await loadArticleTitleGameMetadata(service, input.leagueId, input.seasonId, games.map((game) => game.id))
+      : [];
+    const missingPlayoffSeriesCount = titleMetadata.filter((game) => !game.playoffSeriesId).length;
+    if (missingPlayoffSeriesCount > 0 && missingPlayoffSeriesCount < titleMetadata.length) {
+      readiness.errors.push('The covered playoff games mix linked and unlinked bracket series, so no truthful article phase can be selected.');
+      readiness.ready = false;
+    }
+    const playoffTitlePhaseRequired = titleMetadata.length > 0
+      && missingPlayoffSeriesCount === titleMetadata.length;
     const existingEdition = await loadExistingEdition(service, input.leagueId, input.seasonId, input.periodStart, input.periodEnd);
     if (existingEdition?.status === 'published') {
       readiness.errors.push('This period already has a published edition. Generation is locked to preserve it.');
@@ -251,6 +395,7 @@ export async function getHockeyLifeTimesReadiness(input: {
           score: game.homeScore == null || game.awayScore == null ? null : `${game.awayScore}-${game.homeScore}`,
         })),
         existingEdition,
+        playoffTitlePhaseRequired,
       },
     };
   } catch (error) {
@@ -498,8 +643,12 @@ export async function publishHockeyLifeTimesEdition(input: {
   leagueId: string;
   editionId: string;
   expectedVersion: number;
+  playoffTitlePhase?: HockeyLifeTimesPlayoffTitlePhase;
 }): Promise<ActionResult<{ articleId: string }>> {
   try {
+    if (input.playoffTitlePhase !== undefined && !['Semis', 'Championships'].includes(input.playoffTitlePhase)) {
+      return { success: false, error: 'Playoff title phase must be Semis or Championships.' };
+    }
     const { service, league } = await requireHockeyLifeAdmin(input.leagueId);
     const client = await createClient();
     const { data: { user } } = await client.auth.getUser();
@@ -530,7 +679,6 @@ export async function publishHockeyLifeTimesEdition(input: {
       return { success: false, error: 'Edition tenant validation failed.' };
     }
     const manifest = assertEditionMediaBinding(edition);
-    const title = `Hockey Life Times — ${edition.periodStart} to ${edition.periodEnd}`;
     const slug = `hockey-life-times-${edition.periodStart}-${edition.seasonId.slice(0, 8)}`;
     await promoteApprovedMedia(manifest, mediaStorageAdapter(service));
     const currentGames = await loadPeriodGames(
@@ -554,6 +702,15 @@ export async function publishHockeyLifeTimesEdition(input: {
       row.period_end,
     );
     assertFreshPublicationFacts(edition.source, { games: finalGames, ...currentFacts }, row.league_id, row.season_id);
+    const title = await loadArticleTitleFacts(
+      service,
+      row.league_id,
+      row.season_id,
+      row.period_start,
+      finalGames,
+      edition.source.gameIds,
+      input.playoffTitlePhase,
+    );
     const published = await (service.rpc as any)('publish_newspaper_edition', {
       p_edition_id: input.editionId,
       p_expected_version: input.expectedVersion,
