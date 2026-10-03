@@ -1,0 +1,369 @@
+{
+  "articles": [
+    {
+      "id": "05ed2736-a431-41fa-b919-2ddddee157c8",
+      "league_id": "d6e55507-6eae-4d94-978c-47c6c30a36f1",
+      "season_id": "145ac7ee-99fb-4a50-a0b5-37f24e9991f3",
+      "published": true,
+      "published_at": "2026-10-03T13:32:42.932481+00:00",
+      "content": "Bad Bunny beat First General London 6-2 \u2014 and the Group Chat Will Hear About It\n\n2 finalized games, 15 verified goals, and no mercy from the standings table.\n\nHockey Life closed the books on 2 games from 2026-09-28 through 2026-10-04. Every score below comes from the finalized game record.\n\nThe widest gap was 4 goals, which is less a margin than a request for somebody to locate the backcheck.\n\nTHIS WEEK ON THE ICE\n\nFitzRays Flyers 4, Liuna Premier 3\n\nFitzRays Flyers Takes the Points and Leaves the Tape Bill\n\nFitzRays Flyers beat Liuna Premier 4-3.\n\nThe margin stayed tight enough that every missed clearance came with its own tiny courtroom drama.\n\nThe verified scoresheet credits Jack Foote (2G, 1A); Steve Almond (1G, 1A); Cameron Sheppard (1G, 0A); Cooper Hatfield (1G, 0A).\n\nBad Bunny 6, First General London 2\n\nBad Bunny Turns the Scoreboard Into a Complaint Form\n\nBad Bunny beat First General London 6-2.\n\nA 4-goal margin is not a defensive system; it is an open invitation with free parking.\n\nThe verified scoresheet credits Trevor Paterson (2G, 1A); Adrian Hartley (1G, 1A); Eric Hartley (1G, 1A); Jonathan Brougham (1G, 1A).\n\nTHREE STARS OF THE WEEK\n\n1. Jack Foote, FitzRays Flyers: 3 verified points across the covered games (2 goals, 1 assists).\n\n2. Trevor Paterson, Bad Bunny: 3 verified points across the covered games (2 goals, 1 assists).\n\n3. Adrian Hartley, Bad Bunny: 2 verified points across the covered games (1 goals, 1 assists).\n\nTHIS WEEK BY THE NUMBERS\n\nFinalized games: 2 \u2014 All games in the selected period were checked before generation.\n\nGoals: 15 \u2014 Combined final-score total.\n\nBiggest margin: 4 \u2014 Calculated from verified final scores.\n\nSTANDINGS\n\nBad Bunny: 1 GP, 1-0-0-0, 2 PTS, 6 GF, 2 GA\n\nFitzRays Flyers: 1 GP, 1-0-0-0, 2 PTS, 4 GF, 3 GA\n\nLiuna Premier: 1 GP, 0-1-0-0, 0 PTS, 3 GF, 4 GA\n\nFirst General London: 1 GP, 0-1-0-0, 0 PTS, 2 GF, 6 GA\n\nCanonical season standings at generation time.\n\nTHE HEATER\n\nBad Bunny Owns the Top Line: 2 points through 1 games. The standings do not award style points, which is convenient because they already have the real ones.\n\nTHE COLD TUB\n\nFirst General London Has Located the Basement: 0 points with 6 goals against. The thermostat works; the defensive coverage may need a service call.\n\nNEXT WEEK HEADLINES\n\nLiuna Premier at Bad Bunny: Scheduled matchup. No result, attendance, or performance claim is made before the puck drops.\n\nFirst General London at FitzRays Flyers: Scheduled matchup. No result, attendance, or performance claim is made before the puck drops.",
+      "excerpt": "2 finalized games, 15 verified goals, and no mercy from the standings table.",
+      "title": "HLT: Week 1 - Fall 2026",
+      "slug": "hockey-life-times-2026-09-28-145ac7ee"
+    }
+  ],
+  "editions": [
+    {
+      "id": "61196f33-0958-4752-8436-47601b2875f1",
+      "article_id": "05ed2736-a431-41fa-b919-2ddddee157c8",
+      "league_id": "d6e55507-6eae-4d94-978c-47c6c30a36f1",
+      "season_id": "145ac7ee-99fb-4a50-a0b5-37f24e9991f3",
+      "status": "published",
+      "published_at": "2026-10-03T13:32:42.932481+00:00",
+      "version": 1,
+      "edition_json": {
+        "cold": [
+          {
+            "body": "0 points with 6 goals against. The thermostat works; the defensive coverage may need a service call.",
+            "headline": "First General London Has Located the Basement"
+          }
+        ],
+        "games": [
+          {
+            "awayScore": 4,
+            "awayTeam": {
+              "id": "e4be829d-952c-4531-8376-215907fab3b7",
+              "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-flyers-approved-20260928.webp",
+              "name": "FitzRays Flyers"
+            },
+            "body": [
+              "FitzRays Flyers beat Liuna Premier 4-3.",
+              "The margin stayed tight enough that every missed clearance came with its own tiny courtroom drama.",
+              "The verified scoresheet credits Jack Foote (2G, 1A); Steve Almond (1G, 1A); Cameron Sheppard (1G, 0A); Cooper Hatfield (1G, 0A)."
+            ],
+            "contributors": [
+              {
+                "assists": 1,
+                "goals": 2,
+                "name": "Jack Foote",
+                "playerId": "5dfcbbd7-5fde-41a7-8557-bea05e71a692",
+                "points": 3,
+                "teamName": "FitzRays Flyers"
+              },
+              {
+                "assists": 1,
+                "goals": 1,
+                "name": "Steve Almond",
+                "playerId": "6bbb6990-5a64-4ee4-b1ff-0aafc97b6691",
+                "points": 2,
+                "teamName": "FitzRays Flyers"
+              },
+              {
+                "assists": 0,
+                "goals": 1,
+                "name": "Cameron Sheppard",
+                "playerId": "a70bb86b-2338-4279-b08c-92f32ce2f8b5",
+                "points": 1,
+                "teamName": "Liuna Premier"
+              },
+              {
+                "assists": 0,
+                "goals": 1,
+                "name": "Cooper Hatfield",
+                "playerId": "067b1497-a6fb-4376-afd2-acae6033c3db",
+                "points": 1,
+                "teamName": "FitzRays Flyers"
+              },
+              {
+                "assists": 0,
+                "goals": 1,
+                "name": "Dan MacGillivray",
+                "playerId": "169e8dd5-8489-43d8-9341-e96e4a32177d",
+                "points": 1,
+                "teamName": "Liuna Premier"
+              }
+            ],
+            "gameId": "972a6b35-292e-5cc0-9888-c1db6490a6b2",
+            "headline": "FitzRays Flyers Takes the Points and Leaves the Tape Bill",
+            "homeScore": 3,
+            "homeTeam": {
+              "id": "346833e0-2780-492d-86db-94df0b0cb3e1",
+              "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/346833e0-2780-492d-86db-94df0b0cb3e1-liuna-approved-20260928.webp",
+              "name": "Liuna Premier"
+            },
+            "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3.png"
+          },
+          {
+            "awayScore": 6,
+            "awayTeam": {
+              "id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+              "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+              "name": "Bad Bunny"
+            },
+            "body": [
+              "Bad Bunny beat First General London 6-2.",
+              "A 4-goal margin is not a defensive system; it is an open invitation with free parking.",
+              "The verified scoresheet credits Trevor Paterson (2G, 1A); Adrian Hartley (1G, 1A); Eric Hartley (1G, 1A); Jonathan Brougham (1G, 1A)."
+            ],
+            "contributors": [
+              {
+                "assists": 1,
+                "goals": 2,
+                "name": "Trevor Paterson",
+                "playerId": "6ba6425b-95a4-4ad9-9279-a60194ff9efe",
+                "points": 3,
+                "teamName": "Bad Bunny"
+              },
+              {
+                "assists": 1,
+                "goals": 1,
+                "name": "Adrian Hartley",
+                "playerId": "fc235c43-f6da-422c-8fea-dbb8307cde79",
+                "points": 2,
+                "teamName": "Bad Bunny"
+              },
+              {
+                "assists": 1,
+                "goals": 1,
+                "name": "Eric Hartley",
+                "playerId": "8034c5f0-c3df-4d1c-b5ff-25cca107050b",
+                "points": 2,
+                "teamName": "Bad Bunny"
+              },
+              {
+                "assists": 1,
+                "goals": 1,
+                "name": "Jonathan Brougham",
+                "playerId": "1e64af52-12e8-4984-8479-e052bc6e45f8",
+                "points": 2,
+                "teamName": "First General London"
+              },
+              {
+                "assists": 1,
+                "goals": 1,
+                "name": "Matt Grossi",
+                "playerId": "add94b26-b344-459f-9727-8cddae9783de",
+                "points": 2,
+                "teamName": "Bad Bunny"
+              }
+            ],
+            "gameId": "508ee689-b548-518e-b083-5e896533bf25",
+            "headline": "Bad Bunny Turns the Scoreboard Into a Complaint Form",
+            "homeScore": 2,
+            "homeTeam": {
+              "id": "453d62d9-80b4-4f26-a2ee-861f0c063402",
+              "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-first-general-approved-20260928.webp",
+              "name": "First General London"
+            },
+            "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/464e771b681d93e1278e6fbd63a626ef491449d7b83c761baa725b2db14a3a6c.png"
+          }
+        ],
+        "hot": [
+          {
+            "body": "2 points through 1 games. The standings do not award style points, which is convenient because they already have the real ones.",
+            "headline": "Bad Bunny Owns the Top Line"
+          }
+        ],
+        "issueNumber": "2",
+        "issuedAt": "2026-10-03T13:28:17.513Z",
+        "lead": {
+          "body": [
+            "Hockey Life closed the books on 2 games from 2026-09-28 through 2026-10-04. Every score below comes from the finalized game record.",
+            "The widest gap was 4 goals, which is less a margin than a request for somebody to locate the backcheck."
+          ],
+          "caption": "Editorial caricature of Jack Foote; statistics are typeset from verified records.",
+          "dek": "2 finalized games, 15 verified goals, and no mercy from the standings table.",
+          "headline": "Bad Bunny beat First General London 6-2 \u2014 and the Group Chat Will Hear About It",
+          "imageUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3.png"
+        },
+        "leagueId": "d6e55507-6eae-4d94-978c-47c6c30a36f1",
+        "leagueName": "Hockey Life",
+        "media": {
+          "assets": [
+            {
+              "model": "gpt-image-2",
+              "outputBytes": 2340770,
+              "outputMime": "image/png",
+              "outputSha256": "fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3",
+              "playerId": "5dfcbbd7-5fde-41a7-8557-bea05e71a692",
+              "privatePath": "outputs/v1/fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3.png",
+              "promptVersion": "hockey-life-editorial-caricature-v1",
+              "publicPath": "approved/v1/fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3.png",
+              "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3.png",
+              "sourcePhotoSha256": "98026bc1295a6d3147b1a8d6cf3de3a6a84f8e5df1cf09c80735308a9f6d6ee6"
+            },
+            {
+              "model": "gpt-image-2",
+              "outputBytes": 2176359,
+              "outputMime": "image/png",
+              "outputSha256": "464e771b681d93e1278e6fbd63a626ef491449d7b83c761baa725b2db14a3a6c",
+              "playerId": "6ba6425b-95a4-4ad9-9279-a60194ff9efe",
+              "privatePath": "outputs/v1/464e771b681d93e1278e6fbd63a626ef491449d7b83c761baa725b2db14a3a6c.png",
+              "promptVersion": "hockey-life-editorial-caricature-v1",
+              "publicPath": "approved/v1/464e771b681d93e1278e6fbd63a626ef491449d7b83c761baa725b2db14a3a6c.png",
+              "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/464e771b681d93e1278e6fbd63a626ef491449d7b83c761baa725b2db14a3a6c.png",
+              "sourcePhotoSha256": "bac790bd5b09b2a0b1b88b1ba1d9e1df98a803aca9d8b20902138aa59c97a462"
+            },
+            {
+              "model": "gpt-image-2",
+              "outputBytes": 2239661,
+              "outputMime": "image/png",
+              "outputSha256": "e23c8da6f2c99bc99239e7a8314d733afe85a272df0b4637efd052aaff4bb316",
+              "playerId": "fc235c43-f6da-422c-8fea-dbb8307cde79",
+              "privatePath": "outputs/v1/e23c8da6f2c99bc99239e7a8314d733afe85a272df0b4637efd052aaff4bb316.png",
+              "promptVersion": "hockey-life-editorial-caricature-v1",
+              "publicPath": "approved/v1/e23c8da6f2c99bc99239e7a8314d733afe85a272df0b4637efd052aaff4bb316.png",
+              "publicUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/e23c8da6f2c99bc99239e7a8314d733afe85a272df0b4637efd052aaff4bb316.png",
+              "sourcePhotoSha256": "a69d55d4886f1dbf975ba59c657a645cff6807c1daa85af43a4537b2e44fe6bb"
+            }
+          ],
+          "schemaVersion": 1
+        },
+        "numbers": [
+          {
+            "detail": "All games in the selected period were checked before generation.",
+            "label": "Finalized games",
+            "value": "2"
+          },
+          {
+            "detail": "Combined final-score total.",
+            "label": "Goals",
+            "value": "15"
+          },
+          {
+            "detail": "Calculated from verified final scores.",
+            "label": "Biggest margin",
+            "value": "4"
+          }
+        ],
+        "periodEnd": "2026-10-04",
+        "periodStart": "2026-09-28",
+        "schemaVersion": 1,
+        "seasonId": "145ac7ee-99fb-4a50-a0b5-37f24e9991f3",
+        "seasonName": "FALL 2026",
+        "source": {
+          "factPackDigest": "64f88207c1cc60c78aad472b8bf0e2866cab4f40b01133a87a16642f64aeb8f0",
+          "gameIds": [
+            "972a6b35-292e-5cc0-9888-c1db6490a6b2",
+            "508ee689-b548-518e-b083-5e896533bf25"
+          ],
+          "standingsAsOf": "2026-10-03",
+          "verifiedAt": "2026-10-03T13:28:17.513Z",
+          "warnings": []
+        },
+        "stage": "regular",
+        "standings": [
+          {
+            "ga": 2,
+            "gf": 6,
+            "gp": 1,
+            "l": 0,
+            "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+            "name": "Bad Bunny",
+            "otl": 0,
+            "pts": 2,
+            "t": 0,
+            "teamId": "093f611c-0cdc-4509-afde-9c661b5833c9",
+            "w": 1
+          },
+          {
+            "ga": 3,
+            "gf": 4,
+            "gp": 1,
+            "l": 0,
+            "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-flyers-approved-20260928.webp",
+            "name": "FitzRays Flyers",
+            "otl": 0,
+            "pts": 2,
+            "t": 0,
+            "teamId": "e4be829d-952c-4531-8376-215907fab3b7",
+            "w": 1
+          },
+          {
+            "ga": 4,
+            "gf": 3,
+            "gp": 1,
+            "l": 1,
+            "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/346833e0-2780-492d-86db-94df0b0cb3e1-liuna-approved-20260928.webp",
+            "name": "Liuna Premier",
+            "otl": 0,
+            "pts": 0,
+            "t": 0,
+            "teamId": "346833e0-2780-492d-86db-94df0b0cb3e1",
+            "w": 0
+          },
+          {
+            "ga": 6,
+            "gf": 2,
+            "gp": 1,
+            "l": 1,
+            "logoUrl": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-first-general-approved-20260928.webp",
+            "name": "First General London",
+            "otl": 0,
+            "pts": 0,
+            "t": 0,
+            "teamId": "453d62d9-80b4-4f26-a2ee-861f0c063402",
+            "w": 0
+          }
+        ],
+        "standingsNote": "Canonical season standings at generation time.",
+        "stars": [
+          {
+            "assists": 1,
+            "goals": 2,
+            "illustrationUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/fa7b58fc99e49f42cad0f740ce8e23c72d900919820321f83a38efdf5ffbace3.png",
+            "name": "Jack Foote",
+            "playerId": "5dfcbbd7-5fde-41a7-8557-bea05e71a692",
+            "points": 3,
+            "reason": "3 verified points across the covered games (2 goals, 1 assists).",
+            "teamName": "FitzRays Flyers"
+          },
+          {
+            "assists": 1,
+            "goals": 2,
+            "illustrationUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/464e771b681d93e1278e6fbd63a626ef491449d7b83c761baa725b2db14a3a6c.png",
+            "name": "Trevor Paterson",
+            "playerId": "6ba6425b-95a4-4ad9-9279-a60194ff9efe",
+            "points": 3,
+            "reason": "3 verified points across the covered games (2 goals, 1 assists).",
+            "teamName": "Bad Bunny"
+          },
+          {
+            "assists": 1,
+            "goals": 1,
+            "illustrationUrl": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/newspaper-media-public/approved/v1/e23c8da6f2c99bc99239e7a8314d733afe85a272df0b4637efd052aaff4bb316.png",
+            "name": "Adrian Hartley",
+            "playerId": "fc235c43-f6da-422c-8fea-dbb8307cde79",
+            "points": 2,
+            "reason": "2 verified points across the covered games (1 goals, 1 assists).",
+            "teamName": "Bad Bunny"
+          }
+        ],
+        "status": "published",
+        "timezone": "America/Toronto",
+        "title": "Hockey Life Times",
+        "upcoming": [
+          {
+            "awayName": "Liuna Premier",
+            "body": "Scheduled matchup. No result, attendance, or performance claim is made before the puck drops.",
+            "gameId": "743fa5ad-5aae-522d-b820-f80fbd7a5f5b",
+            "headline": "Liuna Premier at Bad Bunny",
+            "homeName": "Bad Bunny",
+            "scheduledAt": "2026-10-09T02:15:00+00:00",
+            "venue": "Chick-Fil-A Wharncliffe & Wonderland Rink"
+          },
+          {
+            "awayName": "First General London",
+            "body": "Scheduled matchup. No result, attendance, or performance claim is made before the puck drops.",
+            "gameId": "d2b3e1f1-b6d6-5973-98ae-10a837dcb1ae",
+            "headline": "First General London at FitzRays Flyers",
+            "homeName": "FitzRays Flyers",
+            "scheduledAt": "2026-10-09T02:30:00+00:00",
+            "venue": "Collins Clothiers Rink"
+          }
+        ],
+        "upcomingNote": "Fixtures shown are the next scheduled games in this season after the covered period."
+      }
+    }
+  ]
+}

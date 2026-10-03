@@ -29,6 +29,7 @@ test('requires an honest note when upcoming fixtures are absent', () => {
   invalid.upcomingNote = '';
   assert.throws(() => validateNewspaperEdition(invalid), /upcomingNote is required/);
   assert.match(renderNewspaperHtml(fixture), /No scheduled fixtures/);
+  assert.equal((renderNewspaperText(fixture).match(/The validation edition intentionally contains no scheduled fixtures/g) || []).length, 1);
 });
 
 test('fails loudly when required game data is absent', () => {
@@ -44,6 +45,82 @@ test('plain-text fallback is complete and native-readable', () => {
   assert.match(text, /Alexandria Montgomery-Smythe/);
   assert.match(text, /Jean-Luc O'Rourke-Test, Visitors With A Remarkably Long Name: 2 G, 0 A, 2 P/);
   assert.doesNotMatch(text, /<article|<style/);
+});
+
+test('renders the complete approved editorial extension in HTML and text', () => {
+  const edition = structuredClone(fixture) as NewspaperEdition;
+  edition.upcoming = [{
+    gameId: 'next-game', homeName: 'Bad Bunny', awayName: 'Liuna Premier',
+    scheduledAt: '2026-10-09T02:15:00+00:00', headline: 'Liuna Premier at Bad Bunny',
+    body: 'Legacy summary.', line: 'HLT line: Bad Bunny -150 / Liuna Premier +150',
+    pick: "Columnist's pick: Bad Bunny 5-3",
+    bodyParagraphs: ['First approved preview paragraph.', 'Second approved preview paragraph.'],
+  }];
+  edition.upcomingNote = 'Approved fictional-lines disclaimer.';
+  edition.editorial = {
+    standings: {
+      headline: 'Enjoy the View; You Have Not Bought the Place',
+      body: ['First approved standings paragraph.', 'Second approved standings paragraph.'],
+    },
+    upcoming: { heading: 'Next Week Headlines - Thursday, October 8' },
+    sourceNote: ['Scores and contributions were checked.', 'No individual performance is invented.'],
+  };
+
+  for (const rawOutput of [renderNewspaperHtml(edition), renderNewspaperText(edition)]) {
+    const output = rawOutput.replaceAll('&#39;', "'");
+    for (const expected of [
+      'Enjoy the View; You Have Not Bought the Place',
+      'First approved standings paragraph.',
+      'Second approved standings paragraph.',
+      'Next Week Headlines - Thursday, October 8',
+      'Approved fictional-lines disclaimer.',
+      'HLT line: Bad Bunny -150 / Liuna Premier +150',
+      "Columnist's pick: Bad Bunny 5-3",
+      'First approved preview paragraph.',
+      'Second approved preview paragraph.',
+      'Scores and contributions were checked.',
+      'No individual performance is invented.',
+    ]) assert.match(output, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('text fallback retains upcomingNote even when fixtures exist', () => {
+  const edition = structuredClone(fixture);
+  edition.upcoming = [{
+    gameId: 'next-game', homeName: 'Home', awayName: 'Away',
+    scheduledAt: '2026-10-09T02:15:00+00:00', headline: 'Next game', body: 'Scheduled.',
+  }];
+  edition.upcomingNote = 'This disclaimer must remain visible.';
+  const text = renderNewspaperText(edition);
+  assert.match(text, /This disclaimer must remain visible\./);
+  assert.equal((text.match(/This disclaimer must remain visible\./g) || []).length, 1);
+  const html = renderNewspaperHtml(edition);
+  assert.ok(html.indexOf('Next game') < html.indexOf('This disclaimer must remain visible.'));
+});
+
+test('a partial standings extension preserves the legacy upcoming layout and tail', () => {
+  const edition = structuredClone(fixture) as NewspaperEdition;
+  edition.editorial = { standings: { headline: 'Editorial standings', body: ['Exact standings context.'] } };
+  edition.upcoming = [{
+    gameId: 'legacy-next', homeName: 'Home', awayName: 'Away', scheduledAt: '2026-10-09T02:15:00+00:00',
+    headline: 'Legacy next game', body: 'Legacy scheduled-game copy.',
+  }];
+  edition.upcomingNote = 'Legacy note remains after the cards.';
+  const html = renderNewspaperHtml(edition);
+  assert.match(html, /Around the Rink/);
+  assert.match(html, /The issue in brief/);
+  assert.doesNotMatch(html, /<div class="upcoming-grid upcoming-grid--editorial">/);
+  assert.ok(html.indexOf('Legacy next game') < html.indexOf('Legacy note remains after the cards.'));
+});
+
+test('rejects unknown and malformed editorial extension keys', () => {
+  const unknown = structuredClone(fixture) as NewspaperEdition & { editorial: Record<string, unknown> };
+  unknown.editorial = { surprise: 'not allowed' };
+  assert.throws(() => validateNewspaperEdition(unknown), /editorial contains unknown key surprise/);
+
+  const malformed = structuredClone(fixture) as NewspaperEdition;
+  malformed.editorial = { standings: { headline: 'Heading', body: [] } };
+  assert.throws(() => validateNewspaperEdition(malformed), /editorial\.standings\.body/);
 });
 
 test('keeps provenance in data but out of reader-facing HTML and text', () => {
