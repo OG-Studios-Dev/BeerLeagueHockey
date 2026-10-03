@@ -2,6 +2,7 @@ import {
   CARICATURE_PROMPT,
   HOCKEY_LIFE_LEAGUE_ID,
   IMAGE_MODEL,
+  MAX_PLAYERS,
   MAX_OUTPUT_IMAGE_BYTES,
   OUTPUT_MIME,
   PRIVATE_MEDIA_BUCKET,
@@ -377,7 +378,7 @@ export async function generateIllustrations(
   });
 
   const promptSha256 = await sha256Hex(CARICATURE_PROMPT);
-  const illustrations = await mapBounded(resolved, Math.max(1, Math.min(2, dependencies.concurrency ?? 2)), async ({ playerId, profile }): Promise<IllustrationResult> => {
+  const illustrations = await mapBounded(resolved, Math.max(1, Math.min(MAX_PLAYERS, dependencies.concurrency ?? 2)), async ({ playerId, profile }): Promise<IllustrationResult> => {
     const source = await run(() => dependencies.photos.load(profile.avatar_url!));
     const sourcePhotoSha256 = await sha256Hex(source.bytes);
     validatePlayerPhotoUrl(source.url);

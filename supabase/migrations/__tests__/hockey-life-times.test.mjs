@@ -7,6 +7,10 @@ const sql = fs.readFileSync(
   path.resolve(process.cwd(), 'supabase/migrations/20260927100000_hockey_life_times_editions.sql'),
   'utf8',
 );
+const leaseExtensionSql = fs.readFileSync(
+  path.resolve(process.cwd(), 'supabase/migrations/20261003130000_extend_newspaper_generation_lease.sql'),
+  'utf8',
+);
 
 test('edition identity and concurrent generation are database guarded', () => {
   assert.match(sql, /UNIQUE \(league_id, season_id, period_start\)/);
@@ -25,6 +29,15 @@ test('generation leases expire, can be reclaimed, and reject stale completion or
   assert.match(failure, /generation_token = p_generation_token[\s\S]*lease_expires_at > now\(\)/);
   assert.match(failure, /STALE_NEWSPAPER_GENERATION/);
   assert.doesNotMatch(failure, /edition_json\s*=/);
+});
+
+test('extended generation lease remains finite and preserves claim guards', () => {
+  assert.match(leaseExtensionSql, /p_lease_seconds < 30 OR p_lease_seconds > 180/);
+  assert.match(leaseExtensionSql, /NEWSPAPER_GENERATION_IN_PROGRESS/);
+  assert.match(leaseExtensionSql, /NEWSPAPER_ALREADY_PUBLISHED/);
+  assert.match(leaseExtensionSql, /pg_advisory_xact_lock/);
+  assert.match(leaseExtensionSql, /SECURITY DEFINER/);
+  assert.match(leaseExtensionSql, /SET search_path = public/);
 });
 
 test('coverage identity is a canonical Monday through Sunday week', () => {

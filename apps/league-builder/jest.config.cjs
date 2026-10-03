@@ -9,7 +9,7 @@ const config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   rootDir: '.',
-  testMatch: ['**/__tests__/**/*.test.ts', '**/*.spec.ts'],
+  testMatch: ['**/__tests__/**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^server-only$': '<rootDir>/test/fixtures/server-only.cjs',
@@ -30,7 +30,7 @@ const config = {
       'ts-jest',
       {
         tsconfig: {
-          jsx: 'react',
+          jsx: 'react-jsx',
           esModuleInterop: true,
           allowSyntheticDefaultImports: true,
         },
