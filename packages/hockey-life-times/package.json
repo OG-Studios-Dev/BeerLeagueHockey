@@ -11,5 +11,9 @@
     "revision:approved": "node scripts/prepare-approved-revision.mjs",
     "export:fixture": "node scripts/export-newspaper.mjs --edition fixtures/validation-edition.json --output output/fixture",
     "import:approved": "node scripts/import-approved-issue.mjs"
+  },
+  "dependencies": {
+    "jpeg-js": "0.4.4",
+    "pngjs": "7.0.0"
   }
 }
