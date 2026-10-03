@@ -80,6 +80,7 @@ describe('Hockey Life Times artwork integration', () => {
     expect(completeAt).toBeGreaterThan(invokeAt);
     expect(failAt).toBeGreaterThan(completeAt);
     expect(source).toContain('p_edition_json: illustratedEdition');
+    expect(source).toContain('p_lease_seconds: 180');
   });
 
   it('strictly decodes the exact requested player mapping', () => {

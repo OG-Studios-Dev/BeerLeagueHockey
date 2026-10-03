@@ -21,6 +21,11 @@ import {
 } from '@/lib/hockey-life-times/domain';
 import { assertFreshPublicationFacts, canonicalFactDigest } from '@/lib/hockey-life-times/fact-digest';
 import {
+  illustrationFailureMessage,
+  isIllustrationFailureCode,
+  readIllustrationFailureCode,
+} from '@/lib/hockey-life-times/illustration-errors';
+import {
   validateNewspaperEdition,
   type NewspaperEdition,
 } from '../../../../../packages/hockey-life-times/src/index';
@@ -62,6 +67,7 @@ export interface NewspaperEditionRecord {
   generation_lease_active: boolean;
   version: number;
   updated_at: string;
+  edition_json_present: boolean;
 }
 
 export type { NewspaperIllustration } from '@/lib/hockey-life-times/media';
@@ -89,6 +95,7 @@ function publicError(error: unknown, fallback: string) {
   if (message.includes('SEASON_TENANT_MISMATCH')) return 'The selected season does not belong to this league.';
   if (message.includes('Covered week must')) return message;
   if (message.includes('INVALID_NEWSPAPER_PERIOD')) return 'The issue must cover one canonical Monday-through-Sunday week.';
+  if (isIllustrationFailureCode(message)) return illustrationFailureMessage(message);
   return fallback;
 }
 
@@ -178,6 +185,7 @@ async function loadExistingEdition(
   return {
     ...data,
     edition_json: isNewspaperEdition(edition) ? edition : null,
+    edition_json_present: data.edition_json != null,
     generation_lease_active: data.status === 'generating'
       && typeof data.lease_expires_at === 'string'
       && Date.parse(data.lease_expires_at) > Date.now(),
@@ -405,7 +413,7 @@ export async function generateHockeyLifeTimesDraft(input: {
       p_period_start: input.periodStart,
       p_period_end: input.periodEnd,
       p_created_by: user.id,
-      p_lease_seconds: 120,
+      p_lease_seconds: 180,
     });
     if (begin.error) throw begin.error;
     claimed = begin.data;
@@ -444,7 +452,9 @@ export async function generateHockeyLifeTimesDraft(input: {
         playerIds,
       },
     });
-    if (illustrationInvoke.error) throw illustrationInvoke.error;
+    if (illustrationInvoke.error) {
+      throw new Error(await readIllustrationFailureCode(illustrationInvoke.error));
+    }
     const illustrationByPlayer = decodeIllustrationResponse(illustrationInvoke.data, playerIds);
     const illustratedEdition = bindIllustrationsToEdition(edition, illustrationByPlayer);
     validateNewspaperEdition(illustratedEdition);
@@ -463,6 +473,7 @@ export async function generateHockeyLifeTimesDraft(input: {
       data: {
         ...complete.data,
         edition_json: await hydrateDraftMedia(illustratedEdition, mediaStorageAdapter(service)),
+        edition_json_present: true,
         generation_lease_active: false,
       } as NewspaperEditionRecord,
     };
@@ -603,6 +614,7 @@ export async function saveHockeyLifeTimesNarrativeDraft(input: {
       data: {
         ...saved.data,
         edition_json: await hydrateDraftMedia(edited as EditionWithMedia, mediaStorageAdapter(service)),
+        edition_json_present: true,
       } as NewspaperEditionRecord,
     };
   } catch (error) {

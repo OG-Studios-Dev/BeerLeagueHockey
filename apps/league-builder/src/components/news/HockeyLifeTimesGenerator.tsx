@@ -22,6 +22,7 @@ import {
   validateNewspaperEdition,
   type NewspaperEdition,
 } from '../../../../../packages/hockey-life-times/src/index';
+import { illustrationFailureMessage } from '@/lib/hockey-life-times/illustration-errors';
 
 function localDateInToronto() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -257,7 +258,9 @@ export function HockeyLifeTimesGenerator({
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-300 px-5 py-3 text-sm font-black text-black hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {edition?.status === 'draft' ? 'Regenerate draft' : activeGeneration ? 'Generation in progress' : edition?.status === 'generating' ? 'Retry expired generation' : 'Generate draft'}
+              {edition?.status === 'draft'
+                ? edition.edition_json ? 'Regenerate draft' : 'Retry generation'
+                : activeGeneration ? 'Generation in progress' : edition?.status === 'generating' ? 'Retry expired generation' : 'Generate draft'}
             </button>
           </div>
 
@@ -267,7 +270,9 @@ export function HockeyLifeTimesGenerator({
                 <div>
                   <div className="flex items-center gap-2">
                     <Eye className="h-4 w-4 text-amber-300" />
-                    <h3 className="font-bold text-white">Issue {edition.issue_number} full preview</h3>
+                    <h3 className="font-bold text-white">
+                      Issue {edition.issue_number} {edition.edition_json ? 'full preview' : edition.status === 'generating' ? 'generation in progress' : 'generation attempt'}
+                    </h3>
                   </div>
                   <p className="mt-1 text-xs text-neutral-400">
                     Status: {edition.status} · version {edition.version} · {edition.generation_method || 'generation method unavailable'}
@@ -334,9 +339,18 @@ export function HockeyLifeTimesGenerator({
                     className="h-[900px] w-full"
                   />
                 </div>
-              ) : (
+              ) : edition.status === 'generating' ? (
+                <p className="text-sm text-amber-200">Draft generation is in progress. No publishable draft exists yet.</p>
+              ) : edition.edition_json_present ? (
                 <p className="text-sm text-red-300">This stored draft does not satisfy the newspaper render contract and cannot be published.</p>
-              )}
+              ) : !edition.edition_json && edition.generation_error ? (
+                <div className="space-y-1 text-sm text-red-300">
+                  <p>Draft generation failed before a renderable draft was stored.</p>
+                  <p>{illustrationFailureMessage(edition.generation_error)}</p>
+                </div>
+              ) : !edition.edition_json ? (
+                <p className="text-sm text-red-300">No renderable draft was stored. Retry generation; no edition was published.</p>
+              ) : null}
             </div>
           )}
         </div>

@@ -19,10 +19,15 @@ import {
   generateIllustrations,
   makeRepository,
 } from './workflow.ts';
+import {
+  ObservableIllustrationError,
+  OVERALL_DEADLINE_MS,
+  PROVIDER_TIMEOUT_MS,
+  illustrationFailureLog,
+  publicIllustrationError,
+} from './runtime.ts';
 
 const MAX_REQUEST_BYTES = 4096;
-const OVERALL_DEADLINE_MS = 85_000;
-const PROVIDER_TIMEOUT_MS = 50_000;
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -30,19 +35,6 @@ function jsonResponse(status: number, body: unknown): Response {
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
 }
-
-function publicError(error: unknown): { status: number; code: string; message: string } {
-  const code = error instanceof Error ? error.message : 'INTERNAL_ERROR';
-  if (code === 'INVALID_REQUEST') return { status: 400, code, message: 'Request must contain a valid editionId, generationToken, and one to four distinct playerIds.' };
-  if (code === 'EDITION_NOT_FOUND') return { status: 404, code, message: 'Edition was not found.' };
-  if (['EDITION_TENANT_MISMATCH', 'SUPABASE_PROJECT_MISMATCH'].includes(code)) return { status: 403, code, message: 'Project or league scope was rejected.' };
-  if (['STALE_GENERATION_LEASE', 'INVALID_EDITION_SCOPE'].includes(code)) return { status: 409, code, message: 'The newspaper generation lease or canonical week is no longer valid.' };
-  if (code.startsWith('PLAYER_') || code === 'UNSAFE_PLAYER_PHOTO_URL' || code === 'NO_COMPLETED_GAMES' || code === 'GAME_SCOPE_MISMATCH') {
-    return { status: 422, code, message: 'A requested player is not an eligible, fully resolved contributor in this edition.' };
-  }
-  return { status: 502, code: 'ILLUSTRATION_GENERATION_FAILED', message: 'Illustrations could not be generated and validated.' };
-}
-
 
 function decodeBase64Image(value: unknown): Uint8Array {
   if (typeof value !== 'string' || value.length === 0 || value.length > Math.ceil(MAX_OUTPUT_IMAGE_BYTES * 4 / 3) + 8) {
@@ -83,20 +75,29 @@ async function callOpenAI(apiKey: string, input: { image: Uint8Array; mime: stri
         redirect: 'error',
       });
       if (!response.ok) {
+        const status = response.status;
+        const requestId = response.headers.get('x-request-id');
         await response.body?.cancel();
-        throw new Error('PROVIDER_REQUEST_FAILED');
+        throw new ObservableIllustrationError('PROVIDER_REQUEST_FAILED', 'provider_request', status, requestId);
       }
       const bodyBytes = await readResponseBytes(response, Math.ceil(MAX_OUTPUT_IMAGE_BYTES * 4 / 3) + 1024 * 1024);
       let body: any;
       try {
         body = JSON.parse(new TextDecoder().decode(bodyBytes));
       } catch {
-        throw new Error('INVALID_PROVIDER_RESPONSE');
+        throw new ObservableIllustrationError('INVALID_PROVIDER_RESPONSE', 'provider_validation', response.status, response.headers.get('x-request-id'));
       }
-      if (!Array.isArray(body?.data) || body.data.length !== 1) throw new Error('INVALID_PROVIDER_RESPONSE');
+      if (!Array.isArray(body?.data) || body.data.length !== 1) {
+        throw new ObservableIllustrationError('INVALID_PROVIDER_RESPONSE', 'provider_validation', response.status, response.headers.get('x-request-id'));
+      }
       const image = decodeBase64Image(body.data[0]?.b64_json);
       await assertPng1024(image);
       return { image, requestId: response.headers.get('x-request-id') };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new ObservableIllustrationError('PROVIDER_TIMEOUT', 'provider_timeout');
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
     }
@@ -147,8 +148,8 @@ Deno.serve(async (request: Request) => {
     });
     return jsonResponse(200, result);
   } catch (error) {
-    const safe = publicError(error);
-    console.error(JSON.stringify({ event: 'newspaper_illustrations_failed', code: safe.code }));
+    const safe = publicIllustrationError(error);
+    console.error(JSON.stringify(illustrationFailureLog(error, safe.code)));
     return jsonResponse(safe.status, { error: { code: safe.code, message: safe.message } });
   }
 });
