@@ -68,6 +68,7 @@ e2e/**/.auth/
 # Installed skills (local only)
 .agents/
 .claude/skills/
+/.claude/worktrees/
 **/.claude/settings.local.json
 
 # Subdir .claude shims (symlinks for hook cwd compatibility)
