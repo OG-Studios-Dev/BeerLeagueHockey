@@ -120,13 +120,14 @@ export default function StandingsScreen({ navigation }: { navigation: Navigation
             {scoped.map((row, index) => <Pressable key={row.teamId} accessibilityRole="button" accessibilityLabel={`${row.teamName}, ${row.points} points`} onPress={() => navigation.navigate('Team', { screen: 'TeamDetail', params: { teamId: row.teamId, leagueId: activeLeague.id } })} style={[styles.tableRow, index === 0 && styles.leader]}><View style={styles.teamCol}><TeamLogo teamId={row.teamId} logoUrl={row.logoUrl} teamName={row.teamName} primaryColor={row.primaryColor} size={30} /><Text style={styles.teamName}>{row.teamName}</Text></View><Text style={styles.cell}>{row.gamesPlayed}</Text><Text style={styles.cell}>{row.wins}</Text><Text style={styles.cell}>{row.losses}</Text><Text style={[styles.cell, styles.points]}>{row.points}</Text></Pressable>)}
           </FocusCard> : <Text style={styles.muted}>No standings available yet.</Text>}
 
+          {positioning ? <View style={styles.section}><Text style={styles.sectionTitle}>Team Positioning</Text><TeamPositioningChart positioning={positioning} /></View> : null}
+
           <StandingsPlayoffsPanel picture={picture} predictor={predictor} standings={visibleState.standings} accentColor={activeTheme.primaryColor} />
 
           <View style={styles.section}><Text style={styles.sectionTitle}>Season Completion</Text>
             <SeasonCompletionHump percentage={completion.percentage} playoffMode={completion.playoffMode} accentColor={activeTheme.primaryColor} reduceTransparency={reduceTransparency} />
           </View>
 
-          {positioning ? <View style={styles.section}><Text style={styles.sectionTitle}>Team Positioning</Text><TeamPositioningChart positioning={positioning} /></View> : null}
         </FocusScrollView>
       )}
     </SafeAreaView>

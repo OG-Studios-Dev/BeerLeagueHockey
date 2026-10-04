@@ -75,7 +75,7 @@ const snapshot: any = {
   standings: [], rank: 2, record: '7-2-2', streak: 'W1', hero: { winPercentage: 7 / 11 }, roster,
   leaders: { points: [leader(roster[0], 25), leader(roster[1], 22), leader(roster[2], 16)], goals: [leader(roster[0], 12), leader(roster[1], 10), leader(roster[2], 7)], assists: [leader(roster[0], 13), leader(roster[1], 12), leader(roster[2], 9)], penaltyMinutes: [leader(roster[2], 20), leader(roster[1], 12), leader(roster[0], 4)] },
   games, collapsedSchedule: [games[1], games[2], games[3], games[4]], nextGame: games[3],
-  championships: { count: 1, latestTitleSeasonName: 'Fall 2025', latestTitleLabel: '2025', titleSeasonIds: ['old'] }, captain: roster[0], publishedLineup: null, acceptedSubstitutions: [], sponsors: [],
+  championships: { count: 1, latestTitleSeasonName: 'Fall 2025', latestTitleLabel: '2025', titleSeasonIds: ['old'] }, captain: roster[0], publishedLineup: null, acceptedSubstitutions: [], sponsors: [{ id: 'sponsor-1', name: 'Rink Shop', logoUrl: 'sponsor.png', websiteUrl: 'https://rinkshop.test', tier: 'gold' }],
   rivals: [
     { team: viewedSide, rival: { ...viewedSide, ...team('team-b', 'First General London', '#2454A3'), overallRecord: '6-4-1', goalsFor: 30, goalsAgainst: 28, goalDifferential: 2, sniper: { name: 'Rival Sniper', goals: 9 }, playmaker: { name: 'Rival Passer', assists: 10 } }, h2hRecord: '2-1', h2hRecordRival: '1-2', gamesPlayed: 3 },
     { team: viewedSide, rival: { ...viewedSide, ...team('team-c', 'Purple Cobras', '#7C3AED'), overallRecord: '5-5-1', goalsFor: 26, goalsAgainst: 26, goalDifferential: 0 }, h2hRecord: '1-1', h2hRecordRival: '1-1', gamesPlayed: 2 },
@@ -293,6 +293,8 @@ describe('native Team public composition', () => {
     assert.ok(findNode(output, (node) => node.props.testID === 'team-public-hero'));
     assert.match(text, /RANK#2WIN %64%STREAKW1GF34GA22DIFF\+12/);
     assert.match(text, /Latest championship: Fall 2025 \(2025\)/);
+    assert.doesNotMatch(text, /FEATURED PARTNERS|Rink Shop/);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-partners'), undefined);
   });
 
   it('switches exact leader metrics and podium/bar views without fake navigation', () => {

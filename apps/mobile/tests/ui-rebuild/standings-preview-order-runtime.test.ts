@@ -34,11 +34,11 @@ async function mountScreen(rows: typeof standings) {
     '../components/SeasonCompletionHump': (props: any) => createElement('SeasonCompletionHump', props),
     '../components/StandingsPlayoffsPanel': (props: any) => createElement('StandingsPlayoffsPanel', props),
     '../components/TeamLogo': (props: any) => createElement('TeamLogo', props),
-    '../components/TeamPositioningChart': () => null,
+    '../components/TeamPositioningChart': (props: any) => createElement('TeamPositioningChart', props),
     '../context/LeagueContext': { useLeague: () => ({ activeLeague, activeTheme, activeDivision: league.activeDivision, setActiveDivision: (division: any) => { league.activeDivision = division; }, divisions: [{ id: 'east', name: 'east' }, { id: 'west', name: 'west' }] }) },
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
     '../lib/leaguePages': { getLeaguePage: async (_slug: string, page: string) => page === 'playoffs' ? { previewConfig: { playoffTeamsTotal: 4, playoffTeamsPerDivision: 2, useDivisionPlayoffs: false } } : { positioning: null } },
-    '../lib/leaguePagesModel': { filterAndRerankPositioning: () => null },
+    '../lib/leaguePagesModel': { filterAndRerankPositioning: () => ({ teams: [] }) },
     '../lib/standingsModel': await import('../../src/lib/standingsModel.ts'),
     '../lib/supabase/data': { getOperationalSeason: async () => ({ id: 'season-1', name: 'Current' }), getStandings: async () => rows, getSchedule: async () => [] },
     '../navigation/cutIceSafeAreaPolicy': { cutIceContentEdges: (edges: unknown) => edges },
@@ -50,6 +50,22 @@ async function mountScreen(rows: typeof standings) {
 }
 
 describe('StandingsScreen canonical preview ordering', () => {
+  it('renders Standings, Team Positioning, Playoffs, then Season Completion', async () => {
+    const { harness } = await mountScreen(standings);
+    const nodes = allNodes(harness.output);
+    const standingsIndex = nodes.findIndex((node) => node.props.focusId === 'standings:table:league-1');
+    const positioningIndex = nodes.findIndex((node) => node.type === 'TeamPositioningChart');
+    const playoffsIndex = nodes.findIndex((node) => node.type === 'StandingsPlayoffsPanel');
+    const completionIndex = nodes.findIndex((node) => node.type === 'SeasonCompletionHump');
+
+    assert.ok([standingsIndex, positioningIndex, playoffsIndex, completionIndex].every((index) => index >= 0));
+    assert.deepEqual(
+      [standingsIndex, positioningIndex, playoffsIndex, completionIndex],
+      [...[standingsIndex, positioningIndex, playoffsIndex, completionIndex]].sort((left, right) => left - right),
+    );
+    harness.unmount();
+  });
+
   it('keeps mounted preview seeds aligned to the canonical visible ranking across shuffled transport and division display scope', async () => {
     for (const rows of [standings, [standings[2], standings[0], standings[3], standings[1]]]) {
       const { harness, league } = await mountScreen(rows);

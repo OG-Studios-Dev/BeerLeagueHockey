@@ -209,10 +209,11 @@ describe('Home editorial native render', () => {
     assert.ok(findNode(output, (node) => node.props.testID === 'home-league-hero'));
     assert.doesNotMatch(nodeText(output), /LEAGUE HOME/);
 
-    const sectionOrder = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-loading', 'home-sponsors-section']
+    const sectionOrder = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-loading']
       .map((testID) => nodes.findIndex((node) => node.props.testID === testID));
     assert.ok(sectionOrder.every((index) => index >= 0));
     assert.deepEqual(sectionOrder, [...sectionOrder].sort((left, right) => left - right));
+    assert.equal(findNode(output, (node) => node.props.testID === 'home-sponsors-section'), undefined);
 
     for (const label of ['Updates', 'Open full schedule']) {
       const target = findNode(output, (node) => node.props.accessibilityLabel === label);

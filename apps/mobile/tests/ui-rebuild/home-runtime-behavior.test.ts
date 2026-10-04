@@ -168,7 +168,7 @@ describe('Home web-structure runtime', () => {
     const runtime = createRuntime();
     const output = await settle(runtime);
     const nodes = allNodes(output);
-    const ids = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-section', 'home-community-section', 'home-sponsors-section'];
+    const ids = ['home-news-section', 'home-weekly-games-section', 'home-leaders-section', 'home-standings-section', 'home-photos-section', 'home-community-section'];
     const indexes = ids.map((id) => nodes.findIndex((node) => node.props.testID === id));
     assert.ok(indexes.every((index) => index >= 0));
     assert.deepEqual(indexes, [...indexes].sort((a, b) => a - b));
@@ -176,7 +176,8 @@ describe('Home web-structure runtime', () => {
     assert.match(nodeText(output), /This Week’s Games/);
     assert.match(nodeText(output), /Final/);
     assert.match(nodeText(output), /Alex Ace/);
-    assert.match(nodeText(output), /Rink Shop/);
+    assert.doesNotMatch(nodeText(output), /Rink Shop|Featured Sponsors|Premier Partners|Powered by/);
+    assert.equal(findNode(output, (node) => node.props.testID === 'home-sponsors-section'), undefined);
     assert.equal(findNode(output, (node) => /^home-personal-(loading|error|section)$/.test(String(node.props.testID))), undefined);
     assert.equal(runtime.queryCalls.length, 0);
   });
@@ -187,7 +188,7 @@ describe('Home web-structure runtime', () => {
     assert.equal(story?.props.accentColor, '#1F6A44');
   });
 
-  it('preserves article, game, player, schedule, notifications, and sponsor routes', async () => {
+  it('preserves article, game, player, schedule, and notification routes', async () => {
     const runtime = createRuntime();
     const output = await settle(runtime);
     findNode(output, (node) => node.props.accessibilityLabel === 'Read Opening night')?.props.onPress();
@@ -195,14 +196,13 @@ describe('Home web-structure runtime', () => {
     findNode(output, (node) => node.props.accessibilityRole === 'button' && nodeText(node).includes('Alex Ace'))?.props.onPress();
     findNode(output, (node) => node.props.accessibilityLabel === 'Open full schedule')?.props.onPress();
     findNode(output, (node) => node.props.accessibilityLabel === 'Updates')?.props.onPress();
-    findNode(output, (node) => node.props.accessibilityLabel === 'Open Rink Shop')?.props.onPress();
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(runtime.playerCalls, [{ playerId: 'player-leader', leagueId: 'league-1' }]);
     assert.deepEqual(runtime.navigationCalls, [
       ['LeaguePages', { screen: 'NewsArticle', params: { leagueId: 'league-1', leagueSlug: 'harbour-hockey', articleSlug: 'opening-night' } }],
       ['Schedule', { screen: 'GamePreview', initial: false, params: { gameId: 'week-final' } }], ['Schedule'], ['Profile', { screen: 'NotificationsFeed' }],
     ]);
-    assert.deepEqual(runtime.linkCalls, ['https://rinkshop.test/']);
+    assert.deepEqual(runtime.linkCalls, []);
   });
 
   it('shows public sections to guests while omitting membership and check-in controls', async () => {
@@ -357,9 +357,10 @@ describe('Home web-structure runtime', () => {
     await settle(runtime);
     await refresh(runtime);
     const text = nodeText(runtime.harness.output);
-    for (const fact of ['Opening night', 'Alex Ace', 'Rink Shop', 'News refresh failed.', 'Games refresh failed.', 'Leaders refresh failed.', 'Standings refresh failed.', 'Photos refresh failed.', 'Albums refresh failed.']) {
+    for (const fact of ['Opening night', 'Alex Ace', 'News refresh failed.', 'Games refresh failed.', 'Leaders refresh failed.', 'Standings refresh failed.', 'Photos refresh failed.', 'Albums refresh failed.']) {
       assert.match(text, new RegExp(fact.replace(/[.]/g, '\\.')));
     }
+    assert.doesNotMatch(text, /Rink Shop|Sponsors refresh failed|Featured Sponsors|Premier Partners|Powered by/);
     assert.ok(findNode(runtime.harness.output, (node) => node.props.testID === 'home-photos-section'));
   });
 

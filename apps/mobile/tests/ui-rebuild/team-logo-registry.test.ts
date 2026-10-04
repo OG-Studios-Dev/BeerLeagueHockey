@@ -195,7 +195,7 @@ describe('Hockey Life native artwork registry', () => {
     assert.deepEqual(findNode(harness.output, (node) => node.type === 'Image')!.props.source, { uri: 'https://example.test/fallback.png' });
   });
 
-  it('keeps the shared image backing by default and removes it only for an explicit presentation opt-in', () => {
+  it('keeps every shared team-logo image backing transparent', () => {
     const harness = createHookHarness();
     const props = {
       teamId: 'team-a', logoUrl: null, teamName: 'Team A', transparentBacking: false,
@@ -213,7 +213,7 @@ describe('Hockey Life native artwork registry', () => {
       },
     ).default;
     harness.mount(() => TeamLogo(props));
-    assert.equal(findNode(harness.output, (node) => node.type === 'Image')!.props.style[1].backgroundColor, 'rgba(255,255,255,0.06)');
+    assert.equal(findNode(harness.output, (node) => node.type === 'Image')!.props.style[1].backgroundColor, 'transparent');
 
     props.transparentBacking = true;
     harness.render();

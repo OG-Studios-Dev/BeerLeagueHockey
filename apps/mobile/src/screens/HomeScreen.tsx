@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import blhLogo from '../../assets/blh-logo.png';
 import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import GuestBanner from '../components/GuestBanner';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
@@ -34,7 +33,6 @@ import {
   type HomeLeader,
   type HomePublicSnapshot,
   type HomeSection,
-  type HomeSponsor,
   type HomeStanding,
   type HomeWeeklyGame,
   loadHomePublicSnapshot,
@@ -400,10 +398,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         {!publicHome ? <View testID="home-community-loading"><SectionHeading eyebrow="CONNECT" title="Community" /><SectionState loading onRetry={retry} /></View> : publicHome.community.status === 'error' && publicHome.community.data.length === 0 ? <View testID="home-community-error"><SectionHeading eyebrow="CONNECT" title="Community" /><SectionState message={publicHome.community.message} onRetry={retry} /></View> : publicHome.community.data.length > 0 ? <View testID="home-community-section"><SectionHeading eyebrow="CONNECT" title="Community" /><View style={styles.communityGrid}>{publicHome.community.data.map((social) => <Pressable key={social.key} accessibilityRole="link" style={[sectionCard, styles.communityLink]} onPress={() => openExternal(social.url)}><Text style={styles.communityText}>{social.label}</Text><Ionicons name="open-outline" size={15} color={accent} /></Pressable>)}</View>{publicHome.community.status === 'error' ? <Text style={styles.staleNote}>{publicHome.community.message}</Text> : null}</View> : null}
 
-        <View testID="home-sponsors-section">
-          <SectionHeading eyebrow="PARTNERS" title={publicHome?.sponsors.data.some((row) => row.tier === 'premier') ? 'Premier Partners' : publicHome?.sponsors.data.some((row) => row.tier === 'gold') ? 'Featured Sponsors' : 'Powered by'} />
-          {!publicHome ? <SectionState loading onRetry={retry} /> : <><View style={[sectionCard, styles.sponsorStrip]}>{publicHome.sponsors.data.map((sponsor: HomeSponsor) => <Pressable key={sponsor.id} accessibilityRole="link" accessibilityLabel={`Open ${sponsor.name}`} style={styles.sponsor} onPress={() => openExternal(sponsor.website_url)}>{sponsor.logo_url ? <Image source={{ uri: sponsor.logo_url }} style={styles.sponsorLogo} alt={sponsor.name} /> : <Image source={blhLogo} style={styles.sponsorLogo} alt="" />}<Text style={styles.sponsorName}>{sponsor.name}</Text></Pressable>)}</View>{publicHome.sponsors.status === 'error' ? <Text style={styles.staleNote}>{publicHome.sponsors.message}</Text> : null}</>}
-        </View>
       </FocusScrollView>
     </SafeAreaView>
   );
@@ -490,8 +484,4 @@ const styles = StyleSheet.create({
   communityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   communityLink: { minWidth: '47%', flex: 1, minHeight: 50, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   communityText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' },
-  sponsorStrip: { minHeight: 92, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 14 },
-  sponsor: { minWidth: 100, minHeight: 60, alignItems: 'center', justifyContent: 'center' },
-  sponsorLogo: { width: 78, height: 38, resizeMode: 'contain' },
-  sponsorName: { color: colors.textSecondary, fontSize: 10, fontWeight: '700', marginTop: 4 },
 });

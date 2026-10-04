@@ -86,7 +86,7 @@ export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size
 
 const styles = StyleSheet.create({
   image: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'transparent',
     resizeMode: 'contain',
   },
   transparentImage: { backgroundColor: 'transparent' },
