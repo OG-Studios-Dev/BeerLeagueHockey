@@ -7,11 +7,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { supabase } from '../../lib/supabase/client';
+import AuthShell from '../../components/AuthShell';
 import colors from '../../theme/colors';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -57,16 +57,13 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.container}>
-        <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
+    <AuthShell
+      title="Reset your password"
+      subtitle="Enter your email and we’ll send a secure reset link."
+    >
+        <Pressable accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </Pressable>
-
-        <Text style={styles.heading}>Reset Password</Text>
-        <Text style={styles.subheading}>
-          Enter your email address and we&apos;ll send you a link to reset your password.
-        </Text>
 
         {isSuccess ? (
           <View style={styles.successContainer}>
@@ -109,42 +106,20 @@ export default function ForgotPasswordScreen() {
             </Pressable>
           </>
         )}
-      </View>
-    </SafeAreaView>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.bgBase,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 16,
-  },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
-    marginBottom: 16,
-  },
-  heading: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  subheading: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    marginBottom: 24,
-    lineHeight: 22,
+    marginBottom: 12,
   },
   input: {
-    height: 52,
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.borderCard,
     backgroundColor: colors.bgSurface,
@@ -164,7 +139,8 @@ const styles = StyleSheet.create({
   submitButton: {
     marginTop: 4,
     width: '100%',
-    borderRadius: 12,
+    minHeight: 48,
+    borderRadius: 14,
     backgroundColor: colors.primary,
     alignItems: 'center',
     paddingVertical: 14,
@@ -193,7 +169,9 @@ const styles = StyleSheet.create({
   },
   backToLoginButton: {
     marginTop: 16,
-    paddingVertical: 14,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 12,
     borderWidth: 1,
