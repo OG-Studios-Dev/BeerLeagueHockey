@@ -22,6 +22,7 @@ import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import GuestBanner from '../components/GuestBanner';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import HomeLeagueHero from '../components/HomeLeagueHero';
+import HomeLeagueLeaders from '../components/HomeLeagueLeaders';
 import RevealView from '../components/RevealView';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
@@ -30,7 +31,6 @@ import { navigateToPlayerCard } from '../navigation/playerCard';
 import { useMobileShellData } from '../navigation/MobileShellDataContext';
 import {
   type HomeArticle,
-  type HomeLeader,
   type HomePublicSnapshot,
   type HomeSection,
   type HomeStanding,
@@ -39,6 +39,7 @@ import {
   normalizeHomeGameStatus,
   toSafeWebUrl,
 } from '../lib/supabase/home';
+import type { HomeLeaderMetric } from '../lib/homeLeagueLeaders';
 import colors from '../theme/colors';
 import { getHomeVisualPreferences, HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
 
@@ -47,8 +48,6 @@ type HomeNavigation = {
   getState?: () => { routeNames?: string[] };
 };
 type HomeScreenProps = { navigation?: HomeNavigation };
-
-type LeaderMetric = 'goals' | 'assists' | 'points';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -176,28 +175,16 @@ function SectionState({ loading, message, onRetry }: { loading?: boolean; messag
   );
 }
 
-function MetricTabs({ value, onChange }: { value: LeaderMetric; onChange: (value: LeaderMetric) => void }) {
-  return (
-    <View style={styles.metricTabs}>
-      {(['goals', 'assists', 'points'] as const).map((metric) => (
-        <Pressable key={metric} accessibilityRole="button" accessibilityState={{ selected: metric === value }} onPress={() => onChange(metric)} style={[styles.metricTab, metric === value && styles.metricTabActive]}>
-          <Text style={[styles.metricTabText, metric === value && styles.metricTabTextActive]}>{metric[0].toUpperCase() + metric.slice(1)}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { activeLeague, activeTheme } = useLeague();
   const { focusAccent } = useMobileShellData();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
-  const { width, height } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
   const visuals = getHomeVisualPreferences(reduceTransparency, reduceMotion);
   const requestGeneration = React.useRef(0);
   const [publicHome, setPublicHome] = React.useState<HomePublicSnapshot | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [leaderMetric, setLeaderMetric] = React.useState<LeaderMetric>('goals');
+  const [leaderMetric, setLeaderMetric] = React.useState<HomeLeaderMetric>('points');
   const [divisionId, setDivisionId] = React.useState<string | null>(null);
   const [storyIndex, setStoryIndex] = React.useState(0);
   const storyPager = React.useRef<ScrollView>(null);
@@ -280,9 +267,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     ? (divisions.some((division) => division.id === divisionId) ? divisionId : divisions[0]?.id ?? null)
     : null;
   const shownStandings = standings.filter((row) => !selectedDivision || row.division_id === selectedDivision).slice(0, 5);
-  const leaders = (publicHome?.leaders.data ?? []).filter((row) => row[leaderMetric] > 0)
-    .sort((left, right) => right[leaderMetric] - left[leaderMetric] || left.player_name.localeCompare(right.player_name)).slice(0, 5);
-
   const openExternal = (url: string | null | undefined) => {
     const safe = toSafeWebUrl(url);
     if (safe) void Linking.openURL(safe).catch(() => {});
@@ -381,10 +365,21 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         </View>
 
         <View testID="home-leaders-section">
-          <SectionHeading eyebrow="TOP PERFORMERS" title="League Leaders" />
-          <MetricTabs value={leaderMetric} onChange={setLeaderMetric} />
-          {!publicHome ? <SectionState loading onRetry={retry} /> : publicHome.leaders.status === 'error' && leaders.length === 0 ? <SectionState message={publicHome.leaders.message} onRetry={retry} /> : leaders.length === 0 ? <View style={[sectionCard, styles.emptyCard]}><Text style={styles.emptyTitle}>No {leaderMetric} leaders yet</Text><Text style={styles.emptyCopy}>Current-season skater totals will appear after completed games are published.</Text></View> : leaders.map((leader: HomeLeader, index) => <FocusCard key={leader.player_id} focusId={`home:leader:${leaderMetric}:${leader.player_id}`} accentColor={accent}><Pressable accessibilityRole="button" style={[sectionCard, styles.leaderRow]} onPress={() => navigateToPlayerCard(navigation, { playerId: leader.player_id, leagueId: activeLeague.id })}><Text style={styles.rank}>{index + 1}</Text><View style={styles.leaderCopy}><Text style={styles.leaderName}>{leader.player_name}</Text><Text style={styles.leaderTeam}>{leader.display_team_name || leader.team_name || 'Free agent'}</Text></View><Text style={[styles.leaderValue, { color: accent }]}>{leader[leaderMetric]}</Text></Pressable></FocusCard>)}
-          {publicHome?.leaders.status === 'error' && leaders.length > 0 ? <Text style={styles.staleNote}>{publicHome.leaders.message}</Text> : null}
+          <HomeLeagueLeaders
+            leagueId={activeLeague.id}
+            seasonName={publicHome?.presentationSeason?.name ?? null}
+            metric={leaderMetric}
+            leaders={publicHome?.leaders.data ?? []}
+            status={!publicHome ? 'loading' : publicHome.leaders.status === 'error' ? 'error' : 'ready'}
+            errorMessage={publicHome?.leaders.message}
+            width={width}
+            fontScale={fontScale}
+            reduceTransparency={reduceTransparency}
+            onMetricChange={setLeaderMetric}
+            onRetry={retry}
+            onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id })}
+            onOpenAllStats={() => navigation?.navigate?.('Stats', { screen: 'Leaderboards' })}
+          />
         </View>
 
         <View testID="home-standings-section">
@@ -456,17 +451,8 @@ const styles = StyleSheet.create({
   scoreRow: { flexDirection: 'row', marginTop: 8 },
   gameTeams: { flex: 1, color: colors.textPrimary, fontSize: 13, lineHeight: 20, fontWeight: '800' },
   scores: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '900', textAlign: 'right' },
-  metricTabs: { flexDirection: 'row', gap: 7, marginBottom: 8 },
-  metricTab: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, alignItems: 'center', justifyContent: 'center' },
   metricTabActive: { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: colors.glassStrokeStrong },
   metricTabText: { color: colors.textSecondary, fontSize: 11, fontWeight: '800' },
-  metricTabTextActive: { color: colors.textPrimary },
-  leaderRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, marginBottom: 6 },
-  rank: { width: 28, color: colors.textSecondary, fontSize: 13, fontWeight: '900' },
-  leaderCopy: { flex: 1 },
-  leaderName: { color: colors.textPrimary, fontSize: 13, fontWeight: '900' },
-  leaderTeam: { color: colors.textSecondary, fontSize: 10, marginTop: 2 },
-  leaderValue: { fontSize: 20, fontWeight: '900' },
   divisionTabs: { gap: 7, paddingBottom: 8 },
   divisionTab: { minHeight: 44, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, alignItems: 'center', justifyContent: 'center' },
   table: { padding: 8 },

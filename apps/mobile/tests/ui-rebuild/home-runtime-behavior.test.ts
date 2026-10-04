@@ -95,6 +95,19 @@ function createRuntime({
     '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
     '../components/GuestBanner': () => createElement('GuestBanner', null),
     '../components/HomeLeagueHero': ({ updatesAction, ...props }: Record<string, any>) => createElement('HomeLeagueHero', props, updatesAction),
+    '../components/HomeLeagueLeaders': ({ leaders, status, errorMessage, onOpenPlayer, ...props }: Record<string, any>) => createElement(
+      'HomeLeagueLeaders', props,
+      status === 'error' && leaders.length === 0
+        ? createElement('Text', null, errorMessage)
+        : [
+          ...leaders.map((leader: Record<string, any>) => createElement(
+            'Pressable',
+            { accessibilityRole: 'button', onPress: () => onOpenPlayer(leader.player_id) },
+            createElement('Text', null, leader.player_name),
+          )),
+          status === 'error' ? createElement('Text', null, errorMessage) : null,
+        ],
+    ),
     '../components/LeagueMarketplace': (props: Record<string, unknown>) => createElement('LeagueMarketplace', props),
     '../components/RevealView': ({ children, ...props }: Record<string, unknown>) => createElement('RevealView', props, children),
     '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),

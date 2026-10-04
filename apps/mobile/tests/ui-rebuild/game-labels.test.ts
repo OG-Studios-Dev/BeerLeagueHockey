@@ -180,7 +180,7 @@ function renderHome({
   };
   // Seed the v2 component's state slots in declaration order; loading effects
   // stay disabled so this remains a pure accessibility-name test.
-  const state = [publicHome, false, 'goals', null, 0];
+  const state = [publicHome, false, 'points', null, 0];
   let stateIndex = 0;
   const navigationCalls: unknown[][] = [];
   const checkinCalls: unknown[][] = [];
@@ -222,7 +222,7 @@ function renderHome({
     },
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.
-    ...Object.fromEntries(['GuestBanner', 'HomeLeagueHero', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
+    ...Object.fromEntries(['GuestBanner', 'HomeLeagueHero', 'HomeLeagueLeaders', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
     '../components/CardFocus': {
       FocusCard: (props: Props) => jsx('View', props),
       FocusScrollView: ({ children, ...props }: Props) => jsx('ScrollView', { ...props, children }),

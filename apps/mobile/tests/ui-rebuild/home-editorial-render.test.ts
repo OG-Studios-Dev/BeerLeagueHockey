@@ -122,6 +122,7 @@ function makeScreen({
       '../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
       '../components/GuestBanner': () => createElement('GuestBanner', null),
       '../components/HomeLeagueHero': HomeLeagueHero,
+      '../components/HomeLeagueLeaders': (props: Record<string, unknown>) => createElement('HomeLeagueLeaders', props),
       '../components/LeagueMarketplace': (props: Record<string, unknown>) => {
         marketplaceCalls.push(props);
         return createElement('LeagueMarketplace', props);

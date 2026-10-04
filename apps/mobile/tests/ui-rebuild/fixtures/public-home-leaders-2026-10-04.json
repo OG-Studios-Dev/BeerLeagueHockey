@@ -1,0 +1,80 @@
+[
+  {
+    "player_id": "5dfcbbd7-5fde-41a7-8557-bea05e71a692",
+    "player_name": "Jack Foote",
+    "avatar_url": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-avatars/5dfcbbd7-5fde-41a7-8557-bea05e71a692-1785819917416-linked-profile.png",
+    "team_id": "e4be829d-952c-4531-8376-215907fab3b7",
+    "team_name": "FitzRays Flyers",
+    "display_team_name": "FitzRays Flyers",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-flyers-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 2,
+    "assists": 1,
+    "points": 3
+  },
+  {
+    "player_id": "6ba6425b-95a4-4ad9-9279-a60194ff9efe",
+    "player_name": "Trevor Paterson",
+    "avatar_url": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-avatars/6ba6425b-95a4-4ad9-9279-a60194ff9efe-1776446970121.png",
+    "team_id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+    "team_name": "Bad Bunny",
+    "display_team_name": "Bad Bunny",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 2,
+    "assists": 1,
+    "points": 3
+  },
+  {
+    "player_id": "fc235c43-f6da-422c-8fea-dbb8307cde79",
+    "player_name": "Adrian Hartley",
+    "avatar_url": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-avatars/fc235c43-f6da-422c-8fea-dbb8307cde79-1776448526766.png",
+    "team_id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+    "team_name": "Bad Bunny",
+    "display_team_name": "Bad Bunny",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+    "position": "Defense",
+    "goals": 1,
+    "assists": 1,
+    "points": 2
+  },
+  {
+    "player_id": "aaa60b0c-f913-4b5b-b0cc-d50c7d3c359c",
+    "player_name": "Kyle Geraghty",
+    "avatar_url": null,
+    "team_id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+    "team_name": "Bad Bunny",
+    "display_team_name": "Bad Bunny",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+    "position": "Defense",
+    "goals": 0,
+    "assists": 2,
+    "points": 2
+  },
+  {
+    "player_id": "8034c5f0-c3df-4d1c-b5ff-25cca107050b",
+    "player_name": "Eric Hartley",
+    "avatar_url": null,
+    "team_id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+    "team_name": "Bad Bunny",
+    "display_team_name": "Bad Bunny",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 1,
+    "assists": 1,
+    "points": 2
+  },
+  {
+    "player_id": "1e64af52-12e8-4984-8479-e052bc6e45f8",
+    "player_name": "Jonathan Brougham",
+    "avatar_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/player-avatars/736fb921-0ef4-41c5-9c65-d6100d33e312/jonathan-brougham-profile-1777583689894.jpg",
+    "team_id": "453d62d9-80b4-4f26-a2ee-861f0c063402",
+    "team_name": "First General London",
+    "display_team_name": "First General London",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/453d62d9-80b4-4f26-a2ee-861f0c063402-first-general-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 1,
+    "assists": 1,
+    "points": 2
+  }
+]
