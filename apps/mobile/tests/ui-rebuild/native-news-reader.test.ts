@@ -291,7 +291,8 @@ describe('mounted native article reader state', () => {
         ? ({ loading: false, error: null, retry() {}, data: { article: { ...current, publishedAt: '2026-09-28T12:00:00Z', content: '', mentions: [], taggedPlayers: [], relatedGame: null } } })
         : ({ loading: true, error: null, retry() {}, data: null }) },
     }).default;
-    const root = () => Screen({ route: { params: { leagueId, leagueSlug: 'hockey-life', articleSlug: current?.slug ?? expected.articleSlug } }, navigation: { goBack() {}, navigate() {}, push() {} } });
+    const navigation = { goBack() {}, navigate() {}, push() {} };
+    const root = () => Screen({ route: { params: { leagueId, leagueSlug: 'hockey-life', articleSlug: current?.slug ?? expected.articleSlug } }, navigation });
     harness.mount(root);
     assert.equal(findNode(harness.output, (node) => node.props.accessibilityLabel === 'Share article'), undefined);
     current = { id: articleId, slug: 'hockey-life-times-2026-09-28-145ac7ee', title: 'Hockey Life Times' };
@@ -304,7 +305,7 @@ describe('mounted native article reader state', () => {
     assert.ok(allNodes(output).findIndex((node) => node === button) < allNodes(output).findIndex((node) => node.type === 'NativeEdition'));
     button.props.onPress();
     button.props.onPress();
-    assert.deepEqual(shareCalls, [{ title: 'Hockey Life Times', url: 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/hockey-life-times-2026-09-28-145ac7ee' }]);
+    assert.deepEqual(shareCalls, [{ title: 'Hockey Life Times', message: 'Hockey Life Times', url: 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/hockey-life-times-2026-09-28-145ac7ee' }]);
 
     current = { id: '22222222-2222-4222-8222-222222222222', slug: 'second-story', title: 'Second Story' };
     harness.render();

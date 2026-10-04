@@ -27,7 +27,14 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
   const readerKey = articleId && articleSlug ? `${scope.leagueId}:${articleId}:${articleSlug}` : '';
   const currentKeyRef = React.useRef(readerKey);
   const generationRef = React.useRef(0);
-  const shareInFlightRef = React.useRef<string | null>(null);
+  const shareInFlightRef = React.useRef<symbol | null>(null);
+  const shareScopeRef = React.useRef<{ key: string }>({ key: readerKey });
+  const shareActiveRef = React.useRef(true);
+  if (shareScopeRef.current.key !== readerKey) {
+    shareScopeRef.current = { key: readerKey };
+    shareInFlightRef.current = null;
+  }
+  const shareScope = shareScopeRef.current;
   const [retryKey, setRetryKey] = React.useState(0);
   const [showTextFallback, setShowTextFallback] = React.useState(false);
   const [reader, setReader] = React.useState<ReaderState | { key: string; status: 'loading' } | null>(null);
@@ -48,9 +55,19 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
   React.useEffect(() => () => { generationRef.current += 1; }, []);
 
   React.useEffect(() => {
-    shareInFlightRef.current = null;
-    return () => { shareInFlightRef.current = null; };
-  }, [readerKey]);
+    shareActiveRef.current = true;
+    const invalidate = () => {
+      if (shareScopeRef.current !== shareScope) return;
+      shareActiveRef.current = false;
+      shareInFlightRef.current = null;
+    };
+    const restore = () => {
+      if (shareScopeRef.current === shareScope) shareActiveRef.current = true;
+    };
+    const unsubscribeBlur = navigation.addListener?.('blur', invalidate);
+    const unsubscribeFocus = navigation.addListener?.('focus', restore);
+    return () => { invalidate(); unsubscribeBlur?.(); unsubscribeFocus?.(); };
+  }, [navigation, readerKey, shareScope]);
 
   const open = (href: string) => {
     const target = classifyArticleHref(href, scope.leagueSlug); if (!target) return;
@@ -67,17 +84,17 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
   const showArticleBody = currentReader?.status === 'unavailable' || (currentReader?.status === 'error' && showTextFallback);
   const shareUrl = publicArticleUrl(scope.leagueSlug, article.slug);
   const shareArticle = async () => {
-    if (!shareUrl || shareInFlightRef.current) return;
-    const shareKey = `${readerKey}:${shareUrl}`;
-    shareInFlightRef.current = shareKey;
+    if (!shareUrl || !shareActiveRef.current || shareScopeRef.current !== shareScope || shareInFlightRef.current) return;
+    const operation = Symbol('article-share');
+    shareInFlightRef.current = operation;
     try {
       await Share.share(Platform.OS === 'ios'
-        ? { title: article.title, url: shareUrl }
+        ? { title: article.title, message: article.title, url: shareUrl }
         : { title: article.title, message: `${article.title}\n${shareUrl}` });
     } catch {
       // Native share rejection, error, and dismissal do not need app-level feedback.
     } finally {
-      if (shareInFlightRef.current === shareKey) shareInFlightRef.current = null;
+      if (shareInFlightRef.current === operation) shareInFlightRef.current = null;
     }
   };
   return <LeaguePageFrame onAccessibilityEscape={returnToArticleOrigin}>
