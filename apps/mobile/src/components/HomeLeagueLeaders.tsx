@@ -52,23 +52,48 @@ function artworkSource(artwork: LeaderArtwork, stage: LeaderArtwork['kind']): Im
 }
 
 function LeaderArtworkImage({ artwork, leader }: { artwork: LeaderArtwork; leader: RankedHomeLeader }) {
-  const [failure, setFailure] = React.useState({ identityKey: artwork.identityKey, stage: artwork.kind });
-  const stage = failure.identityKey === artwork.identityKey ? failure.stage : artwork.kind;
+  const [attempt, setAttempt] = React.useState({ identityKey: artwork.identityKey, stage: artwork.kind, generation: 0 });
+  const currentAttempt = React.useMemo(() => attempt.identityKey === artwork.identityKey
+    ? attempt
+    : { identityKey: artwork.identityKey, stage: artwork.kind, generation: 0 },
+  [artwork.identityKey, artwork.kind, attempt]);
+  const attemptRef = React.useRef(currentAttempt);
+  React.useLayoutEffect(() => {
+    attemptRef.current = currentAttempt;
+  }, [currentAttempt]);
+  const { stage, generation } = currentAttempt;
   const shownLabel = stage === 'neutral'
     ? `${leader.player_name}, no player photo available`
     : stage === 'photo' ? `${leader.player_name} player photo` : artwork.accessibilityLabel;
+  const handleError = () => {
+    const captured = { identityKey: artwork.identityKey, stage, generation };
+    const latest = attemptRef.current;
+    if (
+      captured.stage === 'neutral'
+      || latest.identityKey !== captured.identityKey
+      || latest.stage !== captured.stage
+      || latest.generation !== captured.generation
+    ) return;
+
+    const next = {
+      identityKey: captured.identityKey,
+      stage: captured.stage === 'generated' ? 'photo' as const : 'neutral' as const,
+      generation: captured.generation + 1,
+    };
+    attemptRef.current = next;
+    setAttempt(next);
+  };
   return (
     <Image
+      key={`${stage}:${generation}`}
       testID="home-leader-feature-art"
       source={artworkSource(artwork, stage)}
       accessibilityLabel={shownLabel}
       alt={shownLabel}
       resizeMode="contain"
       style={[styles.artImage, stage === 'photo' && styles.photoImage]}
-      onError={() => setFailure((current) => ({
-        identityKey: artwork.identityKey,
-        stage: current.identityKey === artwork.identityKey && current.stage === 'generated' ? 'photo' : 'neutral',
-      }))}
+      onLoad={() => {}}
+      onError={handleError}
     />
   );
 }
@@ -83,6 +108,7 @@ function MetricTabs({ value, onChange }: { value: HomeLeaderMetric; onChange: (m
           accessibilityRole="tab"
           accessibilityLabel={`Show ${label} leaders`}
           accessibilityState={{ selected: value === key }}
+          aria-selected={value === key}
           onPress={() => onChange(key)}
           style={({ pressed }) => [styles.tab, value === key && styles.tabSelected, pressed && styles.pressed]}
         >
@@ -93,7 +119,7 @@ function MetricTabs({ value, onChange }: { value: HomeLeaderMetric; onChange: (m
   );
 }
 
-function LeaderRow({ leader, onOpen }: { leader: RankedHomeLeader; onOpen: () => void }) {
+function LeaderRow({ leader, compact, onOpen }: { leader: RankedHomeLeader; compact: boolean; onOpen: () => void }) {
   const teamName = leader.display_team_name || leader.team_name || 'Free agent';
   const metricLabel = leader.metric.toUpperCase();
   return (
@@ -103,22 +129,22 @@ function LeaderRow({ leader, onOpen }: { leader: RankedHomeLeader; onOpen: () =>
         accessibilityRole="button"
         accessibilityLabel={`${leader.rankLabel}. ${leader.player_name}, ${teamName}, ${leader.metricValue} ${leader.metric}. Open player card.`}
         onPress={onOpen}
-        style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.row, compact && styles.rowCompact, pressed && styles.pressed]}
       >
-        <Text allowFontScaling={false} style={[styles.rank, leader.tied && styles.tiedRank]}>{leader.rankLabel}</Text>
+        <Text allowFontScaling={false} style={[styles.rank, compact && styles.rankCompact, leader.tied && styles.tiedRank]}>{leader.rankLabel}</Text>
         <View style={styles.rowCopy}>
-          <Text style={styles.name}>{leader.player_name}</Text>
-          <View style={styles.valueLine}>
+          <Text style={[styles.name, compact && styles.nameCompact]}>{leader.player_name}</Text>
+          <View style={[styles.valueLine, compact && styles.valueLineCompact]}>
             <TeamLogo
               key={`${leader.team_id ?? 'free'}:${leader.display_team_logo_url ?? 'none'}`}
               teamId={leader.team_id}
               logoUrl={leader.display_team_logo_url}
               teamName={teamName}
-              size={36}
+              size={compact ? 30 : 36}
               transparentBacking
             />
-            <Text allowFontScaling={false} style={styles.value}>{leader.metricValue}</Text>
-            <Text style={styles.metricLabel}>{metricLabel}</Text>
+            <Text allowFontScaling={false} style={[styles.value, compact && styles.valueCompact]}>{leader.metricValue}</Text>
+            <Text style={[styles.metricLabel, compact && styles.metricLabelCompact]}>{metricLabel}</Text>
           </View>
         </View>
       </Pressable>
@@ -127,13 +153,15 @@ function LeaderRow({ leader, onOpen }: { leader: RankedHomeLeader; onOpen: () =>
 }
 
 export default function HomeLeagueLeaders({
-  leagueId, seasonName, metric, leaders, status, errorMessage, width, fontScale, reduceTransparency,
+  leagueId, seasonName, metric, leaders, status, errorMessage, width, fontScale,
   onMetricChange, onRetry, onOpenPlayer, onOpenAllStats,
 }: Props) {
   const ranked = rankHomeLeaders(leaders, metric);
   const featured = ranked[0] ?? null;
   const artwork = featured ? resolveLeaderArtwork(leagueId, featured) : null;
-  const stacked = width <= 340 || fontScale >= 1.3;
+  const stacked = fontScale >= 1.3;
+  const compact = width <= 340 && !stacked;
+  const artStageHeight = stacked ? Math.min(340, Math.max(280, Math.round(width * 0.82))) : 326;
 
   return (
     <View testID="home-league-leaders" style={styles.module}>
@@ -164,9 +192,9 @@ export default function HomeLeagueLeaders({
         </View>
       ) : (
         <>
-          <View testID="home-leaders-layout" style={[styles.layout, stacked && styles.layoutStacked]}>
-            <View style={[styles.ranking, stacked && styles.rankingStacked]}>
-              {ranked.map((leader) => <LeaderRow key={leader.player_id} leader={leader} onOpen={() => onOpenPlayer(leader.player_id)} />)}
+          <View testID="home-leaders-layout" style={[styles.layout, compact && styles.layoutCompact, stacked && styles.layoutStacked]}>
+            <View style={[styles.ranking, compact && styles.rankingCompact, stacked && styles.rankingStacked]}>
+              {ranked.map((leader) => <LeaderRow key={leader.player_id} leader={leader} compact={compact} onOpen={() => onOpenPlayer(leader.player_id)} />)}
             </View>
             {featured && artwork ? (
               <Pressable
@@ -174,10 +202,8 @@ export default function HomeLeagueLeaders({
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${featured.player_name} player card`}
                 onPress={() => onOpenPlayer(featured.player_id)}
-                style={({ pressed }) => [styles.artStage, stacked && styles.artStageStacked, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.artStage, { height: artStageHeight }, stacked && styles.artStageStacked, pressed && styles.pressed]}
               >
-                {!reduceTransparency ? <View pointerEvents="none" style={styles.purpleGlow} /> : null}
-                <View pointerEvents="none" style={styles.podiumLine} />
                 <LeaderArtworkImage key={artwork.identityKey} artwork={artwork} leader={featured} />
               </Pressable>
             ) : null}
@@ -206,23 +232,29 @@ const styles = StyleSheet.create({
   tabText: { color: homeTokens.textSecondary, fontSize: 12, lineHeight: 17, fontWeight: '800' },
   tabTextSelected: { color: homeTokens.text },
   layout: { minHeight: 326, flexDirection: 'row', alignItems: 'stretch', gap: 4 },
+  layoutCompact: { gap: 0 },
   layoutStacked: { flexDirection: 'column', minHeight: 0 },
   ranking: { width: '54%', minWidth: 0, justifyContent: 'center' },
+  rankingCompact: { width: '60%' },
   rankingStacked: { width: '100%' },
   row: { minHeight: 92, flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, paddingRight: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: homeTokens.stroke },
+  rowCompact: { paddingRight: 2 },
   rank: { width: 36, paddingTop: 3, color: homeTokens.textSecondary, fontSize: 14, lineHeight: 20, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  rankCompact: { width: 28, fontSize: 13 },
   tiedRank: { color: '#B47CFF' },
   rowCopy: { flex: 1, minWidth: 0 },
   name: { color: homeTokens.text, fontSize: 17, lineHeight: 22, fontWeight: '900', flexShrink: 1 },
+  nameCompact: { fontSize: 14, lineHeight: 18 },
   valueLine: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
+  valueLineCompact: { gap: 4 },
   value: { color: '#B47CFF', fontSize: 29, lineHeight: 34, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  valueCompact: { fontSize: 24, lineHeight: 30 },
   metricLabel: { flexShrink: 1, color: homeTokens.textSecondary, fontSize: 9, lineHeight: 13, fontWeight: '900', letterSpacing: 0.8 },
-  artStage: { flex: 1, minWidth: 0, minHeight: 326, justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden' },
-  artStageStacked: { width: '100%', minHeight: 250, maxHeight: 340 },
-  purpleGlow: { position: 'absolute', left: '8%', right: '8%', bottom: 10, height: '70%', borderRadius: 999, backgroundColor: 'rgba(132, 61, 214, 0.10)' },
-  podiumLine: { position: 'absolute', left: '8%', right: '8%', bottom: 8, height: 10, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(176, 103, 255, 0.70)', backgroundColor: 'rgba(91, 38, 139, 0.16)' },
-  artImage: { width: '100%', height: '100%', backgroundColor: 'transparent' },
-  photoImage: { width: '82%', height: '82%', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(176, 103, 255, 0.54)' },
+  metricLabelCompact: { fontSize: 8, letterSpacing: 0.3 },
+  artStage: { flex: 1, minWidth: 0, justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden' },
+  artStageStacked: { width: '100%', flex: 0 },
+  artImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%', backgroundColor: 'transparent' },
+  photoImage: { borderRadius: 24, borderWidth: 1, borderColor: 'rgba(176, 103, 255, 0.54)' },
   state: { minHeight: 184, alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 18 },
   stateTitle: { color: homeTokens.text, fontSize: 16, lineHeight: 22, fontWeight: '900', textAlign: 'center' },
   stateText: { color: homeTokens.textSecondary, fontSize: 12, lineHeight: 18, textAlign: 'center' },

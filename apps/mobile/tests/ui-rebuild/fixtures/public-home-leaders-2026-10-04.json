@@ -39,6 +39,32 @@
     "points": 2
   },
   {
+    "player_id": "36391d0c-504c-4807-9b3f-4b71b46a3b00",
+    "player_name": "Ash Moore",
+    "avatar_url": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-avatars/36391d0c-504c-4807-9b3f-4b71b46a3b00-ash-moore-1778287381598.png",
+    "team_id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+    "team_name": "Bad Bunny",
+    "display_team_name": "Bad Bunny",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 1,
+    "assists": 0,
+    "points": 1
+  },
+  {
+    "player_id": "a70bb86b-2338-4279-b08c-92f32ce2f8b5",
+    "player_name": "Cameron Sheppard",
+    "avatar_url": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-avatars/a70bb86b-2338-4279-b08c-92f32ce2f8b5-1776448538259.png",
+    "team_id": "346833e0-2780-492d-86db-94df0b0cb3e1",
+    "team_name": "Liuna Premier",
+    "display_team_name": "Liuna Premier",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/346833e0-2780-492d-86db-94df0b0cb3e1-liuna-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 1,
+    "assists": 0,
+    "points": 1
+  },
+  {
     "player_id": "aaa60b0c-f913-4b5b-b0cc-d50c7d3c359c",
     "player_name": "Kyle Geraghty",
     "avatar_url": null,
@@ -50,6 +76,45 @@
     "goals": 0,
     "assists": 2,
     "points": 2
+  },
+  {
+    "player_id": "089e60ba-0216-4fdc-961f-a33a782a4371",
+    "player_name": "Cameron Wallace",
+    "avatar_url": null,
+    "team_id": "093f611c-0cdc-4509-afde-9c661b5833c9",
+    "team_name": "Bad Bunny",
+    "display_team_name": "Bad Bunny",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/093f611c-0cdc-4509-afde-9c661b5833c9-bad-bunny-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 0,
+    "assists": 1,
+    "points": 1
+  },
+  {
+    "player_id": "215355fc-c80b-41da-a92d-71e27498bb63",
+    "player_name": "Daryl Patterson",
+    "avatar_url": null,
+    "team_id": "e4be829d-952c-4531-8376-215907fab3b7",
+    "team_name": "FitzRays Flyers",
+    "display_team_name": "FitzRays Flyers",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-flyers-approved-20260928.webp",
+    "position": "Defense",
+    "goals": 0,
+    "assists": 1,
+    "points": 1
+  },
+  {
+    "player_id": "ab4370b5-17cd-462b-add6-c31b60da6912",
+    "player_name": "Dhurim Ismaili",
+    "avatar_url": "https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-avatars/ab4370b5-17cd-462b-add6-c31b60da6912-1776563309780.png",
+    "team_id": "e4be829d-952c-4531-8376-215907fab3b7",
+    "team_name": "FitzRays Flyers",
+    "display_team_name": "FitzRays Flyers",
+    "display_team_logo_url": "https://auth.beerleaguehockey.ca/storage/v1/object/public/team-logos/team-logos/e4be829d-952c-4531-8376-215907fab3b7-flyers-approved-20260928.webp",
+    "position": "Forward",
+    "goals": 0,
+    "assists": 1,
+    "points": 1
   },
   {
     "player_id": "8034c5f0-c3df-4d1c-b5ff-25cca107050b",

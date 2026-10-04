@@ -60,8 +60,12 @@ describe('Home League Leaders ranking model', () => {
     assert.deepEqual(rankHomeLeaders(captured, 'points').map((row) => [row.player_name, row.metricValue, row.rankLabel]), [
       ['Jack Foote', 3, 'T1'], ['Trevor Paterson', 3, 'T1'], ['Adrian Hartley', 2, 'T3'],
     ]);
-    assert.deepEqual(rankHomeLeaders(captured, 'goals').map((row) => row.player_name), ['Jack Foote', 'Trevor Paterson', 'Adrian Hartley']);
-    assert.equal(rankHomeLeaders(captured, 'assists')[0]?.player_name, 'Kyle Geraghty');
+    assert.deepEqual(rankHomeLeaders(captured, 'goals').map((row) => [row.player_name, row.metricValue, row.rankLabel]), [
+      ['Jack Foote', 2, 'T1'], ['Trevor Paterson', 2, 'T1'], ['Adrian Hartley', 1, 'T3'],
+    ]);
+    assert.deepEqual(rankHomeLeaders(captured, 'assists').map((row) => [row.player_name, row.metricValue, row.rankLabel]), [
+      ['Kyle Geraghty', 2, '1'], ['Adrian Hartley', 1, 'T2'], ['Cameron Wallace', 1, 'T2'],
+    ]);
   });
 });
 

@@ -61,6 +61,14 @@ describe('Home League Leaders component', () => {
     harness.mount(Wrapper);
 
     assert.equal(findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!.props.accessibilityLabel, 'Jack Foote featured player artwork');
+    for (const metric of ['goals', 'assists', 'points']) {
+      const tab = findNode(harness.output, (node) => node.props.testID === `home-leaders-tab-${metric}`)!;
+      assert.equal(tab.props['aria-selected'], metric === 'points');
+      assert.equal(tab.props.accessibilityState.selected, metric === 'points');
+    }
+    const imageStyle = flattenStyle(findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!.props.style);
+    assert.equal(imageStyle.width, '100%', 'Override native Image intrinsic width inside the definite stage');
+    assert.equal(imageStyle.height, '100%', 'Override native Image intrinsic height inside the definite stage');
     assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === `home-leader-row-${jack.player_id}`)), /T1Jack Foote3POINTS/);
 
     findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-assists')!.props.onPress();
@@ -76,7 +84,7 @@ describe('Home League Leaders component', () => {
     assert.deepEqual(opened, ['kyle', 'kyle']);
   });
 
-  it('falls from failed generated art to the genuine photo and then identity-neutral art', () => {
+  it('owns generated, photo and neutral attempts and ignores saved stale callbacks', () => {
     const harness = createHookHarness();
     const Component = loadComponent(harness);
     harness.mount(() => Component({
@@ -85,16 +93,32 @@ describe('Home League Leaders component', () => {
       onOpenPlayer: () => {}, onOpenAllStats: () => {},
     }));
     let art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
-    art.props.onError();
+    const staleGeneratedError = art.props.onError;
+    staleGeneratedError();
     harness.render();
     art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
     assert.deepEqual(art.props.source, { uri: jack.avatar_url });
     assert.equal(art.props.accessibilityLabel, 'Jack Foote player photo');
+    assert.equal(art.props.key, 'photo:1');
+    staleGeneratedError();
+    harness.render();
+    assert.deepEqual(findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!.props.source, { uri: jack.avatar_url });
+    art.props.onLoad();
+    staleGeneratedError();
+    harness.render();
+    art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
+    assert.deepEqual(art.props.source, { uri: jack.avatar_url });
     art.props.onError();
     harness.render();
     art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
     assert.deepEqual(art.props.source, { asset: 'neutral' });
     assert.match(art.props.accessibilityLabel, /no player photo available/i);
+    assert.equal(art.props.key, 'neutral:2');
+    const updatesBeforeNeutralError = harness.stateUpdateCount;
+    art.props.onError();
+    harness.render();
+    assert.equal(harness.stateUpdateCount, updatesBeforeNeutralError);
+    assert.deepEqual(findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!.props.source, { asset: 'neutral' });
   });
 
   it('renders crests without separate visible team names and exposes team identity in row labels', () => {
@@ -110,6 +134,29 @@ describe('Home League Leaders component', () => {
     assert.ok(findNode(jackRow, (node) => node.type === 'TeamLogo'));
     assert.equal(findNode(jackRow, (node) => node.type === 'Text' && nodeText(node) === 'FitzRays Flyers'), undefined);
     assert.equal(flattenStyle(findNode(harness.output, (node) => node.props.testID === 'home-leaders-layout')!.props.style).flexDirection, 'column');
+  });
+
+  it('keeps normal 320/390/430 layouts side-by-side and gives artwork a definite height', () => {
+    const harness = createHookHarness();
+    const Component = loadComponent(harness);
+    const props: Record<string, unknown> = {
+      leagueId, seasonName: 'Fall 2026', metric: 'points', leaders: [jack, trevor], status: 'ready',
+      width: 320, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {},
+      onOpenPlayer: () => {}, onOpenAllStats: () => {},
+    };
+    harness.mount(() => Component(props));
+    for (const width of [320, 390, 430]) {
+      props.width = width;
+      harness.render();
+      assert.equal(flattenStyle(findNode(harness.output, (node) => node.props.testID === 'home-leaders-layout')!.props.style).flexDirection, 'row');
+      const artAction = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-action')!;
+      assert.equal(flattenStyle(artAction.props.style({ pressed: false })).height, 326);
+    }
+    props.fontScale = 1.3;
+    harness.render();
+    assert.equal(flattenStyle(findNode(harness.output, (node) => node.props.testID === 'home-leaders-layout')!.props.style).flexDirection, 'column');
+    const art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
+    assert.equal(flattenStyle(art.props.style).position, 'absolute');
   });
 
   it('keeps tabs at least 44px and supplies loading, error, empty and all-stats actions', () => {
@@ -145,6 +192,7 @@ describe('Home League Leaders component', () => {
     assert.match(source, /import jackFooteArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/jack-foote\.png['"]/);
     assert.match(source, /import neutralHelmetArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/neutral-helmet-player\.png['"]/);
     assert.match(source, /key=\{artwork\.identityKey\}/);
+    assert.match(source, /key=\{`\$\{stage\}:\$\{generation\}`\}/);
     assert.match(source, /key=\{`\$\{leader\.team_id/);
     assert.match(source, /resizeMode="contain"/);
   });
