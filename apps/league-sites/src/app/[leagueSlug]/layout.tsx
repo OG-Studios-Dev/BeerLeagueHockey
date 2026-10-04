@@ -17,6 +17,7 @@ import { pickRegistrationSeason } from '@/lib/registration/seasons';
 import { pickOperationalSeason } from '@/lib/seasons/operational';
 import { CheckinReminderBanner } from '@/components/checkin/CheckinReminderBanner';
 import { OneTimeAppSetupPrompt } from '@/components/pwa/AppSetupActions';
+import { shouldShowPublicSponsors } from '@/lib/publicSiteVisibility';
 
 /**
  * Force league routes dynamic.
@@ -94,11 +95,12 @@ export default async function LeagueLayout({ children, params }: LeagueLayoutPro
     notFound();
   }
 
+  const showPublicSponsors = shouldShowPublicSponsors(leagueSlug);
   const [theme, divisions, seasons, sponsors, isSubscribed] = await Promise.all([
     Promise.resolve(getLeagueTheme(league)),
     getDivisions(league.id),
     getSeasons(league.id),
-    getLeagueSponsors(league.id),
+    showPublicSponsors ? getLeagueSponsors(league.id) : Promise.resolve([]),
     hasPlatformSubscription(league.id),
   ]);
   const templateClass = `league-template-${theme.templateVariant}`;
@@ -156,9 +158,11 @@ export default async function LeagueLayout({ children, params }: LeagueLayoutPro
                     {children}
                   </main>
                   <OneTimeAppSetupPrompt leagueName={league.name} leagueSlug={leagueSlug} />
-                  <div className="league-site-chrome">
-                    <SponsorFooterStrip sponsors={sponsors} />
-                  </div>
+                  {showPublicSponsors && (
+                    <div className="league-site-chrome">
+                      <SponsorFooterStrip sponsors={sponsors} />
+                    </div>
+                  )}
                   <FloatingDock
                     leagueId={league.id}
                     leagueSlug={leagueSlug}
