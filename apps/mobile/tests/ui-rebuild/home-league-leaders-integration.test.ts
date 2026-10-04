@@ -11,6 +11,7 @@ describe('Home League Leaders integration', () => {
     assert.match(homeSource, /<HomeLeagueLeaders/);
     assert.match(homeSource, /leaders=\{publicHome\?\.leaders\.data \?\? \[\]\}/);
     assert.match(homeSource, /seasonName=\{publicHome\?\.presentationSeason\?\.name \?\? null\}/);
+    assert.match(homeSource, /manifestRefreshKey=\{publicHome\}/);
   });
 
   it('keeps player and all-stats navigation wired while preserving latest-four articles', () => {

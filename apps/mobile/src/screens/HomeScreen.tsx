@@ -375,6 +375,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             width={width}
             fontScale={fontScale}
             reduceTransparency={reduceTransparency}
+            manifestRefreshKey={publicHome}
             onMetricChange={setLeaderMetric}
             onRetry={retry}
             onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id })}

@@ -1,4 +1,5 @@
 import type { HomeLeader } from './supabase/home';
+import { findApprovedPlayerArtwork, type PlayerArtworkManifest } from './playerArtworkManifest';
 
 export type HomeLeaderMetric = 'goals' | 'assists' | 'points';
 
@@ -18,6 +19,7 @@ export const JACK_FOOTE_ART_IDENTITY = Object.freeze({
 });
 
 export type LeaderArtwork =
+  | { kind: 'remote'; identityKey: string; uri: string; bundledFallback: 'jack-foote-v1' | null; fallbackUri: string; accessibilityLabel: string }
   | { kind: 'generated'; identityKey: string; artworkId: 'jack-foote-v1'; fallbackUri: string; accessibilityLabel: string }
   | { kind: 'photo'; identityKey: string; uri: string; accessibilityLabel: string }
   | { kind: 'neutral'; identityKey: string; artworkId: 'neutral-helmet-v1'; accessibilityLabel: string };
@@ -58,20 +60,32 @@ export function rankHomeLeaders(leaders: readonly HomeLeader[], metric: HomeLead
 }
 
 /**
- * Generated artwork is an identity-bound enhancement, never a player-name
- * guess. Add future generated portraits by extending this exact identity
- * registry and the component's static Metro asset map; ranking stays untouched.
+ * Artwork is an identity-bound enhancement, never a player-name guess. Remote
+ * approved entries can expand without a binary update; bundled Jack remains an
+ * exact-identity fallback and ranking stays untouched.
  */
-export function resolveLeaderArtwork(leagueId: string, leader: HomeLeader): LeaderArtwork {
+export function resolveLeaderArtwork(leagueId: string, leader: HomeLeader, manifest?: PlayerArtworkManifest | null): LeaderArtwork {
   const identityBase = `${leagueId}:${leader.player_id}:${leader.avatar_url ?? 'no-photo'}`;
-  if (leagueId === JACK_FOOTE_ART_IDENTITY.leagueId
+  const isBundledJack = leagueId === JACK_FOOTE_ART_IDENTITY.leagueId
     && leader.player_id === JACK_FOOTE_ART_IDENTITY.playerId
-    && leader.avatar_url === JACK_FOOTE_ART_IDENTITY.avatarUrl) {
+    && leader.avatar_url === JACK_FOOTE_ART_IDENTITY.avatarUrl;
+  const approved = findApprovedPlayerArtwork(manifest, leagueId, leader.player_id, leader.avatar_url);
+  if (approved && leader.avatar_url) {
+    return {
+      kind: 'remote',
+      identityKey: `${identityBase}:${approved.imageSha256}`,
+      uri: approved.imageUrl,
+      bundledFallback: isBundledJack ? 'jack-foote-v1' : null,
+      fallbackUri: leader.avatar_url,
+      accessibilityLabel: `${leader.player_name} featured player artwork`,
+    };
+  }
+  if (isBundledJack) {
     return {
       kind: 'generated',
       identityKey: `${identityBase}:${JACK_FOOTE_ART_IDENTITY.artworkId}`,
       artworkId: JACK_FOOTE_ART_IDENTITY.artworkId,
-      fallbackUri: leader.avatar_url,
+      fallbackUri: JACK_FOOTE_ART_IDENTITY.avatarUrl,
       accessibilityLabel: `${leader.player_name} featured player artwork`,
     };
   }

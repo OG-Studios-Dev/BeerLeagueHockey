@@ -8,6 +8,7 @@ import {
   rankHomeLeaders,
   resolveLeaderArtwork,
 } from '../../src/lib/homeLeagueLeaders';
+import { PLAYER_ARTWORK_STYLE_VERSION, type PlayerArtworkManifest } from '../../src/lib/playerArtworkManifest';
 
 const leagueId = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 
@@ -70,6 +71,16 @@ describe('Home League Leaders ranking model', () => {
 });
 
 describe('Home League Leaders artwork policy', () => {
+  it('uses approved remote art only for the exact current portrait and preserves bundled Jack as its first fallback', () => {
+    const jack = leader({ player_id: JACK_FOOTE_ART_IDENTITY.playerId, player_name: 'Jack Foote', avatar_url: JACK_FOOTE_ART_IDENTITY.avatarUrl });
+    const imageSha256 = 'a'.repeat(64);
+    const manifest: PlayerArtworkManifest = { schemaVersion: 1, leagueId, styleVersion: PLAYER_ARTWORK_STYLE_VERSION, generatedAt: '2026-10-04T12:00:00.000Z', entries: [{ playerId: jack.player_id, sourcePortraitUrl: jack.avatar_url!, sourcePortraitSha256: 'b'.repeat(64), imageUrl: `https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-artwork/approved/hockey-life/${jack.player_id}/${imageSha256}.png`, imageSha256, width: 631, height: 1050, approvedAt: '2026-10-04T11:00:00.000Z' }] };
+    const remote = resolveLeaderArtwork(leagueId, jack, manifest);
+    assert.equal(remote.kind, 'remote');
+    assert.equal(remote.kind === 'remote' && remote.bundledFallback, 'jack-foote-v1');
+    assert.equal(resolveLeaderArtwork(leagueId, { ...jack, avatar_url: `${jack.avatar_url}?new` }, manifest).kind, 'photo');
+  });
+
   it('accepts generated Jack art only for the exact league, player and avatar version', () => {
     const jack = leader({
       player_id: JACK_FOOTE_ART_IDENTITY.playerId,

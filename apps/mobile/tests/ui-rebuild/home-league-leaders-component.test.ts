@@ -46,6 +46,29 @@ function loadComponent(harness: ReturnType<typeof createHookHarness>) {
 }
 
 describe('Home League Leaders component', () => {
+  it('loads remote artwork without blocking facts and owns remote/bundled/photo attempts across A-B-A', async () => {
+    const harness = createHookHarness();
+    const Component = loadComponent(harness);
+    const imageSha256 = 'a'.repeat(64);
+    const manifest = { schemaVersion: 1 as const, leagueId, styleVersion: 'hl-leader-podium-v1' as const, generatedAt: '2026-10-04T12:00:00.000Z', entries: [{ playerId: jack.player_id, sourcePortraitUrl: jack.avatar_url!, sourcePortraitSha256: 'b'.repeat(64), imageUrl: `https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-artwork/approved/hockey-life/${jack.player_id}/${imageSha256}.png`, imageSha256, width: 631, height: 1050, approvedAt: '2026-10-04T11:00:00.000Z' }] };
+    let selected = jack;
+    const loader = async () => manifest;
+    harness.mount(() => Component({ leagueId, seasonName: null, metric: 'points', leaders: [selected], status: 'ready', width: 390, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {}, onOpenPlayer: () => {}, onOpenAllStats: () => {}, manifestLoader: loader }));
+    assert.match(nodeText(harness.output), /Jack Foote/);
+    await Promise.resolve(); harness.render();
+    let art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
+    assert.deepEqual(art.props.source, { uri: manifest.entries[0].imageUrl, cache: 'force-cache' });
+    const staleAError = art.props.onError;
+    selected = { ...trevor, points: 4 }; harness.render();
+    selected = jack; harness.render();
+    const updates = harness.stateUpdateCount; staleAError(); harness.render();
+    art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
+    assert.equal(harness.stateUpdateCount, updates);
+    assert.deepEqual(art.props.source, { uri: manifest.entries[0].imageUrl, cache: 'force-cache' });
+    art.props.onError(); harness.render();
+    assert.deepEqual(findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!.props.source, { asset: 'jack' });
+  });
+
   it('defaults to Points and switches rows, values, ranks and hero identity together', () => {
     const harness = createHookHarness();
     const Component = loadComponent(harness);

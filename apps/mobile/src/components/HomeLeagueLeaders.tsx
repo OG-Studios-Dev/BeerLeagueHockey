@@ -5,6 +5,7 @@ import { ActivityIndicator, Image, type ImageSourcePropType, Pressable, StyleShe
 import jackFooteArt from '../../assets/league-leaders/jack-foote.png';
 import neutralHelmetArt from '../../assets/league-leaders/neutral-helmet-player.png';
 import type { HomeLeader } from '../lib/supabase/home';
+import { loadPlayerArtworkManifest, type PlayerArtworkManifest } from '../lib/playerArtworkManifest';
 import {
   type HomeLeaderMetric,
   type LeaderArtwork,
@@ -40,45 +41,59 @@ type Props = {
   onRetry: () => void;
   onOpenPlayer: (playerId: string) => void;
   onOpenAllStats: () => void;
+  manifestLoader?: (options?: { signal?: AbortSignal }) => Promise<PlayerArtworkManifest | null>;
+  manifestRefreshKey?: object | null;
 };
 
-function artworkSource(artwork: LeaderArtwork, stage: LeaderArtwork['kind']): ImageSourcePropType {
+type ArtworkStage = 'remote' | 'generated' | 'photo' | 'neutral';
+
+function artworkSource(artwork: LeaderArtwork, stage: ArtworkStage): ImageSourcePropType {
   if (stage === 'neutral') return NEUTRAL_ART;
-  if (stage === 'photo' && artwork.kind === 'photo') return { uri: artwork.uri };
-  if (stage === 'photo' && artwork.kind === 'generated') {
-    return { uri: artwork.fallbackUri };
-  }
-  return GENERATED_ART[(artwork as Extract<LeaderArtwork, { kind: 'generated' }>).artworkId];
+  if (stage === 'remote' && artwork.kind === 'remote') return { uri: artwork.uri, cache: 'force-cache' };
+  if (stage === 'generated') return GENERATED_ART['jack-foote-v1'];
+  if (artwork.kind === 'photo') return { uri: artwork.uri };
+  if (artwork.kind === 'remote' || artwork.kind === 'generated') return { uri: artwork.fallbackUri };
+  return NEUTRAL_ART;
+}
+
+function nextArtworkStage(artwork: LeaderArtwork, stage: ArtworkStage): ArtworkStage {
+  if (stage === 'remote') return artwork.kind === 'remote' && artwork.bundledFallback ? 'generated' : 'photo';
+  if (stage === 'generated') return 'photo';
+  return 'neutral';
 }
 
 function LeaderArtworkImage({ artwork, leader }: { artwork: LeaderArtwork; leader: RankedHomeLeader }) {
-  const [attempt, setAttempt] = React.useState({ identityKey: artwork.identityKey, stage: artwork.kind, generation: 0 });
+  const [attempt, setAttempt] = React.useState({ identityKey: artwork.identityKey, stage: artwork.kind as ArtworkStage, generation: 0, ownership: 0 });
   const currentAttempt = React.useMemo(() => attempt.identityKey === artwork.identityKey
     ? attempt
-    : { identityKey: artwork.identityKey, stage: artwork.kind, generation: 0 },
+    : { identityKey: artwork.identityKey, stage: artwork.kind as ArtworkStage, generation: 0, ownership: attempt.ownership + 1 },
   [artwork.identityKey, artwork.kind, attempt]);
   const attemptRef = React.useRef(currentAttempt);
   React.useLayoutEffect(() => {
+    const identityChanged = attemptRef.current.identityKey !== currentAttempt.identityKey;
     attemptRef.current = currentAttempt;
+    if (identityChanged) setAttempt(currentAttempt);
   }, [currentAttempt]);
   const { stage, generation } = currentAttempt;
   const shownLabel = stage === 'neutral'
     ? `${leader.player_name}, no player photo available`
     : stage === 'photo' ? `${leader.player_name} player photo` : artwork.accessibilityLabel;
   const handleError = () => {
-    const captured = { identityKey: artwork.identityKey, stage, generation };
+    const captured = { identityKey: artwork.identityKey, stage, generation, ownership: currentAttempt.ownership };
     const latest = attemptRef.current;
     if (
       captured.stage === 'neutral'
       || latest.identityKey !== captured.identityKey
       || latest.stage !== captured.stage
       || latest.generation !== captured.generation
+      || latest.ownership !== captured.ownership
     ) return;
 
     const next = {
       identityKey: captured.identityKey,
-      stage: captured.stage === 'generated' ? 'photo' as const : 'neutral' as const,
+      stage: nextArtworkStage(artwork, captured.stage),
       generation: captured.generation + 1,
+      ownership: captured.ownership,
     };
     attemptRef.current = next;
     setAttempt(next);
@@ -154,11 +169,22 @@ function LeaderRow({ leader, compact, onOpen }: { leader: RankedHomeLeader; comp
 
 export default function HomeLeagueLeaders({
   leagueId, seasonName, metric, leaders, status, errorMessage, width, fontScale,
-  onMetricChange, onRetry, onOpenPlayer, onOpenAllStats,
+  onMetricChange, onRetry, onOpenPlayer, onOpenAllStats, manifestLoader = loadPlayerArtworkManifest, manifestRefreshKey,
 }: Props) {
+  const [manifest, setManifest] = React.useState<PlayerArtworkManifest | null>(null);
+  React.useEffect(() => {
+    let current = true;
+    const controller = new AbortController();
+    void manifestLoader({ signal: controller.signal }).then((loaded) => { if (current) setManifest(loaded?.leagueId === leagueId ? loaded : null); });
+    return () => { current = false; controller.abort(); };
+  }, [leagueId, manifestLoader, manifestRefreshKey]);
   const ranked = rankHomeLeaders(leaders, metric);
   const featured = ranked[0] ?? null;
-  const artwork = featured ? resolveLeaderArtwork(leagueId, featured) : null;
+  const artwork = featured ? resolveLeaderArtwork(leagueId, featured, manifest) : null;
+  const remoteArtworkUri = artwork?.kind === 'remote' ? artwork.uri : null;
+  React.useEffect(() => {
+    if (remoteArtworkUri && typeof Image.prefetch === 'function') void Image.prefetch(remoteArtworkUri).catch(() => {});
+  }, [remoteArtworkUri]);
   const stacked = fontScale >= 1.3;
   const compact = width <= 340 && !stacked;
   const artStageHeight = stacked ? Math.min(340, Math.max(280, Math.round(width * 0.82))) : 326;
