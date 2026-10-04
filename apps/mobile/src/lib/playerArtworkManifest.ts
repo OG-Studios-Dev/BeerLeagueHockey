@@ -39,7 +39,13 @@ type LoadOptions = {
 };
 
 let cached: { value: PlayerArtworkManifest; expiresAt: number } | null = null;
-let inflight: Promise<PlayerArtworkManifest | null> | null = null;
+type SharedRequest = {
+  controller: AbortController;
+  promise: Promise<PlayerArtworkManifest | null>;
+  subscribers: number;
+  settled: boolean;
+};
+let inflight: SharedRequest | null = null;
 
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
   const actual = Object.keys(value).sort();
@@ -95,22 +101,29 @@ export function parsePlayerArtworkManifest(raw: unknown): PlayerArtworkManifest 
   return { ...object, entries } as PlayerArtworkManifest;
 }
 
-async function boundedBody(response: Pick<Response, 'headers' | 'body' | 'arrayBuffer'>): Promise<string> {
+async function boundedBody(response: Pick<Response, 'headers' | 'body' | 'arrayBuffer'>, signal: AbortSignal): Promise<string> {
   const declared = Number(response.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > PLAYER_ARTWORK_MAX_BYTES) throw new Error('Artwork manifest is too large');
   if (response.body?.getReader) {
     const reader = response.body.getReader();
+    const cancel = () => { void reader.cancel().catch(() => {}); };
+    signal.addEventListener('abort', cancel, { once: true });
     const chunks: Uint8Array[] = [];
     let size = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > PLAYER_ARTWORK_MAX_BYTES) {
-        await reader.cancel();
-        throw new Error('Artwork manifest is too large');
+    try {
+      while (true) {
+        if (signal.aborted) throw new Error('Artwork manifest request aborted');
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > PLAYER_ARTWORK_MAX_BYTES) {
+          await reader.cancel();
+          throw new Error('Artwork manifest is too large');
+        }
+        chunks.push(value);
       }
-      chunks.push(value);
+    } finally {
+      signal.removeEventListener('abort', cancel);
     }
     const bytes = new Uint8Array(size);
     let offset = 0;
@@ -118,39 +131,102 @@ async function boundedBody(response: Pick<Response, 'headers' | 'body' | 'arrayB
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
+  if (signal.aborted) throw new Error('Artwork manifest request aborted');
   if (bytes.byteLength > PLAYER_ARTWORK_MAX_BYTES) throw new Error('Artwork manifest is too large');
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
+async function requestManifest(fetchImpl: FetchLike, controller: AbortController, timeoutMs: number): Promise<PlayerArtworkManifest | null> {
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let resolveCancelled: ((value: null) => void) | undefined;
+  const cancelled = new Promise<null>((resolve) => { resolveCancelled = resolve; });
+  const onAbort = () => resolveCancelled?.(null);
+  controller.signal.addEventListener('abort', onAbort, { once: true });
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      resolve(null);
+    }, Math.max(0, timeoutMs));
+  });
+  const transport = (async () => {
+    try {
+      const response = await fetchImpl(PLAYER_ARTWORK_MANIFEST_URL, {
+        method: 'GET', cache: 'no-cache', headers: { Accept: 'application/json' }, signal: controller.signal,
+      });
+      if (!response.ok || controller.signal.aborted || timedOut) return null;
+      const manifest = parsePlayerArtworkManifest(JSON.parse(await boundedBody(response, controller.signal)));
+      return controller.signal.aborted || timedOut ? null : manifest;
+    } catch {
+      return null;
+    }
+  })();
+  try {
+    return await Promise.race([transport, deadline, cancelled]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    controller.signal.removeEventListener('abort', onAbort);
+  }
+}
+
+function subscribe(shared: SharedRequest, signal?: AbortSignal): Promise<PlayerArtworkManifest | null> {
+  if (signal?.aborted) return Promise.resolve(null);
+  shared.subscribers += 1;
+  return new Promise((resolve) => {
+    let active = true;
+    const finish = (value: PlayerArtworkManifest | null) => {
+      if (!active) return;
+      active = false;
+      signal?.removeEventListener('abort', abort);
+      shared.subscribers -= 1;
+      resolve(value);
+      if (shared.subscribers === 0 && !shared.settled) {
+        queueMicrotask(() => {
+          if (shared.subscribers === 0 && !shared.settled) {
+            shared.controller.abort();
+            if (inflight === shared) inflight = null;
+          }
+        });
+      }
+    };
+    const abort = () => finish(null);
+    signal?.addEventListener('abort', abort, { once: true });
+    shared.promise.then(finish, () => finish(null));
+  });
 }
 
 export async function loadPlayerArtworkManifest(options: LoadOptions = {}): Promise<PlayerArtworkManifest | null> {
   const now = options.now ?? Date.now;
   if (!options.fetchImpl && cached && cached.expiresAt > now()) return cached.value;
-  if (!options.fetchImpl && inflight) return inflight;
-  const request = (async () => {
+  if (options.fetchImpl) {
     const controller = new AbortController();
-    const abort = () => controller.abort();
+    let resolveAbort: ((value: null) => void) | undefined;
+    const aborted = new Promise<null>((resolve) => { resolveAbort = resolve; });
+    const abort = () => { controller.abort(); resolveAbort?.(null); };
     options.signal?.addEventListener('abort', abort, { once: true });
-    if (options.signal?.aborted) controller.abort();
-    const timer = setTimeout(abort, options.timeoutMs ?? PLAYER_ARTWORK_TIMEOUT_MS);
+    if (options.signal?.aborted) abort();
     try {
-      const fetchImpl = options.fetchImpl ?? (fetch as unknown as FetchLike);
-      const response = await fetchImpl(PLAYER_ARTWORK_MANIFEST_URL, {
-        method: 'GET', cache: 'no-cache', headers: { Accept: 'application/json' }, signal: controller.signal,
-      });
-      if (!response.ok) return null;
-      const manifest = parsePlayerArtworkManifest(JSON.parse(await boundedBody(response)));
-      if (!options.fetchImpl) cached = { value: manifest, expiresAt: now() + PLAYER_ARTWORK_TTL_MS };
-      return manifest;
-    } catch {
-      return null;
+      return await Promise.race([requestManifest(options.fetchImpl, controller, options.timeoutMs ?? PLAYER_ARTWORK_TIMEOUT_MS), aborted]);
     } finally {
-      clearTimeout(timer);
       options.signal?.removeEventListener('abort', abort);
     }
-  })();
-  if (options.fetchImpl) return request;
-  inflight = request.finally(() => { inflight = null; });
-  return inflight;
+  }
+  if (!inflight) {
+    const controller = new AbortController();
+    const shared = { controller, subscribers: 0, settled: false } as SharedRequest;
+    shared.promise = requestManifest(fetch as unknown as FetchLike, controller, options.timeoutMs ?? PLAYER_ARTWORK_TIMEOUT_MS)
+      .then((manifest) => {
+        if (manifest && !controller.signal.aborted && inflight === shared) cached = { value: manifest, expiresAt: now() + PLAYER_ARTWORK_TTL_MS };
+        return manifest;
+      })
+      .finally(() => {
+        shared.settled = true;
+        if (inflight === shared) inflight = null;
+      });
+    inflight = shared;
+  }
+  return subscribe(inflight, options.signal);
 }
 
 export function findApprovedPlayerArtwork(manifest: PlayerArtworkManifest | null | undefined, leagueId: string, playerId: string, portraitUrl: string | null) {

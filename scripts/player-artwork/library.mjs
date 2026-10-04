@@ -77,6 +77,12 @@ export function atomicWriteJson(path, value) {
 
 export function reconcileQueue(roster, previous, now = new Date()) {
   assert(roster.leagueId === previous.leagueId, 'Queue and roster league mismatch');
+  const rosterPrepared = Date.parse(roster.preparedAtUtc);
+  assert(Number.isFinite(rosterPrepared), 'Roster preparedAtUtc is invalid');
+  if (previous.rosterPreparedAt) {
+    const previousPrepared = Date.parse(previous.rosterPreparedAt);
+    assert(Number.isFinite(previousPrepared) && rosterPrepared >= previousPrepared, 'Roster snapshot is older than queue state');
+  }
   const currentIdentities = new Set();
   const jobs = previous.jobs.map((job) => ({ ...job }));
   const byIdentity = new Map(jobs.map((job) => [job.id, job]));
@@ -91,13 +97,30 @@ export function reconcileQueue(roster, previous, now = new Date()) {
     currentIdentities.add(id);
     const existing = byIdentity.get(id);
     if (existing) {
+      const sourceUrlChanged = existing.sourcePortraitUrl !== player.portrait.url;
+      if (existing.status === 'superseded') {
+        const prior = existing.supersededStatus;
+        existing.status = prior === 'approved' || prior === 'review' || prior === 'failed' ? prior : 'queued';
+        delete existing.supersededAt;
+        delete existing.supersededStatus;
+      }
+      if (sourceUrlChanged && existing.approval) {
+        existing.approvalHistory ??= [];
+        existing.approvalHistory.push({ ...existing.approval, invalidatedAt: utc(now), invalidationReason: 'source_portrait_url_changed' });
+        existing.approvalInvalidatedAt = utc(now);
+        existing.approvalInvalidationReason = 'source_portrait_url_changed';
+        delete existing.approvedAt;
+        existing.status = existing.candidate ? 'review' : 'queued';
+      }
       Object.assign(existing, { name: player.name, sourcePortraitUrl: player.portrait.url, sourcePortraitPath: player.portrait.localPath, priority: player.priority, priorityTier: player.priorityTier, priorityReason: player.priorityReason, current: true });
+      existing.updatedAt = utc(now);
     } else {
       jobs.push({ id, leagueId: roster.leagueId, playerId: player.playerId, name: player.name, sourcePortraitUrl: player.portrait.url, sourcePortraitSha256: player.portrait.sha256, sourcePortraitPath: player.portrait.localPath, styleVersion: CONTRACT.styleVersion, priority: player.priority, priorityTier: player.priorityTier, priorityReason: player.priorityReason, status: 'queued', attempts: 0, failures: [], current: true, createdAt: utc(now), updatedAt: utc(now) });
     }
   }
   for (const job of jobs) {
     if (!currentIdentities.has(job.id) && job.status !== 'superseded') {
+      job.supersededStatus = job.status;
       job.status = 'superseded';
       job.current = false;
       job.supersededAt = utc(now);
@@ -110,7 +133,9 @@ export function reconcileQueue(roster, previous, now = new Date()) {
 
 export function preparePackets(state, limit = CONTRACT.maxPrepareBatch) {
   assert(Number.isInteger(limit) && limit > 0 && limit <= CONTRACT.maxPrepareBatch, `Prepare limit must be 1-${CONTRACT.maxPrepareBatch}`);
-  return state.jobs.filter((job) => job.current && job.status === 'queued').slice(0, limit).map((job) => ({
+  return state.jobs.filter((job) => job.current && job.status === 'queued').slice(0, limit).map((job) => {
+    assertFreshSource(job);
+    return ({
     jobId: job.id,
     leagueId: job.leagueId,
     playerId: job.playerId,
@@ -120,7 +145,13 @@ export function preparePackets(state, limit = CONTRACT.maxPrepareBatch) {
     styleVersion: job.styleVersion,
     prompt: 'Using the supplied authentic portrait only as the identity reference, create one reusable full-body Hockey Life athlete in complete hockey equipment with the official HL chest monogram, standing on the approved purple-lit podium. Preserve likeness. Output a true-alpha RGBA PNG with the complete athlete, skates, stick, and podium visible. Do not render a name, number, rank, statistic, team caption, arena rectangle, checkerboard, or other text.',
     requiredReview: ['likeness', 'complete_equipment', 'official_hl_branding', 'complete_podium', 'true_alpha', 'no_names_or_stats'],
-  }));
+    });
+  });
+}
+
+function assertFreshSource(job) {
+  assert(typeof job.sourcePortraitPath === 'string' && existsSync(job.sourcePortraitPath), `Source portrait is missing for ${job.id}`);
+  assert(sha256(readFileSync(job.sourcePortraitPath)) === job.sourcePortraitSha256, `Source portrait bytes changed for ${job.id}`);
 }
 
 export function startJobs(state, jobIds, now = new Date()) {
@@ -152,20 +183,30 @@ export function inspectRgbaPng(path) {
   const bytes = readFileSync(path);
   assert(bytes.length <= 5 * 1024 * 1024, 'PNG exceeds the 5 MiB storage limit');
   assert(bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), 'Output is not a PNG');
-  let offset = 8; let width; let height; let bitDepth; let colorType; let interlace; const idat = [];
+  let offset = 8; let width; let height; let bitDepth; let colorType; let interlace; const idat = []; let sawIend = false; let chunkIndex = 0; let sawIdat = false;
   while (offset + 12 <= bytes.length) {
-    const length = bytes.readUInt32BE(offset); const type = bytes.toString('ascii', offset + 4, offset + 8); const data = bytes.subarray(offset + 8, offset + 8 + length);
+    const length = bytes.readUInt32BE(offset); const type = bytes.toString('ascii', offset + 4, offset + 8);
     assert(offset + 12 + length <= bytes.length, 'PNG chunk is truncated');
+    const data = bytes.subarray(offset + 8, offset + 8 + length);
     assert(bytes.readUInt32BE(offset + 8 + length) === crc32(bytes.subarray(offset + 4, offset + 8 + length)), `PNG ${type} checksum is invalid`);
-    if (type === 'IHDR') { width = data.readUInt32BE(0); height = data.readUInt32BE(4); bitDepth = data[8]; colorType = data[9]; interlace = data[12]; }
-    if (type === 'IDAT') idat.push(data);
+    if (type === 'IHDR') {
+      assert(chunkIndex === 0 && length === 13 && width === undefined, 'PNG IHDR is invalid');
+      width = data.readUInt32BE(0); height = data.readUInt32BE(4); bitDepth = data[8]; colorType = data[9]; interlace = data[12];
+    }
+    if (type === 'IDAT') { assert(width !== undefined, 'PNG IDAT precedes IHDR'); idat.push(data); sawIdat = true; }
+    if (type === 'IEND') { assert(length === 0 && sawIdat, 'PNG IEND is invalid'); sawIend = true; }
     offset += 12 + length;
+    chunkIndex += 1;
     if (type === 'IEND') break;
   }
+  assert(sawIend && offset === bytes.length, 'PNG container must end with IEND');
   assert(Number.isInteger(width) && width >= 256 && width <= 4096 && Number.isInteger(height) && height >= 256 && height <= 4096, 'PNG dimensions are outside 256-4096');
   assert(bitDepth === 8 && colorType === 6 && interlace === 0, 'Output must be non-interlaced 8-bit RGBA PNG');
-  const inflated = inflateSync(Buffer.concat(idat)); const bpp = 4; const stride = width * bpp;
-  assert(inflated.length === height * (stride + 1), 'PNG raster size is invalid');
+  const bpp = 4; const stride = width * bpp; const expectedRasterLength = height * (stride + 1);
+  let inflated;
+  try { inflated = inflateSync(Buffer.concat(idat), { maxOutputLength: expectedRasterLength }); }
+  catch { throw new Error('PNG raster size is invalid'); }
+  assert(inflated.length === expectedRasterLength, 'PNG raster size is invalid');
   let previous = Buffer.alloc(stride); let position = 0; let minAlpha = 255; let maxAlpha = 0;
   for (let y = 0; y < height; y += 1) {
     const filter = inflated[position++]; const row = Buffer.alloc(stride);
@@ -189,11 +230,14 @@ export function attachReviewCandidate(state, jobId, outputPath, now = new Date()
 export function approveCandidate(state, jobId, receipt, now = new Date()) {
   const job = state.jobs.find((candidate) => candidate.id === jobId);
   assert(job?.current && job.status === 'review' && job.candidate, 'Only a current reviewed candidate can be approved');
+  assertFreshSource(job);
+  const currentCandidate = inspectRgbaPng(job.candidate.path);
+  assert(currentCandidate.sha256 === job.candidate.sha256 && currentCandidate.width === job.candidate.width && currentCandidate.height === job.candidate.height, 'Reviewed output bytes changed');
   for (const key of ['reviewer', 'reviewedAt', 'leagueId', 'playerId', 'sourcePortraitUrl', 'sourcePortraitSha256', 'styleVersion', 'outputSha256']) assert(typeof receipt?.[key] === 'string' && receipt[key], `Receipt ${key} is required`);
   for (const key of ['approved', 'identityConfirmed', 'brandingConfirmed', 'transparencyConfirmed', 'noTextOrStatsConfirmed']) assert(receipt?.[key] === true, `Receipt ${key} must be true`);
   assert(receipt.leagueId === job.leagueId && receipt.playerId === job.playerId && receipt.sourcePortraitUrl === job.sourcePortraitUrl && receipt.sourcePortraitSha256 === job.sourcePortraitSha256 && receipt.styleVersion === job.styleVersion && receipt.outputSha256 === job.candidate.sha256, 'Receipt is not bound to this source and output');
   assert(Number.isFinite(Date.parse(receipt.reviewedAt)), 'Receipt reviewedAt is invalid');
-  job.status = 'approved'; job.approval = { ...receipt }; job.approvedAt = receipt.reviewedAt; job.updatedAt = utc(now); state.updatedAt = utc(now); return state;
+  job.status = 'approved'; job.approval = { ...receipt }; delete job.approvalInvalidatedAt; delete job.approvalInvalidationReason; job.approvedAt = receipt.reviewedAt; job.updatedAt = utc(now); state.updatedAt = utc(now); return state;
 }
 
 export function failJob(state, jobId, message, now = new Date()) {
@@ -213,7 +257,13 @@ export function retryJob(state, jobId, now = new Date()) {
 
 export function buildApprovedManifest(state, now = new Date()) {
   const entries = state.jobs.filter((job) => job.current && job.status === 'approved').map((job) => {
-    assert(job.approval && job.candidate && job.approval.outputSha256 === job.candidate.sha256, `Approved job ${job.id} is incomplete`);
+    assertFreshSource(job);
+    assert(job.approval && !job.approvalInvalidatedAt && job.candidate && job.approval.outputSha256 === job.candidate.sha256, `Approved job ${job.id} is incomplete`);
+    assert(job.approval.leagueId === job.leagueId && job.approval.playerId === job.playerId
+      && job.approval.sourcePortraitUrl === job.sourcePortraitUrl && job.approval.sourcePortraitSha256 === job.sourcePortraitSha256
+      && job.approval.styleVersion === job.styleVersion, `Approved job ${job.id} source binding is stale`);
+    const currentCandidate = inspectRgbaPng(job.candidate.path);
+    assert(currentCandidate.sha256 === job.candidate.sha256 && currentCandidate.width === job.candidate.width && currentCandidate.height === job.candidate.height, `Approved output bytes changed for ${job.id}`);
     return { playerId: job.playerId, sourcePortraitUrl: job.sourcePortraitUrl, sourcePortraitSha256: job.sourcePortraitSha256, imageUrl: `${CONTRACT.imagePrefix}${job.playerId}/${job.candidate.sha256}.png`, imageSha256: job.candidate.sha256, width: job.candidate.width, height: job.candidate.height, approvedAt: job.approvedAt };
   });
   return { schemaVersion: 1, leagueId: CONTRACT.leagueId, styleVersion: CONTRACT.styleVersion, generatedAt: utc(now), entries };

@@ -5,6 +5,7 @@ import {
   PLAYER_ARTWORK_LEAGUE_ID,
   PLAYER_ARTWORK_MANIFEST_URL,
   PLAYER_ARTWORK_STYLE_VERSION,
+  __resetPlayerArtworkManifestCacheForTests,
   findApprovedPlayerArtwork,
   loadPlayerArtworkManifest,
   parsePlayerArtworkManifest,
@@ -46,5 +47,43 @@ describe('approved player artwork manifest', () => {
     assert.equal(await loadPlayerArtworkManifest({ fetchImpl: async () => ({ ok: true, status: 200, headers: new Headers(), body: null, arrayBuffer: async () => invalid.buffer }) }), null);
     assert.equal(await loadPlayerArtworkManifest({ fetchImpl: async () => ({ ...response('{}'), headers: new Headers({ 'content-length': String(600_000) }) }) }), null);
     assert.equal(await loadPlayerArtworkManifest({ timeoutMs: 1, fetchImpl: async (_url, init) => new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new Error('aborted')))) }), null);
+  });
+
+  it('enforces the deadline independently of uncooperative transport/body work and rejects late success', async () => {
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const stuckTransport = loadPlayerArtworkManifest({ timeoutMs: 5, fetchImpl: async () => new Promise(() => {}) });
+    assert.equal(await Promise.race([stuckTransport, delay(60).then(() => 'pending')]), null);
+    const stuckBody = loadPlayerArtworkManifest({ timeoutMs: 5, fetchImpl: async () => ({
+      ...response('{}'), body: { getReader: () => ({ read: async () => new Promise(() => {}), cancel: async () => {} }) } as unknown as Response['body'],
+    }) });
+    assert.equal(await Promise.race([stuckBody, delay(60).then(() => 'pending')]), null);
+    assert.equal(await loadPlayerArtworkManifest({ timeoutMs: 5, fetchImpl: async () => { await delay(25); return response(JSON.stringify(manifest)); } }), null);
+  });
+
+  it('keeps a shared refresh viable across the old subscriber abort and releases timed-out global inflight', async () => {
+    const originalFetch = globalThis.fetch;
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; await delay(20); return response(JSON.stringify(manifest)) as Response; }) as unknown as typeof fetch;
+    try {
+      __resetPlayerArtworkManifestCacheForTests();
+      const old = new AbortController();
+      const first = loadPlayerArtworkManifest({ signal: old.signal });
+      old.abort();
+      const second = loadPlayerArtworkManifest({ signal: new AbortController().signal });
+      assert.equal(await first, null);
+      assert.equal((await second)?.entries.length, 1);
+      assert.equal(calls, 1);
+
+      __resetPlayerArtworkManifestCacheForTests();
+      calls = 0;
+      globalThis.fetch = (async () => { calls += 1; return calls === 1 ? new Promise(() => {}) : response(JSON.stringify(manifest)) as Response; }) as unknown as typeof fetch;
+      assert.equal(await loadPlayerArtworkManifest({ timeoutMs: 5 }), null);
+      assert.equal((await loadPlayerArtworkManifest({ timeoutMs: 20 }))?.entries.length, 1);
+      assert.equal(calls, 2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      __resetPlayerArtworkManifestCacheForTests();
+    }
   });
 });

@@ -18,7 +18,7 @@ The loader bounds the body to 512 KiB and 500 entries, times out after four seco
 
 ## Operator queue
 
-The queue is local and makes no network, AI, storage, publication, or paid-provider calls. Drafts and receipts stay local. Its roster adapter accepts the canonical `roster/roster.json` schema version 1, verifies exact league/current-season eligibility, deduplicates player IDs, and re-hashes every downloaded portrait before it creates a job. Job identity is league + player + portrait-byte SHA-256 + style. Current metric leaders retain the roster scout's queue order, followed by all other current eligible photographed players. Missing-photo players are reported and never generated.
+The queue is local and makes no network, AI, storage, publication, or paid-provider calls. Drafts and receipts stay local. Its roster adapter accepts the canonical `roster/roster.json` schema version 1, verifies exact league/current-season eligibility, deduplicates player IDs, rejects snapshots older than the queue's last accepted snapshot, and re-hashes every downloaded portrait before it creates a job. Job identity is league + player + portrait-byte SHA-256 + style. Exact source URL changes invalidate an existing approval even when the bytes are identical. Returning A→B→A identities resume their prior usable state, while prepare, approval, and manifest handoff re-hash the current source/output bytes. Current metric leaders retain the roster scout's queue order, followed by all other current eligible photographed players. Missing-photo players are reported and never generated.
 
 Run from the repository root:
 
@@ -35,11 +35,11 @@ node scripts/player-artwork/queue.mjs start --state "$ARTIFACT/queue/state.json"
 node scripts/player-artwork/queue.mjs review --state "$ARTIFACT/queue/state.json" --job '<job-id>' --output '/absolute/path/final.png'
 ```
 
-`review` requires a real, non-interlaced 8-bit RGBA PNG between 256 and 4096 pixels in each dimension and scans decoded alpha pixels for both transparent and visible content. It does not approve the image. Human review must verify likeness, complete equipment and stick, official HL branding, complete podium, true transparency, and absence of names/stats. Then supply an explicit receipt bound to league, player, exact source URL and source-byte hash, style, and final output hash:
+`review` requires a complete, non-interlaced 8-bit RGBA PNG between 256 and 4096 pixels in each dimension, bounds decompression to the declared raster, and scans decoded alpha pixels for both transparent and visible content. It does not approve the image. An authorized operator visual review must verify likeness, complete equipment and stick, official HL branding, complete podium, true transparency, and absence of names/stats. The receipt must identify the reviewer that actually performed that review (including an explicitly identified parent AI reviewer when that is the truth); it must not imply an additional human check that did not occur. Supply the receipt bound to league, player, exact source URL and source-byte hash, style, and final output hash:
 
 ```json
 {
-  "reviewer": "human identity",
+  "reviewer": "actual operator reviewer identity",
   "reviewedAt": "2026-10-04T12:00:00.000Z",
   "leagueId": "d6e55507-6eae-4d94-978c-47c6c30a36f1",
   "playerId": "canonical UUID",
@@ -60,7 +60,7 @@ node scripts/player-artwork/queue.mjs approve --state "$ARTIFACT/queue/state.jso
 node scripts/player-artwork/queue.mjs manifest --state "$ARTIFACT/queue/state.json" --out "$ARTIFACT/queue/manifest-v1.candidate.json"
 ```
 
-The candidate manifest contains only current explicitly approved jobs. Publication is deliberately separate: upload each approved PNG create-only at its exact manifest object path, verify its public bytes/hash/content type/no redirect surprise, then atomically replace the complete manifest. No publisher is included because this repository has no narrow credential-free transport. A failed retry records failure without downgrading an already approved current job; portrait changes supersede the old identity, so old art cannot enter the next manifest. Failed jobs may be retried at most three times:
+The candidate manifest contains only current explicitly approved jobs whose source, receipt and output bytes still match. This is preparation evidence, not publication readiness. Publication is deliberately separate: upload each approved PNG create-only at its exact manifest object path, verify its public bytes/hash/content type/no redirect surprise, then atomically replace the complete manifest. No publisher is included because this repository has no narrow credential-free transport. Every state command uses the same POSIX advisory lock at `<absolute-state-path>.lock` across its full read-modify-write transaction; future monitor apply mode must use that exact file. A failed retry records failure without downgrading an already approved current job; portrait changes supersede the old identity, so old art cannot enter the next manifest. Failed jobs may be retried at most three times:
 
 ```sh
 node scripts/player-artwork/queue.mjs fail --state "$ARTIFACT/queue/state.json" --job '<job-id>' --message 'bounded reason'
