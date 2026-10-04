@@ -18,6 +18,7 @@ function findNodes(root: unknown, predicate: (node: TestNode) => boolean): TestN
 describe('mounted native content navigation', () => {
   it('renders the actual News feed composition and navigates a real article identity in-stack', () => {
     const harness = createHookHarness(); const calls: unknown[][] = [];
+    const articles = Array.from({ length: 6 }, (_, index) => ({ id: `article-${index}`, slug: index === 0 ? 'synthetic-story' : `archive-${index}`, title: index === 0 ? 'Mounted synthetic story' : `Archive story ${index}`, excerpt: 'Synthetic excerpt.', imageUrl: null, type: 'weekly_wrap', publishedAt: '2026-01-01T00:00:00Z', authorName: null, authorId: null }));
     const Screen = compileCommonJs<any>(new URL('../../src/screens/league-pages/NewsFeedScreen.tsx', import.meta.url), {
       react: harness.react,
       'react-native': native,
@@ -31,15 +32,15 @@ describe('mounted native content navigation', () => {
         PageLoadState: (props: any) => createElement('PageLoadState', props),
       },
       './ContentPageCommon': { useLeagueContent: () => ({ loading: false, error: null, retry() {}, data: {
-        schemaVersion: 1, view: 'news', league: { id: 'league-1', slug: 'hockey-life', name: 'Synthetic League', logoUrl: null }, total: 1,
-        articles: [{ id: 'article-id', slug: 'synthetic-story', title: 'Mounted synthetic story', excerpt: 'Synthetic excerpt.', imageUrl: null, type: 'weekly_wrap', publishedAt: '2026-01-01T00:00:00Z', authorName: null, authorId: null }],
+        schemaVersion: 1, view: 'news', league: { id: 'league-1', slug: 'hockey-life', name: 'Synthetic League', logoUrl: null }, total: articles.length, articles,
       } }) },
     }).default;
     const route = { params: { leagueId: 'league-1', leagueSlug: 'hockey-life' } };
     const output = harness.mount(() => Screen({ route, navigation: { navigate: (...args: unknown[]) => calls.push(args) } }));
-    assert.match(nodeText(output), /All 1Recaps 1News 0/);
+    assert.match(nodeText(output), /All 6Recaps 6News 0/);
     assert.match(nodeText(output), /Mounted synthetic story/);
-    assert.equal(findNode(output, node => node.type === 'FlatList')?.props.testID, 'news-feed-list');
+    assert.match(nodeText(output), /Archive story 5/);
+    assert.equal(findNode(output, node => node.type === 'FlatList')?.props.data.length, 6);
     const story = findNode(output, node => node.props.accessibilityLabel === 'Mounted synthetic story, Read story');
     assert.ok(story);
     story.props.onPress();
@@ -69,7 +70,7 @@ describe('mounted native content navigation', () => {
     assert.equal((harness.output as any).data.league.id, 'league-b-id');
   });
 
-  it('renders the complete article readably and keeps inline links and mentions native', async () => {
+  it('renders the complete article readably and keeps inline links native without the mentions footer', async () => {
     const harness = createHookHarness(); const calls: unknown[][] = []; const browserCalls: string[] = [];
     const Screen = compileCommonJs<any>(new URL('../../src/screens/league-pages/NewsArticleScreen.tsx', import.meta.url), {
       react: harness.react,
@@ -107,11 +108,9 @@ describe('mounted native content navigation', () => {
     assert.match(text, /Final source line/);
     assert.doesNotMatch(text, /##|\*\*/);
     findNode(output, node => node.props.accessibilityRole === 'link' && nodeText(node) === 'the team')!.props.onPress();
-    findNode(output, node => node.props.accessibilityLabel === 'View Recorded game')!.props.onPress();
-    assert.deepEqual(calls, [
-      ['LeagueTeamDetail', { teamId: '22222222-2222-4222-8222-222222222222', leagueId: 'league-1' }],
-      ['LeagueGamePreview', { gameId: '33333333-3333-4333-8333-333333333333' }],
-    ]);
+    assert.equal(findNode(output, node => node.props.accessibilityLabel === 'View Recorded game'), undefined);
+    assert.doesNotMatch(text, /Mentioned in this story|Recorded game/);
+    assert.deepEqual(calls, [['LeagueTeamDetail', { teamId: '22222222-2222-4222-8222-222222222222', leagueId: 'league-1' }]]);
     assert.deepEqual(browserCalls, []);
   });
 

@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { classifyArticleHref, filterArticles, groupAlbums, parseArticleBlocks, parseInlineMarkdown, splitRichTextParagraphs } from '../../src/lib/leagueContentModel.ts';
+import { classifyArticleHref, filterArticles, groupAlbums, parseArticleBlocks, parseInlineMarkdown, publicArticleUrl, splitRichTextParagraphs } from '../../src/lib/leagueContentModel.ts';
 
 describe('native league content model', () => {
+  it('builds only canonical public HTTPS article URLs from safe tenant and article slugs', () => {
+    assert.equal(publicArticleUrl('hockey-life', 'hockey-life-times-2026-09-28-145ac7ee'), 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/hockey-life-times-2026-09-28-145ac7ee');
+    assert.equal(publicArticleUrl('harbour-hockey', 'opening-night'), 'https://harbour-hockey.beerleaguehockey.ca/harbour-hockey/news/opening-night');
+    assert.equal(publicArticleUrl('localhost', '../private'), null);
+    assert.equal(publicArticleUrl('bad.example.com', 'story'), null);
+  });
+
   it('preserves published paragraphs and routes only safe, known links', () => {
     const body = 'First **published** paragraph.\n\nSecond line\ncontinues.\n\n[Player](https://hockey-life.beerleaguehockey.ca/players/11111111-1111-4111-8111-111111111111)';
     assert.deepEqual(splitRichTextParagraphs(body), [

@@ -241,7 +241,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     setRefreshing(true);
     try { await load(true); } finally { setRefreshing(false); }
   }, [load]);
-  const stories = publicHome?.articles.data ?? [];
+  const stories = (publicHome?.articles.data ?? []).slice(0, 4);
   const storyIds = stories.map((story) => story.id).join('|');
   const storyPageWidth = Math.max(1, width - homeTokens.contentPadding * 2);
   React.useEffect(() => {

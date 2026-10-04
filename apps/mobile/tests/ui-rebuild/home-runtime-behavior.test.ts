@@ -319,28 +319,36 @@ describe('Home web-structure runtime', () => {
     assert.equal(runtime.animationCalls.length, 0);
   });
 
-  it('keeps every news page addressable without eagerly mounting an unbounded set of article images', async () => {
-    const stories = Array.from({ length: 53 }, (_, index) => ({
-      ...snapshot.articles.data[0], id: `story-${index}`, title: `Story ${index}`, slug: `story-${index}`, image_url: `https://images.test/${index}.jpg`,
+  it('renders only the first four sorted stories with matching controls and bounded images', async () => {
+    const stories = Array.from({ length: 6 }, (_, index) => ({
+      ...snapshot.articles.data[0], id: `story-${index}`, title: `Latest ${index + 1}`, slug: `latest-${index + 1}`, image_url: `https://images.test/${index}.jpg`,
     }));
     const runtime = createRuntime({ publicData: { ...snapshot, articles: { status: 'ready', data: stories } } });
     await settle(runtime);
     const pager = findNode(runtime.harness.output, (node) => node.props.testID === 'home-news-pager');
-    assert.equal(Array.isArray(pager?.props.children) ? pager.props.children.length : 0, 53);
+    assert.equal(Array.isArray(pager?.props.children) ? pager.props.children.length : 0, 4);
     assert.ok(allNodes(pager).filter((node) => node.type === 'Image' && typeof node.props.source?.uri === 'string').length <= 3);
+    assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Latest 1'));
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Latest 5'), undefined);
     const indicator = findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator');
-    assert.equal(indicator?.props.accessibilityValue.max, 53);
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 53');
+    assert.equal(indicator?.props.accessibilityValue.max, 4);
+    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 4');
     assert.equal(allNodes(indicator).filter((node) => flattenStyle(node.props.style).width === 6).length, 0);
     for (const label of ['Previous story', 'Next story']) {
       const button = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === label);
       const style = flattenStyle(button?.props.style);
       assert.deepEqual([style.width, style.height, style.flexShrink], [44, 44, 0]);
     }
+    for (let index = 0; index < 3; index += 1) {
+      findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story')!.props.onPress();
+      runtime.harness.render();
+    }
+    assert.match(nodeText(runtime.harness.output), /Latest 4/);
+    assert.doesNotMatch(nodeText(runtime.harness.output), /Latest 5|Latest 6/);
     runtime.resize(320);
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 53');
+    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '4 / 4');
     runtime.resize(390);
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 53');
+    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '4 / 4');
   });
 
   it('retains same-period facts with visible stale notes, including an independent photo reel when albums fail', async () => {

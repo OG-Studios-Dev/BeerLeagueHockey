@@ -48,6 +48,11 @@ export type ArticleLinkTarget =
   | { kind: 'article'; slug: string }
   | { kind: 'external'; url: string };
 
+export function publicArticleUrl(leagueSlug: string, articleSlug: string) {
+  if (!SLUG.test(leagueSlug) || !SLUG.test(articleSlug)) return null;
+  return `https://${leagueSlug}.beerleaguehockey.ca/${leagueSlug}/news/${articleSlug}`;
+}
+
 export function classifyArticleHref(value: string, leagueSlug: string): ArticleLinkTarget | null {
   try {
     const tenantHost = `${leagueSlug}.beerleaguehockey.ca`;
