@@ -6,6 +6,7 @@ import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
 import GuestBanner from '../components/GuestBanner';
 import SeasonCompletionHump from '../components/SeasonCompletionHump';
+import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
 import StandingsPlayoffsPanel from '../components/StandingsPlayoffsPanel';
 import TeamLogo from '../components/TeamLogo';
 import TeamPositioningChart from '../components/TeamPositioningChart';
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
   cell: { flex: 0.8, color: colors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   points: { fontWeight: '900' },
   section: { gap: 12 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 23, lineHeight: 29, fontWeight: '900' },
+  sectionTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary },
   pictureGroup: { gap: 10 },
   groupTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
   matchup: { minHeight: 72, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', borderRadius: 18, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, padding: 10 },

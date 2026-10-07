@@ -36,6 +36,7 @@ const snapshot = {
   articles: { status: 'ready', data: [{ id: 'story-1', season_id: 'season-1', title: 'Opening night', content: 'Real story copy', excerpt: 'Real story copy', image_url: null, slug: 'opening-night', published_at: '2026-09-10', created_at: '2026-09-10', type: 'news' }] },
   weeklyGames: { status: 'ready', data: [{ ...nextGame, id: 'week-final', status: 'completed', home_score: 5, away_score: 4 }] },
   leaders: { status: 'ready', data: [{ player_id: 'player-leader', player_name: 'Alex Ace', avatar_url: null, team_id: 'wolves', team_name: 'Harbour Wolves', display_team_name: 'Harbour Wolves', display_team_logo_url: null, position: 'C', goals: 7, assists: 5, points: 12 }] },
+  goalieLeaders: { status: 'ready', data: [{ player_id: 'goalie-leader', player_name: 'Steven Wild', avatar_url: null, team_id: 'wolves', team_name: 'Harbour Wolves', display_team_name: 'Harbour Wolves', display_team_logo_url: null, position: 'Goalie', goals: null, assists: null, points: null, gaa: 3, is_goalie: true, estimated: true }] },
   standings: { status: 'ready', data: [{ team_id: 'wolves', team_name: 'Harbour Wolves', logo_url: null, primary_color: '#34D399', division_id: null, division_name: null, team_type: null, games_played: 10, wins: 7, losses: 3, ties: 0, goals_for: 40, goals_against: 25, points: 14 }] },
   photos: { status: 'ready', data: [{ id: 'photo-1', url: 'https://images.test/photo.jpg', caption: 'Rink', gallery_id: 'album-1' }] },
   albums: { status: 'ready', data: [] },
@@ -47,6 +48,7 @@ function createRuntime({
   guest = false,
   reduceMotion = false,
   width = 320,
+  fontScale = 1,
   updateResults = [] as Array<{ success: boolean }>,
   publicData = snapshot as any,
   publicResults = [] as any[],
@@ -63,7 +65,9 @@ function createRuntime({
   const checkinCalls: unknown[][] = [];
   const animationCalls: unknown[] = [];
   const scrollCalls: Array<{ x: number; animated: boolean }> = [];
+  const leaderRenders: Array<{ leagueId: string; leaders: any[]; metric: string; status: string }> = [];
   let viewportWidth = width;
+  let viewportFontScale = fontScale;
   const queryCalls: Array<[string, unknown[]]> = [];
   const chain: Record<string, any> = {};
   for (const method of ['select', 'eq', 'gte', 'or', 'order', 'limit']) chain[method] = (...args: unknown[]) => { queryCalls.push([method, args]); return chain; };
@@ -84,7 +88,7 @@ function createRuntime({
       Text: 'Text', View: 'View',
       StyleSheet: { create: <T>(value: T) => value, absoluteFill: {}, absoluteFillObject: { position: 'absolute', inset: 0 }, hairlineWidth: 1 },
       LayoutAnimation: { Presets: { easeInEaseOut: 'ease' }, configureNext: (preset: unknown) => animationCalls.push(preset) },
-      useWindowDimensions: () => ({ width: viewportWidth, height: 700 }),
+      useWindowDimensions: () => ({ width: viewportWidth, height: 700, fontScale: viewportFontScale }),
     },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     '@expo/vector-icons': { Ionicons: 'Ionicon' },
@@ -95,21 +99,37 @@ function createRuntime({
     '../../assets/hockey-life-logo.png': 'hockey-life-logo.png',
     '../components/GuestBanner': () => createElement('GuestBanner', null),
     '../components/HomeLeagueHero': ({ updatesAction, ...props }: Record<string, any>) => createElement('HomeLeagueHero', props, updatesAction),
-    '../components/HomeLeagueLeaders': ({ leaders, status, errorMessage, onOpenPlayer, ...props }: Record<string, any>) => createElement(
-      'HomeLeagueLeaders', props,
-      status === 'error' && leaders.length === 0
-        ? createElement('Text', null, errorMessage)
-        : [
-          ...leaders.map((leader: Record<string, any>) => createElement(
-            'Pressable',
-            { accessibilityRole: 'button', onPress: () => onOpenPlayer(leader.player_id) },
-            createElement('Text', null, leader.player_name),
-          )),
-          status === 'error' ? createElement('Text', null, errorMessage) : null,
+    '../components/HomeLeagueLeaders': ({ leaders, status, errorMessage, onOpenPlayer, metric, onMetricChange, ...props }: Record<string, any>) => {
+      leaderRenders.push({ leagueId: props.leagueId, leaders, metric, status });
+      return createElement(
+        'HomeLeagueLeaders', { ...props, leaders, status, errorMessage, metric },
+        [
+          createElement('Pressable', { testID: 'home-leaders-tab-points', onPress: () => onMetricChange('points') }, createElement('Text', null, 'Points')),
+          createElement('Pressable', { testID: 'home-leaders-tab-gaa', onPress: () => onMetricChange('gaa') }, createElement('Text', null, 'GAA')),
+          status === 'error' && leaders.length === 0
+            ? createElement('Text', null, errorMessage)
+            : [
+              ...leaders.map((leader: Record<string, any>) => createElement(
+                'Pressable',
+                { accessibilityRole: 'button', onPress: () => onOpenPlayer(leader.player_id) },
+                createElement('Text', null, leader.player_name),
+              )),
+              status === 'error' ? createElement('Text', null, errorMessage) : null,
+            ],
         ],
+      );
+    },
+    '../components/HomeMatchupCarousel': ({ games, onOpenGame, ...props }: Record<string, any>) => createElement(
+      'HomeMatchupCarousel', props,
+      games.map((game: Record<string, any>) => createElement('Pressable', {
+        accessibilityRole: 'button',
+        accessibilityLabel: `${game.status === 'completed' ? 'Final' : 'Scheduled'}. ${game.away_team.name} ${game.away_score ?? 'score unavailable'}. ${game.home_team.name} ${game.home_score ?? 'score unavailable'}. Sep 18 at 8:30 PM. ${game.location}`,
+        onPress: () => onOpenGame(game.id),
+      }, createElement('Text', null, game.status === 'completed' ? 'Final' : 'Scheduled'))),
     ),
     '../components/LeagueMarketplace': (props: Record<string, unknown>) => createElement('LeagueMarketplace', props),
     '../components/RevealView': ({ children, ...props }: Record<string, unknown>) => createElement('RevealView', props, children),
+    '../components/SectionHeader': { SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
     '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion }) },
     '../context/AuthContext': { useAuth: () => ({ user: currentUser, isGuest: guest }) },
@@ -148,8 +168,9 @@ function createRuntime({
   }).default;
   harness.mount(() => HomeScreen({ navigation: { navigate: (...args: unknown[]) => navigationCalls.push(args) } }));
   return {
-    harness, navigationCalls, linkCalls, playerCalls, checkinCalls, queryCalls, animationCalls, scrollCalls,
+    harness, navigationCalls, linkCalls, playerCalls, checkinCalls, queryCalls, animationCalls, scrollCalls, leaderRenders,
     resize: (nextWidth: number) => { viewportWidth = nextWidth; harness.render(); },
+    setFontScale: (nextFontScale: number) => { viewportFontScale = nextFontScale; harness.render(); },
     changeGame: (kind: 'game' | 'team') => {
       if (kind === 'team') {
         replacementTeam = assignmentB;
@@ -177,6 +198,119 @@ async function refresh(runtime: ReturnType<typeof createRuntime>) {
 }
 
 describe('Home web-structure runtime', () => {
+  const headingActions = [
+    { headingText: 'This Week’s GamesFull schedule', title: 'This Week’s Games', actionText: 'Full schedule' },
+    { headingText: 'StandingsAll standings', title: 'Standings', actionText: 'All standings' },
+    { headingText: 'League PhotosGallery', title: 'League Photos', actionText: 'Gallery' },
+  ];
+
+  function findHeading(output: unknown, text: string) {
+    return findNode(output, (node) => node.type === 'View'
+      && nodeText(node) === text
+      && flattenStyle(node.props.style).marginBottom === 9);
+  }
+
+  function findHeadingAction(heading: TestNode, actionText: string) {
+    return findNode(heading, (node) => node.type === 'Pressable' && nodeText(node) === actionText);
+  }
+
+  it('keeps every title and intrinsic 44dp action on the approved same row at normal text size', async () => {
+    const output = await settle(createRuntime({ fontScale: 1 }));
+    for (const contract of headingActions) {
+      const heading = findHeading(output, contract.headingText);
+      assert.ok(heading, `Missing ${contract.title} heading`);
+      assert.equal(flattenStyle(heading.props.style).flexDirection, 'row');
+      const title = findNode(heading, (node) => node.props.accessibilityRole === 'header');
+      assert.equal(nodeText(title), contract.title);
+      const action = findHeadingAction(heading, contract.actionText);
+      assert.ok(action, `Missing complete ${contract.actionText} action`);
+      const actionStyle = flattenStyle(action.props.style);
+      assert.equal(actionStyle.minHeight, 44);
+      assert.equal(actionStyle.width, undefined, 'normal text actions must remain intrinsic on the same row');
+      const label = findNode(action, (node) => node.type === 'Text' && nodeText(node) === contract.actionText);
+      assert.deepEqual(
+        { fontSize: flattenStyle(label?.props.style).fontSize, lineHeight: flattenStyle(label?.props.style).lineHeight },
+        { fontSize: 12, lineHeight: 18 },
+        'normal-scale action typography must remain unchanged',
+      );
+    }
+    const weeklyTitle = findNode(findHeading(output, headingActions[0].headingText), (node) => node.props.accessibilityRole === 'header');
+    assert.deepEqual(
+      { fontSize: flattenStyle(weeklyTitle?.props.style).fontSize, lineHeight: flattenStyle(weeklyTitle?.props.style).lineHeight },
+      { fontSize: 22, lineHeight: 28 },
+    );
+  });
+
+  it('gives every stacked accessibility-large action full width and scale-derived intrinsic-safe height', async () => {
+    const fontScale = 1.8;
+    const output = await settle(createRuntime({ fontScale }));
+    const scaledActionMinHeight = Math.max(44, Math.ceil(18 * fontScale) + 16);
+    const scaledTextLineHeight = Math.ceil(18 * fontScale);
+    for (const contract of headingActions) {
+      const heading = findHeading(output, contract.headingText);
+      assert.ok(heading, `Missing ${contract.title} heading`);
+      const headingStyle = flattenStyle(heading.props.style);
+      assert.equal(headingStyle.flexDirection, 'column');
+      assert.equal(headingStyle.height, undefined);
+      assert.equal(headingStyle.minHeight, 44);
+      const title = findNode(heading, (node) => node.props.accessibilityRole === 'header');
+      assert.equal(nodeText(title), contract.title);
+      assert.equal(flattenStyle(title?.props.style).width, '100%');
+
+      const action = findHeadingAction(heading, contract.actionText);
+      assert.ok(action, `Missing complete ${contract.actionText} action`);
+      const actionStyle = flattenStyle(action.props.style);
+      assert.equal(actionStyle.width, '100%');
+      assert.equal(actionStyle.alignSelf, 'stretch');
+      assert.equal(actionStyle.height, undefined);
+      assert.equal(actionStyle.minHeight, scaledActionMinHeight);
+      assert.ok(
+        actionStyle.width === '100%' && actionStyle.minHeight > 44,
+        'negative control: the first-fix 44dp intrinsic action would retain the confirmed native clipping defect',
+      );
+      const label = findNode(action, (node) => node.type === 'Text' && nodeText(node) === contract.actionText);
+      assert.equal(label?.props.allowFontScaling, true);
+      assert.equal(label?.props.numberOfLines, undefined);
+      assert.equal(label?.props.maxFontSizeMultiplier, undefined);
+      assert.equal(flattenStyle(label?.props.style).lineHeight, scaledTextLineHeight);
+    }
+    const fullSchedule = findHeadingAction(findHeading(output, headingActions[0].headingText)!, 'Full schedule');
+    assert.ok(findNode(fullSchedule, (node) => node.type === 'Ionicon' && node.props.name === 'arrow-forward'));
+  });
+
+  it('proves the mounted fix-2 container-only baseline leaves the action Text line box inadequate', async () => {
+    const fontScale = 1.8;
+    const output = await settle(createRuntime({ fontScale }));
+    const action = findHeadingAction(findHeading(output, headingActions[0].headingText)!, 'Full schedule')!;
+    const label = findNode(action, (node) => node.type === 'Text' && nodeText(node) === 'Full schedule')!;
+    const fix2PressableStyle = flattenStyle(action.props.style);
+    const fix2TextStyle = { ...flattenStyle(label.props.style), lineHeight: 18 };
+    const requiredTextLineHeight = Math.ceil(18 * fontScale);
+
+    assert.equal(fix2PressableStyle.width, '100%');
+    assert.ok(fix2PressableStyle.minHeight > 44);
+    assert.ok(
+      fix2TextStyle.lineHeight < requiredTextLineHeight,
+      'a full-width, taller Pressable does not enlarge its child Text line box',
+    );
+    assert.equal(flattenStyle(label.props.style).lineHeight, requiredTextLineHeight);
+  });
+
+  it('rejects the collision-prone accessibility-large row while leaving actionless headings unchanged', async () => {
+    const output = await settle(createRuntime({ fontScale: 1.8 }));
+    const weeklyHeading = findHeading(output, 'This Week’s GamesFull schedule');
+    assert.ok(weeklyHeading);
+    assert.notEqual(
+      flattenStyle(weeklyHeading.props.style).flexDirection,
+      'row',
+      'the previous always-row layout is the confirmed native collision negative control',
+    );
+    const newsHeading = findHeading(output, 'News');
+    assert.ok(newsHeading);
+    assert.equal(flattenStyle(newsHeading.props.style).flexDirection, 'row');
+    assert.equal(nodeText(findNode(newsHeading, (node) => node.props.accessibilityRole === 'header')), 'News');
+  });
+
   it('renders factual sections in web order and keeps compact content wrappable', async () => {
     const runtime = createRuntime();
     const output = await settle(runtime);
@@ -233,6 +367,73 @@ describe('Home web-structure runtime', () => {
     const section = findNode(output, (node) => node.props.testID === 'home-leaders-section');
     assert.match(nodeText(section), /Current-season leaders require the league public Home feed/);
     assert.doesNotMatch(nodeText(section), /Alex Ace/);
+  });
+
+  it('isolates a goalie-feed error to GAA while Goals, Assists, and Points retain skater leaders', async () => {
+    const goalieUnavailable = {
+      ...snapshot,
+      goalieLeaders: { status: 'error', data: [], message: 'Current-season goalie GAA is temporarily unavailable.' },
+    };
+    const runtime = createRuntime({ publicData: goalieUnavailable });
+    await settle(runtime);
+
+    let leaders = findNode(runtime.harness.output, (node) => node.type === 'HomeLeagueLeaders')!;
+    assert.equal(leaders.props.status, 'ready');
+    assert.match(nodeText(leaders), /Alex Ace/);
+    findNode(leaders, (node) => node.props.testID === 'home-leaders-tab-gaa')!.props.onPress();
+    runtime.harness.render();
+
+    leaders = findNode(runtime.harness.output, (node) => node.type === 'HomeLeagueLeaders')!;
+    assert.equal(leaders.props.status, 'error');
+    assert.match(nodeText(leaders), /goalie GAA is temporarily unavailable/i);
+    assert.doesNotMatch(nodeText(leaders), /Alex Ace/);
+
+    findNode(leaders, (node) => node.props.testID === 'home-leaders-tab-points')!.props.onPress();
+    runtime.harness.render();
+    leaders = findNode(runtime.harness.output, (node) => node.type === 'HomeLeagueLeaders')!;
+    assert.equal(leaders.props.status, 'ready');
+    assert.match(nodeText(leaders), /Alex Ace/);
+  });
+
+  it('never renders old-league GAA rows under the new league identity during a league switch', async () => {
+    const leagueBGoalie = {
+      ...snapshot.goalieLeaders.data[0],
+      player_id: 'goalie-league-2',
+      player_name: 'Lakeside Goalie',
+      team_id: 'falcons',
+      team_name: 'Lakeside Falcons',
+      display_team_name: 'Lakeside Falcons',
+      gaa: 2,
+    };
+    const leagueBSnapshot = {
+      ...snapshot,
+      leagueId: leagueB.id,
+      leagueSlug: leagueB.slug,
+      presentationSeason: { ...snapshot.presentationSeason, id: 'season-2', league_id: leagueB.id },
+      goalieLeaders: { status: 'ready', data: [leagueBGoalie] },
+    };
+    const runtime = createRuntime({ publicResults: [snapshot, leagueBSnapshot] });
+    await settle(runtime);
+    findNode(runtime.harness.output, (node) => node.props.testID === 'home-leaders-tab-gaa')!.props.onPress();
+    runtime.harness.render();
+    assert.match(nodeText(findNode(runtime.harness.output, (node) => node.type === 'HomeLeagueLeaders')), /Steven Wild/);
+
+    runtime.leaderRenders.length = 0;
+    runtime.switchIdentity();
+
+    const switchRenders = runtime.leaderRenders.filter((render) => render.leagueId === leagueB.id && render.metric === 'gaa');
+    assert.ok(switchRenders.length > 0, 'the mounted switch must exercise the GAA render boundary');
+    assert.equal(
+      switchRenders.some((render) => render.leaders.some((row) => row.player_id === 'goalie-leader')),
+      false,
+      'a snapshot from league 1 must never render with league 2 navigation and focus identity',
+    );
+
+    await settle(runtime);
+    const settled = findNode(runtime.harness.output, (node) => node.type === 'HomeLeagueLeaders')!;
+    assert.equal(settled.props.leagueId, leagueB.id);
+    assert.match(nodeText(settled), /Lakeside Goalie/);
+    assert.doesNotMatch(nodeText(settled), /Steven Wild/);
   });
 
   it('uses canonical server division order for multi-division chips and the default table', async () => {

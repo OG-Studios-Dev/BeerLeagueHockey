@@ -5,6 +5,7 @@ import { Image, ImageBackground, Pressable, StyleSheet, Text, useWindowDimension
 
 import Avatar from '../../components/Avatar';
 import { FocusCard } from '../../components/CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import TeamLogo from '../../components/TeamLogo';
 import type { TeamLeaderMetric, TeamPageGame, TeamPageLeader, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { formatPublicMetric } from '../../lib/supabase/publicStats';
@@ -458,7 +459,7 @@ const styles = StyleSheet.create({
   composition: { backgroundColor: 'transparent', gap: 28, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 36 },
   compositionOpaque: { backgroundColor: '#03070D' },
   sectionHeading: { flexShrink: 1, minWidth: 0, minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  sectionHeadingText: { flexShrink: 1, color: '#F7FBFF', fontSize: 24, lineHeight: 28, fontWeight: '900', letterSpacing: -.35 },
+  sectionHeadingText: { ...SECTION_HEADING_TEXT_STYLE, flexShrink: 1, color: '#F7FBFF' },
   hero: { alignItems: 'center', paddingVertical: 16, gap: 10 },
   heroLogoWrap: { position: 'relative', width: 190, minHeight: 174, alignItems: 'center', justifyContent: 'center' },
   trophyWrap: { position: 'absolute', right: -14, bottom: -4, width: 86, height: 102 },

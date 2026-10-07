@@ -9,9 +9,14 @@ describe('Home League Leaders integration', () => {
     assert.match(homeSource, /import HomeLeagueLeaders from ['"]\.\.\/components\/HomeLeagueLeaders['"]/);
     assert.match(homeSource, /useState<HomeLeaderMetric>\(['"]points['"]\)/);
     assert.match(homeSource, /<HomeLeagueLeaders/);
-    assert.match(homeSource, /leaders=\{publicHome\?\.leaders\.data \?\? \[\]\}/);
-    assert.match(homeSource, /seasonName=\{publicHome\?\.presentationSeason\?\.name \?\? null\}/);
-    assert.match(homeSource, /manifestRefreshKey=\{publicHome\}/);
+    assert.match(homeSource, /const renderedPublicHome = publicHome/);
+    assert.match(homeSource, /publicHome\.leagueId === activeLeague\.id/);
+    assert.match(homeSource, /publicHome\.leagueSlug === activeLeague\.slug/);
+    assert.match(homeSource, /const selectedLeaderSection = leaderMetric === ['"]gaa['"] \? renderedPublicHome\?\.goalieLeaders : renderedPublicHome\?\.leaders/);
+    assert.match(homeSource, /leaders=\{selectedLeaderSection\?\.data \?\? \[\]\}/);
+    assert.match(homeSource, /selectedLeaderSection\?\.status === ['"]error['"]/);
+    assert.match(homeSource, /seasonName=\{renderedPublicHome\?\.presentationSeason\?\.name \?\? null\}/);
+    assert.match(homeSource, /manifestRefreshKey=\{renderedPublicHome\}/);
   });
 
   it('keeps player and all-stats navigation wired while preserving latest-four articles', () => {

@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import trophy from '../../assets/playoff-trophy.png';
 import type { StandingsFact } from '../lib/standingsModel';
 import colors from '../theme/colors';
+import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
 import TeamLogo from './TeamLogo';
 
 type Seed = StandingsFact;
@@ -133,7 +134,7 @@ export default function StandingsPlayoffsPanel({ picture, predictor, standings, 
 
 const styles = StyleSheet.create({
   section: { gap: 16 }, heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '900' }, tabs: { flexDirection: 'row', borderRadius: 24, borderWidth: 1, borderColor: colors.borderCard, padding: 3 },
+  title: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary }, tabs: { flexDirection: 'row', borderRadius: 24, borderWidth: 1, borderColor: colors.borderCard, padding: 3 },
   tab: { minHeight: 44, minWidth: 72, borderRadius: 21, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, tabText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' },
   group: { gap: 8 }, groupTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900' }, bracketScroll: { paddingTop: 22, paddingBottom: 8 },
   bracketCanvas: { width: 520, height: 446, position: 'relative' }, roundLabel: { position: 'absolute', top: -24, color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' },

@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import { getPublicGoalies, type PublicGoalie } from './publicStats';
 
 export type PresentationSeason = {
   id: string; league_id: string; name: string; status: string | null;
@@ -20,7 +21,8 @@ export type HomeWeeklyGame = {
 export type HomeLeader = {
   player_id: string; player_name: string; avatar_url: string | null; team_id: string | null; team_name: string;
   display_team_name: string | null; display_team_logo_url: string | null; position: string | null;
-  goals: number; assists: number; points: number;
+  goals: number | null; assists: number | null; points: number | null; gaa: number | null;
+  is_goalie: boolean; estimated: boolean;
 };
 export type HomeStanding = {
   team_id: string; team_name: string; logo_url: string | null; primary_color: string | null;
@@ -44,7 +46,7 @@ export type HomePublicSnapshot = {
   leagueId: string; leagueSlug: string; presentationSeason: PresentationSeason | null;
   timezone: string | null; weekKey: string | null; divisions: HomeDivision[];
   articles: HomeSection<HomeArticle[]>; weeklyGames: HomeSection<HomeWeeklyGame[]>;
-  leaders: HomeSection<HomeLeader[]>; standings: HomeSection<HomeStanding[]>;
+  leaders: HomeSection<HomeLeader[]>; goalieLeaders: HomeSection<HomeLeader[]>; standings: HomeSection<HomeStanding[]>;
   photos: HomeSection<HomePhoto[]>; albums: HomeSection<HomeAlbum[]>;
   community: HomeSection<HomeSocial[]>; sponsors: HomeSection<HomeSponsor[]>;
 };
@@ -144,6 +146,93 @@ export function normalizeHomeGameStatus(status: string) {
   if (status === 'postponed') return 'Postponed';
   if (status === 'cancelled') return 'Cancelled';
   return 'Scheduled';
+}
+
+export type HomeMatchupFacts = {
+  dateLabel: string | null;
+  timeLabel: string | null;
+  locationLabel: string | null;
+  statusLabel: ReturnType<typeof normalizeHomeGameStatus>;
+  showScore: boolean;
+  awayScoreLabel: string | null;
+  homeScoreLabel: string | null;
+};
+
+function formatMatchupPart(value: Date, timezone: string, kind: 'date' | 'time') {
+  try {
+    const options: Intl.DateTimeFormatOptions = kind === 'date'
+      ? { timeZone: timezone, month: 'short', day: 'numeric' }
+      : { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true };
+    const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(value);
+    const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+    if (kind === 'date') {
+      const month = read('month'); const day = read('day');
+      return month && day ? `${month} ${day}` : null;
+    }
+    const hour = read('hour'); const minute = read('minute'); const dayPeriod = read('dayPeriod');
+    return hour && minute && dayPeriod ? `${hour}:${minute} ${dayPeriod}` : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildHomeMatchupFacts(game: HomeWeeklyGame, timezone: string | null): HomeMatchupFacts {
+  const instant = new Date(game.scheduled_at);
+  const validInstant = Number.isFinite(instant.getTime());
+  const validTimezone = timezone?.trim() || null;
+  const statusLabel = normalizeHomeGameStatus(game.status);
+  const showScore = statusLabel === 'Final' || statusLabel === 'Live';
+  return {
+    dateLabel: validInstant && validTimezone ? formatMatchupPart(instant, validTimezone, 'date') : null,
+    timeLabel: validInstant && validTimezone ? formatMatchupPart(instant, validTimezone, 'time') : null,
+    locationLabel: game.location?.trim() || null,
+    statusLabel,
+    showScore,
+    awayScoreLabel: showScore && game.away_score != null ? String(game.away_score) : null,
+    homeScoreLabel: showScore && game.home_score != null ? String(game.home_score) : null,
+  };
+}
+
+function safeMatchupColor(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed || !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(trimmed)) return null;
+  if (trimmed.length === 4) return `#${trimmed.slice(1).split('').map((part) => `${part}${part}`).join('')}`.toUpperCase();
+  return trimmed.toUpperCase();
+}
+
+export function resolveHomeMatchupColors(away: string | null, home: string | null, leagueFallback: string | null) {
+  const fallback = safeMatchupColor(leagueFallback) ?? '#7C8798';
+  return { away: safeMatchupColor(away) ?? fallback, home: safeMatchupColor(home) ?? fallback };
+}
+
+export type HomeMatchupSelection = { gameId: string | null; index: number };
+
+export function reconcileHomeMatchupSelection(
+  games: Array<Pick<HomeWeeklyGame, 'id'>>,
+  selectedGameId: string | null,
+  previousIndex: number,
+  scopeChanged: boolean,
+): HomeMatchupSelection {
+  if (games.length === 0) return { gameId: null, index: 0 };
+  if (!scopeChanged && selectedGameId) {
+    const retainedIndex = games.findIndex((game) => game.id === selectedGameId);
+    if (retainedIndex >= 0) return { gameId: selectedGameId, index: retainedIndex };
+  }
+  const index = scopeChanged ? 0 : Math.max(0, Math.min(games.length - 1, previousIndex));
+  return { gameId: games[index].id, index };
+}
+
+export function selectHomeMatchupForScope(
+  games: Array<Pick<HomeWeeklyGame, 'id'>>,
+  index: number,
+  currentScope: string,
+  callbackScope: string,
+  currentGeneration: number,
+  callbackGeneration: number,
+): HomeMatchupSelection | null {
+  if (currentScope !== callbackScope || currentGeneration !== callbackGeneration || games.length === 0) return null;
+  const safeIndex = Math.max(0, Math.min(games.length - 1, index));
+  return { gameId: games[safeIndex].id, index: safeIndex };
 }
 
 export function toSafeWebUrl(value: string | null | undefined) {
@@ -377,7 +466,35 @@ function validateLeader(value: unknown): HomeLeader {
     display_team_logo_url: nullableString(row.display_team_logo_url, 'leader display team logo'),
     position: nullableString(row.position, 'leader position'), goals: finite(row.goals, 'leader goals'),
     assists: finite(row.assists, 'leader assists'), points: finite(row.points, 'leader points'),
+    gaa: null, is_goalie: false, estimated: false,
   };
+}
+
+function mapPublicGoalieToHomeLeader(goalie: PublicGoalie): HomeLeader {
+  return {
+    player_id: goalie.player_id,
+    player_name: goalie.player_name,
+    avatar_url: goalie.avatar_url,
+    team_id: goalie.team_id,
+    team_name: goalie.team_name,
+    display_team_name: goalie.team_id ? goalie.team_name : null,
+    display_team_logo_url: null,
+    position: 'Goalie',
+    goals: null,
+    assists: null,
+    points: null,
+    gaa: goalie.goals_against_average,
+    is_goalie: true,
+    estimated: goalie.estimated,
+  };
+}
+
+function selectUnambiguousPublicGoalies(goalies: readonly PublicGoalie[]) {
+  const rowsPerPlayer = new Map<string, number>();
+  for (const goalie of goalies) rowsPerPlayer.set(goalie.player_id, (rowsPerPlayer.get(goalie.player_id) ?? 0) + 1);
+  // Public goalies v1 is team-scoped and defines no cross-team aggregation.
+  // Exclude every ambiguous player's rows instead of choosing a team or inventing combined GAA.
+  return goalies.filter((goalie) => rowsPerPlayer.get(goalie.player_id) === 1);
 }
 
 function validateStanding(value: unknown): HomeStanding {
@@ -471,6 +588,7 @@ function allFailedSnapshot(leagueId: string, leagueSlug: string): HomePublicSnap
     articles: failed([], 'News is temporarily unavailable.'),
     weeklyGames: failed([], 'This week’s games are temporarily unavailable.'),
     leaders: failed([], 'Current-season leaders are temporarily unavailable.'),
+    goalieLeaders: failed([], 'Current-season goalie GAA is temporarily unavailable.'),
     standings: failed([], 'Standings are temporarily unavailable.'),
     photos: failed([], 'League photos are temporarily unavailable.'),
     albums: failed([], 'League albums are temporarily unavailable.'),
@@ -533,6 +651,12 @@ export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: strin
       return loadUnifiedPublicHome(leagueSlug, leagueId, presentationSeason);
     },
   );
+  const goalieLeadersPromise = section<HomeLeader[]>([], 'Current-season goalie GAA is temporarily unavailable.', async () => {
+    if (seasonLookupFailed) throw new Error('Season unavailable');
+    if (!presentationSeason) return [];
+    const payload = await getPublicGoalies(leagueSlug, leagueId, presentationSeason.id, null);
+    return selectUnambiguousPublicGoalies(payload.goalies).map(mapPublicGoalieToHomeLeader);
+  });
   const photosPromise = section<HomePhoto[]>([], 'League photos are temporarily unavailable.', async () => {
     const result = await supabase.from('gallery_photos')
       .select('id,url,caption,gallery_id,league_gallery!inner(id,title,league_id,is_published)')
@@ -557,8 +681,8 @@ export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: strin
     return selectSponsorStrip(validateSponsors(result.data ?? [], leagueId));
   });
 
-  const [articles, weeklyGames, unified, photos, albums, sponsors] = await Promise.all([
-    articlePromise, gamesPromise, unifiedPromise, photosPromise, albumsPromise, sponsorsPromise,
+  const [articles, weeklyGames, unified, goalieLeaders, photos, albums, sponsors] = await Promise.all([
+    articlePromise, gamesPromise, unifiedPromise, goalieLeadersPromise, photosPromise, albumsPromise, sponsorsPromise,
   ]);
   const leaders = unified.status === 'ready' ? ready(unified.data.leaders)
     : failed<HomeLeader[]>([], unified.message ?? 'Leaders unavailable.');
@@ -583,6 +707,6 @@ export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: strin
 
   return {
     leagueId, leagueSlug, presentationSeason, timezone: league.timezone, weekKey, divisions,
-    articles, weeklyGames, leaders, standings, photos, albums, community, sponsors,
+    articles, weeklyGames, leaders, goalieLeaders, standings, photos, albums, community, sponsors,
   };
 }

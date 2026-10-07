@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FocusFlatList } from '../../components/CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import TeamLogo from '../../components/TeamLogo';
 import { useLeague } from '../../context/LeagueContext';
 import { getPublicLeagues, type LeagueRow } from '../../lib/supabase/leagues';
@@ -307,14 +308,11 @@ const styles = StyleSheet.create({
     marginLeft: 64,
   },
   sectionTitle: {
+    ...SECTION_HEADING_TEXT_STYLE,
     marginTop: 20,
     marginBottom: 0,
     paddingHorizontal: 16,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    color: colors.textPrimary,
   },
   browseContainer: {
     borderTopWidth: StyleSheet.hairlineWidth,

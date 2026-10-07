@@ -18,6 +18,7 @@ const leader = {
   player_id: 'player-opaque-1', player_name: 'Alex Ace', avatar_url: null,
   team_id: null, team_name: 'Free Agent', display_team_name: null,
   display_team_logo_url: null, position: null, goals: 4, assists: 3, points: 7,
+  gaa: null, is_goalie: false, estimated: false,
 };
 
 const standing = {
@@ -28,6 +29,13 @@ const standing = {
 };
 
 const division = { id: DIVISION_ID, name: 'A', sort_order: 2 };
+
+const goalie = {
+  player_id: '40000000-0000-4000-8000-000000000004', player_name: 'Steven Wild',
+  team_id: '50000000-0000-4000-8000-000000000005', team_name: 'Goalie Team', avatar_url: null,
+  games_played: 3, wins: 1, losses: 2, save_percentage: null, goals_against_average: 3,
+  shutouts: 0, saves: null, goals_against: 9, estimated: true,
+};
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
@@ -41,12 +49,14 @@ function makeBoundary({
   responsePayload = payload(), timezone = 'America/Toronto', leagueRow,
   seasonRows = [season],
   resultData = {},
+  goalieResult = { leagueId: LEAGUE_ID, leagueSlug: SLUG, presentationSeason: season, divisionId: null, source: 'estimated', goalies: [goalie] } as unknown,
 }: {
   responsePayload?: unknown;
   timezone?: unknown;
   leagueRow?: unknown;
   seasonRows?: unknown[];
   resultData?: Record<string, unknown>;
+  goalieResult?: unknown;
 } = {}) {
   const calls: Array<{ table?: string; method: string; args: unknown[] }> = [];
   const results: Record<string, { data: unknown; error: unknown }> = {
@@ -92,6 +102,13 @@ function makeBoundary({
         },
       },
     },
+    './publicStats': {
+      getPublicGoalies: async (...args: unknown[]) => {
+        calls.push({ method: 'getPublicGoalies', args });
+        if (goalieResult instanceof Error) throw goalieResult;
+        return goalieResult;
+      },
+    },
   });
   let fetchCount = 0;
   const load = async (slug = SLUG) => {
@@ -129,6 +146,84 @@ describe('reviewed Home data corrections', () => {
     assert.deepEqual(result.standings.data, [standing]);
     assert.deepEqual(result.divisions, [division]);
     assert.equal(boundary.calls.some((call) => call.method === 'rpc'), false);
+  });
+
+  it('loads goalie GAA for the selected presentation season and maps no invented skater values', async () => {
+    const boundary = makeBoundary();
+    const result = await boundary.load();
+
+    assert.deepEqual(boundary.calls.filter((call) => call.method === 'getPublicGoalies').map((call) => call.args), [
+      [SLUG, LEAGUE_ID, SEASON_ID, null],
+    ]);
+    assert.deepEqual(result.goalieLeaders, {
+      status: 'ready',
+      data: [{
+        player_id: goalie.player_id, player_name: goalie.player_name, avatar_url: null,
+        team_id: goalie.team_id, team_name: goalie.team_name,
+        display_team_name: goalie.team_name, display_team_logo_url: null, position: 'Goalie',
+        goals: null, assists: null, points: null, gaa: 3, is_goalie: true, estimated: true,
+      }],
+    });
+  });
+
+  it('fails closed on same-player multi-team goalie rows instead of choosing or aggregating a team row', async () => {
+    const duplicateTeamGoalie = {
+      ...goalie,
+      team_id: '60000000-0000-4000-8000-000000000006',
+      team_name: 'Second Goalie Team',
+      goals_against_average: 5,
+      goals_against: 15,
+    };
+    const uniqueGoalie = {
+      ...goalie,
+      player_id: '70000000-0000-4000-8000-000000000007',
+      player_name: 'Unique Goalie',
+      team_id: '80000000-0000-4000-8000-000000000008',
+      team_name: 'Unique Team',
+      goals_against_average: 2,
+      goals_against: 6,
+    };
+    const goalieResult = {
+      leagueId: LEAGUE_ID,
+      leagueSlug: SLUG,
+      presentationSeason: season,
+      divisionId: null,
+      source: 'estimated',
+      goalies: [goalie, duplicateTeamGoalie, uniqueGoalie],
+    };
+
+    const result = await makeBoundary({ goalieResult }).load();
+
+    assert.equal(result.goalieLeaders.status, 'ready');
+    assert.deepEqual(result.goalieLeaders.data.map((row: any) => ({
+      player_id: row.player_id,
+      team_id: row.team_id,
+      gaa: row.gaa,
+    })), [{
+      player_id: uniqueGoalie.player_id,
+      team_id: uniqueGoalie.team_id,
+      gaa: uniqueGoalie.goals_against_average,
+    }]);
+  });
+
+  it('contains goalie-feed failure without degrading ready skater leaders or standings', async () => {
+    const result = await makeBoundary({ goalieResult: new Error('goalie feed offline') }).load();
+    assert.equal(result.goalieLeaders.status, 'error');
+    assert.deepEqual(result.goalieLeaders.data, []);
+    assert.equal(result.leaders.status, 'ready');
+    assert.deepEqual(result.leaders.data, [leader]);
+    assert.equal(result.standings.status, 'ready');
+    assert.deepEqual(result.standings.data, [standing]);
+  });
+
+  it('does not request or expose all-time goalie facts when no presentation season exists', async () => {
+    const boundary = makeBoundary({
+      seasonRows: [],
+      responsePayload: payload({ presentationSeason: null, leaders: [], standings: [], divisions: [] }),
+    });
+    const result = await boundary.load();
+    assert.equal(boundary.calls.some((call) => call.method === 'getPublicGoalies'), false);
+    assert.deepEqual(result.goalieLeaders, { status: 'ready', data: [] });
   });
 
   it('rejects wrong schema/tenant/season, malformed rows, non-finite facts, invalid divisions, and bounds as one endpoint-owned error', async () => {

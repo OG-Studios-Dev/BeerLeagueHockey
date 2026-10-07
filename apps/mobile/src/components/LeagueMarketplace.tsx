@@ -25,6 +25,7 @@ import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
 import { getContrastTextColor } from '../theme/contrast';
 import MembershipDiagnosticsCard from './MembershipDiagnosticsCard';
+import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
 import TeamLogo from './TeamLogo';
 
 type SortMode = 'nearest' | 'fit';
@@ -339,7 +340,7 @@ export default function LeagueMarketplace({
 
   const joinedLeagueStrip = showJoinedLeagues && availableLeagues.length > 0 ? (
     <FocusCard focusId="marketplace:joined" style={styles.joinedLeaguesSection}>
-      <Text style={styles.sectionEyebrow}>Your leagues</Text>
+      <Text accessibilityRole="header" style={styles.joinedLeaguesTitle}>Your leagues</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.joinedLeaguesScroller}>
         {availableLeagues.map((league) => (
           <Pressable
@@ -772,11 +773,8 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingBottom: 10,
   },
-  sectionEyebrow: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
+  joinedLeaguesTitle: {
+    ...SECTION_HEADING_TEXT_STYLE,
     color: colors.textSecondary,
   },
   joinedLeaguesScroller: {
@@ -951,11 +949,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   modalSectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: colors.textSecondary,
+    ...SECTION_HEADING_TEXT_STYLE,
+    color: colors.textPrimary,
   },
   modalSectionBody: {
     fontSize: 14,

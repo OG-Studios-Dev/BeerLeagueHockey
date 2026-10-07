@@ -123,6 +123,7 @@ function makeScreen({
       '../components/GuestBanner': () => createElement('GuestBanner', null),
       '../components/HomeLeagueHero': HomeLeagueHero,
       '../components/HomeLeagueLeaders': (props: Record<string, unknown>) => createElement('HomeLeagueLeaders', props),
+      '../components/HomeMatchupCarousel': (props: Record<string, unknown>) => createElement('HomeMatchupCarousel', props),
       '../components/LeagueMarketplace': (props: Record<string, unknown>) => {
         marketplaceCalls.push(props);
         return createElement('LeagueMarketplace', props);
@@ -130,7 +131,7 @@ function makeScreen({
       '../components/QuickCheckinActions': () => null,
       '../components/RevealView': passthrough,
       '../components/ScheduleConflictList': () => null,
-      '../components/SectionHeader': ({ title }: { title: string }) => createElement('Text', null, title),
+      '../components/SectionHeader': { default: ({ title }: { title: string }) => createElement('Text', null, title), SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../context/AccessibilityPreferencesContext': {
         useAccessibilityPreferences: () => ({ reduceTransparency, reduceMotion }),

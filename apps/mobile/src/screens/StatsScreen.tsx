@@ -9,6 +9,7 @@ import { FocusFlatList } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
 import PillToggle from '../components/PillToggle';
 import PlayerRow from '../components/PlayerRow';
+import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
 import StatsLeadersCard, { type StatsLeaderMetric, type StatsLeaderStatus } from '../components/StatsLeadersCard';
 import { useLeague } from '../context/LeagueContext';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
@@ -189,7 +190,7 @@ const styles = StyleSheet.create({
   leaderboardsActionText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   listContent: { paddingHorizontal: 16, paddingBottom: 40 },
   tableControls: { marginBottom: 10, gap: 8 },
-  tableTitle: { color: colors.textPrimary, fontSize: 18, lineHeight: 24, fontWeight: '800' },
+  tableTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary },
   tableEmpty: { paddingVertical: 28, alignItems: 'center', justifyContent: 'center' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },

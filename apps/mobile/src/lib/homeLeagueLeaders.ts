@@ -1,7 +1,7 @@
 import type { HomeLeader } from './supabase/home';
 import { findApprovedPlayerArtwork, type PlayerArtworkManifest } from './playerArtworkManifest';
 
-export type HomeLeaderMetric = 'goals' | 'assists' | 'points';
+export type HomeLeaderMetric = 'goals' | 'assists' | 'points' | 'gaa';
 
 export type RankedHomeLeader = HomeLeader & {
   metric: HomeLeaderMetric;
@@ -22,7 +22,7 @@ export type LeaderArtwork =
   | { kind: 'remote'; identityKey: string; uri: string; bundledFallback: 'jack-foote-v1' | null; fallbackUri: string; accessibilityLabel: string }
   | { kind: 'generated'; identityKey: string; artworkId: 'jack-foote-v1'; fallbackUri: string; accessibilityLabel: string }
   | { kind: 'photo'; identityKey: string; uri: string; accessibilityLabel: string }
-  | { kind: 'neutral'; identityKey: string; artworkId: 'neutral-helmet-v1'; accessibilityLabel: string };
+  | { kind: 'neutral'; identityKey: string; artworkId: 'neutral-helmet-v1' | 'neutral-goalie-v1'; accessibilityLabel: string };
 
 function compareText(left: string, right: string) {
   return left.localeCompare(right, 'en', { sensitivity: 'base' }) || left.localeCompare(right, 'en');
@@ -33,18 +33,29 @@ function compareText(left: string, right: string) {
  * from the complete eligible population before the visible limit is applied.
  */
 export function rankHomeLeaders(leaders: readonly HomeLeader[], metric: HomeLeaderMetric): RankedHomeLeader[] {
+  const isGaa = metric === 'gaa';
   const eligible = leaders
-    .filter((leader) => Number.isFinite(leader[metric]) && leader[metric] > 0)
-    .map((leader) => ({ ...leader }))
-    .sort((left, right) => right[metric] - left[metric]
-      || compareText(left.player_name, right.player_name)
-      || compareText(`${left.player_id}:${left.team_id ?? ''}`, `${right.player_id}:${right.team_id ?? ''}`));
+    .filter((leader) => {
+      const value = leader[metric];
+      return Number.isFinite(value) && value !== null && (isGaa ? leader.is_goalie && value >= 0 : value > 0);
+    })
+    .map((leader) => ({ ...leader, [metric]: leader[metric] as number }))
+    .sort((left, right) => {
+      const leftValue = left[metric] as number;
+      const rightValue = right[metric] as number;
+      return (isGaa ? leftValue - rightValue : rightValue - leftValue)
+        || compareText(left.player_name, right.player_name)
+        || compareText(`${left.player_id}:${left.team_id ?? ''}`, `${right.player_id}:${right.team_id ?? ''}`);
+    });
 
   const populationByValue = new Map<number, number>();
-  eligible.forEach((leader) => populationByValue.set(leader[metric], (populationByValue.get(leader[metric]) ?? 0) + 1));
+  eligible.forEach((leader) => {
+    const value = leader[metric] as number;
+    populationByValue.set(value, (populationByValue.get(value) ?? 0) + 1);
+  });
 
   return eligible.slice(0, 3).map((leader) => {
-    const metricValue = leader[metric];
+    const metricValue = leader[metric] as number;
     const firstEqualIndex = eligible.findIndex((candidate) => candidate[metric] === metricValue);
     const competitionRank = firstEqualIndex + 1;
     const tied = (populationByValue.get(metricValue) ?? 0) > 1;
@@ -97,10 +108,11 @@ export function resolveLeaderArtwork(leagueId: string, leader: HomeLeader, manif
       accessibilityLabel: `${leader.player_name} player photo`,
     };
   }
+  const neutralArtworkId = leader.is_goalie ? 'neutral-goalie-v1' : 'neutral-helmet-v1';
   return {
     kind: 'neutral',
-    identityKey: `${identityBase}:neutral-helmet-v1`,
-    artworkId: 'neutral-helmet-v1',
-    accessibilityLabel: `${leader.player_name}, no player photo available`,
+    identityKey: `${identityBase}:${neutralArtworkId}`,
+    artworkId: neutralArtworkId,
+    accessibilityLabel: `${leader.player_name}, no ${leader.is_goalie ? 'goalie' : 'player'} photo available`,
   };
 }

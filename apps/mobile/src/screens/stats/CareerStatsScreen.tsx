@@ -17,7 +17,7 @@ import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import Avatar from '../../components/Avatar';
 import BrandAtmosphere from '../../components/BrandAtmosphere';
-import SectionHeader from '../../components/SectionHeader';
+import SectionHeader, { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import { useAuth } from '../../context/AuthContext';
 import { useLeague } from '../../context/LeagueContext';
 import { discoverCareerLeagues, formatPublicMetric, loadCanonicalCareerV2, type CareerSeasonV2, type PublicCareerV2 } from '../../lib/supabase/publicStats';
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
   },
   tableCellHighlight: { fontWeight: '900', color: colors.primary },
   roleDetail: { flexBasis: '100%', marginTop: 8, color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
-  goalieTotalsTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900', marginBottom: 12, textAlign: 'center' },
+  goalieTotalsTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary, marginBottom: 12, textAlign: 'center' },
   goalieTotalsRow: { flexWrap: 'wrap', rowGap: 14 },
   goalieTotalItem: { width: '25%', alignItems: 'center' },
   goalieTotalItemCompact: { width: '50%' },

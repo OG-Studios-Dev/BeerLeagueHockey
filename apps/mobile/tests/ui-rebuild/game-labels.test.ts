@@ -220,6 +220,13 @@ function renderHome({
       getGameCheckinSummary: failNetwork, getMyCheckins: failNetwork,
       updateCheckin: async (...args: unknown[]) => { checkinCalls.push(args); return { success: true }; },
     },
+    '../components/HomeMatchupCarousel': ({ games, onOpenGame }: { games: GameRow[]; onOpenGame: (id: string) => void }) => games.map((game) => jsx('Pressable', {
+      accessibilityRole: 'button',
+      accessibilityLabel: `Final. ${game.away_team?.name} ${game.away_score}. ${game.home_team?.name} ${game.home_score}. North Forum.`,
+      onPress: () => onOpenGame(game.id),
+      children: jsx('Text', { children: `Final ${game.location} ${game.away_team?.name} ${game.away_score} ${game.home_team?.name} ${game.home_score}` }),
+    })),
+    '../components/SectionHeader': { SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.
     ...Object.fromEntries(['GuestBanner', 'HomeLeagueHero', 'HomeLeagueLeaders', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),

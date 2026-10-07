@@ -8,6 +8,7 @@ import type { PlayerStatRow } from '../lib/supabase/data';
 import { formatPublicMetric } from '../lib/supabase/publicStats';
 import { ui } from '../theme/ui';
 import { FocusCard } from './CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
 
 export type StatsLeaderMetric = 'goals' | 'assists' | 'points';
 export type StatsCardLeader = PlayerStatRow & { avatar_url: string | null };
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 28, borderWidth: 1, borderColor: '#24404C', overflow: 'hidden', backgroundColor: '#0B1723', marginBottom: 22 },
   surface: { padding: 16 }, heading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }, headingCopy: { flex: 1, minWidth: 0 },
   eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 5 }, eyebrow: { flexShrink: 1, color: '#93B4C1', fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 1.1, textTransform: 'uppercase' },
-  title: { color: '#F5FAFF', fontSize: 23, lineHeight: 29, fontWeight: '900', letterSpacing: -0.6 }, topFive: { borderRadius: 999, borderWidth: 1, borderColor: '#49605D', backgroundColor: '#182E31', paddingHorizontal: 10, paddingVertical: 7 }, topFiveText: { color: '#E8C779', fontSize: 10, lineHeight: 14, fontWeight: '900', letterSpacing: 0.8 },
+  title: { ...SECTION_HEADING_TEXT_STYLE, color: '#F5FAFF' }, topFive: { borderRadius: 999, borderWidth: 1, borderColor: '#49605D', backgroundColor: '#182E31', paddingHorizontal: 10, paddingVertical: 7 }, topFiveText: { color: '#E8C779', fontSize: 10, lineHeight: 14, fontWeight: '900', letterSpacing: 0.8 },
   toggle: { flexDirection: 'row', padding: 4, gap: 3, borderRadius: 999, backgroundColor: '#07111C', borderWidth: 1, borderColor: '#223541', marginBottom: 17 },
   toggleButton: { flex: 1, minWidth: 0, minHeight: ui.minTouchTarget, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, paddingVertical: 8, borderRadius: 999 }, toggleSelected: { backgroundColor: '#6BE3DF' }, toggleText: { color: '#ADBCCA', fontSize: 12, lineHeight: 17, fontWeight: '800', textAlign: 'center' }, toggleTextSelected: { color: '#072028' }, pressed: { opacity: 0.78 },
   rankings: { gap: 4 }, featured: { minHeight: 110, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 16, marginBottom: 5, backgroundColor: '#152833', borderWidth: 1, borderColor: '#34463E' },

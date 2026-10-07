@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 
 import TeamLogo from '../../components/TeamLogo';
 import { supabase } from '../../lib/supabase/client';
@@ -355,7 +356,7 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5, color: colors.textSecondary },
+  sectionLabel: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary },
   twoColRow: { flexDirection: 'row', gap: 12 },
   scorerCol: { flex: 1, gap: 6 },
   colHeader: { fontSize: 12, fontWeight: '800', marginBottom: 4 },

@@ -38,6 +38,19 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
 
   new Function('require', 'exports', compiled)((id: string) => {
     if (id in mocks) return mocks[id];
+    if (id.endsWith('/SectionHeader') || id === './SectionHeader') {
+      const native = (mocks['react-native'] ?? {}) as TestProps;
+      const titleStyle = { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' };
+      return {
+        __esModule: true,
+        default: ({ title }: { title: string }) => createElement(
+          native.View ?? 'View',
+          null,
+          createElement(native.Text ?? 'Text', { accessibilityRole: 'header', style: titleStyle }, title),
+        ),
+        SECTION_HEADING_TEXT_STYLE: titleStyle,
+      };
+    }
     if (id === '@react-navigation/bottom-tabs') {
       return { BottomTabBarHeightContext: { current: undefined } };
     }

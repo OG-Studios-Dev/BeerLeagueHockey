@@ -3,6 +3,7 @@ import React from 'react';
 import { ActivityIndicator, Image, type ImageSourcePropType, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import jackFooteArt from '../../assets/league-leaders/jack-foote.png';
+import neutralGoalieArt from '../../assets/league-leaders/neutral-goalie.png';
 import neutralHelmetArt from '../../assets/league-leaders/neutral-helmet-player.png';
 import type { HomeLeader } from '../lib/supabase/home';
 import { loadPlayerArtworkManifest, type PlayerArtworkManifest } from '../lib/playerArtworkManifest';
@@ -15,16 +16,21 @@ import {
 } from '../lib/homeLeagueLeaders';
 import { HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
 import { FocusCard } from './CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
 import TeamLogo from './TeamLogo';
 
 const GENERATED_ART: Record<'jack-foote-v1', ImageSourcePropType> = {
   'jack-foote-v1': jackFooteArt,
 };
-const NEUTRAL_ART: ImageSourcePropType = neutralHelmetArt;
+const NEUTRAL_ART: Record<'neutral-helmet-v1' | 'neutral-goalie-v1', ImageSourcePropType> = {
+  'neutral-helmet-v1': neutralHelmetArt,
+  'neutral-goalie-v1': neutralGoalieArt,
+};
 const METRICS: readonly { key: HomeLeaderMetric; label: string }[] = [
   { key: 'goals', label: 'Goals' },
   { key: 'assists', label: 'Assists' },
   { key: 'points', label: 'Points' },
+  { key: 'gaa', label: 'GAA' },
 ];
 
 type Props = {
@@ -47,13 +53,20 @@ type Props = {
 
 type ArtworkStage = 'remote' | 'generated' | 'photo' | 'neutral';
 
-function artworkSource(artwork: LeaderArtwork, stage: ArtworkStage): ImageSourcePropType {
-  if (stage === 'neutral') return NEUTRAL_ART;
+function neutralArtworkSource(artwork: LeaderArtwork, leader: RankedHomeLeader) {
+  const artworkId = artwork.kind === 'neutral'
+    ? artwork.artworkId
+    : leader.is_goalie ? 'neutral-goalie-v1' : 'neutral-helmet-v1';
+  return NEUTRAL_ART[artworkId];
+}
+
+function artworkSource(artwork: LeaderArtwork, stage: ArtworkStage, leader: RankedHomeLeader): ImageSourcePropType {
+  if (stage === 'neutral') return neutralArtworkSource(artwork, leader);
   if (stage === 'remote' && artwork.kind === 'remote') return { uri: artwork.uri, cache: 'force-cache' };
   if (stage === 'generated') return GENERATED_ART['jack-foote-v1'];
   if (artwork.kind === 'photo') return { uri: artwork.uri };
   if (artwork.kind === 'remote' || artwork.kind === 'generated') return { uri: artwork.fallbackUri };
-  return NEUTRAL_ART;
+  return neutralArtworkSource(artwork, leader);
 }
 
 function nextArtworkStage(artwork: LeaderArtwork, stage: ArtworkStage): ArtworkStage {
@@ -76,7 +89,7 @@ function LeaderArtworkImage({ artwork, leader }: { artwork: LeaderArtwork; leade
   }, [currentAttempt]);
   const { stage, generation } = currentAttempt;
   const shownLabel = stage === 'neutral'
-    ? `${leader.player_name}, no player photo available`
+    ? `${leader.player_name}, no ${leader.is_goalie ? 'goalie' : 'player'} photo available`
     : stage === 'photo' ? `${leader.player_name} player photo` : artwork.accessibilityLabel;
   const handleError = () => {
     const captured = { identityKey: artwork.identityKey, stage, generation, ownership: currentAttempt.ownership };
@@ -102,7 +115,7 @@ function LeaderArtworkImage({ artwork, leader }: { artwork: LeaderArtwork; leade
     <Image
       key={`${stage}:${generation}`}
       testID="home-leader-feature-art"
-      source={artworkSource(artwork, stage)}
+      source={artworkSource(artwork, stage, leader)}
       accessibilityLabel={shownLabel}
       alt={shownLabel}
       resizeMode="contain"
@@ -137,12 +150,18 @@ function MetricTabs({ value, onChange }: { value: HomeLeaderMetric; onChange: (m
 function LeaderRow({ leader, compact, onOpen }: { leader: RankedHomeLeader; compact: boolean; onOpen: () => void }) {
   const teamName = leader.display_team_name || leader.team_name || 'Free agent';
   const metricLabel = leader.metric.toUpperCase();
+  const metricValue = leader.metric === 'gaa'
+    ? `${leader.estimated ? '~' : ''}${leader.metricValue.toFixed(2)}`
+    : String(leader.metricValue);
+  const accessibleMetric = leader.metric === 'gaa'
+    ? `${leader.estimated ? 'estimated ' : ''}goals against average ${leader.metricValue.toFixed(2)}`
+    : `${leader.metricValue} ${leader.metric}`;
   return (
     <FocusCard focusId={`home:leader:${leader.metric}:${leader.player_id}`}>
       <Pressable
         testID={`home-leader-row-${leader.player_id}`}
         accessibilityRole="button"
-        accessibilityLabel={`${leader.rankLabel}. ${leader.player_name}, ${teamName}, ${leader.metricValue} ${leader.metric}. Open player card.`}
+        accessibilityLabel={`${leader.rankLabel}. ${leader.player_name}, ${teamName}, ${accessibleMetric}. Open player card.`}
         onPress={onOpen}
         style={({ pressed }) => [styles.row, compact && styles.rowCompact, pressed && styles.pressed]}
       >
@@ -158,7 +177,7 @@ function LeaderRow({ leader, compact, onOpen }: { leader: RankedHomeLeader; comp
               size={compact ? 30 : 36}
               transparentBacking
             />
-            <Text allowFontScaling={false} style={[styles.value, compact && styles.valueCompact]}>{leader.metricValue}</Text>
+            <Text allowFontScaling={false} style={[styles.value, compact && styles.valueCompact]}>{metricValue}</Text>
             <Text style={[styles.metricLabel, compact && styles.metricLabelCompact]}>{metricLabel}</Text>
           </View>
         </View>
@@ -168,7 +187,7 @@ function LeaderRow({ leader, compact, onOpen }: { leader: RankedHomeLeader; comp
 }
 
 export default function HomeLeagueLeaders({
-  leagueId, seasonName, metric, leaders, status, errorMessage, width, fontScale,
+  leagueId, seasonName: _seasonName, metric, leaders, status, errorMessage, width, fontScale,
   onMetricChange, onRetry, onOpenPlayer, onOpenAllStats, manifestLoader = loadPlayerArtworkManifest, manifestRefreshKey,
 }: Props) {
   const [manifest, setManifest] = React.useState<PlayerArtworkManifest | null>(null);
@@ -193,9 +212,7 @@ export default function HomeLeagueLeaders({
     <View testID="home-league-leaders" style={styles.module}>
       <View style={styles.heading}>
         <View style={styles.headingCopy}>
-          <Text style={styles.eyebrow}>LEAGUE</Text>
           <Text accessibilityRole="header" style={styles.title}>League Leaders</Text>
-          {seasonName ? <Text style={styles.season}>{seasonName}</Text> : null}
         </View>
       </View>
       <MetricTabs value={metric} onChange={onMetricChange} />
@@ -208,13 +225,17 @@ export default function HomeLeagueLeaders({
       ) : status === 'error' && ranked.length === 0 ? (
         <View testID="home-leaders-error" style={styles.state} accessibilityLiveRegion="polite">
           <Ionicons name="cloud-offline-outline" size={22} color={homeTokens.textSecondary} />
-          <Text style={styles.stateText}>{errorMessage || 'Current-season leaders are temporarily unavailable.'}</Text>
+          <Text style={styles.stateText}>{errorMessage || (metric === 'gaa'
+            ? 'Current-season goalie GAA is temporarily unavailable.'
+            : 'Current-season leaders are temporarily unavailable.')}</Text>
           <Pressable testID="home-leaders-retry" accessibilityRole="button" onPress={onRetry} style={styles.retry}><Text style={styles.retryText}>Retry</Text></Pressable>
         </View>
       ) : ranked.length === 0 ? (
         <View testID="home-leaders-empty" style={styles.state} accessibilityLiveRegion="polite">
-          <Text style={styles.stateTitle}>No {metric} leaders yet</Text>
-          <Text style={styles.stateText}>Current-season skater totals will appear after completed games are published.</Text>
+          <Text style={styles.stateTitle}>{metric === 'gaa' ? 'No GAA leaders yet' : `No ${metric} leaders yet`}</Text>
+          <Text style={styles.stateText}>{metric === 'gaa'
+            ? 'Current-season goalie GAA values will appear after eligible goalie results are published.'
+            : 'Current-season skater totals will appear after completed games are published.'}</Text>
         </View>
       ) : (
         <>
@@ -249,9 +270,7 @@ const styles = StyleSheet.create({
   module: { width: '100%', overflow: 'hidden', paddingVertical: 4 },
   heading: { minHeight: 58, flexDirection: 'row', alignItems: 'flex-end' },
   headingCopy: { flex: 1, minWidth: 0 },
-  eyebrow: { color: homeTokens.textSecondary, fontSize: 10, lineHeight: 15, fontWeight: '900', letterSpacing: 2.8 },
-  title: { color: homeTokens.text, fontSize: 28, lineHeight: 34, fontWeight: '900', fontStyle: 'italic', letterSpacing: -0.8 },
-  season: { color: homeTokens.textSecondary, fontSize: 11, lineHeight: 17, fontWeight: '800', letterSpacing: 1.8, textTransform: 'uppercase', marginTop: 3 },
+  title: { ...SECTION_HEADING_TEXT_STYLE, color: homeTokens.text },
   tabs: { flexDirection: 'row', gap: 6, marginTop: 13, marginBottom: 12 },
   tab: { flex: 1, minWidth: 0, minHeight: 44, borderRadius: 13, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   tabSelected: { borderColor: 'rgba(172, 101, 255, 0.72)', backgroundColor: 'rgba(103, 48, 151, 0.28)' },

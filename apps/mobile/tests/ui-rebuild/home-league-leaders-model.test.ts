@@ -23,6 +23,9 @@ function leader(overrides: Partial<HomeLeader> & Pick<HomeLeader, 'player_id' | 
     goals: 0,
     assists: 0,
     points: 0,
+    gaa: null,
+    is_goalie: false,
+    estimated: false,
     ...overrides,
   };
 }
@@ -54,6 +57,34 @@ describe('Home League Leaders ranking model', () => {
         .map((row) => [row.player_id, row.rankLabel]),
       [['one', '1']],
     );
+  });
+
+  it('ranks only finite goalie GAA ascending, accepts zero, and derives ties before the top-three limit', () => {
+    const rows = [
+      leader({ player_id: 'skater', player_name: 'Skater', is_goalie: false, gaa: 0 }),
+      leader({ player_id: 'zero', player_name: 'Zero', is_goalie: true, gaa: 0 }),
+      leader({ player_id: 'tie-b', player_name: 'Tie B', is_goalie: true, gaa: 1.5 }),
+      leader({ player_id: 'tie-a', player_name: 'Tie A', is_goalie: true, gaa: 1.5 }),
+      leader({ player_id: 'tie-c', player_name: 'Tie C', is_goalie: true, gaa: 1.5 }),
+      leader({ player_id: 'null', player_name: 'Null', is_goalie: true, gaa: null }),
+      leader({ player_id: 'nan', player_name: 'NaN', is_goalie: true, gaa: Number.NaN }),
+    ] as HomeLeader[];
+
+    assert.deepEqual(rankHomeLeaders(rows, 'gaa').map((row) => [row.player_id, row.metricValue, row.rankLabel]), [
+      ['zero', 0, '1'], ['tie-a', 1.5, 'T2'], ['tie-b', 1.5, 'T2'],
+    ]);
+    assert.deepEqual(rankHomeLeaders(rows, 'goals'), [], 'skater zero exclusion remains unchanged');
+  });
+
+  it('includes Connor and Christian whenever their goalie rows contain eligible GAA values', () => {
+    const rows = [
+      leader({ player_id: 'steven', player_name: 'Steven Wild', is_goalie: true, gaa: 3 }),
+      leader({ player_id: 'christian', player_name: 'Christian Jarchow', is_goalie: true, gaa: 1.25 }),
+      leader({ player_id: 'connor', player_name: 'Connor', is_goalie: true, gaa: 0.75 }),
+    ];
+    assert.deepEqual(rankHomeLeaders(rows, 'gaa').map((row) => row.player_name), [
+      'Connor', 'Christian Jarchow', 'Steven Wild',
+    ]);
   });
 
   it('matches the captured 2026-10-04 public Home leaders for every tab', () => {
@@ -93,9 +124,10 @@ describe('Home League Leaders artwork policy', () => {
     assert.equal(resolveLeaderArtwork(leagueId, { ...jack, avatar_url: `${jack.avatar_url}?changed=1` }).kind, 'photo');
   });
 
-  it('uses a genuine photo for unmatched photographed leaders and neutral art when no photo exists', () => {
+  it('uses a genuine photo for unmatched photographed leaders and role-correct neutral art when no photo exists', () => {
     const photo = leader({ player_id: 'photo', player_name: 'Photo Player', avatar_url: 'https://example.test/photo.png' });
     const missing = leader({ player_id: 'missing', player_name: 'Missing Player' });
+    const missingGoalie = leader({ player_id: 'goalie', player_name: 'Missing Goalie', is_goalie: true, position: 'Goalie' });
     assert.deepEqual(resolveLeaderArtwork(leagueId, photo), {
       kind: 'photo',
       identityKey: `${leagueId}:photo:https://example.test/photo.png:photo`,
@@ -103,6 +135,12 @@ describe('Home League Leaders artwork policy', () => {
       accessibilityLabel: 'Photo Player player photo',
     });
     assert.equal(resolveLeaderArtwork(leagueId, missing).kind, 'neutral');
+    assert.deepEqual(resolveLeaderArtwork(leagueId, missingGoalie), {
+      kind: 'neutral',
+      identityKey: `${leagueId}:goalie:no-photo:neutral-goalie-v1`,
+      artworkId: 'neutral-goalie-v1',
+      accessibilityLabel: 'Missing Goalie, no goalie photo available',
+    });
     assert.match(resolveLeaderArtwork(leagueId, missing).accessibilityLabel, /no player photo available/i);
   });
 });

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusScrollView } from '../../components/CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 
 import { useLeague } from '../../context/LeagueContext';
 import { getLeaguePage, type LeaguePageKind, type LeaguePageResponse, type PageDivision, type PageSeason } from '../../lib/leaguePages';
@@ -136,7 +137,7 @@ export function DivisionPicker({ divisions, selected, onSelect }: { divisions: P
 
 export const commonStyles = StyleSheet.create({
   section: { marginTop: 24 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 21, fontWeight: '900', marginBottom: 10 },
+  sectionTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary, marginBottom: 10 },
   sectionDetail: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   card: { backgroundColor: colors.bgSurface, borderColor: colors.glassStroke, borderWidth: 1, borderRadius: 18, padding: 14 },
   primaryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.primary, paddingHorizontal: 18 },

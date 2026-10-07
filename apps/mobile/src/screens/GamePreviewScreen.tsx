@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
 
 import { addGameToCalendar } from '../lib/calendar';
 import Avatar from '../components/Avatar';
@@ -796,10 +797,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    color: colors.textSecondary,
+    ...SECTION_HEADING_TEXT_STYLE,
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   twoColRow: { flexDirection: 'row', gap: 12 },

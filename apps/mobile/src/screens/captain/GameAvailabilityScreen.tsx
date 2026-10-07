@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AccessibleChoiceGroup from '../../components/AccessibleChoiceGroup';
 import Avatar from '../../components/Avatar';
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
+import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -440,7 +441,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bgBase }, centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }, content: { padding: 16, paddingBottom: 40, gap: 14 },
-  card: { backgroundColor: colors.bgSurface, borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, padding: 14, gap: 10 }, gameTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary }, sectionTitle: { fontSize: 16, fontWeight: '900', color: colors.textPrimary }, secondary: { fontSize: 12, fontWeight: '600', color: colors.textSecondary }, inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  card: { backgroundColor: colors.bgSurface, borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, padding: 14, gap: 10 }, gameTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary }, sectionTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary }, secondary: { fontSize: 12, fontWeight: '600', color: colors.textSecondary }, inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   error: { color: colors.accentRed, fontSize: 12, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, primaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.primary }, secondaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.bgInteractive }, buttonText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' }, disabled: { opacity: 0.5 },
   counts: { flexDirection: 'row', gap: 8 }, countCard: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, backgroundColor: colors.bgSurface }, count: { fontSize: 22, fontWeight: '900' }, countLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
   playerRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingVertical: 8 }, playerInfo: { flex: 1, minWidth: 100 }, playerName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary }, statusActions: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, statusButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.bgInteractive }, statusText: { color: colors.textPrimary, fontSize: 11, fontWeight: '800' }, dot: { width: 10, height: 10, borderRadius: 5 },

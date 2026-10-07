@@ -13,17 +13,28 @@ const jack: HomeLeader = {
   avatar_url: leaderModel.JACK_FOOTE_ART_IDENTITY.avatarUrl,
   team_id: 'flyers', team_name: 'FitzRays Flyers', display_team_name: 'FitzRays Flyers',
   display_team_logo_url: 'https://example.test/flyers.png', position: 'Forward', goals: 2, assists: 1, points: 3,
+  gaa: null, is_goalie: false, estimated: false,
 };
 const kyle: HomeLeader = {
   player_id: 'kyle', player_name: 'Kyle Geraghty', avatar_url: null,
   team_id: 'bunny', team_name: 'Bad Bunny', display_team_name: 'Bad Bunny',
   display_team_logo_url: 'https://example.test/bunny.png', position: 'Defense', goals: 0, assists: 2, points: 2,
+  gaa: null, is_goalie: false, estimated: false,
 };
 const trevor: HomeLeader = {
   player_id: 'trevor', player_name: 'Trevor Paterson', avatar_url: 'https://example.test/trevor.png',
   team_id: 'bunny', team_name: 'Bad Bunny', display_team_name: 'Bad Bunny',
   display_team_logo_url: 'https://example.test/bunny.png', position: 'Forward', goals: 2, assists: 1, points: 3,
+  gaa: null, is_goalie: false, estimated: false,
 };
+const steven: HomeLeader = {
+  player_id: 'steven', player_name: 'Steven Wild', avatar_url: null,
+  team_id: 'goalie-team', team_name: 'Goalie Team', display_team_name: 'Goalie Team',
+  display_team_logo_url: null, position: 'Goalie', goals: null, assists: null, points: null,
+  gaa: 3, is_goalie: true, estimated: true,
+};
+const aaron: HomeLeader = { ...steven, player_id: 'aaron', player_name: 'Aaron Buehler', gaa: 4 };
+const cody: HomeLeader = { ...steven, player_id: 'cody', player_name: 'Cody Bolman', gaa: 6 };
 
 function loadComponent(harness: ReturnType<typeof createHookHarness>) {
   return compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
@@ -38,9 +49,11 @@ function loadComponent(harness: ReturnType<typeof createHookHarness>) {
       'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       '../lib/homeLeagueLeaders': leaderModel,
       '../theme/home': { HOME_VISUAL_TOKENS: { text: '#fff', textSecondary: '#aaa', stroke: 'rgba(1,2,3,.2)', strokeOpaque: '#345', minTouchTarget: 44 } },
+      './SectionHeader': { SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
       './TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../../assets/league-leaders/jack-foote.png': { asset: 'jack' },
       '../../assets/league-leaders/neutral-helmet-player.png': { asset: 'neutral' },
+      '../../assets/league-leaders/neutral-goalie.png': { asset: 'goalie' },
     },
   ).default;
 }
@@ -105,6 +118,37 @@ describe('Home League Leaders component', () => {
     findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-action')!.props.onPress();
     findNode(harness.output, (node) => node.props.testID === 'home-leader-row-kyle')!.props.onPress();
     assert.deepEqual(opened, ['kyle', 'kyle']);
+  });
+
+  it('selects the exact GAA tab and renders estimated goalie values to two decimals with accessible provenance', () => {
+    const harness = createHookHarness();
+    const Component = loadComponent(harness);
+    const Wrapper = () => {
+      const [metric, setMetric] = harness.react.useState<leaderModel.HomeLeaderMetric>('points');
+      return Component({
+        leagueId, seasonName: 'Fall 2026', metric, leaders: [jack, cody, steven, aaron], status: 'ready',
+        width: 390, fontScale: 1, reduceTransparency: false, onMetricChange: setMetric,
+        onRetry: () => {}, onOpenPlayer: () => {}, onOpenAllStats: () => {},
+      });
+    };
+    harness.mount(Wrapper);
+
+    const gaaTab = findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-gaa');
+    assert.ok(gaaTab);
+    assert.equal(nodeText(gaaTab), 'GAA');
+    gaaTab.props.onPress();
+    harness.render();
+
+    const selectedGaaTab = findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-gaa')!;
+    assert.equal(selectedGaaTab.props.accessibilityState.selected, true);
+    const row = findNode(harness.output, (node) => node.props.testID === 'home-leader-row-steven')!;
+    assert.match(nodeText(row), /1Steven Wild~3\.00GAA/);
+    assert.match(row.props.accessibilityLabel, /estimated goals against average 3\.00/i);
+    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-aaron')), /2Aaron Buehler~4\.00GAA/);
+    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-cody')), /3Cody Bolman~6\.00GAA/);
+    const art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
+    assert.deepEqual(art.props.source, { asset: 'goalie' });
+    assert.match(art.props.accessibilityLabel, /no goalie photo available/i);
   });
 
   it('owns generated, photo and neutral attempts and ignores saved stale callbacks', () => {
@@ -182,6 +226,20 @@ describe('Home League Leaders component', () => {
     assert.equal(flattenStyle(art.props.style).position, 'absolute');
   });
 
+  it('uses a goalie-specific fallback when GAA errors omit a message', () => {
+    const harness = createHookHarness();
+    const Component = loadComponent(harness);
+    harness.mount(() => Component({
+      leagueId, seasonName: 'Fall 2026', metric: 'gaa', leaders: [], status: 'error',
+      width: 390, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {},
+      onOpenPlayer: () => {}, onOpenAllStats: () => {},
+    }));
+
+    const error = findNode(harness.output, (node) => node.props.testID === 'home-leaders-error');
+    assert.ok(error);
+    assert.equal(nodeText(error), 'Current-season goalie GAA is temporarily unavailable.Retry');
+  });
+
   it('keeps tabs at least 44px and supplies loading, error, empty and all-stats actions', () => {
     const harness = createHookHarness();
     const Component = loadComponent(harness);
@@ -204,8 +262,12 @@ describe('Home League Leaders component', () => {
     assert.equal(retried, 1);
 
     props.status = 'ready';
+    props.metric = 'gaa';
     harness.render();
-    assert.ok(findNode(harness.output, (node) => node.props.testID === 'home-leaders-empty'));
+    const empty = findNode(harness.output, (node) => node.props.testID === 'home-leaders-empty');
+    assert.ok(empty);
+    assert.match(nodeText(empty), /goalie GAA/i);
+    assert.doesNotMatch(nodeText(empty), /skater totals/i);
     findNode(harness.output, (node) => node.props.testID === 'home-leaders-all-stats')!.props.onPress();
     assert.equal(openedAll, 1);
   });
@@ -213,6 +275,7 @@ describe('Home League Leaders component', () => {
   it('keys artwork and crest lifetimes to exact changing identities', () => {
     const source = readFileSync(new URL('../../src/components/HomeLeagueLeaders.tsx', import.meta.url).pathname, 'utf8');
     assert.match(source, /import jackFooteArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/jack-foote\.png['"]/);
+    assert.match(source, /import neutralGoalieArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/neutral-goalie\.png['"]/);
     assert.match(source, /import neutralHelmetArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/neutral-helmet-player\.png['"]/);
     assert.match(source, /key=\{artwork\.identityKey\}/);
     assert.match(source, /key=\{`\$\{stage\}:\$\{generation\}`\}/);
