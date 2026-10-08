@@ -28,6 +28,14 @@ const OLD_ASSET_HASHES = new Set([
   '008a7b4471105d38017bc2623d49674fef70a68686fb2b8ecd6133d135bc6a1b',
 ]);
 
+const APPROVED_THREE_STAR_ASSET_HASHES = {
+  'hockey-life-logo.png': 'c71e4711db012fd483bee340812464317fe7bbbeb12320c24017889fcb74ae47',
+  'icon.png': 'd2fc79d089ae36aaa246b3c3007cc6e023185c2213ef0c5b9f89c37accbb32da',
+  'splash.png': 'b929003606d55ce882ea079c5ff61392c2b492f56f8e501b769285ba95c7ac80',
+  'adaptive-icon.png': 'ad0885af7a8e8409d8c44b9b803d48f3830cbc3c8cbd2591fb7e127fd6b84481',
+  'favicon.png': 'a582d641fcf830f23931ab77b0cc603146075f03f2bd1f9be9c4c6d811c9f804',
+};
+
 function paeth(left, above, upperLeft) {
   const estimate = left + above - upperLeft;
   const leftDistance = Math.abs(estimate - left);
@@ -126,6 +134,37 @@ function markBounds(image, background = [17, 23, 23], threshold = 24) {
   return { left, top, right, bottom, width: right - left + 1, height: bottom - top + 1 };
 }
 
+function alphaComponents(image, threshold = 8) {
+  const visited = new Uint8Array(image.width * image.height);
+  const components = [];
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const start = y * image.width + x;
+      if (visited[start] || image.pixel(x, y)[3] <= threshold) continue;
+      const queue = [[x, y]];
+      visited[start] = 1;
+      let count = 0;
+      let top = y;
+      let bottom = y;
+      for (let index = 0; index < queue.length; index += 1) {
+        const [currentX, currentY] = queue[index];
+        count += 1;
+        top = Math.min(top, currentY);
+        bottom = Math.max(bottom, currentY);
+        for (const [nextX, nextY] of [[currentX - 1, currentY], [currentX + 1, currentY], [currentX, currentY - 1], [currentX, currentY + 1]]) {
+          if (nextX < 0 || nextY < 0 || nextX >= image.width || nextY >= image.height) continue;
+          const next = nextY * image.width + nextX;
+          if (visited[next] || image.pixel(nextX, nextY)[3] <= threshold) continue;
+          visited[next] = 1;
+          queue.push([nextX, nextY]);
+        }
+      }
+      components.push({ count, top, bottom });
+    }
+  }
+  return components;
+}
+
 test('uses Hockey Life for the display identity while freezing technical identity and validating counters', () => {
   const { expo } = readJson('app.json');
   assert.equal(expo.name, 'Hockey Life');
@@ -172,8 +211,8 @@ test('ships an opaque square 1024px iOS icon with the supplied dark background',
   assert.deepEqual(icon.pixel(0, 0), [17, 23, 23, 255]);
   const bounds = markBounds(icon);
   assert.ok(bounds.width >= 680 && bounds.width <= 760, JSON.stringify(bounds));
-  assert.ok(bounds.height >= 470 && bounds.height <= 540, JSON.stringify(bounds));
-  assert.ok(Math.abs(bounds.width / bounds.height - 206 / 144) < 0.04, JSON.stringify(bounds));
+  assert.ok(bounds.height >= 600 && bounds.height <= 650, JSON.stringify(bounds));
+  assert.ok(Math.abs(bounds.width / bounds.height - 661 / 570) < 0.04, JSON.stringify(bounds));
 });
 
 test('keeps every adaptive-icon mark pixel inside the Android 66/108 safe circle', () => {
@@ -181,8 +220,8 @@ test('keeps every adaptive-icon mark pixel inside the Android 66/108 safe circle
   assert.deepEqual([adaptive.width, adaptive.height, adaptive.colorType], [1024, 1024, 6]);
   assert.equal(adaptive.pixel(0, 0)[3], 0);
   const bounds = alphaBounds(adaptive);
-  assert.ok(bounds.width >= 480 && bounds.width <= 560, JSON.stringify(bounds));
-  assert.ok(Math.abs(bounds.width / bounds.height - 206 / 144) < 0.04, JSON.stringify(bounds));
+  assert.ok(bounds.width >= 450 && bounds.width <= 480, JSON.stringify(bounds));
+  assert.ok(Math.abs(bounds.width / bounds.height - 661 / 570) < 0.04, JSON.stringify(bounds));
   const center = (adaptive.width - 1) / 2;
   const safeRadius = adaptive.width * 33 / 108;
   for (let y = 0; y < adaptive.height; y += 1) {
@@ -203,8 +242,21 @@ test('uses transparent proportional derivatives for shared and native splash mar
     assert.equal(image.pixel(0, 0)[3], 0);
     const bounds = alphaBounds(image);
     assert.ok(bounds.width >= minimumWidth && bounds.width <= maximumWidth, `${name}: ${JSON.stringify(bounds)}`);
-    assert.ok(Math.abs(bounds.width / bounds.height - 206 / 144) < 0.04, `${name}: ${JSON.stringify(bounds)}`);
+    assert.ok(Math.abs(bounds.width / bounds.height - 661 / 570) < 0.04, `${name}: ${JSON.stringify(bounds)}`);
   }
+});
+
+test('freezes the reviewed official three-star derivatives by digest and visible mark structure', () => {
+  for (const [name, expectedHash] of Object.entries(APPROVED_THREE_STAR_ASSET_HASHES)) {
+    const actualHash = createHash('sha256').update(readFileSync(assetPath(name))).digest('hex');
+    assert.equal(actualHash, expectedHash, `${name} must be regenerated from the approved official source`);
+  }
+
+  const sharedMark = decodePng('hockey-life-logo.png');
+  const bounds = alphaBounds(sharedMark);
+  const starComponents = alphaComponents(sharedMark)
+    .filter((component) => component.count >= 1000 && component.bottom < bounds.top + bounds.height * 0.22);
+  assert.equal(starComponents.length, 3, 'the shared Hockey Life mark must retain exactly three separated stars');
 });
 
 test('keeps app-owned assets distinct from the preserved BLH platform sponsor', () => {

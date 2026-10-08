@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import { compileCommonJs, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness.ts';
 
 const HOCKEY_LIFE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
-const CANONICAL_HOCKEY_LIFE_LOGO = 'https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/league-logos/wizard-add94b26-b344-459f-9727-8cddae9783de-1773170120557.jpg';
+const CANONICAL_HOCKEY_LIFE_LOGO = 'https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/league-logos/d6e55507-6eae-4d94-978c-47c6c30a36f1-league-logo-20261005-4c8a4397af9394c8.png';
 
 function createRuntime({
   id = HOCKEY_LIFE_ID,

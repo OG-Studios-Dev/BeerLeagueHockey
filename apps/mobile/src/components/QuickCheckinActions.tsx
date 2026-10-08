@@ -39,6 +39,9 @@ export default function QuickCheckinActions({
         return (
           <Pressable
             key={option.key}
+            accessibilityRole="button"
+            accessibilityLabel={`Check in: ${option.label}`}
+            accessibilityState={{ selected, disabled }}
             style={({ pressed }) => [
               styles.button,
               compact ? styles.buttonCompact : undefined,
@@ -68,7 +71,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 0,
     minWidth: 84,
-    minHeight: 38,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -78,7 +81,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   buttonCompact: {
-    minHeight: 34,
+    minHeight: 44,
     paddingHorizontal: 8,
     borderRadius: 9,
   },

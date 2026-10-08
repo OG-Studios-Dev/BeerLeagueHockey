@@ -1,82 +1,58 @@
+import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
-import { FocusCard, FocusFlatList, FocusScrollView } from '../components/CardFocus';
+import { FocusCard, FocusFlatList } from '../components/CardFocus';
 import DivisionFilter from '../components/DivisionFilter';
 import GuestBanner from '../components/GuestBanner';
-import GameCard from '../components/GameCard';
-import PillToggle from '../components/PillToggle';
 import QuickCheckinActions from '../components/QuickCheckinActions';
-import TeamLogo from '../components/TeamLogo';
+import ScheduleMatchupCard from '../components/ScheduleMatchupCard';
+import ScheduleTeamFilter from '../components/ScheduleTeamFilter';
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
-import { getMyCheckins, type CheckinStatus, updateCheckin } from '../lib/supabase/checkins';
+import { addGameToCalendar } from '../lib/calendar';
 import {
-  getCurrentSeason,
-  getSchedule,
-  getStandings,
-  mapGameStatus,
-  type GameRow,
-  type Season,
-  type StandingRow,
-} from '../lib/supabase/data';
+  buildScheduleRows,
+  buildScheduleTeamOptions,
+  filterScheduleGamesByTeam,
+  resolveScheduleTeamSelection,
+  type SchedulePresentationRow,
+  type ScheduleTeamSelection,
+} from '../lib/schedulePresentation';
+import { getMyCheckinsForTeams, type CheckinStatus, updateCheckin } from '../lib/supabase/checkins';
 import { supabase } from '../lib/supabase/client';
+import type { GameRow, Season } from '../lib/supabase/data';
+import { loadScheduleSnapshot } from '../lib/supabase/schedule';
+import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import colors from '../theme/colors';
-import * as Haptics from 'expo-haptics';
 
-type ScheduleTab = 'Upcoming' | 'Scores' | 'Standings';
+type Navigation = { navigate: (route: string, params: { gameId: string }) => void };
+type LoadState = {
+  ownerKey: string | null;
+  status: 'loading' | 'no-season' | 'ready' | 'error';
+  scopeKey: string | null;
+  season: Season | null;
+  timezone: string | null;
+  games: GameRow[];
+};
+type CheckinState = { scopeKey: string | null; teamIds: string[]; values: Record<string, CheckinStatus> };
 
-type UpcomingRow =
-  | { type: 'header'; id: string; title: string }
-  | { type: 'game'; id: string; game: GameRow };
+const emptyCheckins: CheckinState = { scopeKey: null, teamIds: [], values: {} };
 
-const scheduleTabs: readonly ScheduleTab[] = ['Upcoming', 'Scores', 'Standings'];
-
-function formatDateHeading(dateISO: string): string {
-  const date = new Date(dateISO);
-  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+function loadingState(ownerKey: string | null): LoadState {
+  return { ownerKey, status: 'loading', scopeKey: null, season: null, timezone: null, games: [] };
 }
 
-function buildUpcomingRows(games: GameRow[]): { rows: UpcomingRow[]; stickyHeaderIndices: number[] } {
-  const upcomingGames = games
-    .filter((g) => mapGameStatus(g.status) === 'Upcoming')
-    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
-
-  const rows: UpcomingRow[] = [];
-  const stickyHeaderIndices: number[] = [];
-  let currentHeading = '';
-
-  upcomingGames.forEach((game) => {
-    const heading = formatDateHeading(game.scheduled_at);
-    if (heading !== currentHeading) {
-      currentHeading = heading;
-      stickyHeaderIndices.push(rows.length);
-      rows.push({ type: 'header', id: `header-${heading}`, title: heading });
-    }
-    rows.push({ type: 'game', id: game.id, game });
-  });
-
-  return { rows, stickyHeaderIndices };
+function scheduleOwnerKey(leagueId: string, divisionId: string | null) {
+  return `${leagueId}:${divisionId ?? 'all'}`;
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+function safeTeamName(game: GameRow, side: 'away' | 'home') {
+  return game[`${side}_team`]?.name?.trim() || 'Team unavailable';
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-export default function ScheduleScreen({
-  navigation,
-  initialTab = 'Upcoming',
-  standalone = false,
-}: {
-  navigation: any;
-  initialTab?: ScheduleTab;
-  standalone?: boolean;
-}) {
+export default function ScheduleScreen({ navigation }: { navigation: Navigation }) {
   const {
     activeLeague,
     activeTheme,
@@ -85,119 +61,194 @@ export default function ScheduleScreen({
     divisions,
     isGuestLeague,
   } = useLeague();
-  const [selectedTab, setSelectedTab] = React.useState<ScheduleTab>(initialTab);
-  const [season, setSeason] = React.useState<Season | null>(null);
-  const [games, setGames] = React.useState<GameRow[]>([]);
-  const [standings, setStandings] = React.useState<StandingRow[]>([]);
-  const [loadingGames, setLoadingGames] = React.useState(false);
-  const [loadingStandings, setLoadingStandings] = React.useState(false);
-  const [userTeamId, setUserTeamId] = React.useState<string | null>(null);
-  const [checkins, setCheckins] = React.useState<Record<string, CheckinStatus>>({});
-  const [savingGameId, setSavingGameId] = React.useState<string | null>(null);
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const leagueId = activeLeague?.id ?? null;
+  const divisionId = activeDivision?.id ?? null;
+  const ownerKey = leagueId ? scheduleOwnerKey(leagueId, divisionId) : null;
+  const [state, setState] = React.useState<LoadState>(() => loadingState(ownerKey));
+  const [selection, setSelection] = React.useState<ScheduleTeamSelection>({ scopeKey: '', teamId: null });
+  const [checkinState, setCheckinState] = React.useState<CheckinState>(emptyCheckins);
+  const [savingCheckinKey, setSavingCheckinKey] = React.useState<string | null>(null);
+  const loadGeneration = React.useRef(0);
+  const checkinGeneration = React.useRef(0);
+  const activeScheduleScope = React.useRef<string | null>(null);
+  const activeCheckinWrite = React.useRef<string | null>(null);
 
-  // Load user's team once per league
+  const load = React.useCallback(async () => {
+    if (!leagueId) return;
+    const request = ++loadGeneration.current;
+    const requestOwner = scheduleOwnerKey(leagueId, divisionId);
+    setSelection({ scopeKey: `loading:${request}`, teamId: null });
+    setState(loadingState(requestOwner));
+    try {
+      const snapshot = await loadScheduleSnapshot(leagueId, divisionId);
+      if (request !== loadGeneration.current) return;
+      if (snapshot.kind === 'no-season') {
+        setState({ ownerKey: requestOwner, status: 'no-season', scopeKey: snapshot.scopeKey, season: null, timezone: null, games: [] });
+        return;
+      }
+      setState({
+        ownerKey: requestOwner,
+        status: 'ready',
+        scopeKey: snapshot.scopeKey,
+        season: snapshot.season,
+        timezone: snapshot.timezone,
+        games: snapshot.games,
+      });
+    } catch {
+      if (request === loadGeneration.current) {
+        setState({ ownerKey: requestOwner, status: 'error', scopeKey: null, season: null, timezone: null, games: [] });
+      }
+    }
+  }, [divisionId, leagueId]);
+
   React.useEffect(() => {
-    if (!activeLeague) { setUserTeamId(null); return; }
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase.from('team_rosters')
+    if (!leagueId) {
+      loadGeneration.current += 1;
+      setState(loadingState(null));
+      setSelection({ scopeKey: '', teamId: null });
+      return;
+    }
+    void load();
+    return () => { loadGeneration.current += 1; };
+  }, [leagueId, load]);
+
+  const visibleState = state.ownerKey === ownerKey ? state : loadingState(ownerKey);
+  const readyScope = visibleState.status === 'ready' ? visibleState.scopeKey : null;
+
+  React.useEffect(() => {
+    activeScheduleScope.current = readyScope;
+  }, [readyScope]);
+
+  React.useEffect(() => {
+    const request = ++checkinGeneration.current;
+    if (!leagueId || isGuestLeague || visibleState.status !== 'ready' || !visibleState.season || !visibleState.scopeKey) {
+      setCheckinState(emptyCheckins);
+      setSavingCheckinKey(null);
+      activeCheckinWrite.current = null;
+      return;
+    }
+    const scopeKey = visibleState.scopeKey;
+    const seasonId = visibleState.season.id;
+    setCheckinState({ scopeKey, teamIds: [], values: {} });
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || request !== checkinGeneration.current || activeScheduleScope.current !== scopeKey) return;
+      const { data, error } = await supabase
+        .from('team_rosters')
         .select('team_id')
         .eq('player_id', user.id)
-        .eq('league_id', activeLeague.id)
+        .eq('league_id', leagueId)
+        .eq('season_id', seasonId)
         .eq('status', 'active')
-        .maybeSingle()
-        .then(({ data }) => setUserTeamId(data?.team_id ?? null));
-    });
-  }, [activeLeague?.id]);
+        .is('end_date', null);
+      if (error || request !== checkinGeneration.current || activeScheduleScope.current !== scopeKey) return;
+      const teamIds = [...new Set((data ?? []).map((row) => row.team_id).filter((id): id is string => typeof id === 'string' && id.length > 0))];
+      const values = await getMyCheckinsForTeams(teamIds);
+      if (request === checkinGeneration.current && activeScheduleScope.current === scopeKey) {
+        setCheckinState({ scopeKey, teamIds, values });
+      }
+    })();
+    return () => { checkinGeneration.current += 1; };
+  }, [isGuestLeague, leagueId, readyScope, visibleState.scopeKey, visibleState.season, visibleState.status]);
 
-  // Load checkins when team or games change
-  React.useEffect(() => {
-    if (!userTeamId) { setCheckins({}); return; }
-    getMyCheckins(userTeamId).then(setCheckins);
-  }, [userTeamId, games.length]);
+  const teamOptions = React.useMemo(
+    () => visibleState.status === 'ready' ? buildScheduleTeamOptions(visibleState.games) : [],
+    [visibleState.games, visibleState.status],
+  );
+  const selectedTeamId = visibleState.status === 'ready' && visibleState.scopeKey
+    ? resolveScheduleTeamSelection(selection, visibleState.scopeKey, teamOptions)
+    : null;
+  const selectedTeamName = selectedTeamId
+    ? teamOptions.find((option) => option.id === selectedTeamId)?.name ?? 'Team unavailable'
+    : null;
+  const filteredGames = React.useMemo(
+    () => visibleState.status === 'ready' ? filterScheduleGamesByTeam(visibleState.games, selectedTeamId) : [],
+    [selectedTeamId, visibleState.games, visibleState.status],
+  );
+  const rows = React.useMemo(
+    () => buildScheduleRows(filteredGames, visibleState.timezone ?? ''),
+    [filteredGames, visibleState.timezone],
+  );
 
-  const handleLeagueScheduleCheckin = async (gameId: string, status: CheckinStatus) => {
-    if (!userTeamId || savingGameId) return;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const previous = checkins[gameId] ?? null;
-    setCheckins((current) => ({ ...current, [gameId]: status }));
-    setSavingGameId(gameId);
-
-    const result = await updateCheckin(gameId, userTeamId, status);
-    setSavingGameId(null);
-
-    if (!result.success) {
-      setCheckins((current) => {
-        const next = { ...current };
-        if (previous) {
-          next[gameId] = previous;
-        } else {
-          delete next[gameId];
-        }
-        return next;
+  const handleCheckin = async (gameId: string, teamId: string, status: CheckinStatus, scopeKey: string) => {
+    if (activeScheduleScope.current !== scopeKey || activeCheckinWrite.current) return;
+    const operationKey = `${scopeKey}:${gameId}:${teamId}`;
+    const operationGeneration = checkinGeneration.current;
+    const previous = checkinState.scopeKey === scopeKey ? (checkinState.values[gameId] ?? null) : null;
+    activeCheckinWrite.current = operationKey;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCheckinState((current) => current.scopeKey === scopeKey
+      ? { ...current, values: { ...current.values, [gameId]: status } }
+      : current);
+    setSavingCheckinKey(operationKey);
+    let success = false;
+    try {
+      success = (await updateCheckin(gameId, teamId, status)).success;
+    } catch {
+      success = false;
+    } finally {
+      if (operationGeneration === checkinGeneration.current && activeScheduleScope.current === scopeKey) {
+        if (activeCheckinWrite.current === operationKey) activeCheckinWrite.current = null;
+        setSavingCheckinKey((current) => current === operationKey ? null : current);
+      }
+    }
+    if (operationGeneration !== checkinGeneration.current || activeScheduleScope.current !== scopeKey) return;
+    if (!success) {
+      setCheckinState((current) => {
+        if (current.scopeKey !== scopeKey) return current;
+        const values = { ...current.values };
+        if (previous) values[gameId] = previous;
+        else delete values[gameId];
+        return { ...current, values };
       });
     }
   };
 
-  // Load season once per league
-  React.useEffect(() => {
-    if (!activeLeague) {
-      setSeason(null);
-      setGames([]);
-      setStandings([]);
-      return;
-    }
-    getCurrentSeason(activeLeague.id).then(setSeason);
-  }, [activeLeague?.id]);
-
-  // Load games when league, season, or division changes
-  React.useEffect(() => {
-    if (!activeLeague) return;
-    setLoadingGames(true);
-    getSchedule(activeLeague.id, season?.id ?? null, activeDivision?.id ?? null)
-      .then(setGames)
-      .finally(() => setLoadingGames(false));
-  }, [activeLeague?.id, season?.id, activeDivision?.id]);
-
-  // Load standings when on Standings tab
-  React.useEffect(() => {
-    if (!activeLeague || selectedTab !== 'Standings') return;
-    setLoadingStandings(true);
-    getStandings(activeLeague.id, season?.id)
-      .then((rows) => {
-        if (activeDivision) {
-          setStandings(rows.filter((r) => r.division_id === activeDivision.id));
-        } else {
-          setStandings(rows);
-        }
-      })
-      .finally(() => setLoadingStandings(false));
-  }, [activeLeague?.id, season?.id, selectedTab, activeDivision?.id]);
-
-  const { rows: upcomingRows, stickyHeaderIndices } = React.useMemo(
-    () => buildUpcomingRows(games),
-    [games],
-  );
-
-  const finalGames = React.useMemo(
-    () =>
-      games
-        .filter((g) => mapGameStatus(g.status) === 'Final')
-        .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()),
-    [games],
-  );
-
   if (!activeLeague) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyTitle}>Hockey Life access required</Text>
-          <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>
+        <View style={styles.stateWrap}>
+          <Text style={styles.stateTitle}>Hockey Life access required</Text>
+          <Text style={styles.stateBody}>Your account does not have an accessible Hockey Life membership.</Text>
         </View>
       </SafeAreaView>
     );
   }
+
+  const listHeader = visibleState.status === 'ready' ? (
+    <View style={styles.listHeader}>
+      <View>
+        <Text style={styles.season}>{visibleState.season?.name ?? 'Current season'}</Text>
+      </View>
+      <ScheduleTeamFilter
+        options={teamOptions}
+        selectedTeamId={selectedTeamId}
+        onSelect={(teamId) => {
+          if (visibleState.scopeKey) setSelection({ scopeKey: visibleState.scopeKey, teamId });
+        }}
+      />
+      {visibleState.games.length === 0 ? (
+        <View style={styles.inlineState}>
+          <Text style={styles.stateTitle}>No games scheduled for {visibleState.season?.name ?? 'this season'}.</Text>
+        </View>
+      ) : selectedTeamId && filteredGames.length === 0 ? (
+        <View style={styles.inlineState}>
+          <Text style={styles.stateTitle}>No games for {selectedTeamName ?? 'this team'} in this schedule.</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Clear team filter"
+            onPress={() => visibleState.scopeKey && setSelection({ scopeKey: visibleState.scopeKey, teamId: null })}
+            style={styles.clearButton}
+          >
+            <Text style={styles.clearText}>Clear filter</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Text style={styles.count}>{filteredGames.length} {filteredGames.length === 1 ? 'game' : 'games'}</Text>
+      )}
+    </View>
+  ) : null;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
@@ -208,222 +259,88 @@ export default function ScheduleScreen({
         primaryColor={activeTheme.primaryColor}
         onSelect={setActiveDivision}
       />
-
-      {!standalone ? (
-        <View style={styles.screenPadding}>
-          <PillToggle options={scheduleTabs} selected={selectedTab} onChange={setSelectedTab} />
+      {visibleState.status === 'loading' ? (
+        <View accessibilityLiveRegion="polite" style={styles.stateWrap}>
+          <ActivityIndicator color={activeTheme.primaryColor} />
+          <Text style={styles.stateBody}>Loading schedule…</Text>
         </View>
-      ) : null}
-
-      {selectedTab === 'Upcoming' ? (
-        loadingGames ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={activeTheme.primaryColor} />
-          </View>
-        ) : upcomingRows.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyTitle}>No upcoming games yet</Text>
-          </View>
-        ) : (
-          <FocusFlatList
-            focusItems={false}
-            focusScopeKey={`schedule:${activeLeague.id}:upcoming`}
-            data={upcomingRows}
-            keyExtractor={(item) => item.id}
-            stickyHeaderIndices={stickyHeaderIndices}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => {
-              if (item.type === 'header') {
-                return (
-                  <View style={[styles.stickyHeaderWrap, { backgroundColor: activeTheme.backgroundColor }]}>
-                    <Text style={styles.stickyHeaderText}>{item.title}</Text>
+      ) : visibleState.status === 'no-season' ? (
+        <View style={styles.stateWrap}>
+          <Text style={styles.stateTitle}>No current season is available.</Text>
+        </View>
+      ) : visibleState.status === 'error' ? (
+        <View accessibilityRole="alert" style={styles.stateWrap}>
+          <Text style={styles.stateTitle}>Couldn’t load schedule</Text>
+          <Text style={styles.stateBody}>The schedule is temporarily unavailable.</Text>
+          <Pressable accessibilityRole="button" onPress={() => void load()} style={[styles.retry, { backgroundColor: activeTheme.primaryColor }]}>
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <FocusFlatList
+          focusItems={false}
+          focusScopeKey={`schedule:${visibleState.scopeKey}`}
+          data={rows}
+          keyExtractor={(item: SchedulePresentationRow) => item.id}
+          ListHeaderComponent={listHeader}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }: { item: SchedulePresentationRow }) => {
+            if (item.type === 'date') {
+              return <View style={styles.dateHeader}><Text accessibilityRole="header" style={styles.dateHeaderText}>{item.title}</Text></View>;
+            }
+            const game = item.game;
+            const gameTeamId = checkinState.scopeKey === visibleState.scopeKey
+              ? checkinState.teamIds.find((teamId) => teamId === game.home_team_id || teamId === game.away_team_id) ?? null
+              : null;
+            return (
+              <FocusCard focusId={`schedule:game:${game.id}`}>
+                <ScheduleMatchupCard
+                  game={game}
+                  timezone={visibleState.timezone}
+                  leagueColor={activeTheme.primaryColor}
+                  reduceTransparency={reduceTransparency}
+                  onOpenGame={(gameId) => navigation.navigate('GamePreview', { gameId })}
+                  onAddToCalendar={(scheduledGame) => void addGameToCalendar({
+                    awayTeam: safeTeamName(scheduledGame, 'away'),
+                    homeTeam: safeTeamName(scheduledGame, 'home'),
+                    scheduledAt: scheduledGame.scheduled_at,
+                    location: scheduledGame.location,
+                  })}
+                />
+                {game.status === 'scheduled' && gameTeamId && visibleState.scopeKey && !isGuestLeague ? (
+                  <View style={styles.quickCheckinWrap}>
+                    <QuickCheckinActions
+                      value={checkinState.values[game.id] ?? null}
+                      onChange={(status) => void handleCheckin(game.id, gameTeamId, status, visibleState.scopeKey!)}
+                      disabled={savingCheckinKey !== null}
+                      compact
+                    />
                   </View>
-                );
-              }
-              const { game } = item as { type: 'game'; id: string; game: GameRow };
-              const isUserGame = userTeamId &&
-                (game.home_team_id === userTeamId || game.away_team_id === userTeamId);
-              const myCheckin = isUserGame ? (checkins[game.id] ?? null) : null;
-
-              return (
-                <FocusCard focusId={`schedule:game:${game.id}`}>
-                  <GameCard
-                    gameId={game.id}
-                    homeTeam={game.home_team?.name ?? game.home_team_id}
-                    awayTeam={game.away_team?.name ?? game.away_team_id}
-                    dateLabel={formatDate(game.scheduled_at)}
-                    timeLabel={formatTime(game.scheduled_at)}
-                    rinkName={game.location ?? ''}
-                    status={mapGameStatus(game.status)}
-                    homeScore={game.home_score ?? undefined}
-                    awayScore={game.away_score ?? undefined}
-                    scheduledAt={game.scheduled_at}
-                    location={game.location}
-                    onPress={() => navigation.navigate('GamePreview', { gameId: game.id })}
-                  />
-                  {isUserGame && !isGuestLeague && (
-                    <View style={styles.quickCheckinWrap}>
-                      <QuickCheckinActions
-                        value={myCheckin}
-                        onChange={(status) => void handleLeagueScheduleCheckin(game.id, status)}
-                        disabled={savingGameId === game.id}
-                        compact
-                      />
-                    </View>
-                  )}
-                </FocusCard>
-              );
-            }}
-          />
-        )
-      ) : null}
-
-      {selectedTab === 'Scores' ? (
-        loadingGames ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={activeTheme.primaryColor} />
-          </View>
-        ) : finalGames.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyTitle}>No scores yet</Text>
-          </View>
-        ) : (
-          <FocusFlatList
-            focusItems={false}
-            focusScopeKey={`schedule:${activeLeague.id}:scores`}
-            data={finalGames}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <GameCard
-                gameId={item.id}
-                homeTeam={item.home_team?.name ?? item.home_team_id}
-                awayTeam={item.away_team?.name ?? item.away_team_id}
-                dateLabel={formatDate(item.scheduled_at)}
-                timeLabel={formatTime(item.scheduled_at)}
-                rinkName={item.location ?? ''}
-                status={mapGameStatus(item.status)}
-                homeScore={item.home_score ?? undefined}
-                awayScore={item.away_score ?? undefined}
-                onPress={() => navigation.navigate('GamePreview', { gameId: item.id })}
-              />
-            )}
-          />
-        )
-      ) : null}
-
-      {selectedTab === 'Standings' ? (
-        loadingStandings ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={activeTheme.primaryColor} />
-          </View>
-        ) : standings.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyTitle}>No standings yet</Text>
-          </View>
-        ) : (
-          <FocusScrollView focusScopeKey={`schedule:${activeLeague.id}:standings`} contentContainerStyle={styles.listContent}>
-            <FocusCard focusId={`standings:table:${activeLeague.id}`} style={[styles.standingsCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderCard }]}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.headerText, styles.teamHeaderText]}>Team</Text>
-                <Text style={styles.headerText}>GP</Text>
-                <Text style={styles.headerText}>W</Text>
-                <Text style={styles.headerText}>L</Text>
-                <Text style={styles.headerText}>PTS</Text>
-              </View>
-              {standings.map((row, index) => {
-                const isLeader = index === 0;
-                const color = row.primary_color ?? activeTheme.primaryColor;
-                return (
-                  <Pressable
-                    key={row.team_id ?? index}
-                    style={({ pressed }) => [styles.tableRow, isLeader ? styles.leaderRow : undefined, pressed && row.team_id ? styles.tableRowPressed : undefined]}
-                    onPress={() => row.team_id ? navigation.navigate('Team', { screen: 'TeamDetail', params: { teamId: row.team_id, leagueId: activeLeague.id } }) : undefined}
-                    disabled={!row.team_id}
-                  >
-                    <View style={styles.teamCol}>
-                      <TeamLogo
-                        teamId={row.team_id}
-                        logoUrl={row.logo_url ?? null}
-                        teamName={row.team_name ?? row.short_name ?? 'Team'}
-                        primaryColor={color}
-                        size={28}
-                      />
-                      <Text style={[styles.teamName, isLeader ? styles.leaderText : undefined]} numberOfLines={1}>
-                        {row.team_name ?? '—'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.rowText, isLeader ? styles.leaderText : undefined]}>{row.games_played ?? 0}</Text>
-                    <Text style={[styles.rowText, isLeader ? styles.leaderText : undefined]}>{row.wins ?? 0}</Text>
-                    <Text style={[styles.rowText, isLeader ? styles.leaderText : undefined]}>{row.losses ?? 0}</Text>
-                    <Text style={[styles.rowText, styles.ptsText, isLeader ? styles.ptsLeaderText : undefined]}>
-                      {row.points ?? 0}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </FocusCard>
-          </FocusScrollView>
-        )
-      ) : null}
+                ) : null}
+              </FocusCard>
+            );
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  screenPadding: { paddingHorizontal: 16, paddingBottom: 8 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' },
-  emptyBody: { color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  globalScheduleIntro: {
-    marginTop: -2,
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  globalListHeader: {
-    paddingBottom: 6,
-  },
-  globalLeagueRow: {
-    paddingHorizontal: 2,
-    paddingTop: 4,
-    paddingBottom: 6,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  globalLeagueLabel: { fontSize: 12, fontWeight: '800', color: colors.primary },
-  globalLeagueMeta: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-  globalCheckinWrap: { paddingHorizontal: 14, paddingBottom: 10 },
-  quickCheckinWrap: { paddingHorizontal: 14, paddingBottom: 10 },
-  stickyHeaderWrap: { paddingTop: 10, paddingBottom: 6 },
-  stickyHeaderText: {
-    fontSize: 14, fontWeight: '800', color: colors.textSecondary,
-    textTransform: 'uppercase', letterSpacing: 0.8,
-  },
-  standingsCard: { marginTop: 12, borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  tableHeader: {
-    flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 12,
-    backgroundColor: colors.bgInteractive, alignItems: 'center',
-  },
-  headerText: { flex: 0.8, fontSize: 11, fontWeight: '800', color: colors.textSecondary, textAlign: 'center' },
-  teamHeaderText: { flex: 2.8, textAlign: 'left' },
-  tableRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12,
-    borderTopWidth: 1, borderTopColor: colors.borderCard,
-  },
-  tableRowPressed: {
-    backgroundColor: colors.bgInteractive,
-  },
-  leaderRow: { backgroundColor: 'rgba(34, 211, 238, 0.08)' },
-  teamCol: { flex: 2.8, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  teamName: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, flex: 1 },
-  rowText: { flex: 0.8, fontSize: 14, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
-  ptsText: { fontWeight: '800', color: colors.textPrimary },
-  ptsLeaderText: { color: colors.primary, fontWeight: '900' },
-  leaderText: { fontWeight: '900', color: colors.textPrimary },
+  listContent: { paddingHorizontal: 16, paddingBottom: 32 },
+  listHeader: { minWidth: 0, gap: 12, paddingBottom: 10 },
+  season: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: '700', marginTop: 2 },
+  count: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  stateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28 },
+  inlineState: { alignItems: 'center', gap: 10, paddingVertical: 22 },
+  stateTitle: { color: colors.textPrimary, fontSize: 17, lineHeight: 23, fontWeight: '900', textAlign: 'center' },
+  stateBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  retry: { minWidth: 120, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingHorizontal: 16 },
+  retryText: { color: '#07111F', fontSize: 14, fontWeight: '900' },
+  clearButton: { minWidth: 120, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderCard },
+  clearText: { color: colors.textPrimary, fontSize: 13, fontWeight: '900' },
+  dateHeader: { paddingTop: 12, paddingBottom: 7, backgroundColor: 'transparent' },
+  dateHeaderText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.7 },
+  quickCheckinWrap: { paddingHorizontal: 12, paddingBottom: 12 },
 });

@@ -42,38 +42,27 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       'react-native': reactNative,
       'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
       'expo-haptics': { impactAsync: () => {}, ImpactFeedbackStyle: { Light: 'light' } },
+      '../components/CardFocus': {
+        FocusCard: ({ children, ...props }: Record<string, unknown>) => createElement('FocusCard', props, children),
+        FocusFlatList: ({ data = [], renderItem, ListHeaderComponent, ...props }: Record<string, any>) =>
+          createElement('FocusFlatList', props, ListHeaderComponent, ...data.map((item: unknown, index: number) => renderItem({ item, index }))),
+      },
       '../components/DivisionFilter': () => null,
       '../components/GuestBanner': () => null,
-      '../components/SeasonCompletionHump': (props: Record<string, unknown>) => createElement('SeasonCompletionHump', props),
-      '../components/StandingsPlayoffsPanel': (props: Record<string, unknown>) => createElement('StandingsPlayoffsPanel', props, createElement('Text', null, 'Playoffs')),
-      '../components/GameCard': (props: Record<string, unknown>) => createElement('GameCard', props),
-      '../components/PillToggle': () => null,
       '../components/QuickCheckinActions': () => null,
-      '../components/ScheduleConflictList': () => null,
-      '../components/SectionHeader': ({ title }: { title: string }) => createElement('Text', null, title),
-      '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
+      '../components/ScheduleMatchupCard': (props: Record<string, unknown>) => createElement('ScheduleMatchupCard', props),
+      '../components/ScheduleTeamFilter': (props: Record<string, unknown>) => createElement('ScheduleTeamFilter', props),
       '../context/LeagueContext': { useLeague: leagueContext },
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
-      '../lib/scheduleConflicts': { getScheduleConflicts: () => [] },
+      '../lib/calendar': { addGameToCalendar: async () => undefined },
       '../lib/supabase/checkins': {
         getMyCheckins: async () => ({}), getMyCheckinsForTeams: async () => ({}), updateCheckin: async () => ({ success: true }),
       },
       '../lib/supabase/client': {
         supabase: { auth: { getUser: async () => { authReads += 1; return { data: { user: null } }; } } },
       },
-      '../lib/supabase/data': {
-        getCurrentSeason: async () => ({ id: 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
-        getOperationalSeason: async (leagueId: string) => ({ id: leagueId === leagueB.id ? 'season-b' : 'season-a', name: 'Current', start_date: '2026-01-01', end_date: null, status: 'active' }),
-        getSchedule: async () => [],
-        getStandings: async () => {
-          standingsReads += 1;
-          return [{
-            team_id: 'team-owls', team_name: 'Ice Owls', primary_color: '#123456', logo_url: null,
-            division_id: null, wins: 3, losses: 1, ties: 0, points: 6, goals_for: 10, goals_against: 4, games_played: 4,
-          }];
-        },
-        mapGameStatus: () => 'Upcoming',
-      },
+      '../lib/supabase/schedule': { loadScheduleSnapshot: async () => ({ kind: 'no-season', scopeKey: 'league-a:no-season:all', season: null, timezone: null, games: [] }) },
+      '../navigation/cutIceSafeAreaPolicy': { cutIceContentEdges: (edges: unknown) => edges },
       '../theme/colors': { default: { bgBase: '#000', bgSurface: '#111', borderCard: '#222', bgInteractive: '#333', textSecondary: '#aaa', textPrimary: '#fff', primary: '#0ff' } },
     },
   ).default;

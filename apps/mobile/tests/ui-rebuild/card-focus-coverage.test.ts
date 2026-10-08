@@ -95,12 +95,13 @@ describe('routed scroll surface wiring', () => {
     assert.doesNotMatch(reveal, /opacity:\s*progress/);
   });
 
-  it('fails Standings closed without Hockey Life access and keeps active standings rows out of card focus', () => {
+  it('fails Standings closed without Hockey Life access and keeps standings focus out of Schedule', () => {
     const standings = source('screens/StandingsScreen.tsx');
     const schedule = source('screens/ScheduleScreen.tsx');
     assert.match(standings, /Hockey Life access required/);
     assert.doesNotMatch(standings, /standings:league:/);
-    assert.match(schedule, /focusId={`standings:table:/);
+    assert.doesNotMatch(schedule, /focusId={`standings:/);
+    assert.doesNotMatch(schedule, /StandingsPlayoffsPanel|getStandings/);
   });
 
   it('treats each schedule game and adjacent check-in as one candidate while excluding sticky headers', () => {

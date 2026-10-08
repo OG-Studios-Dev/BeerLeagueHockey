@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { getPublicGoalies, type PublicGoalie } from './publicStats';
+import { buildGamePresentation, normalizeGameStatus, resolveGameAccentColors } from '../gamePresentation';
 
 export type PresentationSeason = {
   id: string; league_id: string; name: string; status: string | null;
@@ -140,12 +141,7 @@ export function filterGamesToLeagueWeek<T extends { scheduled_at: string }>(game
 }
 
 export function normalizeHomeGameStatus(status: string) {
-  if (status === 'completed') return 'Final';
-  if (status === 'in_progress') return 'Live';
-  if (status === 'pending_verification') return 'Awaiting Review';
-  if (status === 'postponed') return 'Postponed';
-  if (status === 'cancelled') return 'Cancelled';
-  return 'Scheduled';
+  return normalizeGameStatus(status).label;
 }
 
 export type HomeMatchupFacts = {
@@ -158,51 +154,21 @@ export type HomeMatchupFacts = {
   homeScoreLabel: string | null;
 };
 
-function formatMatchupPart(value: Date, timezone: string, kind: 'date' | 'time') {
-  try {
-    const options: Intl.DateTimeFormatOptions = kind === 'date'
-      ? { timeZone: timezone, month: 'short', day: 'numeric' }
-      : { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true };
-    const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(value);
-    const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
-    if (kind === 'date') {
-      const month = read('month'); const day = read('day');
-      return month && day ? `${month} ${day}` : null;
-    }
-    const hour = read('hour'); const minute = read('minute'); const dayPeriod = read('dayPeriod');
-    return hour && minute && dayPeriod ? `${hour}:${minute} ${dayPeriod}` : null;
-  } catch {
-    return null;
-  }
-}
-
 export function buildHomeMatchupFacts(game: HomeWeeklyGame, timezone: string | null): HomeMatchupFacts {
-  const instant = new Date(game.scheduled_at);
-  const validInstant = Number.isFinite(instant.getTime());
-  const validTimezone = timezone?.trim() || null;
-  const statusLabel = normalizeHomeGameStatus(game.status);
-  const showScore = statusLabel === 'Final' || statusLabel === 'Live';
+  const facts = buildGamePresentation(game, timezone);
   return {
-    dateLabel: validInstant && validTimezone ? formatMatchupPart(instant, validTimezone, 'date') : null,
-    timeLabel: validInstant && validTimezone ? formatMatchupPart(instant, validTimezone, 'time') : null,
-    locationLabel: game.location?.trim() || null,
-    statusLabel,
-    showScore,
-    awayScoreLabel: showScore && game.away_score != null ? String(game.away_score) : null,
-    homeScoreLabel: showScore && game.home_score != null ? String(game.home_score) : null,
+    dateLabel: facts.dateLabel,
+    timeLabel: facts.timeLabel,
+    locationLabel: facts.locationLabel,
+    statusLabel: facts.statusLabel,
+    showScore: facts.showScore,
+    awayScoreLabel: facts.awayScoreLabel,
+    homeScoreLabel: facts.homeScoreLabel,
   };
 }
 
-function safeMatchupColor(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed || !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(trimmed)) return null;
-  if (trimmed.length === 4) return `#${trimmed.slice(1).split('').map((part) => `${part}${part}`).join('')}`.toUpperCase();
-  return trimmed.toUpperCase();
-}
-
 export function resolveHomeMatchupColors(away: string | null, home: string | null, leagueFallback: string | null) {
-  const fallback = safeMatchupColor(leagueFallback) ?? '#7C8798';
-  return { away: safeMatchupColor(away) ?? fallback, home: safeMatchupColor(home) ?? fallback };
+  return resolveGameAccentColors(away, home, leagueFallback);
 }
 
 export type HomeMatchupSelection = { gameId: string | null; index: number };

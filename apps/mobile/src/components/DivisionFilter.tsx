@@ -23,6 +23,10 @@ export default function DivisionFilter({ divisions, activeDivision, primaryColor
         style={styles.scroll}
       >
         <Pressable
+          testID="division-filter-all"
+          accessibilityRole="button"
+          accessibilityLabel="All divisions"
+          accessibilityState={{ selected: activeDivision === null }}
           style={[styles.pill, activeDivision === null ? { backgroundColor: primaryColor } : { backgroundColor: colors.bgInteractive }]}
           onPress={() => onSelect(null)}
         >
@@ -36,6 +40,10 @@ export default function DivisionFilter({ divisions, activeDivision, primaryColor
           return (
             <Pressable
               key={division.id}
+              testID={`division-filter-${division.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${division.name} division`}
+              accessibilityState={{ selected: isActive }}
               style={[styles.pill, isActive ? { backgroundColor: primaryColor } : { backgroundColor: colors.bgInteractive }]}
               onPress={() => onSelect(division)}
             >
@@ -66,6 +74,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pill: {
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 7,

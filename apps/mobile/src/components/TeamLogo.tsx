@@ -11,6 +11,7 @@ type Props = {
   primaryColor?: string | null;
   size?: number;
   transparentBacking?: boolean;
+  decorative?: boolean;
 };
 
 function resolveInitialSource(teamId?: string | null, logoUrl?: string | null): ImageSourcePropType {
@@ -35,7 +36,7 @@ function resolveInitialState(teamId?: string | null, logoUrl?: string | null): L
   };
 }
 
-export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size = 40, transparentBacking = false }: Props) {
+export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size = 40, transparentBacking = false, decorative = false }: Props) {
   const initialState = React.useMemo(() => resolveInitialState(teamId, logoUrl), [teamId, logoUrl]);
   const [fallback, setFallback] = React.useState<LogoFallbackState>(initialState);
   const current = fallback.identityKey === initialState.identityKey ? fallback : initialState;
@@ -57,8 +58,9 @@ export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size
   if (!current.showInitialsFallback) {
     return (
       <Image
-        alt={teamName}
-        accessibilityLabel={teamName}
+        alt={decorative ? '' : teamName}
+        accessible={!decorative}
+        accessibilityLabel={decorative ? undefined : teamName}
         source={current.imageSource}
         style={[imageFrameStyle, styles.image, transparentBacking && styles.transparentImage]}
         onError={() => {
@@ -78,8 +80,12 @@ export default function TeamLogo({ logoUrl, teamId, teamName, primaryColor, size
   }
 
   return (
-    <View style={[circleStyle, styles.fallback, { backgroundColor: bgColor }]}>
-      <Text style={[styles.initials, { fontSize: size * 0.35 }]}>{initials}</Text>
+    <View
+      accessible={!decorative}
+      accessibilityLabel={decorative ? undefined : teamName}
+      style={[circleStyle, styles.fallback, { backgroundColor: bgColor }]}
+    >
+      <Text accessible={false} style={[styles.initials, { fontSize: size * 0.35 }]}>{initials}</Text>
     </View>
   );
 }

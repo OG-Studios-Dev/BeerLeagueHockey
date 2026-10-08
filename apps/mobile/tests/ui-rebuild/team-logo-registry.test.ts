@@ -219,4 +219,34 @@ describe('Hockey Life native artwork registry', () => {
     harness.render();
     assert.equal(findNode(harness.output, (node) => node.type === 'Image')!.props.style[2].backgroundColor, 'transparent');
   });
+
+  it('makes both image and initials branches inert when a parent owns the accessible name', () => {
+    const harness = createHookHarness();
+    const props = { teamId: null, logoUrl: 'https://example.test/decorative.png', teamName: 'Decorative Ducks', decorative: true };
+    const TeamLogo = compileCommonJs<{ default: (value: typeof props) => unknown }>(
+      new URL('../../src/components/TeamLogo.tsx', import.meta.url),
+      {
+        react: harness.react,
+        'react-native': {
+          Image: 'Image', Text: 'Text', View: 'View',
+          StyleSheet: { create: <T>(value: T) => value },
+        },
+        '../lib/imagePlaceholders': { BLH_DEFAULT_TEAM_LOGO_URL: 'https://example.test/fallback.png' },
+        '../lib/teamLogoSources': { getBundledTeamLogoSource: () => null },
+      },
+    ).default;
+    harness.mount(() => TeamLogo(props));
+    let image = findNode(harness.output, (node) => node.type === 'Image')!;
+    assert.equal(image.props.accessible, false);
+    assert.equal(image.props.accessibilityLabel, undefined);
+    assert.equal(image.props.alt, '');
+    image.props.onError();
+    harness.render();
+    image = findNode(harness.output, (node) => node.type === 'Image')!;
+    image.props.onError();
+    harness.render();
+    const fallback = findNode(harness.output, (node) => node.type === 'View')!;
+    assert.equal(fallback.props.accessible, false);
+    assert.equal(fallback.props.accessibilityLabel, undefined);
+  });
 });

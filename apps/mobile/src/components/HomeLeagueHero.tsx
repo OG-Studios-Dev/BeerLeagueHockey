@@ -16,7 +16,7 @@ import {
 import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 
 const HOCKEY_LIFE_LEAGUE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
-const HOCKEY_LIFE_CANONICAL_LOGO_URL = 'https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/league-logos/wizard-add94b26-b344-459f-9727-8cddae9783de-1773170120557.jpg';
+const HOCKEY_LIFE_CANONICAL_LOGO_URL = 'https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/league-logos/d6e55507-6eae-4d94-978c-47c6c30a36f1-league-logo-20261005-4c8a4397af9394c8.png';
 
 type Props = {
   leagueId: string;
