@@ -1,142 +1,153 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
+import { buildLeaderRows, type StatsLeaderMetric, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
 
-const players = [
+const metric = (value: number | null): PublicStatMetric => ({ value, state: value === null ? 'unknown' : 'recorded', sources: value === null ? [] : ['skater_stats'] });
+const players: StatsScopePlayer[] = [
   ['a', 'Ada Wing', 15, 45], ['b', 'Ben Blue', 14, 10], ['c', 'Cam Centre', 13, 35],
   ['d', 'Drew Defence', 12, 30], ['e', 'Eli Edge', 11, 50], ['f', 'Finn Finisher', 25, 1],
-].map(([id, name, goals, assists]) => ({ player_id: id as string, player_name: name as string,
-  team_id: 'team-a', team_name: 'North Stars', team_short_name: 'Stars', goals: goals as number,
-  assists: assists as number, points: Number(goals) + Number(assists), games_played: 12,
-  position: 'F', is_goalie: false, jersey_number: 12, plus_minus: 0 }));
+].map(([id, name, goals, assists]) => ({
+  playerId: id as string, playerName: name as string, avatarUrl: null,
+  displayTeam: { id: '44444444-4444-4444-8444-444444444444', name: 'Stars', logoUrl: null },
+  skater: { gamesPlayed: metric(12), goals: metric(goals as number), assists: metric(assists as number), points: metric(Number(goals) + Number(assists)), championships: metric(0) }, goalie: null,
+}));
+players.push(
+  { ...players[0], playerId: 'g1', playerName: 'Goalie One', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(3), goalsAgainstAverage: metric(1.5), championships: metric(0) } },
+  { ...players[0], playerId: 'g2', playerName: 'Goalie Two', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(4), goalsAgainstAverage: metric(2), championships: metric(0) } },
+);
 
-function nodes(root: any, predicate: (n: any) => boolean): any[] {
-  if (Array.isArray(root)) return root.flatMap((n) => nodes(n, predicate));
+function allNodes(root: any, predicate: (node: any) => boolean): any[] {
+  if (Array.isArray(root)) return root.flatMap((node) => allNodes(node, predicate));
   if (!root?.props) return [];
-  return [...(predicate(root) ? [root] : []), ...nodes(root.props.children, predicate)];
+  return [...(predicate(root) ? [root] : []), ...allNodes(root.props.children, predicate)];
 }
 
-function runtime(getRows?: (...args: any[]) => any[], width = 390) {
+function runtime(initialPlayers: StatsScopePlayer[] = players, initialStatus: 'ready' | 'error' = 'ready', resolveArtwork?: (_league: string, leader: any) => any) {
   const h = createHookHarness();
-  const calls: any[][] = [], navigationCalls: any[][] = [];
-  const league: any = { activeLeague: { id: 'league-a', slug: 'harbour', name: 'Harbour League' }, activeDivision: null,
-    divisions: [], availableLeagues: [], activeTheme: { backgroundColor: '#07111F', primaryColor: '#22D3EE' }, setActiveDivision: () => {} };
-  const native = { ActivityIndicator: 'ActivityIndicator', Text: 'Text', View: 'View', Pressable: 'Pressable',
-    StyleSheet: { create: (s: any) => s, absoluteFillObject: { position: 'absolute', inset: 0 }, hairlineWidth: 1 },
-    useWindowDimensions: () => ({ width, height: 844, fontScale: 1 }),
-    FlatList: (p: any) => createElement('FlatList', p, p.ListHeaderComponent,
-      ...(p.data ?? []).map((item: any, index: number) => p.renderItem({ item, index })),
-      !p.data?.length ? p.ListEmptyComponent : null),
+  const opened: string[] = [];
+  let retryCount = 0;
+  let currentPlayers = initialPlayers;
+  const native = {
+    ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', Text: 'Text', View: 'View',
+    StyleSheet: { create: (styles: any) => styles, hairlineWidth: 1 },
   };
-  const colors = { __esModule: true, default: { primary: '#22D3EE', bgBase: '#07111F', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8', brandGold: '#E4C85A' } };
-  const componentPath = new URL('../../src/components/StatsLeadersCard.tsx', import.meta.url);
-  const Card = existsSync(fileURLToPath(componentPath.toString())) ? compileCommonJs<{ default: (props: any) => unknown }>(componentPath, {
-    react: h.react, 'react-native': native, 'expo-linear-gradient': { LinearGradient: (p: any) => createElement('LinearGradient', p, p.children) },
-    '@expo/vector-icons': { Ionicons: 'Ionicon' }, './Avatar': (p: any) => createElement('Avatar', p),
-    '../theme/colors': colors, '../theme/ui': { ui: { minTouchTarget: 44 } },
-  }).default : () => null;
-  const Stats = compileCommonJs<{ default: () => unknown }>(new URL('../../src/screens/StatsScreen.tsx', import.meta.url), {
-    react: h.react, 'react-native': native, '@react-navigation/native': { useNavigation: () => ({}) },
-    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-    '../components/StatsLeadersCard': { __esModule: true, default: Card },
-    '../components/DivisionFilter': (p: any) => createElement('DivisionFilter', p),
-    '../components/GuestBanner': () => null,
-    '../components/PillToggle': (p: any) => createElement('PillToggle', p),
-    '../components/PlayerRow': (p: any) => createElement('PlayerRow', p, p.name),
-    '../components/SectionHeader': (p: any) => createElement('SectionHeader', p, p.title),
-    '../context/LeagueContext': { useLeague: () => league },
-    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: false, reduceTransparency: false }) },
-    '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(args) },
-    '../lib/supabase/client': { supabase: { from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }) }) }) } },
-    '../lib/supabase/data': {
-      getStatsLeadersFromPublicSeason: (payload: any, metric: string, limit: number) => {
-        const args = [payload.leagueId, metric, limit, payload.divisionId]; calls.push(args);
-        if (getRows) return getRows(...args);
-        return [...players].sort((a: any,b: any) => b[metric]-a[metric]).slice(0,limit);
-      },
-    },
-    '../lib/supabase/team': { getMetricsOperationalSeason: async () => ({ season: { id: 'season-a' }, error: null }) },
-    '../lib/supabase/publicStats': { getPublicSeasonStats: async (_slug: string, leagueId: string, _season: string, divisionId: string | null) => ({ leagueId, divisionId, presentationSeason: { id: 'season-a' }, players: [] }), getPublicGoaliesV2: async () => ({ presentationSeason: { id: 'season-a' }, goalies: [] }), formatPublicMetric: (m: any) => ({ value: String(m.value), hint: 'Recorded.' }) },
-    '../theme/colors': colors,
+  const Card = compileCommonJs<{ default: (props: any) => unknown }>(new URL('../../src/components/StatsLeadersCard.tsx', import.meta.url), {
+    react: h.react,
+    'react-native': native,
+    '../../assets/league-leaders/jack-foote.png': { art: 'jack' },
+    '../../assets/league-leaders/neutral-goalie.png': { art: 'goalie' },
+    '../../assets/league-leaders/neutral-helmet-player.png': { art: 'skater' },
+    '../lib/homeLeagueLeaders': { resolveLeaderArtwork: resolveArtwork ?? ((_league: string, leader: any) => ({ kind: 'neutral', identityKey: leader.player_id, artworkId: leader.is_goalie ? 'neutral-goalie-v1' : 'neutral-helmet-v1', accessibilityLabel: 'fallback' })) },
+    '../lib/playerArtworkManifest': { loadPlayerArtworkManifest: async () => null },
+    './TeamLogo': (props: any) => createElement('TeamLogo', props),
   }).default;
-  h.mount(() => Stats());
-  return { h, calls, navigationCalls, league };
+  function Root() {
+    const [selected, setSelected] = h.react.useState<StatsLeaderMetric>('points');
+    return Card({ leagueId: 'league-a', metric: selected, leaders: buildLeaderRows(currentPlayers, selected), status: initialStatus, onMetricChange: setSelected, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
+  }
+  h.mount(Root);
+  return { h, opened, get retryCount() { return retryCount; }, replacePlayers(next: StatsScopePlayer[]) { currentPlayers = next; h.render(); } };
 }
-async function settle(r: ReturnType<typeof runtime>) { for (let i=0;i<8;i++) { await new Promise<void>(resolve => setImmediate(resolve)); r.h.render(); } return r.h.output; }
-function cardRows(root: any) { return nodes(findNode(root, n => n.props.testID === 'stats-leaders-card'), n => typeof n.props.testID === 'string' && n.props.testID.startsWith('stats-leader-row-')); }
+
+function rows(root: any) {
+  return allNodes(root, (node) => typeof node.props.testID === 'string' && node.props.testID.startsWith('stats-leader-row-'));
+}
 
 describe('Stats top-five leaders card', () => {
-  it('exposes each metric button pressed state for browser assistive technology', async () => {
-    const r = runtime();
-    await settle(r);
-    for (const metric of ['goals', 'assists', 'points'] as const) {
-      findNode(r.h.output, n => n.props.testID === `stats-leaders-tab-${metric}`)!.props.onPress();
-      await settle(r);
-      for (const key of ['goals', 'assists', 'points'] as const) {
-        const button = findNode(r.h.output, n => n.props.testID === `stats-leaders-tab-${key}`)!;
-        assert.equal(button.props.accessibilityRole, 'button');
-        assert.equal(button.props['aria-pressed'], key === metric);
-        assert.equal(button.props.accessibilityState.selected, key === metric);
+  it('exposes all four approved metric tabs with selected state', () => {
+    const result = runtime();
+    for (const selected of ['points', 'goals', 'assists', 'gaa'] as const) {
+      findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${selected}`)!.props.onPress();
+      result.h.render();
+      for (const key of ['points', 'goals', 'assists', 'gaa'] as const) {
+        const tab = findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${key}`)!;
+        assert.equal(tab.props.accessibilityRole, 'tab');
+        assert.equal(tab.props['aria-selected'], key === selected);
+        assert.equal(tab.props.accessibilityState.selected, key === selected);
       }
     }
   });
-  it('mounts above the existing list and requests the top five GOALS, not the points subset', async () => {
-    const r = runtime(); const output = await settle(r);
-    const card = findNode(output, n => n.props.testID === 'stats-leaders-card');
-    assert.ok(card, 'actual Stats screen mounts the leaders card');
-    assert.ok(r.calls.some(args => args[0] === 'league-a' && args[1] === 'goals' && args[2] === 5));
-    assert.deepEqual(cardRows(output).map(n => n.props.testID), ['f','a','b','c','d'].map(id => `stats-leader-row-${id}`));
-    assert.equal(findNode(card, n => n.props.testID === 'stats-leaders-tab-goals')?.props.accessibilityState.selected, true);
-    const flat = findNode(output, n => n.type === 'FlatList');
-    assert.ok(findNode(flat?.props.ListHeaderComponent, n => n.props.testID === 'stats-leaders-card'));
+
+  it('renders a compact deterministic top five for the default Points metric', () => {
+    const result = runtime();
+    assert.deepEqual(rows(result.h.output).map((node) => node.props.testID), ['e', 'a', 'c', 'd', 'f'].map((id) => `stats-leader-row-${id}`));
+    assert.equal(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-points')?.props.accessibilityState.selected, true);
+    assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art'));
+    const first = rows(result.h.output)[0];
+    const children = first.props.children;
+    assert.equal(children[0].type, 'Text');
+    assert.equal(children[1].type, 'TeamLogo');
+    assert.equal(children[2].type, 'View');
+    assert.equal(children[3].type, 'View');
+    assert.equal(children[2].props.children.length, 2, 'given name and surname stay stacked');
+    assert.equal(nodeText(children[2]), 'EliEdge');
   });
 
-  it('toggles Goals / Assists / Points, updates actual ranking values, and opens the native player card', async () => {
-    const r = runtime(undefined, 320); await settle(r);
-    for (const [metric, expected] of [['assists',['e','a','c','d','b']], ['points',['e','a','c','d','f']], ['goals',['f','a','b','c','d']]] as const) {
-      findNode(r.h.output, n => n.props.testID === `stats-leaders-tab-${metric}`)?.props.onPress();
-      const output = await settle(r);
-      assert.deepEqual(cardRows(output).map(n => n.props.testID), expected.map(id => `stats-leader-row-${id}`));
-      assert.equal(findNode(output, n => n.props.testID === `stats-leaders-tab-${metric}`)?.props.accessibilityState.selected, true);
+  it('updates actual rankings, supports GAA, and opens native player cards', () => {
+    const result = runtime();
+    for (const [selected, expected] of [['assists', ['e', 'a', 'c', 'd', 'b']], ['goals', ['f', 'a', 'b', 'c', 'd']], ['gaa', ['g1', 'g2']]] as const) {
+      findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${selected}`)!.props.onPress();
+      result.h.render();
+      assert.deepEqual(rows(result.h.output).map((node) => node.props.testID), expected.map((id) => `stats-leader-row-${id}`));
     }
-    cardRows(r.h.output)[0].props.onPress();
-    assert.deepEqual(r.navigationCalls[0][1], { playerId: 'f', leagueId: 'league-a' });
+    rows(result.h.output)[0].props.onPress();
+    assert.deepEqual(result.opened, ['g1']);
   });
 
-  it('shows an honest empty card instead of creating five placeholder players', async () => {
-    const r = runtime(() => []); const output = await settle(r);
-    assert.equal(cardRows(output).length, 0);
-    assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-empty'));
+  it('shows honest emptiness without placeholder players', () => {
+    const result = runtime([]);
+    assert.equal(rows(result.h.output).length, 0);
+    assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-empty'));
+    assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa'));
   });
 
-  it('shows an honest empty state without losing the metric toggle', async () => {
-    let failure = true;
-    const r = runtime((_league, _metric, limit) => { if (limit === 5 && failure) return []; return players.slice(0,limit); });
-    let output = await settle(r);
-    assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-empty'));
-    assert.ok(findNode(output, n => n.props.testID === 'stats-leaders-tab-assists'));
-    failure = false;
-    findNode(output, n => n.props.testID === 'stats-leaders-retry')?.props.onPress();
-    output = await settle(r);
-    assert.equal(cardRows(output).length, 5);
-    assert.equal(findNode(output, n => n.props.testID === 'stats-leaders-empty'), undefined);
+  it('keeps retry behavior for an unavailable complete scope', () => {
+    const result = runtime([], 'error');
+    findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-retry')!.props.onPress();
+    assert.equal(result.retryCount, 1);
   });
 
-  it('ignores late metric responses and clears old league/division identities before new reads settle', async () => {
-    const r = runtime((league, metric, limit) => {
-      return [...players].sort((a:any,b:any)=>b[metric]-a[metric]).slice(0,limit).map(p=>({...p,player_name:league==='league-b'?'B '+p.player_name:p.player_name}));
-    });
-    await settle(r);
-    findNode(r.h.output,n=>n.props.testID==='stats-leaders-tab-assists')?.props.onPress();
-    await settle(r);
-    assert.doesNotMatch(nodeText(findNode(r.h.output,n=>n.props.testID==='stats-leaders-card')),/STALE GOALS PLAYER/);
-    r.league.activeLeague={id:'league-b',slug:'bay',name:'Bay League'};r.league.activeDivision={id:'division-b',name:'B'};r.h.render();
-    assert.equal(cardRows(r.h.output).length,0);
-    await settle(r);
-    assert.ok(r.calls.some(a=>a[0]==='league-b'&&a[1]==='assists'&&a[2]===5&&a[3]==='division-b'));
-    assert.match(nodeText(cardRows(r.h.output)[0]),/B Eli Edge/);
+  it('clears old player identities synchronously when scope data changes', () => {
+    const result = runtime();
+    result.replacePlayers(players.map((player) => ({ ...player, playerId: `new-${player.playerId}`, playerName: `New ${player.playerName}` })));
+    assert.ok(rows(result.h.output).every((node) => node.props.testID.startsWith('stats-leader-row-new-')));
+  });
+
+  it('falls back from remote art to bundled art, player photo, then neutral art', () => {
+    const result = runtime(players, 'ready', (_league, leader) => ({
+      kind: 'remote', identityKey: leader.player_id, uri: 'https://example.test/approved.png',
+      bundledFallback: 'jack-foote-v1', fallbackUri: 'https://example.test/photo.png', accessibilityLabel: 'Approved player artwork',
+    }));
+    const art = () => findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art')!;
+    assert.deepEqual(art().props.source, { uri: 'https://example.test/approved.png', cache: 'force-cache' });
+    assert.equal(art().props.accessibilityLabel, 'Approved player artwork');
+    art().props.onError(); result.h.render(); assert.deepEqual(art().props.source, { art: 'jack' });
+    art().props.onError(); result.h.render(); assert.deepEqual(art().props.source, { uri: 'https://example.test/photo.png' });
+    art().props.onError(); result.h.render(); assert.deepEqual(art().props.source, { art: 'skater' });
+    assert.equal(art().props.style.height, '108%');
+    assert.equal(art().props.style.bottom, -5);
+  });
+
+  it('ignores a delayed A1 failure after an A to B to A2 artwork sequence', () => {
+    const result = runtime(players, 'ready', (_league, leader) => ({
+      kind: 'remote', identityKey: leader.player_id, uri: `https://example.test/${leader.player_id}.png`,
+      bundledFallback: 'jack-foote-v1', fallbackUri: `https://example.test/${leader.player_id}-photo.png`, accessibilityLabel: leader.player_name,
+    }));
+    const oldArt = findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art')!;
+    const bPlayers = players.map((player) => player.playerId === 'b'
+      ? { ...player, skater: { ...player.skater!, points: metric(100) } }
+      : player);
+    result.replacePlayers(bPlayers);
+    assert.match(findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art')!.props.accessibilityLabel, /^Ben /);
+    result.replacePlayers(players);
+    const newArt = () => findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art')!;
+    const currentSource = newArt().props.source;
+    oldArt.props.onError();
+    result.h.render();
+    assert.deepEqual(newArt().props.source, currentSource);
+    assert.match(newArt().props.accessibilityLabel, /^Eli /);
   });
 });

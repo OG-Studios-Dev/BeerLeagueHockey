@@ -7,7 +7,7 @@ const MAX_LEAGUES = 100;
 export const PUBLIC_METRIC_STATES = ['verified', 'recorded', 'reported', 'estimated', 'unknown', 'conflicted'] as const;
 export const PUBLIC_METRIC_SOURCES = [
   'attendance', 'skater_stats', 'goalie_stats', 'goalie_assignment', 'roster_window',
-  'accepted_sub', 'imported', 'override', 'capture_confirmation',
+  'accepted_sub', 'imported', 'override', 'capture_confirmation', 'player_badges',
 ] as const;
 export type PublicMetricState = (typeof PUBLIC_METRIC_STATES)[number];
 export type PublicMetricSource = (typeof PUBLIC_METRIC_SOURCES)[number];
@@ -54,6 +54,33 @@ export type PublicGoaliesV2 = {
   schemaVersion: 2; leagueId: string; leagueSlug: string;
   presentationSeason: PublicSeasonStats['presentationSeason']; divisionId: string | null;
   goalies: PublicGoalieV2[]; coverage: { goalies: PublicMetricState[] };
+};
+export type PublicStatsScopeKind = 'current' | 'single' | 'multiple' | 'all';
+export type PublicStatsScopeSelection = { kind: PublicStatsScopeKind; seasonIds?: string[] };
+export type PublicStatsScopeSeason = { id: string; name: string; status: string | null; startDate: string | null };
+export type PublicStatsScopeTeam = PublicTeamRef & { logoUrl: string | null };
+export type PublicStatsScopePlayer = {
+  playerId: string;
+  playerName: string;
+  avatarUrl: string | null;
+  displayTeam: PublicStatsScopeTeam | null;
+  skater: {
+    gamesPlayed: PublicStatMetric; goals: PublicStatMetric; assists: PublicStatMetric;
+    points: PublicStatMetric; championships: PublicStatMetric;
+  } | null;
+  goalie: {
+    gamesPlayed: PublicStatMetric; goalsAgainst: PublicStatMetric;
+    goalsAgainstAverage: PublicStatMetric; championships: PublicStatMetric;
+  } | null;
+};
+export type PublicStatsScope = {
+  schemaVersion: 1;
+  leagueId: string;
+  leagueSlug: string;
+  divisionId: string | null;
+  scope: { kind: PublicStatsScopeKind; label: string; seasonIds: string[]; currentSeasonId: string };
+  seasons: PublicStatsScopeSeason[];
+  players: PublicStatsScopePlayer[];
 };
 export type CareerSeasonV2 = {
   seasonId: string | null; sourceId: string | null; seasonName: string; sortDate: string | null;
@@ -493,6 +520,150 @@ export async function getPublicSeasonStats(
   if (teamId) query.set('teamId', teamId);
   const raw = await publicJson(`https://${slug}.beerleaguehockey.ca/api/public/season-stats?${query}`, fetchImpl, timeoutMs);
   return parsePublicSeasonStatsV2(raw, { slug, leagueId, seasonId, divisionId, teamId });
+}
+
+function parseStatsScopeMetricGroup(value: unknown, label: string, keys: readonly string[]) {
+  const raw = object(value, label);
+  exactKeys(raw, [...keys], label);
+  return Object.fromEntries(keys.map((key) => [key, publicMetric(raw[key], `${label} ${key}`)]));
+}
+
+export function parsePublicStatsScope(
+  rawValue: unknown,
+  expected: { slug: string; leagueId: string; divisionId: string | null; selection: PublicStatsScopeSelection },
+): PublicStatsScope {
+  const raw = object(rawValue, 'stats scope payload');
+  exactKeys(raw, ['schemaVersion', 'leagueId', 'leagueSlug', 'divisionId', 'scope', 'seasons', 'players'], 'stats scope payload');
+  if (raw.schemaVersion !== 1 || raw.leagueId !== expected.leagueId || raw.leagueSlug !== expected.slug) {
+    throw new TypeError('Stats scope response identity mismatch');
+  }
+  const divisionId = raw.divisionId === null ? null : id(raw.divisionId, 'stats scope division id');
+  if (divisionId !== expected.divisionId) throw new TypeError('Stats scope division identity mismatch');
+  const scopeRaw = object(raw.scope, 'stats scope');
+  exactKeys(scopeRaw, ['kind', 'label', 'seasonIds', 'currentSeasonId'], 'stats scope');
+  if (!['current', 'single', 'multiple', 'all'].includes(String(scopeRaw.kind)) || scopeRaw.kind !== expected.selection.kind) {
+    throw new TypeError('Stats scope selection mismatch');
+  }
+  if (!Array.isArray(scopeRaw.seasonIds) || scopeRaw.seasonIds.length === 0 || scopeRaw.seasonIds.length > 100) {
+    throw new TypeError('Invalid stats scope seasons');
+  }
+  const seasonIds = scopeRaw.seasonIds.map((seasonId, index) => id(seasonId, `stats scope season ${index}`));
+  unique(seasonIds, 'stats scope season');
+  const requestedIds = [...new Set(expected.selection.seasonIds ?? [])];
+  if ((expected.selection.kind === 'single' || expected.selection.kind === 'multiple')
+    && (requestedIds.length !== seasonIds.length || requestedIds.some((seasonId) => !seasonIds.includes(seasonId)))) {
+    throw new TypeError('Stats scope season selection mismatch');
+  }
+  if (!Array.isArray(raw.seasons) || raw.seasons.length === 0 || raw.seasons.length > 100) throw new TypeError('Invalid stats season catalog');
+  const seasons = raw.seasons.map((value, index): PublicStatsScopeSeason => {
+    const season = object(value, `stats season ${index}`);
+    exactKeys(season, ['id', 'name', 'status', 'startDate'], `stats season ${index}`);
+    return {
+      id: id(season.id, `stats season ${index} id`),
+      name: text(season.name, `stats season ${index} name`),
+      status: season.status === null ? null : text(season.status, `stats season ${index} status`, 40),
+      startDate: season.startDate === null ? null : text(season.startDate, `stats season ${index} start date`, 40),
+    };
+  });
+  unique(seasons.map((season) => season.id), 'stats season catalog');
+  const catalogIds = new Set(seasons.map((season) => season.id));
+  const currentSeasonId = id(scopeRaw.currentSeasonId, 'stats scope current season id');
+  if (!catalogIds.has(currentSeasonId) || seasonIds.some((seasonId) => !catalogIds.has(seasonId))) {
+    throw new TypeError('Stats scope season is outside catalog');
+  }
+  if (expected.selection.kind === 'current' && (seasonIds.length !== 1 || seasonIds[0] !== currentSeasonId)) {
+    throw new TypeError('Current stats scope is incomplete');
+  }
+  if (expected.selection.kind === 'all' && (seasonIds.length !== seasons.length
+    || seasons.some((season) => !seasonIds.includes(season.id)))) {
+    throw new TypeError('All-time stats scope is incomplete');
+  }
+  if (!Array.isArray(raw.players) || raw.players.length > 2_000) throw new TypeError('Invalid stats scope player bound');
+  const players = raw.players.map((value, index): PublicStatsScopePlayer => {
+    const player = object(value, `stats scope player ${index}`);
+    exactKeys(player, ['playerId', 'playerName', 'avatarUrl', 'displayTeam', 'skater', 'goalie'], `stats scope player ${index}`);
+    let displayTeam: PublicStatsScopeTeam | null = null;
+    if (player.displayTeam !== null) {
+      const team = object(player.displayTeam, `stats scope player ${index} team`);
+      exactKeys(team, ['id', 'name', 'logoUrl'], `stats scope player ${index} team`);
+      displayTeam = {
+        id: id(team.id, `stats scope player ${index} team id`),
+        name: text(team.name, `stats scope player ${index} team name`),
+        logoUrl: nullableText(team.logoUrl, `stats scope player ${index} team logo`),
+      };
+    }
+    const skater = player.skater === null ? null : parseStatsScopeMetricGroup(
+      player.skater,
+      `stats scope player ${index} skater`,
+      ['gamesPlayed', 'goals', 'assists', 'points', 'championships'],
+    ) as PublicStatsScopePlayer['skater'];
+    if (skater !== null) {
+      const { goals, assists, points } = skater;
+      if (goals.value !== null && assists.value !== null && points.value !== goals.value + assists.value) {
+        throw new TypeError('Invalid stats scope points reconciliation');
+      }
+    }
+    const goalie = player.goalie === null ? null : parseStatsScopeMetricGroup(
+      player.goalie,
+      `stats scope player ${index} goalie`,
+      ['gamesPlayed', 'goalsAgainst', 'goalsAgainstAverage', 'championships'],
+    ) as PublicStatsScopePlayer['goalie'];
+    if (goalie !== null) {
+      const { gamesPlayed, goalsAgainst, goalsAgainstAverage } = goalie;
+      if (gamesPlayed.value !== null && goalsAgainst.value !== null) {
+        const expectedGaa = gamesPlayed.value > 0 ? goalsAgainst.value / gamesPlayed.value : null;
+        if (expectedGaa === null ? goalsAgainstAverage.value !== null
+          : goalsAgainstAverage.value === null || Math.abs(goalsAgainstAverage.value - expectedGaa) > 0.0001) {
+          throw new TypeError('Invalid stats scope goalie GAA reconciliation');
+        }
+      }
+    }
+    return {
+      playerId: id(player.playerId, `stats scope player ${index} id`),
+      playerName: text(player.playerName, `stats scope player ${index} name`),
+      avatarUrl: nullableText(player.avatarUrl, `stats scope player ${index} avatar`),
+      displayTeam,
+      skater,
+      goalie,
+    };
+  });
+  unique(players.map((player) => player.playerId), 'stats scope player');
+  return {
+    schemaVersion: 1,
+    leagueId: expected.leagueId,
+    leagueSlug: expected.slug,
+    divisionId,
+    scope: { kind: scopeRaw.kind as PublicStatsScopeKind, label: text(scopeRaw.label, 'stats scope label'), seasonIds, currentSeasonId },
+    seasons,
+    players,
+  };
+}
+
+export async function getPublicStatsScope(
+  slug: string,
+  leagueId: string,
+  selection: PublicStatsScopeSelection,
+  divisionId: string | null = null,
+  fetchImpl: FetchLike = fetch,
+  timeoutMs = 8000,
+): Promise<PublicStatsScope> {
+  validateInputs(slug, leagueId);
+  if (divisionId !== null) id(divisionId, 'division id');
+  if (!['current', 'single', 'multiple', 'all'].includes(selection.kind)) throw new TypeError('Invalid stats scope');
+  const seasonIds = [...new Set(selection.seasonIds ?? [])];
+  if (seasonIds.some((seasonId) => !UUID.test(seasonId))) throw new TypeError('Invalid season id');
+  if ((selection.kind === 'single' && seasonIds.length !== 1) || (selection.kind === 'multiple' && seasonIds.length < 1)) {
+    throw new TypeError('The stats scope requires a season selection');
+  }
+  if ((selection.kind === 'current' || selection.kind === 'all') && seasonIds.length > 0) throw new TypeError('Invalid stats scope season selection');
+  // All-time totals are league-wide. Defensively ignore a retained UI division
+  // so this client can never imply or request an unsupported scoped aggregate.
+  const requestDivisionId = selection.kind === 'all' ? null : divisionId;
+  const query = new URLSearchParams({ leagueSlug: slug, scope: selection.kind });
+  for (const seasonId of seasonIds) query.append('seasonId', seasonId);
+  if (requestDivisionId) query.set('divisionId', requestDivisionId);
+  const response = await publicJson(`https://${slug}.beerleaguehockey.ca/api/public/stats-scope?${query}`, fetchImpl, timeoutMs);
+  return parsePublicStatsScope(response, { slug, leagueId, divisionId: requestDivisionId, selection: { kind: selection.kind, seasonIds } });
 }
 
 export function toPlayerStatRows(
