@@ -27,7 +27,7 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 export const PUBLIC_STATS_SCOPE_SCHEMA_VERSION = 1 as const;
 export const MAX_PUBLIC_STATS_SCOPE_SEASONS = 32;
 export const MAX_PUBLIC_STATS_SCOPE_PLAYERS = 2_000;
-export const MAX_PUBLIC_STATS_SCOPE_RESPONSE_BYTES = 256 * 1024;
+export const MAX_PUBLIC_STATS_SCOPE_RESPONSE_BYTES = 1024 * 1024;
 export const MAX_PUBLIC_STATS_SCOPE_SOURCE_ROWS = 50_000;
 
 const MAX_SEASON_CATALOG_ROWS = 100;
@@ -74,6 +74,9 @@ export type StatsScopeBadgeRow = { id: string; player_id: string | null; season_
 export type StatsScopeBaselineRow = {
   id: string;
   player_id: string | null;
+  full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   is_goalie: boolean;
   games_played: number;
   goals: number;
@@ -82,6 +85,7 @@ export type StatsScopeBaselineRow = {
   goals_against: number;
   moosehead_cup_wins: number;
 };
+type StatsScopeBaselineRows = StatsScopeBaselineRow[] & { sourceRowCount?: number };
 type ImportedRosterRow = {
   id: string;
   player_id: string;
@@ -210,6 +214,12 @@ function importedMetric(value: number): PublicStatMetric {
   return { value: validated, state: 'reported', sources: ['imported'] };
 }
 
+function estimatedImportedMetric(value: number, integer = false): PublicStatMetric {
+  const validated = safeNonnegative(value, 'estimated imported metric', integer);
+  if (validated > MAX_METRIC_VALUE) throw new PublicStatsScopeDataError('invalid estimated imported metric');
+  return { value: validated, state: 'estimated', sources: ['imported'] };
+}
+
 function importedRateMetric(value: number): PublicStatMetric {
   const validated = safeNonnegative(value, 'imported rate');
   if (validated > MAX_METRIC_VALUE) throw new PublicStatsScopeDataError('invalid imported rate');
@@ -247,6 +257,38 @@ export function resolvePublicStatsAvatar(
   contractAvatarUrl: string | null | undefined,
 ): string | null {
   return avatarUrl?.trim() || photoUrl?.trim() || contractAvatarUrl?.trim() || null;
+}
+
+function baselineIdentityName(row: StatsScopeBaselineRow): string {
+  const name = row.full_name?.trim()
+    || [row.first_name?.trim(), row.last_name?.trim()].filter(Boolean).join(' ');
+  validateText(name, 'baseline player name');
+  return name;
+}
+
+export function resolveBaselinePlayerIds(
+  rows: readonly StatsScopeBaselineRow[],
+  profiles: readonly StatsScopeProfileRow[],
+  proofs: readonly IdentityProofRow[],
+): StatsScopeBaselineRow[] {
+  const profilesByName = new Map<string, StatsScopeProfileRow[]>();
+  for (const profile of profiles) {
+    if (!UUID_PATTERN.test(profile.id) || !profile.full_name?.trim()) continue;
+    const key = normalizeName(profile.full_name);
+    profilesByName.set(key, [...(profilesByName.get(key) ?? []), profile]);
+  }
+  const proven = new Set(proofs.flatMap((proof) => proof.player_id && UUID_PATTERN.test(proof.player_id)
+    ? [proof.player_id]
+    : []));
+  return rows.map((row) => {
+    if (row.player_id) return row;
+    const candidates = (profilesByName.get(normalizeName(baselineIdentityName(row))) ?? [])
+      .filter((profile) => proven.has(profile.id));
+    if (candidates.length !== 1) {
+      throw new PublicStatsScopeDataError('imported baseline player identity is missing or ambiguous');
+    }
+    return { ...row, player_id: candidates[0].id };
+  });
 }
 
 export function supportsPublicStatsScopeDivision(kind: PublicStatsScopeKind, divisionId: string | null): boolean {
@@ -397,7 +439,7 @@ export interface PublicStatsScopeDependencies {
   loadNativeSeason(season: StatsScopeSeason, divisionId: string | null, maxRows: number): Promise<StatsScopeSeasonPayload>;
   loadImportedAggregateSeason(season: StatsScopeSeason, divisionId: string | null, maxRows: number): Promise<StatsScopeSeasonPayload>;
   readBadges(leagueId: string, seasonIds: string[], maxRows: number): Promise<StatsScopeBadgeRow[]>;
-  readBaselines(leagueId: string, maxRows: number): Promise<StatsScopeBaselineRow[]>;
+  readBaselines(leagueId: string, maxRows: number): Promise<StatsScopeBaselineRows>;
   readProfiles(playerIds: string[], maxRows: number): Promise<StatsScopeProfileRow[]>;
   readTeams(leagueId: string, teamIds: string[], maxRows: number): Promise<StatsScopeTeamRow[]>;
 }
@@ -536,6 +578,12 @@ async function readImportedAggregateIdentities(
     Math.min(MAX_SUPPORT_ROWS, remainingRows(maxRows, sourceRowCount, 'imported aggregate')),
   );
   sourceRowCount += rosterRows.length;
+  const rosterTeamIdsByPlayer = new Map<string, Set<string>>();
+  for (const row of rosterRows) {
+    const teamIds = rosterTeamIdsByPlayer.get(row.player_id) ?? new Set<string>();
+    teamIds.add(row.team_id);
+    rosterTeamIdsByPlayer.set(row.player_id, teamIds);
+  }
   const rosterProfiles = await readProfilesByIds(
     rosterRows.map((row) => row.player_id),
     remainingRows(maxRows, sourceRowCount, 'imported aggregate'),
@@ -588,6 +636,7 @@ async function readImportedAggregateIdentities(
   }
   return {
     byName,
+    rosterTeamIdsByPlayer,
     sourceRowCount,
   };
 }
@@ -613,7 +662,7 @@ async function loadImportedAggregateSeason(
   const skaterSeeds = getImportedAggregateSkaterSeeds(season.id);
   const goalieSeeds = getImportedAggregateGoalieSeeds(season.id);
   const seedNames = [...new Set([...skaterSeeds, ...goalieSeeds].map((seed) => seed.playerName))];
-  const { byName, sourceRowCount } = await readImportedAggregateIdentities(
+  const { byName, rosterTeamIdsByPlayer, sourceRowCount } = await readImportedAggregateIdentities(
     season.league_id,
     season.id,
     seedNames,
@@ -624,15 +673,22 @@ async function loadImportedAggregateSeason(
     remainingRows(maxRows, sourceRowCount, 'imported aggregate'),
   );
   const teamsByName = new Map<string, StatsScopeTeamRow[]>();
+  const teamsById = new Map<string, StatsScopeTeamRow>();
   for (const team of teams) {
     const key = normalizeName(team.name);
     if (key) teamsByName.set(key, [...(teamsByName.get(key) ?? []), team]);
+    teamsById.set(team.id, team);
   }
-  const resolveTeam = (name: string | null) => {
+  const resolveTeam = (name: string | null, playerId: string) => {
     if (!name) return null;
     const candidates = teamsByName.get(normalizeName(name)) ?? [];
-    if (candidates.length !== 1) throw new PublicStatsScopeDataError('imported aggregate team identity is missing or ambiguous');
-    return candidates[0];
+    if (candidates.length === 1) return candidates[0];
+    const rosterTeams = [...(rosterTeamIdsByPlayer.get(playerId) ?? [])]
+      .flatMap((teamId) => teamsById.get(teamId) ? [teamsById.get(teamId)!] : []);
+    const provenCandidates = candidates.filter((team) => rosterTeamIdsByPlayer.get(playerId)?.has(team.id));
+    if (provenCandidates.length === 1) return provenCandidates[0];
+    if (candidates.length === 0 && rosterTeams.length === 1) return rosterTeams[0];
+    throw new PublicStatsScopeDataError('imported aggregate team identity is missing or ambiguous');
   };
   const players = new Map<string, PublicSeasonMetricPlayer>();
   const basePlayer = (name: string): PublicSeasonMetricPlayer => {
@@ -661,9 +717,9 @@ async function loadImportedAggregateSeason(
     return created;
   };
   for (const seed of skaterSeeds) {
-    const team = resolveTeam(seed.teamName);
-    if (divisionId && team?.division_id !== divisionId) continue;
     const player = basePlayer(seed.playerName);
+    const team = resolveTeam(seed.teamName, player.playerId);
+    if (divisionId && team?.division_id !== divisionId) continue;
     player.roles.push('skater');
     player.metrics = {
       gamesPlayed: importedMetric(seed.gamesPlayed),
@@ -678,12 +734,12 @@ async function loadImportedAggregateSeason(
     }
   }
   for (const seed of goalieSeeds) {
-    const team = resolveTeam(seed.teamName);
-    if (divisionId && team?.division_id !== divisionId) continue;
     const player = basePlayer(seed.playerName);
+    const team = resolveTeam(seed.teamName, player.playerId);
+    if (divisionId && team?.division_id !== divisionId) continue;
     if (!player.roles.includes('goalie')) player.roles.push('goalie');
     const gamesPlayed = importedMetric(seed.gamesPlayed);
-    const saves = importedMetric(seed.saves);
+    const saves = estimatedImportedMetric(seed.saves, true);
     const goalsAgainst = importedMetric(seed.goalsAgainst);
     const attempts = seed.saves + seed.goalsAgainst;
     player.goalie = {
@@ -692,7 +748,9 @@ async function loadImportedAggregateSeason(
       losses: importedMetric(seed.losses),
       saves,
       goalsAgainst,
-      savePercentage: attempts > 0 ? importedRateMetric(seed.saves / attempts) : unknownPublicMetric(['imported']),
+      savePercentage: attempts > 0
+        ? estimatedImportedMetric(seed.saves / attempts)
+        : unknownPublicMetric(['imported']),
       goalsAgainstAverage: seed.gamesPlayed > 0 ? importedRateMetric(seed.goalsAgainst / seed.gamesPlayed) : unknownPublicMetric(['imported']),
       shutouts: importedMetric(seed.shutouts),
     };
@@ -723,16 +781,41 @@ async function readBadges(
   return readCompleteStatsScopeRows(build, 'championship badges', Math.min(MAX_BADGE_ROWS, maxRows));
 }
 
-async function readBaselines(leagueId: string, maxRows: number): Promise<StatsScopeBaselineRow[]> {
+async function readBaselines(leagueId: string, maxRows: number): Promise<StatsScopeBaselineRows> {
   const client = createServiceRoleClient();
-  return readCompleteStatsScopeRows(
+  const rows = await readCompleteStatsScopeRows(
     () => serviceQuery<StatsScopeBaselineRow>(client.from('player_career_baselines')
-      .select('id, player_id, is_goalie, games_played, goals, assists, points, goals_against, moosehead_cup_wins', { count: 'exact' })
+      .select('id, player_id, full_name, first_name, last_name, is_goalie, games_played, goals, assists, points, goals_against, moosehead_cup_wins', { count: 'exact' })
       .eq('league_id', leagueId)
       .order('id', { ascending: true })),
     'career baselines',
     Math.min(MAX_BASELINE_ROWS, maxRows),
   );
+  let sourceRowCount = rows.length;
+  const unresolved = rows.filter((row) => !row.player_id);
+  if (unresolved.length === 0) return Object.assign(rows, { sourceRowCount });
+
+  const names = [...new Set(unresolved.map(baselineIdentityName))];
+  const profiles = await readProfilesByNames(
+    names,
+    remainingRows(maxRows, sourceRowCount, 'career baseline identities'),
+  );
+  sourceRowCount += profiles.length;
+  const profileIds = profiles.map((profile) => profile.id);
+  const proofs = profileIds.length > 0
+    ? await readBatchedRows(
+        profileIds,
+        'career baseline identity proofs',
+        Math.min(MAX_SUPPORT_ROWS, remainingRows(maxRows, sourceRowCount, 'career baseline identities')),
+        (batch) => serviceQuery<IdentityProofRow>(client.from('team_rosters')
+          .select('id, player_id', { count: 'exact' })
+          .eq('league_id', leagueId)
+          .in('player_id', batch)
+          .order('id', { ascending: true })),
+      )
+    : [];
+  sourceRowCount += proofs.length;
+  return Object.assign(resolveBaselinePlayerIds(rows, profiles, proofs), { sourceRowCount });
 }
 
 async function readTeams(leagueId: string, teamIds: string[], maxRows: number): Promise<StatsScopeTeamRow[]> {
@@ -1125,7 +1208,7 @@ export async function handlePublicStatsScopeRequest(
         )
       : [];
     validateBaselines(baselines);
-    sourceRows += baselines.length;
+    sourceRows += baselines.sourceRowCount ?? baselines.length;
     const selectedSeasonIds = selected.map((season) => season.id);
     const badgeBudget = remainingRows(MAX_PUBLIC_STATS_SCOPE_SOURCE_ROWS, sourceRows, 'scope source');
     const badges = await deps.readBadges(
