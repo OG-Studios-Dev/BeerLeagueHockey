@@ -939,14 +939,12 @@ function validateFinalPlayers(players: readonly StatsScopePlayer[]): void {
 
 function validateBaselines(rows: StatsScopeBaselineRow[]): void {
   const ids = new Set<string>();
-  const playerIds = new Set<string>();
   for (const row of rows) {
-    if (!UUID_PATTERN.test(row.id) || ids.has(row.id) || !row.player_id || !UUID_PATTERN.test(row.player_id) || playerIds.has(row.player_id)) {
-      throw new PublicStatsScopeDataError('invalid or duplicate imported baseline');
+    if (!UUID_PATTERN.test(row.id) || ids.has(row.id) || !row.player_id || !UUID_PATTERN.test(row.player_id)) {
+      throw new PublicStatsScopeDataError('invalid or duplicate imported baseline row');
     }
     if (typeof row.is_goalie !== 'boolean') throw new PublicStatsScopeDataError('invalid imported baseline role');
     ids.add(row.id);
-    playerIds.add(row.player_id);
     for (const [field, value] of Object.entries({
       games_played: row.games_played,
       goals: row.goals,
