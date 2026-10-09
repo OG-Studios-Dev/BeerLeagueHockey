@@ -116,8 +116,8 @@ const ERROR_CACHE = 'no-store';
 const STATE_ORDER: PublicMetricState[] = ['verified', 'recorded', 'reported', 'estimated', 'unknown', 'conflicted'];
 const SOURCE_ORDER = new Map(PUBLIC_METRIC_SOURCES.map((source, index) => [source, index]));
 
-class PublicMetricDataError extends Error {}
-class PublicMetricLimitError extends Error {}
+export class PublicMetricDataError extends Error {}
+export class PublicMetricLimitError extends Error {}
 
 function finite(value: number | null | undefined, label: string): number {
   const parsed = value ?? 0;
@@ -473,12 +473,22 @@ type QueryLike = { range(from: number, to: number): Promise<QueryResult> };
 type ClientLike = { from(table: string): { select(columns: string, options?: { count?: 'exact' }): unknown } };
 type SourceName = keyof PublicStatMetricRows;
 
-async function readPages(build: () => QueryLike, label: string, pageSize: number): Promise<unknown[]> {
-  const first = await build().range(0, pageSize - 1);
+async function readPages(
+  build: () => QueryLike,
+  label: string,
+  pageSize: number,
+  maxRows = MAX_SOURCE_ROWS,
+): Promise<unknown[]> {
+  if (maxRows < 1) throw new PublicMetricLimitError('metric source total row limit exceeded');
+  const first = await build().range(0, Math.min(pageSize, maxRows) - 1);
   if (first.error) throw new PublicMetricDataError(`${label} source read failed`);
   if (!Number.isSafeInteger(first.count) || (first.count ?? -1) < 0) throw new PublicMetricDataError(`${label} source count missing`);
   const count = first.count as number;
-  if (count > MAX_SOURCE_ROWS) throw new PublicMetricLimitError(`${label} source row limit exceeded`);
+  if (count > MAX_SOURCE_ROWS || count > maxRows) {
+    throw new PublicMetricLimitError(count > MAX_SOURCE_ROWS
+      ? `${label} source row limit exceeded`
+      : 'metric source total row limit exceeded');
+  }
   const result = [...(first.data ?? [])];
   for (let offset = pageSize; offset < count; offset += pageSize) {
     const page = await build().range(offset, Math.min(offset + pageSize - 1, count - 1));
@@ -504,10 +514,15 @@ function applyFilters(queryValue: unknown, filters: Array<['eq' | 'in', string, 
 export async function loadPublicStatMetricRows(
   client: ClientLike,
   scope: MetricScope,
-  options: { pageSize?: number; tables?: SourceName[] } = {},
+  options: { pageSize?: number; tables?: SourceName[]; maxTotalRows?: number } = {},
 ): Promise<PublicStatMetricRows> {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1000) throw new PublicMetricDataError('invalid page size');
+  if (options.maxTotalRows !== undefined
+    && (!Number.isSafeInteger(options.maxTotalRows) || options.maxTotalRows < 1 || options.maxTotalRows > MAX_SOURCE_ROWS)) {
+    throw new PublicMetricDataError('invalid total row limit');
+  }
+  const maxTotalRows = options.maxTotalRows;
   const selected = new Set<SourceName>(options.tables ?? ['games', 'teams', 'rosters', 'checkins', 'acceptedSubs', 'playerStats', 'goalieStats', 'goalieAppearances']);
   const playerFilter = scope.playerId ? [['eq', 'player_id', scope.playerId] as ['eq', string, unknown]] : [];
   const tableConfig: Record<Exclude<SourceName, 'profiles'>, { table: string; columns: string; filters: Array<['eq' | 'in', string, unknown]>; orderColumns?: string[] }> = {
@@ -521,14 +536,25 @@ export async function loadPublicStatMetricRows(
     goalieAppearances: { table: 'game_goalie_appearances', columns: 'game_id, player_id, team_id, team_type, game:games!inner(id)', filters: [['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])], orderColumns: ['game_id', 'player_id'] },
   };
   const output: PublicStatMetricRows = { games: [], teams: [], profiles: [], rosters: [], checkins: [], acceptedSubs: [], playerStats: [], goalieStats: [], goalieAppearances: [] };
+  let totalRows = 0;
+  const addRows = (count: number) => {
+    totalRows += count;
+    if (maxTotalRows !== undefined && totalRows > maxTotalRows) {
+      throw new PublicMetricLimitError('metric source total row limit exceeded');
+    }
+  };
+  const remainingRows = () => maxTotalRows === undefined ? MAX_SOURCE_ROWS : maxTotalRows - totalRows;
   for (const name of Object.keys(tableConfig) as Array<Exclude<SourceName, 'profiles'>>) {
     if (!selected.has(name)) continue;
     const config = tableConfig[name];
-    output[name] = await readPages(
+    const loaded = await readPages(
       () => applyFilters(client.from(config.table).select(config.columns, { count: 'exact' }), config.filters, config.orderColumns),
       name,
       pageSize,
-    ) as never;
+      Math.min(MAX_SOURCE_ROWS, remainingRows()),
+    );
+    output[name] = loaded as never;
+    addRows(loaded.length);
   }
   const playerIds = [...new Set([
     ...output.rosters.map((row) => row.player_id), ...output.checkins.map((row) => row.player_id),
@@ -539,23 +565,31 @@ export async function loadPublicStatMetricRows(
     output.profiles = await readPages(
       () => applyFilters(client.from('profiles').select('id, full_name, avatar_url, photo_url', { count: 'exact' }), playerIds.length ? [['in', 'id', playerIds]] : []),
       'profiles', pageSize,
+      Math.min(MAX_SOURCE_ROWS, remainingRows()),
     ) as PublicMetricProfileRow[];
+    addRows(output.profiles.length);
   } else if (!options.tables && playerIds.length) {
     const profileBatchSize = 200;
     for (let offset = 0; offset < playerIds.length; offset += profileBatchSize) {
       const batch = playerIds.slice(offset, offset + profileBatchSize);
-      output.profiles.push(...await readPages(
+      const profiles = await readPages(
         () => applyFilters(client.from('profiles').select('id, full_name, avatar_url, photo_url', { count: 'exact' }), [['in', 'id', batch]]),
         'profiles', pageSize,
-      ) as PublicMetricProfileRow[]);
+        Math.min(MAX_SOURCE_ROWS, remainingRows()),
+      ) as PublicMetricProfileRow[];
+      addRows(profiles.length);
+      output.profiles.push(...profiles);
     }
   }
   return output;
 }
 
-export async function readPublicStatMetricRows(scope: MetricScope): Promise<PublicStatMetricRows> {
+export async function readPublicStatMetricRows(
+  scope: MetricScope,
+  options: { maxTotalRows?: number } = {},
+): Promise<PublicStatMetricRows> {
   assertRequiredPrivilegedMetricConfig();
-  return loadPublicStatMetricRows(createServiceRoleClient() as unknown as ClientLike, scope);
+  return loadPublicStatMetricRows(createServiceRoleClient() as unknown as ClientLike, scope, options);
 }
 
 export function assertRequiredPrivilegedMetricConfig(): void {
@@ -617,9 +651,9 @@ function exactQuery(request: NextRequest, allowed: string[]): NextResponse | nul
   return null;
 }
 
-type MetricTenantHost = { kind: 'slug'; slug: string } | { kind: 'custom'; hostname: string } | { kind: 'unbound' };
+export type PublicStatsTenantHost = { kind: 'slug'; slug: string } | { kind: 'custom'; hostname: string } | { kind: 'unbound' };
 
-function metricTenantHost(request: NextRequest): MetricTenantHost {
+export function getPublicStatsTenantHost(request: NextRequest): PublicStatsTenantHost {
   const host = (request.headers.get('host') ?? '').toLowerCase().replace(/:\d+$/, '');
   if (!host || host === 'localhost' || host === '127.0.0.1' || host === 'beerleaguehockey.ca') return { kind: 'unbound' };
   if (host.endsWith('.beerleaguehockey.ca')) {
@@ -651,7 +685,7 @@ export async function handlePublicSeasonStatsRequest(
   if (divisionId !== null && !UUID.test(divisionId)) return error(400, 'INVALID_DIVISION_ID', 'divisionId must be a UUID.');
   if (teamId !== null && !UUID.test(teamId)) return error(400, 'INVALID_TEAM_ID', 'teamId must be a UUID.');
   if (version !== '2') return error(400, 'UNSUPPORTED_CONTRACT_VERSION', 'contractVersion=2 is required.');
-  const tenantHost = metricTenantHost(request);
+  const tenantHost = getPublicStatsTenantHost(request);
   if (tenantHost.kind === 'slug' && tenantHost.slug !== slug) return error(400, 'TENANT_MISMATCH', 'leagueSlug does not match the tenant host.');
   try {
     deps.requirePrivilegedAccess();
