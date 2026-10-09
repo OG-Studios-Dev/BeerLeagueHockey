@@ -14,6 +14,10 @@ describe('imported aggregate season overrides', () => {
   it('returns the seeded winter GP override for Hockey Life skaters', () => {
     expect(getImportedAggregateSkaterGamesPlayed(HLHL_WINTER_2026_SEASON_ID, 'Adam Klimowicz')).toBe(11);
     expect(getImportedAggregateSkaterGamesPlayed(HLHL_WINTER_2026_SEASON_ID, 'Steve Almond')).toBe(10);
+    expect(getImportedAggregateSkaterGamesPlayed(HLHL_WINTER_2026_SEASON_ID, 'Dan MacGillivray')).toBe(9);
+    expect(getImportedAggregateSkaterGamesPlayed(HLHL_WINTER_2026_SEASON_ID, 'Eric Mortson')).toBe(10);
+    expect(getImportedAggregateSkaterGamesPlayed(HLHL_WINTER_2026_SEASON_ID, 'Dan Macgillavray')).toBeNull();
+    expect(getImportedAggregateSkaterGamesPlayed(HLHL_WINTER_2026_SEASON_ID, 'Eric Morston')).toBeNull();
     expect(getImportedAggregateSkaterGamesPlayed('some-other-season', 'Adam Klimowicz')).toBeNull();
   });
 
@@ -34,6 +38,12 @@ describe('imported aggregate season overrides', () => {
       wins: 5,
       losses: 4,
       goalsAgainst: 33,
+    });
+    expect(getImportedAggregateGoalieSeed(HLHL_WINTER_2026_SEASON_ID, 'Vince Mitalas')).toMatchObject({
+      gamesPlayed: 1,
+      wins: 1,
+      goalsAgainst: 1,
+      saves: 24,
     });
     expect(getImportedAggregateGoalieSeeds(HLHL_WINTER_2026_SEASON_ID)).toHaveLength(9);
   });

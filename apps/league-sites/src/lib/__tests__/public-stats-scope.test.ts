@@ -6,10 +6,12 @@ import {
   aggregatePublicStatsScope,
   assertPublicStatsScopeResponseBytes,
   handlePublicStatsScopeRequest,
+  MAX_PUBLIC_STATS_SCOPE_RESPONSE_BYTES,
   MAX_PUBLIC_STATS_SCOPE_SOURCE_ROWS,
   PublicStatsScopeDataError,
   PublicStatsScopeLimitError,
   readCompleteStatsScopeRows,
+  resolveBaselinePlayerIds,
   resolvePublicStatsAvatar,
   supportsPublicStatsScopeDivision,
   type PublicStatsScopeDependencies,
@@ -347,6 +349,29 @@ describe('public stats-scope aggregation', () => {
     expect(result[0].displayTeam).toEqual({ id: TEAM_ID, name: 'Wolves', logoUrl: 'crest.png' });
   });
 
+  it('resolves a null baseline identity only through one league-proven exact-name profile', () => {
+    const unresolved = baseline({ player_id: null, full_name: 'Profile Pat' });
+    const otherId = '41000000-0000-4000-8000-000000000004';
+    const candidates = [
+      { id: PLAYER_ID, full_name: 'Profile Pat', avatar_url: null, photo_url: null },
+      { id: otherId, full_name: 'Profile Pat', avatar_url: null, photo_url: null },
+    ];
+    expect(resolveBaselinePlayerIds(
+      [unresolved],
+      candidates,
+      [{ id: '42000000-0000-4000-8000-000000000004', player_id: PLAYER_ID }],
+    )[0].player_id).toBe(PLAYER_ID);
+    expect(() => resolveBaselinePlayerIds(
+      [unresolved],
+      candidates,
+      [
+        { id: '42000000-0000-4000-8000-000000000004', player_id: PLAYER_ID },
+        { id: '43000000-0000-4000-8000-000000000004', player_id: otherId },
+      ],
+    )).toThrow('missing or ambiguous');
+    expect(() => resolveBaselinePlayerIds([unresolved], candidates, [])).toThrow('missing or ambiguous');
+  });
+
   it('preserves unknown and conflicted states without averaging rates', () => {
     const conflicted = payload(OLD, {
       gamesPlayed: publicMetric(null, 'conflicted', ['attendance']),
@@ -679,7 +704,7 @@ describe('GET /api/public/stats-scope', () => {
 
     const responseBytesDeps = dependencies();
     const basePayload = payload(ACTIVE);
-    const playerIds = Array.from({ length: 130 }, (_, index) =>
+    const playerIds = Array.from({ length: 520 }, (_, index) =>
       `40000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
     responseBytesDeps.loadNativeSeason.mockResolvedValue({
       ...basePayload,
@@ -809,8 +834,8 @@ describe('GET /api/public/stats-scope', () => {
       })(),
     )).status).toBe(503);
 
-    expect(() => assertPublicStatsScopeResponseBytes('é'.repeat((256 * 1024) / 2))).not.toThrow();
-    expect(() => assertPublicStatsScopeResponseBytes(`x${'é'.repeat((256 * 1024) / 2)}`))
+    expect(() => assertPublicStatsScopeResponseBytes('é'.repeat(MAX_PUBLIC_STATS_SCOPE_RESPONSE_BYTES / 2))).not.toThrow();
+    expect(() => assertPublicStatsScopeResponseBytes(`x${'é'.repeat(MAX_PUBLIC_STATS_SCOPE_RESPONSE_BYTES / 2)}`))
       .toThrow(PublicStatsScopeLimitError);
     log.mockRestore();
   });

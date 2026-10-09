@@ -51,10 +51,10 @@ const HLHL_WINTER_2026_SKATERS: ImportedAggregateSkaterSeed[] = [
   { playerName: 'Stefan Kowlessar', teamName: 'London Eco Metal', gamesPlayed: 11, goals: 2, assists: 7 },
   { playerName: 'Adrian Kwasek', teamName: 'FitzRays Premier', gamesPlayed: 11, goals: 1, assists: 8 },
   { playerName: 'Jeff Lobodzinski', teamName: 'First General London', gamesPlayed: 11, goals: 6, assists: 8 },
-  { playerName: 'Dan Macgillavray', teamName: 'FitzRays Premier', gamesPlayed: 9, goals: 12, assists: 4 },
+  { playerName: 'Dan MacGillivray', teamName: 'FitzRays Premier', gamesPlayed: 9, goals: 12, assists: 4 },
   { playerName: 'Garrett Mcinerney', teamName: 'London Eco Metal', gamesPlayed: 11, goals: 8, assists: 6 },
   { playerName: 'David Miskus', teamName: 'First General London', gamesPlayed: 10, goals: 11, assists: 11 },
-  { playerName: 'Eric Morston', teamName: 'London Eco Metal', gamesPlayed: 10, goals: 11, assists: 6 },
+  { playerName: 'Eric Mortson', teamName: 'London Eco Metal', gamesPlayed: 10, goals: 11, assists: 6 },
   { playerName: 'Cory Nott', teamName: 'First General London', gamesPlayed: 11, goals: 0, assists: 1 },
   { playerName: 'Trevor Paterson', teamName: 'London Eco Metal', gamesPlayed: 9, goals: 1, assists: 4 },
   { playerName: 'Daryl Patterson', teamName: 'FitzRays Flyers', gamesPlayed: 9, goals: 0, assists: 4 },
@@ -104,8 +104,11 @@ const HLHL_WINTER_2026_GOALIE_RAW: ImportedAggregateGoalieRawSeed[] = [
 ];
 
 function estimateGoalieSaves(goalsAgainst: number, wins: number, gamesPlayed: number) {
+  if (wins >= gamesPlayed) {
+    return Math.max(gamesPlayed * 25 - goalsAgainst, 0);
+  }
   const winRatio = wins / Math.max(gamesPlayed, 1);
-  const estimated = Math.round((goalsAgainst / Math.max(1 - winRatio, Number.EPSILON)) * wins);
+  const estimated = Math.round((goalsAgainst / (1 - winRatio)) * wins);
   if (Number.isFinite(estimated) && estimated > 0) {
     return estimated;
   }
