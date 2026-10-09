@@ -579,11 +579,42 @@ describe('GET /api/public/stats-scope', () => {
     });
   });
 
-  it('fails closed on baseline overlap, badge incompleteness, missing profiles, and producer identity mismatch', async () => {
+  it('accepts multiple authoritative baseline source rows for the same player', async () => {
+    const deps = dependencies();
+    deps.readBaselines.mockResolvedValue([
+      baseline(),
+      baseline({
+        id: '71000000-0000-4000-8000-000000000007',
+        games_played: 2,
+        goals: 1,
+        assists: 1,
+        points: 2,
+        moosehead_cup_wins: 0,
+      }),
+      baseline({
+        id: '71000000-0000-4000-8000-000000000008',
+        is_goalie: true,
+        games_played: 3,
+        goals: 0,
+        assists: 0,
+        points: 0,
+        goals_against: 6,
+        moosehead_cup_wins: 0,
+      }),
+    ]);
+
+    const response = await handlePublicStatsScopeRequest(request('leagueSlug=hockey-life&scope=all'), deps);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.players[0].skater.gamesPlayed.value).toBe(16);
+    expect(body.players[0].goalie.gamesPlayed.value).toBe(7);
+  });
+
+  it('fails closed on duplicate baseline rows, badge incompleteness, missing profiles, and producer identity mismatch', async () => {
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const baselineDeps = dependencies();
-    baselineDeps.readBaselines.mockResolvedValue([baseline(), { ...baseline(), id: '71000000-0000-4000-8000-000000000007' }]);
+    baselineDeps.readBaselines.mockResolvedValue([baseline(), baseline()]);
     const baselineResponse = await handlePublicStatsScopeRequest(request('leagueSlug=hockey-life&scope=all'), baselineDeps);
     expect(baselineResponse.status).toBe(503);
 
