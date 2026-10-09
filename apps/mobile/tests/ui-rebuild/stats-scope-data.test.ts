@@ -48,6 +48,20 @@ describe('public stats scope boundary', () => {
     assert.equal(result.players[0].goalie.championships.value, null);
   });
 
+  it('accepts the measured all-time payload size and rejects responses over the 1 MiB contract', async () => {
+    const api = moduleWith();
+    const json = JSON.stringify(payload());
+    const measuredAllTimeBytes = 469_102;
+    const measuredBody = `${' '.repeat(measuredAllTimeBytes - json.length)}${json}`;
+    const result = await api.getPublicStatsScope('harbour', LEAGUE, { kind: 'current' }, null, async () => ({
+      ok: true, status: 200, text: async () => measuredBody,
+    }));
+    assert.equal(result.players[0].playerId, PLAYER);
+    await assert.rejects(api.getPublicStatsScope('harbour', LEAGUE, { kind: 'current' }, null, async () => ({
+      ok: true, status: 200, text: async () => 'x'.repeat((1024 * 1024) + 1),
+    })), /byte limit/i);
+  });
+
   it('encodes one or multiple selected seasons without client fan-out', async () => {
     const api = moduleWith();
     const urls: string[] = [];
