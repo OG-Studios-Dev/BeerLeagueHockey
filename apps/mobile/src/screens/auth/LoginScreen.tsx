@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.borderCard,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     color: colors.textPrimary,
     paddingHorizontal: 14,
     marginBottom: 12,

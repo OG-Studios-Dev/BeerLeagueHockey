@@ -8,6 +8,7 @@ import { useMobileDockData, type MobileDockData } from './useMobileDockData';
 type MobileShellData = MobileDockData & {
   retry: () => void;
   focusAccent: string;
+  homeAccent: string;
   titleAccent: string;
 };
 
@@ -24,6 +25,7 @@ const EMPTY: MobileShellData = {
   team: null,
   retry: () => undefined,
   focusAccent: HOCKEY_LIFE_PRIMARY,
+  homeAccent: HOCKEY_LIFE_PRIMARY,
   titleAccent: HOCKEY_LIFE_PRIMARY,
 };
 
@@ -44,6 +46,7 @@ export function MobileShellDataProvider({
   const value = React.useMemo(() => ({
     ...data,
     focusAccent: resolveFocusAccent(data.team?.primary_color, leaguePrimary),
+    homeAccent: resolveFocusAccent(null, leaguePrimary),
     titleAccent: resolveCutIceAccent(data.team?.primary_color ?? leaguePrimary),
   }), [data, leaguePrimary]);
   return <MobileShellDataContext.Provider value={value}>{children}</MobileShellDataContext.Provider>;

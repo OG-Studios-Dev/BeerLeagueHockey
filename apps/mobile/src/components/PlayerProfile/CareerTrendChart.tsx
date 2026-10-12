@@ -1,9 +1,11 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+
 import { getCareerMetricDefinitions, lineChartGeometry } from '../../lib/playerPageModel';
 import type { HockeyLifePlayerPage } from '../../lib/supabase/playerPage';
 import colors from '../../theme/colors';
+
 
 type Props = {
   rows: HockeyLifePlayerPage['careerRows'];
@@ -16,6 +18,7 @@ const WIDTH = 300;
 const HEIGHT = 132;
 
 export default function CareerTrendChart({ rows, isGoalie, accent, hotFacts }: Props) {
+
   const definitions = getCareerMetricDefinitions(isGoalie).filter((metric) => rows.some((row) => row.metrics[metric.key] != null));
   const [selectedKey, setSelectedKey] = React.useState(definitions[0]?.key ?? '');
   const [factIndex, setFactIndex] = React.useState(0);
@@ -60,7 +63,7 @@ export default function CareerTrendChart({ rows, isGoalie, accent, hotFacts }: P
 
 const styles = StyleSheet.create({
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 },
-  control: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.glassStrokeStrong, borderRadius: 999, paddingHorizontal: 13, backgroundColor: colors.bgSurface },
+  control: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.glassStrokeStrong, borderRadius: 999, paddingHorizontal: 13, backgroundColor: colors.bgInteractive },
   controlText: { color: colors.textSecondary, fontSize: 12, fontWeight: '800' },
   chartFrame: { borderWidth: 1, borderColor: colors.glassStroke, borderRadius: 18, backgroundColor: colors.bgSurface, paddingHorizontal: 10, paddingTop: 20, overflow: 'hidden' },
   chart: { width: '100%', maxWidth: WIDTH, height: HEIGHT, alignSelf: 'center', position: 'relative' },

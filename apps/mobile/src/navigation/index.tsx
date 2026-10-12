@@ -5,7 +5,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { useAuth } from '../context/AuthContext';
-import { FocusPauseProvider } from '../context/FocusPauseContext';
+
 import { useLeague } from '../context/LeagueContext';
 import {
   ScheduleStackParamList,
@@ -29,6 +29,7 @@ import TeamScreen from '../screens/TeamScreen';
 import TeamDetailScreen from '../screens/TeamScreen/TeamDetailScreen';
 import PlayerCardScreen from '../screens/PlayerCardScreen';
 import CutIceTitle from '../components/CutIceTitle';
+import LeagueBackdrop from '../components/LeagueBackdrop';
 import { cutIceScreenLayout } from './CutIceScreenBoundary';
 import { createNewsArticleOptions } from './newsArticleHeader';
 
@@ -48,10 +49,9 @@ import GalleryAlbumScreen from '../screens/league-pages/GalleryAlbumScreen';
 import EventsScreen from '../screens/league-pages/EventsScreen';
 import ContactScreen from '../screens/league-pages/ContactScreen';
 
-import colors from '../theme/colors';
 import MobileWebDock from './MobileWebDock';
 import GuestBannerLayout from './GuestBannerLayout';
-import { MobileShellDataProvider } from './MobileShellDataContext';
+import { MobileShellDataProvider, useMobileShellData } from './MobileShellDataContext';
 
 const Tab = createBottomTabNavigator();
 const ScheduleStack = createNativeStackNavigator<ScheduleStackParamList>();
@@ -92,7 +92,7 @@ function cutIceOptions(title: string) {
 
 function ScheduleNavigator() {
   return (
-    <ScheduleStack.Navigator screenLayout={cutIceScreenLayout}>
+    <ScheduleStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <ScheduleStack.Screen name="ScheduleList" component={ScheduleScreen} options={cutIceOptions('Schedule')} />
       <ScheduleStack.Screen name="GamePreview" component={GamePreviewScreen} options={cutIceOptions('Game Preview')} />
       <ScheduleStack.Screen name="GameRecap" component={GameRecapScreen} options={cutIceOptions('Game Recap')} />
@@ -102,7 +102,7 @@ function ScheduleNavigator() {
 
 function StandingsNavigator() {
   return (
-    <StandingsStack.Navigator screenLayout={cutIceScreenLayout}>
+    <StandingsStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <StandingsStack.Screen name="ScheduleList" component={StandingsScreen} options={cutIceOptions('Standings')} />
       <StandingsStack.Screen name="GamePreview" component={GamePreviewScreen} options={cutIceOptions('Game Preview')} />
       <StandingsStack.Screen name="GameRecap" component={GameRecapScreen} options={cutIceOptions('Game Recap')} />
@@ -112,7 +112,7 @@ function StandingsNavigator() {
 
 function TeamNavigator() {
   return (
-    <TeamStack.Navigator screenLayout={cutIceScreenLayout}>
+    <TeamStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <TeamStack.Screen name="TeamList" component={TeamScreen} options={cutIceOptions('Teams')} />
       <TeamStack.Screen name="TeamDetail" component={TeamDetailScreen} options={{ headerShown: false }} />
       <TeamStack.Screen name="PlayerCard" component={PlayerCardScreen} options={cutIceOptions('Player Profile')} />
@@ -122,7 +122,7 @@ function TeamNavigator() {
 
 function ProfileNavigator() {
   return (
-    <ProfileStack.Navigator screenLayout={cutIceScreenLayout}>
+    <ProfileStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} options={cutIceOptions('My Profile')} />
       <ProfileStack.Screen name="EditProfile" component={EditProfileScreen} options={cutIceOptions('Player Preferences')} />
       <ProfileStack.Screen name="NotificationsFeed" component={NotificationsFeedScreen} options={cutIceOptions('Notifications')} />
@@ -135,7 +135,7 @@ function ProfileNavigator() {
 
 function StatsNavigator() {
   return (
-    <StatsStack.Navigator screenLayout={cutIceScreenLayout}>
+    <StatsStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <StatsStack.Screen name="StatsMain" component={StatsScreen} options={cutIceOptions('Stats')} />
       <StatsStack.Screen name="Leaderboards" component={LeaderboardsScreen} options={cutIceOptions('Leaderboards')} />
       <StatsStack.Screen name="CareerStats" component={CareerStatsScreen} options={cutIceOptions('Career Stats')} />
@@ -145,7 +145,7 @@ function StatsNavigator() {
 
 function CaptainNavigator() {
   return (
-    <CaptainStack.Navigator screenLayout={cutIceScreenLayout}>
+    <CaptainStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <CaptainStack.Screen name="CaptainDashboard" component={CaptainDashboardScreen} options={cutIceOptions('Captain Dashboard')} />
       <CaptainStack.Screen name="GameAvailability" component={GameAvailabilityScreen} options={cutIceOptions('Game Availability')} />
     </CaptainStack.Navigator>
@@ -154,7 +154,7 @@ function CaptainNavigator() {
 
 function LeaguePagesNavigator() {
   return (
-    <LeaguePagesStack.Navigator screenLayout={cutIceScreenLayout}>
+    <LeaguePagesStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <LeaguePagesStack.Screen name="TeamsDirectory" component={TeamsDirectoryScreen} options={cutIceOptions('Teams')} />
       <LeaguePagesStack.Screen name="PlayersDirectory" component={PlayersDirectoryScreen} options={cutIceOptions('Players')} />
       <LeaguePagesStack.Screen name="PlayoffsDirectory" component={PlayoffsDirectoryScreen} options={cutIceOptions('Playoffs')} />
@@ -172,43 +172,47 @@ function LeaguePagesNavigator() {
   );
 }
 
+function LeagueBackdropLayer() {
+  const { homeAccent } = useMobileShellData();
+  return <LeagueBackdrop accentColor={homeAccent} />;
+}
+
 export default function RootNavigation() {
   const { activeLeague, activeTheme } = useLeague();
   const { isGuest, user } = useAuth();
 
   return (
-    <FocusPauseProvider>
-      <GuestBannerLayout isGuest={isGuest}>
-        <MobileShellDataProvider leagueId={activeLeague?.id ?? null} leaguePrimary={activeTheme.primaryColor} userId={user?.id ?? null}>
-          <View style={[styles.root, { backgroundColor: activeTheme.backgroundColor || colors.bgBase }]}>
-            <Tab.Navigator
-              initialRouteName="Home"
-              tabBar={(props) => <MobileWebDock {...props} />}
-              screenOptions={() => ({
-                headerShown: false,
-                sceneStyle: { backgroundColor: activeTheme.backgroundColor },
-                tabBarHideOnKeyboard: true,
-              })}
-            >
-              <Tab.Screen name="Home" component={HomeScreen} />
-              <Tab.Screen name="Standings" component={StandingsNavigator} />
-              <Tab.Screen name="Schedule" component={ScheduleNavigator} />
-              <Tab.Screen name="Stats" component={StatsNavigator} />
-              <Tab.Screen name="Team" component={TeamNavigator} />
-              <Tab.Screen name="Captain" component={CaptainNavigator} />
-              <Tab.Screen name="Profile" component={ProfileNavigator} />
-              <Tab.Screen name="LeaguePages" component={LeaguePagesNavigator} options={{ tabBarButton: () => null }} />
-            </Tab.Navigator>
-          </View>
-        </MobileShellDataProvider>
-      </GuestBannerLayout>
-    </FocusPauseProvider>
+    <GuestBannerLayout isGuest={isGuest}>
+      <MobileShellDataProvider leagueId={activeLeague?.id ?? null} leaguePrimary={activeTheme.primaryColor} userId={user?.id ?? null}>
+        <View style={styles.root}>
+          <LeagueBackdropLayer />
+          <Tab.Navigator
+            initialRouteName="Home"
+            tabBar={(props) => <MobileWebDock {...props} />}
+            screenOptions={() => ({
+              headerShown: false,
+              sceneStyle: styles.transparentScene,
+              tabBarHideOnKeyboard: true,
+            })}
+          >
+            <Tab.Screen name="Home" component={HomeScreen} />
+            <Tab.Screen name="Standings" component={StandingsNavigator} />
+            <Tab.Screen name="Schedule" component={ScheduleNavigator} />
+            <Tab.Screen name="Stats" component={StatsNavigator} />
+            <Tab.Screen name="Team" component={TeamNavigator} />
+            <Tab.Screen name="Captain" component={CaptainNavigator} />
+            <Tab.Screen name="Profile" component={ProfileNavigator} />
+            <Tab.Screen name="LeaguePages" component={LeaguePagesNavigator} options={{ tabBarButton: () => null }} />
+          </Tab.Navigator>
+        </View>
+      </MobileShellDataProvider>
+    </GuestBannerLayout>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bgBase,
   },
+  transparentScene: { backgroundColor: 'transparent' },
 });

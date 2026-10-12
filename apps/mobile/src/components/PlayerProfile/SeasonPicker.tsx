@@ -32,10 +32,10 @@ export default function SeasonPicker({ seasons, selectedSeasonId, isCareer, acce
 }
 
 const styles = StyleSheet.create({
-  trigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 14, backgroundColor: colors.bgSurface, paddingHorizontal: 15, marginBottom: 14 },
+  trigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 14, backgroundColor: colors.bgInteractive, paddingHorizontal: 15, marginBottom: 14 },
   triggerText: { color: colors.textPrimary, fontSize: 14, fontWeight: '900' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.72)' },
-  sheet: { maxHeight: '72%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgElevated, padding: 18 },
+  sheet: { maxHeight: '72%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgModal, padding: 18 },
   title: { color: colors.textPrimary, fontSize: 19, fontWeight: '900', marginBottom: 12 },
   list: { flexGrow: 0 },
   option: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.glassStroke, borderRadius: 13, paddingHorizontal: 14, marginBottom: 8 },

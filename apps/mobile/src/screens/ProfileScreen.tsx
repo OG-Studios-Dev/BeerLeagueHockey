@@ -19,7 +19,6 @@ import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 
 import Avatar from '../components/Avatar';
-import BrandAtmosphere from '../components/BrandAtmosphere';
 import MembershipDiagnosticsCard from '../components/MembershipDiagnosticsCard';
 import RevealView from '../components/RevealView';
 import SectionHeader from '../components/SectionHeader';
@@ -735,8 +734,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
-      <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="medium" />
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <View style={styles.accountActionBar}>
         <Pressable
           accessibilityRole="button"
@@ -1253,7 +1251,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.glassStrokeStrong,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
   },
   accountActionButtonPressed: { opacity: 0.72 },
   accountActionText: { color: colors.textPrimary, fontSize: 14, fontWeight: '800' },
@@ -1377,11 +1375,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    borderRadius: 12,
+    gap: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
     paddingVertical: 11,
     paddingHorizontal: 12,
   },
@@ -1530,7 +1528,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
     paddingVertical: 10,
     paddingHorizontal: 12,
   },

@@ -24,7 +24,7 @@ import TeamLogo from '../components/TeamLogo';
 import LeagueLogo from '../components/LeagueLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useAuth } from '../context/AuthContext';
-import { useFocusPauseLease } from '../context/FocusPauseContext';
+
 import { useLeague } from '../context/LeagueContext';
 import { isApprovedPublicLink, openPublicLink } from '../lib/publicLinks';
 import colors from '../theme/colors';
@@ -86,7 +86,6 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   const { activeLeague, activeTheme, isGuestLeague } = useLeague();
   const data = useMobileShellData();
   const [modal, setModal] = React.useState<ModalSnapshot>({ mounted: false, open: false });
-  useFocusPauseLease(modal.mounted);
   const [keyboardVisible, setKeyboardVisible] = React.useState(false);
   const [progress] = React.useState(() => new Animated.Value(0));
   const animateModal = React.useCallback((open: boolean, complete: (finished: boolean) => void) => {
@@ -266,21 +265,25 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
   return (
     <View testID="mobile-web-dock" onLayout={handleLayout} style={[styles.dockOuter, { bottom: layout.exteriorBottomOffset, height: layout.outerHeight, paddingHorizontal: layout.horizontalPadding, paddingTop: layout.topPadding }]} pointerEvents="box-none">
       <View testID="dock-surface" accessibilityLabel="Primary navigation" style={[styles.dockShadow, { borderColor: `${primary}38` }]}>
-        <View testID="dock-surface-fill" pointerEvents="none" style={styles.dockSurfaceFill}>
-          <LinearGradient
-            colors={reduceTransparency ? [palette.elevated, palette.elevated] : ['rgba(5, 9, 18, 0.99)', 'rgba(13, 23, 40, 0.985)', 'rgba(7, 13, 25, 0.99)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <LinearGradient
-            colors={[`${primary}22`, 'transparent', `${secondary}18`]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.dockSheen} />
-          <View style={styles.dockInnerRim} />
+        <View testID="dock-surface-fill" pointerEvents="none" style={[styles.dockSurfaceFill, reduceTransparency && { backgroundColor: palette.elevated }]}>
+          {!reduceTransparency ? (
+            <>
+              <LinearGradient
+                colors={['rgba(5, 9, 18, 0.99)', 'rgba(13, 23, 40, 0.985)', 'rgba(7, 13, 25, 0.99)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <LinearGradient
+                colors={[`${primary}22`, 'transparent', `${secondary}18`]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.dockSheen} />
+              <View style={styles.dockInnerRim} />
+            </>
+          ) : null}
         </View>
         <View style={[styles.controlsRow, { paddingBottom: layout.safeAreaPaddingBottom }]}>
           {CONTROLS.map((control) => {

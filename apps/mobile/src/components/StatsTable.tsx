@@ -1,7 +1,9 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import type { StatsTableColumn, StatsTableRow } from '../lib/statsPresentationModel';
+import { getSurfacePalette } from '../theme/ui';
 import Avatar from './Avatar';
 import TeamLogo from './TeamLogo';
 
@@ -153,6 +155,8 @@ function SyncedMetrics({ children, kind, syncId, horizontalSync, onHorizontalOff
 }
 
 export function StatsTableHeader(props: SharedProps) {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const surface = getSurfacePalette(reduceTransparency);
   const { identityWidth, metricCellWidth, metricPaneWidth, columns } = useTableLayout(props.kind, props.expandedMetrics);
   const kindLabel = props.kind === 'goalie' ? 'Goalie' : 'Skater';
   return <View
@@ -160,19 +164,21 @@ export function StatsTableHeader(props: SharedProps) {
     accessibilityRole="summary"
     accessibilityLabel={`${kindLabel} statistics table. Columns: rank, player, team, ${columns.map((column) => column.label).join(', ')}.`}
     accessibilityHint={props.kind === 'skater' || props.expandedMetrics ? 'Swipe the metrics area left and right to review every statistic.' : 'All goalie metrics are visible.'}
-    style={[styles.tableHeader, styles.transparent, styles.horizontalOverflow]}
+    style={[styles.tableHeader, styles.transparent, styles.horizontalOverflow, reduceTransparency && { backgroundColor: surface.elevated, borderColor: surface.stroke }]}
   >
-    <View importantForAccessibility="no-hide-descendants" style={[styles.identityHeader, { width: identityWidth }]}><Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.rankHead}>#</Text><View style={styles.avatarHead} /><Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.nameHead}>Name</Text><Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.teamHead}>Team</Text></View>
+    <View importantForAccessibility="no-hide-descendants" style={[styles.identityHeader, { width: identityWidth }, reduceTransparency && { backgroundColor: surface.elevated, borderColor: surface.stroke }]}><Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.rankHead}>#</Text><View style={styles.avatarHead} /><Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.nameHead}>Name</Text><Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.teamHead}>Team</Text></View>
     <SyncedMetrics {...props} width={metricPaneWidth} style={props.kind === 'goalie' ? styles.goalieMetrics : styles.skaterMetrics}>
-      <View importantForAccessibility="no-hide-descendants" style={[styles.metricRow, styles.metricHeader, { width: metricPaneWidth }]}>{columns.map((column) => <Text key={column.key} maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={[styles.metricHead, { width: metricCellWidth }]}>{column.label}</Text>)}</View>
+      <View importantForAccessibility="no-hide-descendants" style={[styles.metricRow, styles.metricHeader, { width: metricPaneWidth }, reduceTransparency && { backgroundColor: surface.elevated, borderColor: surface.stroke }]}>{columns.map((column) => <Text key={column.key} maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={[styles.metricHead, { width: metricCellWidth }]}>{column.label}</Text>)}</View>
     </SyncedMetrics>
   </View>;
 }
 
 export function StatsTableRowView({ row, last, onOpenPlayer, ...props }: SharedProps & { row: StatsTableRow; last: boolean; onOpenPlayer: (playerId: string) => void }) {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const surface = getSurfacePalette(reduceTransparency);
   const { identityWidth, metricCellWidth, metricPaneWidth } = useTableLayout(props.kind, props.expandedMetrics);
-  return <View testID={`stats-table-row-${row.playerId}`} style={[styles.tableRow, last && styles.tableRowLast, styles.transparent, styles.horizontalOverflow]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Rank ${row.rank}. ${row.playerName}, ${row.displayTeam?.name ?? 'unknown team'}. Open player card.`} onPress={() => onOpenPlayer(row.playerId)} style={({ pressed }) => [styles.identityRow, { width: identityWidth }, last && styles.identityLast, pressed && styles.pressed]}>
+  return <View testID={`stats-table-row-${row.playerId}`} style={[styles.tableRow, last && styles.tableRowLast, styles.transparent, styles.horizontalOverflow, reduceTransparency && { backgroundColor: surface.surface, borderColor: surface.stroke }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Rank ${row.rank}. ${row.playerName}, ${row.displayTeam?.name ?? 'unknown team'}. Open player card.`} onPress={() => onOpenPlayer(row.playerId)} style={({ pressed }) => [styles.identityRow, { width: identityWidth }, last && styles.identityLast, reduceTransparency && { backgroundColor: surface.surface, borderColor: surface.stroke }, pressed && styles.pressed]}>
       <Text maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={[styles.rank, row.rank === 1 && styles.rankFirst]}>{row.rank}</Text>
       <Avatar uri={row.avatarUrl} name={row.playerName} size={30} />
       <View style={styles.playerName}><Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.givenName}>{row.name.givenName}</Text><Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER} style={styles.surname}>{row.name.surname || ' '}</Text></View>

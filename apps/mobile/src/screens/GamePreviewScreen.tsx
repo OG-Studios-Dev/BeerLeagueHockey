@@ -618,7 +618,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: 16 },
   scrollContent: { padding: 16, paddingBottom: 40, gap: 16 },
@@ -820,7 +820,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   goalieCardPressed: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgControlOpaque,
   },
   goalieTeam: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   goalieName: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },

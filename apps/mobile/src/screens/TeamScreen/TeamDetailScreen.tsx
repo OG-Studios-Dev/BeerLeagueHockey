@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import AccessibleChoiceGroup from '../../components/AccessibleChoiceGroup';
-import BrandAtmosphere from '../../components/BrandAtmosphere';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import {
   type CheckinStatus,
@@ -48,7 +47,7 @@ import { useMobileShellData } from '../../navigation/MobileShellDataContext';
 import { TeamStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
 import { resolveFocusAccent } from '../../theme/focusAccent';
-import { ui } from '../../theme/ui';
+import { getSurfacePalette, ui } from '../../theme/ui';
 import TeamPublicPage from './TeamPublicPage';
 
 type Props = NativeStackScreenProps<TeamStackParamList, 'TeamDetail'>;
@@ -324,9 +323,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   const nextGame = upcomingGames[0] ?? null;
   const primaryColor = resolveFocusAccent(team?.primary_color, focusAccent);
-  const _publicSurface = reduceTransparency
-    ? { backgroundColor: '#0C1B31', borderColor: '#41607F' }
-    : { backgroundColor: 'rgba(10, 22, 40, 0.30)', borderColor: 'rgba(125, 190, 255, 0.22)' };
+  const publicSurface = getSurfacePalette(reduceTransparency);
   const nextOpponent = nextGame
     ? nextGame.home_team_id === teamId
       ? nextGame.away_team?.name ?? 'Opponent'
@@ -844,7 +841,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <BrandAtmosphere accentColor={primaryColor} secondaryColor={team?.secondary_color ?? colors.brandArena} intensity="medium" />
       <View style={[styles.colorStrip, { backgroundColor: primaryColor }]} />
 
       <FocusScrollView
@@ -862,12 +858,12 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
             onOpenGame={navigateToGame}
           />
         ) : publicLoading ? (
-          <View testID="team-public-loading-state" style={styles.publicStateCard}>
+          <View testID="team-public-loading-state" style={[styles.publicStateCard, { backgroundColor: publicSurface.surface, borderColor: publicSurface.stroke }]}>
             <ActivityIndicator color={colors.primary} />
             <Text style={styles.stateBody}>Loading current Team page…</Text>
           </View>
         ) : (
-          <View testID="team-public-error-state" style={styles.publicStateCard}>
+          <View testID="team-public-error-state" style={[styles.publicStateCard, { backgroundColor: publicSurface.surface, borderColor: publicSurface.stroke }]}>
             <Ionicons name="alert-circle-outline" size={24} color={colors.accentRed} />
             <Text style={styles.stateTitle}>Public Team page unavailable</Text>
             <Text style={styles.stateBody}>{publicError ?? 'Current public Team facts are not available for this season.'}</Text>
@@ -1008,7 +1004,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgBase,
   },
   colorStrip: {
     height: 6,
@@ -1051,8 +1046,6 @@ const styles = StyleSheet.create({
     gap: 10,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: colors.borderCard,
-    backgroundColor: '#03070D',
     padding: 24,
   },
   publicRetryButton: {
@@ -1598,7 +1591,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.glassStrokeStrong,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgModal,
     padding: 18,
   },
   modalCardLarge: {
@@ -1607,7 +1600,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.glassStrokeStrong,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgModal,
     padding: 18,
   },
   modalHeaderRow: {

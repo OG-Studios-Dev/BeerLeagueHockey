@@ -311,7 +311,7 @@ export default function GameRecapScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: 16 },
   content: { padding: 16, paddingBottom: 40, gap: 16 },

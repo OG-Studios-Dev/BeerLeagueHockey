@@ -129,6 +129,20 @@ describe('Stats top-five leaders card', () => {
     art().props.onError(); result.h.render(); assert.deepEqual(art().props.source, { art: 'skater' });
     assert.equal(art().props.style.height, '108%');
     assert.equal(art().props.style.bottom, -5);
+    assert.deepEqual(art().props.style.transform, [{ scale: 0.8 }]);
+  });
+
+  it('scales skater and goalie feature art by exactly twenty percent without changing the feature hit area', () => {
+    const result = runtime();
+    const art = () => findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art')!;
+    const stage = () => findNode(result.h.output, (node) => node.props.accessibilityLabel?.startsWith('Open ') && node.props.accessibilityLabel?.endsWith(' player card'))!;
+    assert.deepEqual(art().props.style.transform, [{ scale: 0.8 }]);
+    assert.equal(stage().props.style.minHeight, 44);
+
+    findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa')!.props.onPress();
+    result.h.render();
+    assert.deepEqual(art().props.style.transform, [{ scale: 0.8 }]);
+    assert.equal(stage().props.style.minHeight, 44);
   });
 
   it('ignores a delayed A1 failure after an A to B to A2 artwork sequence', () => {

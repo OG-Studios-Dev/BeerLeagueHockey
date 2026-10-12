@@ -1,7 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import Avatar from './Avatar';
 import colors from '../theme/colors';
+import { getSurfacePalette } from '../theme/ui';
 
 type StatItem = {
   label: string;
@@ -27,8 +29,10 @@ export default function PlayerRow({
   avatarUrl,
   onPress,
 }: PlayerRowProps) {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const surfaces = getSurfacePalette(reduceTransparency);
   return (
-    <Pressable onPress={onPress} style={[styles.container, highlight ? styles.highlightContainer : undefined]}>
+    <Pressable onPress={onPress} style={[styles.container, { borderColor: surfaces.stroke }, highlight ? styles.highlightContainer : undefined]}>
       <Text style={[styles.rank, highlight ? styles.rankHighlight : undefined]}>{rank}</Text>
 
       <Avatar uri={avatarUrl ?? null} name={name} size={32} />
@@ -56,7 +60,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 12,

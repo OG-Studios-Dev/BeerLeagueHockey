@@ -99,9 +99,11 @@ function createScheduleComposition(loadScheduleSnapshot: () => Promise<unknown>)
       if (id === '@react-navigation/native-stack') return { createNativeStackNavigator: navigatorFactory('StackNavigatorRuntime') };
       if (id === '../context/AuthContext') return { useAuth: () => ({ isGuest: false, user: { id: 'viewer' } }) };
       if (id === '../context/LeagueContext') return { useLeague: () => ({ activeLeague: league, activeTheme: league.theme }) };
-      if (id === '../context/FocusPauseContext') return { FocusPauseProvider: passthrough };
       if (id === './GuestBannerLayout') return { __esModule: true, default: passthrough };
-      if (id === './MobileShellDataContext') return { MobileShellDataProvider: passthrough };
+      if (id === './MobileShellDataContext') return {
+        MobileShellDataProvider: passthrough,
+        useMobileShellData: () => ({ homeAccent: league.theme.primaryColor }),
+      };
       if (id === './MobileWebDock') return screenModule;
       if (id === '../components/CutIceTitle') {
         return { __esModule: true, default: (props: Record<string, unknown>) => createElement('CutIceTitle', props) };

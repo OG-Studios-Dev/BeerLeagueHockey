@@ -52,7 +52,6 @@ describe('full App mobile dock composition', () => {
         '../components/TeamLogo': 'TeamLogo',
         '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: true, reduceTransparency: false }) },
         '../context/AuthContext': { useAuth: () => ({ user: { id: 'member-a' }, isGuest: false }) },
-        '../context/FocusPauseContext': { useFocusPauseLease: () => undefined },
         '../context/LeagueContext': {
           useLeague: () => ({
             activeLeague: { id: 'league-a', name: 'League A', slug: 'league-a', logoUrl: null },
@@ -112,10 +111,12 @@ describe('full App mobile dock composition', () => {
         if (id === '@react-navigation/native-stack') return { createNativeStackNavigator: stackFactory };
         if (id === '../context/AuthContext') return { useAuth: () => ({ isGuest: false, user: { id: 'member-a' } }) };
         if (id === '../context/LeagueContext') return { useLeague: () => ({ activeLeague: { id: 'league-a' }, activeTheme: { backgroundColor: '#07111F', primaryColor: '#00ffff' } }) };
-        if (id === '../context/FocusPauseContext') return { FocusPauseProvider: passthrough };
         if (id === './MobileWebDock') return { __esModule: true, default: MobileWebDock };
         if (id === './GuestBannerLayout') return { __esModule: true, default: passthrough };
-        if (id === './MobileShellDataContext') return { MobileShellDataProvider: passthrough };
+        if (id === './MobileShellDataContext') return {
+          MobileShellDataProvider: passthrough,
+          useMobileShellData: () => ({ homeAccent: '#00ffff' }),
+        };
         if (id === '../theme/colors') return { __esModule: true, default: { bgBase: '#07111F' } };
         return screenModule;
       },

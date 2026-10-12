@@ -1,9 +1,11 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import type { PositioningData, PositionMetric } from '../lib/leaguePages';
 import { buildBumpChartSegment, POSITION_METRICS } from '../lib/leaguePagesModel';
 import colors from '../theme/colors';
+import { getSurfacePalette } from '../theme/ui';
 import TeamLogo from './TeamLogo';
 
 const RANK_WIDTH = 36;
@@ -25,12 +27,14 @@ function accessibilityLabel(team: PositioningData['teams'][number], metricKey: P
 }
 
 export default function TeamPositioningChart({ positioning }: { positioning: PositioningData }) {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const surfaces = getSurfacePalette(reduceTransparency);
   const [selected, setSelected] = React.useState<{ teamId: string; metric: PositionMetric } | null>(null);
   const chartHeight = HEADER_HEIGHT + positioning.totalTeams * ROW_HEIGHT;
   const teams = [...positioning.teams].sort((left, right) => left.metrics.overall.rank - right.metrics.overall.rank);
 
   return (
-    <View accessibilityRole="summary" accessibilityLabel="Team positioning connected crest chart across five measures" style={styles.viewport}>
+    <View accessibilityRole="summary" accessibilityLabel="Team positioning connected crest chart across five measures" style={[styles.viewport, { backgroundColor: surfaces.surface, borderColor: surfaces.stroke }]}>
       <ScrollView testID="team-positioning-chart-scroll" horizontal nestedScrollEnabled directionalLockEnabled showsHorizontalScrollIndicator contentContainerStyle={styles.scrollContent}>
         <View testID="team-positioning-chart" style={[styles.canvas, { height: chartHeight, width: CHART_WIDTH }]}>
           <View pointerEvents="none" style={[styles.headerRule, { top: HEADER_HEIGHT }]} />
@@ -82,5 +86,5 @@ const styles = StyleSheet.create({
   rank: { position: 'absolute', left: 0, width: RANK_WIDTH - 4, height: 18, color: colors.textSecondary, fontSize: 11, fontWeight: '800', textAlign: 'center' },
   lineLayer: { ...StyleSheet.absoluteFillObject },
   line: { position: 'absolute', height: 3, borderRadius: 2 },
-  target: { position: 'absolute', width: TARGET_SIZE, height: TARGET_SIZE, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgSurface },
+  target: { position: 'absolute', width: TARGET_SIZE, height: TARGET_SIZE, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgInteractive },
 });

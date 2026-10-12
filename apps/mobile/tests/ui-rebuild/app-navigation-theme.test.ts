@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { compileCommonJs, createElement, findNode, flattenStyle } from './component-harness.ts';
 
 describe('production App navigation canvas', () => {
-  it('supplies a complete dark v7 theme and dark native-stack backing', () => {
+  it('supplies a complete dark v7 theme and transparent native-stack scenes', () => {
     const passthrough = ({ children }: { children?: unknown }) => children ?? null;
     const stack = {
       Navigator: 'Stack.Navigator',
@@ -74,6 +74,6 @@ describe('production App navigation canvas', () => {
 
     const navigator = findNode(tree, (node) => node.type === 'Stack.Navigator');
     assert.ok(navigator);
-    assert.equal(flattenStyle(navigator.props.screenOptions.contentStyle).backgroundColor, '#07111F');
+    assert.equal(flattenStyle(navigator.props.screenOptions.contentStyle).backgroundColor, 'transparent');
   });
 });

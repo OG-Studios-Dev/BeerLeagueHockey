@@ -128,17 +128,6 @@ function markSnapshotFailed(snapshot: HomePublicSnapshot): HomePublicSnapshot {
   };
 }
 
-function HomeArenaBackdrop({ accentColor, showAtmosphericGlow }: { accentColor: string; showAtmosphericGlow: boolean }) {
-  return (
-    <View testID="home-arena-backdrop" pointerEvents="none" style={styles.arenaBackdrop}>
-      <LinearGradient colors={[homeTokens.canvas, homeTokens.navy, homeTokens.ink]} start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 1 }} style={StyleSheet.absoluteFill} />
-      {showAtmosphericGlow ? (
-        <LinearGradient testID="home-atmospheric-glow" colors={[`${accentColor}24`, 'rgba(255,255,255,0.03)', 'transparent']} start={{ x: 0.05, y: 0 }} end={{ x: 0.9, y: 0.62 }} style={styles.arenaGlow} />
-      ) : null}
-      <View testID="home-rink-lines" style={styles.arenaRink}><View style={styles.arenaCenterLine} /><View style={styles.arenaCenterCircle} /></View>
-    </View>
-  );
-}
 
 function SectionHeading({ title, action, fontScale }: { title: string; action?: React.ReactNode; fontScale: number }) {
   const stacked = Boolean(action) && fontScale >= 1.3;
@@ -162,7 +151,7 @@ function SectionState({ loading, message, onRetry }: { loading?: boolean; messag
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { activeLeague, activeTheme } = useLeague();
-  const { focusAccent } = useMobileShellData();
+  const { homeAccent } = useMobileShellData();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { width, height, fontScale } = useWindowDimensions();
   const stackedHeadingActions = fontScale >= 1.3;
@@ -250,7 +239,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <View style={styles.accessState}>
           <Image source={hockeyLifeLogo} style={styles.accessStateLogo} resizeMode="contain" alt="Hockey Life" />
           <Text style={styles.accessStateTitle}>Hockey Life access required</Text>
@@ -260,7 +249,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     );
   }
 
-  const accent = focusAccent;
+  const accent = homeAccent;
   const article = stories[storyIndex] ?? stories[0] ?? null;
   const heroAlbum = !article ? renderedPublicHome?.albums.data.find((album) => album.cover_photo_url) ?? renderedPublicHome?.albums.data[0] ?? null : null;
   const standings = renderedPublicHome?.standings.data ?? [];
@@ -292,8 +281,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const sectionCard = [styles.card, { backgroundColor: visuals.surface, borderColor: visuals.stroke }];
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: visuals.canvas }]} edges={['top', 'left', 'right']}>
-      <HomeArenaBackdrop accentColor={accent} showAtmosphericGlow={visuals.showAtmosphericGlow} />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <GuestBanner />
       <FocusScrollView accentColor={accent} focusScopeKey={`home:${activeLeague.id}`} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />} showsVerticalScrollIndicator={false}>
         <HomeLeagueHero
@@ -400,16 +388,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, backgroundColor: 'transparent' },
   accessState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 12 },
   accessStateLogo: { width: 92, height: 92 },
   accessStateTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', textAlign: 'center' },
   accessStateCopy: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 320 },
-  arenaBackdrop: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
-  arenaGlow: { position: 'absolute', top: -80, left: -60, right: -80, height: 360, borderRadius: 180 },
-  arenaRink: { position: 'absolute', width: 250, height: 470, right: -120, top: 120, borderWidth: 1, borderColor: homeTokens.rinkLine, borderRadius: 125, transform: [{ rotate: '-10deg' }] },
-  arenaCenterLine: { position: 'absolute', top: '50%', right: 0, left: 0, height: 1, backgroundColor: homeTokens.rinkLine },
-  arenaCenterCircle: { position: 'absolute', top: 191, left: 81, width: 86, height: 86, borderWidth: 1, borderColor: homeTokens.rinkLine, borderRadius: 43 },
   content: { paddingHorizontal: homeTokens.contentPadding, paddingTop: 6, paddingBottom: 34, gap: 20 },
   iconButton: { width: 44, height: 44, minHeight: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   sectionHeading: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 9 },
@@ -436,7 +419,7 @@ const styles = StyleSheet.create({
   heroExcerpt: { color: '#CCD6E5', fontSize: 13, lineHeight: 19, marginTop: 7 },
   newsPager: { width: '100%' },
   storyNavigation: { width: '100%', minHeight: 44, marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  storyNavigationButton: { width: 44, height: 44, flexShrink: 0, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, alignItems: 'center', justifyContent: 'center' },
+  storyNavigationButton: { width: 44, height: 44, flexShrink: 0, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgInteractive, alignItems: 'center', justifyContent: 'center' },
   storyDots: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   storyCount: { fontSize: 12, lineHeight: 18, fontWeight: '900', letterSpacing: 1 },
   emptyCard: { minHeight: 104, alignItems: 'center', justifyContent: 'center', padding: 18 },
@@ -455,7 +438,7 @@ const styles = StyleSheet.create({
   tableTeamName: { flex: 1, color: colors.textPrimary, fontSize: 11, fontWeight: '800' },
   tableStat: { width: 30, color: colors.textSecondary, fontSize: 11, textAlign: 'center' },
   photoRail: { gap: 10 },
-  photo: { width: 150, height: 110, borderRadius: 16, backgroundColor: colors.bgSurface },
+  photo: { width: 150, height: 110, borderRadius: 16, backgroundColor: colors.bgMedia },
   album: { width: 158, minHeight: 130 },
   albumImage: { width: '100%', height: 94, resizeMode: 'cover' },
   albumTitle: { color: colors.textPrimary, fontSize: 12, fontWeight: '800', padding: 9 },

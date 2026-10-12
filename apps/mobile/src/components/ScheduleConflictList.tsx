@@ -2,8 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import type { ConflictWatchGame, ScheduleConflict } from '../lib/scheduleConflicts';
 import colors from '../theme/colors';
+import { getSurfacePalette } from '../theme/ui';
 
 type ScheduleConflictListProps = {
   conflicts: ScheduleConflict[];
@@ -39,13 +41,15 @@ function getSeverityMeta(severity: ScheduleConflict['severity']) {
 }
 
 export default function ScheduleConflictList({ conflicts, onOpenGame }: ScheduleConflictListProps) {
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const surfaces = getSurfacePalette(reduceTransparency);
   return (
     <View style={styles.list}>
       {conflicts.map((conflict) => {
         const severityMeta = getSeverityMeta(conflict.severity);
 
         return (
-          <View key={conflict.key} style={styles.card}>
+          <View key={conflict.key} style={[styles.card, { backgroundColor: surfaces.surface, borderColor: surfaces.stroke }]}>
             <View style={styles.headerRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.dateLabel}>{conflict.dateLabel}</Text>

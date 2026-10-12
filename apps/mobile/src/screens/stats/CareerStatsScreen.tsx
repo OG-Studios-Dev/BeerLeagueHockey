@@ -16,7 +16,6 @@ import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
 import Avatar from '../../components/Avatar';
-import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader, { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import { useAuth } from '../../context/AuthContext';
 import { useLeague } from '../../context/LeagueContext';
@@ -122,7 +121,6 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
 
   return (
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
-      <BrandAtmosphere intensity="low" />
       <FocusScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
@@ -272,7 +270,7 @@ export default function CareerStatsScreen({ navigation }: { navigation: { goBack
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 16, paddingBottom: 40, gap: 8 },
 

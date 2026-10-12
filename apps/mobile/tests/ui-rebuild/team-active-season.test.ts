@@ -273,7 +273,14 @@ function createRuntime({
       './TeamPublicPage': (props: Row) => createElement('TeamPublicPage', props, props.snapshot.hero ? PublicPage(props) : null),
       '../../navigation/playerCard': { navigateToPlayerCard: (...args: unknown[]) => navigationCalls.push(args) },
       '../../theme/colors': { __esModule: true, default: colors },
-      '../../theme/ui': { ui: { minTouchTarget: 44, radius: { card: 18, panel: 24 } } },
+      '../../theme/ui': {
+        ui: { minTouchTarget: 44, radius: { card: 18, panel: 24 } },
+        getSurfacePalette: (reduceTransparency: boolean) => ({
+          surface: reduceTransparency ? '#0C1B31' : 'rgba(10, 22, 40, 0.30)',
+          elevated: reduceTransparency ? '#0A1628' : 'rgba(12, 27, 49, 0.38)',
+          stroke: reduceTransparency ? '#41607F' : 'rgba(125, 190, 255, 0.22)',
+        }),
+      },
     },
   ).default;
 

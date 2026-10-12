@@ -6,14 +6,12 @@ import { URL } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { readVerticalScrollOffset } from '../../src/components/cardFocusMath.ts';
 import { compileCommonJs } from './component-harness.ts';
 
-const require = createRequire(import.meta.url);
-const nativeWeb = require('react-native-web') as Record<string, unknown>;
+const nativeWeb = createRequire(import.meta.url)('react-native-web') as Record<string, unknown>;
 
-describe('RN-web card focus production boundary', () => {
-  it('renders real production focus components through RN-web and invokes the production scroll adapter', () => {
+describe('RN-web card layout production boundary', () => {
+  it('renders production card wrappers through RN-web without scroll-past emphasis', () => {
     let capturedScrollProps: Record<string, unknown> | undefined;
     const CapturedWebScrollView = (props: Record<string, unknown>) => {
       capturedScrollProps = props;
@@ -30,10 +28,10 @@ describe('RN-web card focus production boundary', () => {
         BottomTabBarHeightContext: React.createContext<number | undefined>(158),
       },
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: false }) },
-      '../context/FocusPauseContext': { useFocusPaused: () => false },
       '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#B31B34' }) },
       '../theme/colors': { default: { primary: '#34d399' } },
-      './cardFocusMath': require('../../src/components/cardFocusMath.ts'),
+      '../theme/league': { LEAGUE_VISUAL_TOKENS: { surface: 'rgba(10, 22, 40, 0.30)', elevated: 'rgba(12, 27, 49, 0.38)', control: 'rgba(7, 17, 31, 0.78)', stroke: 'rgba(125, 190, 255, 0.22)' } },
+      '../theme/ui': { getSurfacePalette: () => ({ surface: '#0C1B31', elevated: '#0A1628', interactive: '#1C2A42', stroke: '#41607F' }) },
     });
     const observedOffsets: number[] = [];
     const fixture = React.createElement(
@@ -42,16 +40,16 @@ describe('RN-web card focus production boundary', () => {
         testID: 'synthetic-card-focus-scroll',
         focusScopeKey: 'synthetic-tenant',
         contentContainerStyle: { paddingHorizontal: 16, paddingBottom: 34 },
-        onScroll: (event: unknown) => observedOffsets.push(readVerticalScrollOffset(event)),
+        onScroll: (event: { nativeEvent: { contentOffset: { y: number } } }) => observedOffsets.push(event.nativeEvent.contentOffset.y),
       },
-      React.createElement(runtime.FocusCard, { focusId: 'alpha', testID: 'synthetic-card-alpha' }, 'Synthetic Alpha card'),
-      React.createElement(runtime.FocusCard, { focusId: 'bravo' }, 'Synthetic Bravo card'),
+      React.createElement(runtime.FocusCard, { focusId: 'alpha', testID: 'synthetic-card-alpha' }, React.createElement('span', null, 'Synthetic Alpha card')),
+      React.createElement(runtime.FocusCard, { focusId: 'bravo' }, React.createElement('span', null, 'Synthetic Bravo card')),
     );
 
     const markup = renderToStaticMarkup(fixture);
     assert.match(markup, /synthetic-card-focus-scroll/);
-    assert.match(markup, /synthetic-card-alpha-emphasis/);
-    assert.match(markup, /focus-card-bravo-emphasis/);
+    assert.match(markup, /synthetic-card-alpha/);
+    assert.doesNotMatch(markup, /emphasis/);
     assert.match(markup, /Synthetic Alpha card/);
     assert.deepEqual(capturedScrollProps?.contentContainerStyle, [
       { paddingHorizontal: 16, paddingBottom: 34 },
@@ -64,10 +62,6 @@ describe('RN-web card focus production boundary', () => {
     assert.deepEqual(observedOffsets, [236]);
   });
 
-  it('keeps malformed or non-finite web offsets readable at the top', () => {
-    assert.equal(readVerticalScrollOffset({}), 0);
-    assert.equal(readVerticalScrollOffset({ nativeEvent: { contentOffset: { y: Number.NaN } } }), 0);
-  });
 
   it('preserves effective numeric bottom padding across every focus adapter', () => {
     const captured: Record<string, Record<string, unknown> | undefined> = {};
@@ -91,10 +85,10 @@ describe('RN-web card focus production boundary', () => {
         BottomTabBarHeightContext: React.createContext<number | undefined>(158),
       },
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: true }) },
-      '../context/FocusPauseContext': { useFocusPaused: () => false },
       '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#B31B34' }) },
       '../theme/colors': { default: { primary: '#34d399' } },
-      './cardFocusMath': require('../../src/components/cardFocusMath.ts'),
+      '../theme/league': { LEAGUE_VISUAL_TOKENS: { surface: 'rgba(10, 22, 40, 0.30)', elevated: 'rgba(12, 27, 49, 0.38)', control: 'rgba(7, 17, 31, 0.78)', stroke: 'rgba(125, 190, 255, 0.22)' } },
+      '../theme/ui': { getSurfacePalette: () => ({ surface: '#0C1B31', elevated: '#0A1628', interactive: '#1C2A42', stroke: '#41607F' }) },
     });
     const adapters = [
       ['scroll', runtime.FocusScrollView],

@@ -159,7 +159,7 @@ export default function TeamChatScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { padding: 16, paddingBottom: 100, gap: 10 },
   chatContext: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, fontWeight: '700', marginBottom: 2 },
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 10,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
     borderTopWidth: 1,
     borderTopColor: colors.glassStroke,
     paddingHorizontal: 16,
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   composeInput: {
     flex: 1,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.glassStroke,

@@ -20,7 +20,7 @@ type DockState = {
 
 const stateRouteNames = ['Home', 'Standings', 'Schedule', 'Stats', 'Team', 'Captain', 'Profile', 'LeaguePages'];
 
-function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; deferAnimations?: boolean; member?: boolean; failLinks?: boolean } = {}) {
+function createDockFixture(initialData: Partial<DockState> = {}, options: { reduceMotion?: boolean; reduceTransparency?: boolean; deferAnimations?: boolean; member?: boolean; failLinks?: boolean } = {}) {
   const harness = createHookHarness();
   let retryCount = 0;
   let reportedDockHeight: number | undefined;
@@ -37,7 +37,6 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
   const keyboardListeners = new Map<string, Set<() => void>>();
   const animationCompletions: Array<(result: { finished: boolean }) => void> = [];
   let animationStops = 0;
-  const focusPauseStates: boolean[] = [];
   class AnimatedValue {
     value: number;
     constructor(value: number) { this.value = value; }
@@ -81,7 +80,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
       'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }) },
       '../components/LeagueLogo': (props: Record<string, unknown>) => createElement('LeagueLogo', props),
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
-      '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: options.reduceMotion ?? true, reduceTransparency: false }) },
+      '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceMotion: options.reduceMotion ?? true, reduceTransparency: options.reduceTransparency ?? false }) },
       '../context/AuthContext': { useAuth: () => ({ user: options.member ? { id: 'user-a' } : null, isGuest: !options.member }) },
       '../context/LeagueContext': {
         useLeague: () => ({
@@ -90,7 +89,6 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
           isGuestLeague: !options.member,
         }),
       },
-      '../context/FocusPauseContext': { useFocusPauseLease: (active: boolean) => { focusPauseStates.push(active); } },
       '../lib/publicLinks': {
         isApprovedPublicLink: (url: string) => [
           'https://hockey-life.beerleaguehockey.ca/contact',
@@ -141,7 +139,7 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
     harness.render();
   };
   return {
-    harness, mount, openMore, navigationCalls, emittedEvents, openedUrls, publicLinkCalls, alerts, focusPauseStates,
+    harness, mount, openMore, navigationCalls, emittedEvents, openedUrls, publicLinkCalls, alerts,
     retryCount: () => retryCount,
     reportedDockHeight: () => reportedDockHeight,
     emitKeyboard: (event: string) => {
@@ -164,20 +162,30 @@ function createDockFixture(initialData: Partial<DockState> = {}, options: { redu
 }
 
 describe('MobileWebDock component integration', () => {
-  it('holds the global focus pause for the full mounted More lifecycle, including reopen and route reset', () => {
+  it('uses one flat opaque dock fill with no decorative gradient bleed under Reduce Transparency', () => {
+    const fixture = createDockFixture({}, { reduceTransparency: true });
+    fixture.mount();
+    const fill = findNode(fixture.harness.output, (node) => node.props.testID === 'dock-surface-fill');
+    assert.equal(flattenStyle(fill?.props.style).backgroundColor, '#0A1628');
+    assert.equal(findNode(fill, (node) => node.type === 'LinearGradient'), undefined);
+  });
+
+  it('preserves the More modal lifecycle through close-animation interruption and route reset', () => {
     const fixture = createDockFixture({}, { reduceMotion: false, deferAnimations: true });
     fixture.mount();
-    assert.equal(fixture.focusPauseStates.at(-1), false);
+    assert.notEqual(findNode(fixture.harness.output, (node) => node.type === 'Modal')?.props.visible, true);
+
     fixture.openMore();
-    assert.equal(fixture.focusPauseStates.at(-1), true);
     fixture.finishNextAnimation();
+    assert.equal(findNode(fixture.harness.output, (node) => node.type === 'Modal')?.props.visible, true);
+
     findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Close more menu')!.props.onPress();
-    assert.equal(fixture.focusPauseStates.at(-1), true, 'close animation retains the lease');
     fixture.openMore();
     fixture.finishNextAnimation();
-    assert.equal(fixture.focusPauseStates.at(-1), true, 'stale close completion does not unpause reopened More');
+    assert.ok(findNode(fixture.harness.output, (node) => node.props.testID === 'more-sheet'), 'stale close completion must not hide a reopened More menu');
+
     fixture.setFocusedRoute('Stats');
-    assert.equal(fixture.focusPauseStates.at(-1), false, 'route reset releases the overlay pause');
+    assert.notEqual(findNode(fixture.harness.output, (node) => node.type === 'Modal')?.props.visible, true, 'route changes close the More menu');
   });
 
   it('renders the expanded More panel as a league-first, bottom-attached row directory', () => {

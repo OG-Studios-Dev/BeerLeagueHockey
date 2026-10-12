@@ -246,7 +246,7 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorNotice: { padding: 12, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.14)' },
   errorText: { color: colors.accentRed, fontSize: 13, lineHeight: 18, fontWeight: '700' },

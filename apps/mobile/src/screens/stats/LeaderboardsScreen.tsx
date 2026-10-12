@@ -145,7 +145,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <View style={styles.filterWrap}>
         <PillToggle options={categories} selected={category} onChange={setCategory} />
       </View>
@@ -257,7 +257,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
   retryButton: { marginTop: 14, paddingHorizontal: 18, paddingVertical: 10 },

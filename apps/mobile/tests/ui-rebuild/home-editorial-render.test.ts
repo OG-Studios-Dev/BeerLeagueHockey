@@ -137,7 +137,7 @@ function makeScreen({
         useAccessibilityPreferences: () => ({ reduceTransparency, reduceMotion }),
       },
       '../context/AuthContext': { useAuth: () => ({ user: { id: 'player-1' }, isGuest: false }) },
-      '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#34D399' }) },
+      '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#34D399', homeAccent: '#34D399' }) },
       '../context/LeagueContext': {
         useLeague: () => ({
           activeLeague,
@@ -205,7 +205,8 @@ describe('Home editorial native render', () => {
 
     const safeArea = findNode(output, (node) => node.type === 'SafeAreaView');
     assert.ok(safeArea);
-    assert.equal(flattenStyle(safeArea.props.style).backgroundColor, '#07111F');
+    assert.equal(flattenStyle(safeArea.props.style).backgroundColor, 'transparent');
+    assert.equal(nodes.some((node) => node.props.testID === 'home-arena-backdrop'), false);
 
     assert.equal(findNode(output, (node) => node.props.testID === 'home-editorial-header'), undefined);
     assert.ok(findNode(output, (node) => node.props.testID === 'home-league-hero'));

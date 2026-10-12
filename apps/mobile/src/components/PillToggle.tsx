@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 4,
     borderRadius: 999,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderWidth: 1,
     borderColor: colors.glassStroke,
     gap: 6,

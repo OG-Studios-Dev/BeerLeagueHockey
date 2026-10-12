@@ -1,3 +1,5 @@
+import { LEAGUE_VISUAL_TOKENS } from './league';
+
 const colors = {
   // Brand
   primary: '#22D3EE',
@@ -6,13 +8,16 @@ const colors = {
   brandGold: '#D4AF37',
 
   // Backgrounds (3 elevation levels)
-  bgBase: '#07111F',          // Level 1 — midnight canvas
-  bgSurface: 'rgba(12, 27, 49, 0.72)',     // Level 2 — translucent slate panels
-  bgInteractive: 'rgba(28, 42, 66, 0.84)', // Level 3 — controls
-  bgElevated: 'rgba(10, 22, 40, 0.88)',
-  glassStroke: 'rgba(255, 255, 255, 0.12)',
-  glassStrokeStrong: 'rgba(96, 165, 250, 0.28)',
-  glassHighlight: 'rgba(255, 255, 255, 0.08)',
+  bgBase: LEAGUE_VISUAL_TOKENS.canvas,       // Level 1 — shared arena canvas
+  bgSurface: LEAGUE_VISUAL_TOKENS.surface,  // Level 2 — accepted Home glass
+  bgInteractive: '#1C2A42',
+  bgElevated: LEAGUE_VISUAL_TOKENS.elevated,
+  bgMedia: LEAGUE_VISUAL_TOKENS.surfaceOpaque,
+  bgModal: LEAGUE_VISUAL_TOKENS.elevatedOpaque,
+  bgControlOpaque: '#1C2A42',
+  glassStroke: LEAGUE_VISUAL_TOKENS.highlight,
+  glassStrokeStrong: LEAGUE_VISUAL_TOKENS.stroke,
+  glassHighlight: LEAGUE_VISUAL_TOKENS.rinkLine,
   glassGlow: 'rgba(34, 211, 238, 0.22)',
 
   // Text — ALL must pass contrast on bg levels above
@@ -47,9 +52,9 @@ const colors = {
   accentViolet: '#8E7FFF',
 
   // Legacy aliases (keep for compatibility)
-  navy: '#07111F',
-  background: '#07111F',
-  card: 'rgba(12, 27, 49, 0.72)',
+  navy: LEAGUE_VISUAL_TOKENS.canvas,
+  background: LEAGUE_VISUAL_TOKENS.canvas,
+  card: LEAGUE_VISUAL_TOKENS.surface,
 };
 
 export default colors;

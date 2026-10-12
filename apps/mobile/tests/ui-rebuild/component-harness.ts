@@ -2,18 +2,13 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import type { CardFocusCoordinator, createCardFocusCoordinator } from '../../src/components/CardFocus';
 
 export type TestProps = Record<string, unknown>;
-export type TestFocusCoordinator = Omit<CardFocusCoordinator, 'register'> & {
-  register(id: string, progress: { setValue(value: number): void }, measure: (token: number) => void): ReturnType<CardFocusCoordinator['register']>;
-};
-// The synthetic native animation only needs setValue; all other coordinator signatures stay production-derived.
 export type TestFocusModule = {
-  createCardFocusCoordinator(options?: Parameters<typeof createCardFocusCoordinator>[0]): TestFocusCoordinator;
   FocusCard(props: TestProps): unknown;
   FocusScrollView(props: TestProps): unknown;
   FocusFlatList(props: TestProps): unknown;
+  FocusSectionList?(props: TestProps): unknown;
 };
 export const forwardTestRef = (render: (props: TestProps, ref: null) => unknown) =>
   (props: TestProps) => render(props, null);
@@ -56,9 +51,6 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
     }
     if (id.endsWith('/CardFocus') || id === './CardFocus') {
       const native = (mocks['react-native'] ?? {}) as TestProps;
-      const animated = native.Animated;
-      const animatedView = animated && typeof animated === 'object' && 'View' in animated
-        ? animated.View : 'AnimatedView';
       const FocusScrollView = native.ScrollView ?? 'ScrollView';
       const FocusFlatList = native.FlatList ?? 'FlatList';
       const FocusCard = ({ children, focusId, style, testID, accentColor }: TestProps) => {
@@ -67,10 +59,6 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
           native.View ?? 'View',
           { style, testID: wrapperTestID, accentColor },
           children ?? null,
-          createElement(animatedView ?? 'AnimatedView', {
-            testID: `${wrapperTestID}-emphasis`,
-            pointerEvents: 'none',
-          }),
         );
       };
       return { FocusScrollView, FocusFlatList, FocusSectionList: FocusFlatList, FocusCard, useBottomTabContentInset: () => 0 };
@@ -119,6 +107,7 @@ export function createHookHarness() {
       if (typeof type === 'function') return type({ ...(props ?? {}), children: childValue });
       return createElement(type, props, ...children);
     },
+
     useCallback: <T>(callback: T, dependencies: readonly unknown[]) =>
       react.useMemo(() => callback, dependencies),
     useContext: (context: { current?: unknown }) => context.current,

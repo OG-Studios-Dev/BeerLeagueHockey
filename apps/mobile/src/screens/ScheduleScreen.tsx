@@ -207,7 +207,7 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.stateWrap}>
           <Text style={styles.stateTitle}>Hockey Life access required</Text>
           <Text style={styles.stateBody}>Your account does not have an accessible Hockey Life membership.</Text>
@@ -251,7 +251,7 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
   ) : null;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <GuestBanner />
       <DivisionFilter
         divisions={divisions}

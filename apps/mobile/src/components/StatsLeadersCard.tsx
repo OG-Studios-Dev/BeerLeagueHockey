@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   rank: { width: 18, color: '#7E94A6', fontSize: 9, fontWeight: '900', fontVariant: ['tabular-nums'] }, rankFirst: { color: '#61E2E8' },
   name: { flex: 1, minWidth: 0 }, givenName: { color: '#AFC0CD', fontSize: 9, lineHeight: 12, fontWeight: '800' }, surname: { color: '#F2F7FB', fontSize: 11, lineHeight: 14, fontWeight: '900' }, score: { width: 34, alignItems: 'center' },
   value: { color: '#61E2E8', fontSize: 20, lineHeight: 22, fontWeight: '900', fontVariant: ['tabular-nums'] }, unit: { color: '#8299AA', fontSize: 6, lineHeight: 8, fontWeight: '900' },
-  artStage: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, art: { position: 'absolute', right: -18, bottom: -5, width: '128%', height: '108%', backgroundColor: 'transparent' },
+  artStage: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, art: { position: 'absolute', right: -18, bottom: -5, width: '128%', height: '108%', backgroundColor: 'transparent', transform: [{ scale: 0.8 }] },
   state: { minHeight: 210, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 18 }, stateText: { color: '#A8B4C8', fontSize: 12, lineHeight: 18, textAlign: 'center' },
   retry: { minHeight: 44, minWidth: 90, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(125,190,255,0.28)', borderRadius: 13 }, retryText: { color: '#61E2E8', fontSize: 12, fontWeight: '900' }, pressed: { opacity: 0.72 },
 });

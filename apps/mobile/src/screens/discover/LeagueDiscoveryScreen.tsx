@@ -218,14 +218,14 @@ export default function LeagueDiscoveryScreen({ navigation }: { navigation: any 
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   searchWrap: { paddingHorizontal: 16, paddingVertical: 10 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.glassStroke,
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   leagueCard: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.glassStroke,

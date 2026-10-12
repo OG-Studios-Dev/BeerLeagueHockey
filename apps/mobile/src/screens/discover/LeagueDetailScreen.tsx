@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 
-import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
 import TeamLogo from '../../components/TeamLogo';
 import { useLeague } from '../../context/LeagueContext';
@@ -152,7 +151,6 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
-      <BrandAtmosphere accentColor={accentColor} intensity="low" />
       <FocusScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* League Header */}
         <FocusCard focusId={`league:${leagueId}:hero`} accentColor={accentColor} style={styles.heroCard}>
@@ -277,7 +275,7 @@ export default function LeagueDetailScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: 16 },
   content: { padding: 16, paddingBottom: 40, gap: 8 },
@@ -327,7 +325,7 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     paddingVertical: 14,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderWidth: 1,
     borderColor: colors.glassStroke,
   },

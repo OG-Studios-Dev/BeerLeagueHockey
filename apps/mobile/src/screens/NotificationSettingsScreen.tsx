@@ -182,7 +182,7 @@ export default function NotificationSettingsScreen({ navigation }: { navigation:
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 16 },
   card: {

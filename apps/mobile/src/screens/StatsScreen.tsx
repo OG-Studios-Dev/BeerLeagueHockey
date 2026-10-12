@@ -62,7 +62,7 @@ export default function StatsScreen() {
   }, [leagueId, leagueSlug, requestDivisionId, requestKey, selection]);
 
   if (!activeLeague) {
-    return <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}><View style={styles.emptyWrap}><Text style={styles.emptyTitle}>Hockey Life access required</Text><Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text></View></SafeAreaView>;
+    return <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}><View style={styles.emptyWrap}><Text style={styles.emptyTitle}>Hockey Life access required</Text><Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text></View></SafeAreaView>;
   }
 
   const view = snapshot.key === requestKey ? snapshot : { status: 'loading' as const, payload: null };
@@ -77,7 +77,7 @@ export default function StatsScreen() {
   const timeline = <StatsTimelineFilter label={scopeLabel} currentSeasonId={view.payload?.scope.currentSeasonId ?? null} seasons={view.payload?.seasons ?? []} selection={selection} onApply={setSelection} />;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <FocusFlatList
         focusScopeKey={`stats:${requestKey}:${selectedTab}`}
         testID="stats-page-list"

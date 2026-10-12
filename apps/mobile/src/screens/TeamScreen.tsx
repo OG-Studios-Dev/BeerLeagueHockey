@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import Avatar from '../components/Avatar';
-import BrandAtmosphere from '../components/BrandAtmosphere';
 import { FocusCard, FocusFlatList } from '../components/CardFocus';
 import GuestBanner from '../components/GuestBanner';
 import TeamLogo from '../components/TeamLogo';
@@ -122,7 +121,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (!activeLeague) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Hockey Life access required</Text>
           <Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text>
@@ -133,7 +132,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={activeTheme.primaryColor} />
         </View>
@@ -143,7 +142,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loadState === 'error') {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View testID="team-list-active-error-state" style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Unable to load team</Text>
           <Text style={styles.emptyBody}>{loadError}</Text>
@@ -154,7 +153,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loadState === 'no-active-season') {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View testID="team-list-no-active-season-state" style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>No active season</Text>
           <Text style={styles.emptyBody}>Your team roster will appear when this league activates a season.</Text>
@@ -165,7 +164,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (loadState === 'no-team') {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <GuestBanner />
         <View testID="team-list-no-assignment-state" style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>No active team assignment</Text>
@@ -177,7 +176,7 @@ export default function TeamScreen({ navigation }: Props) {
 
   if (roster.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>No roster found for this league</Text>
         </View>
@@ -188,8 +187,7 @@ export default function TeamScreen({ navigation }: Props) {
   const primaryColor = teamColor ?? activeTheme.primaryColor;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgBase }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
-      <BrandAtmosphere accentColor={primaryColor} secondaryColor={activeTheme.secondaryColor} intensity="low" />
+    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <GuestBanner />
       <FocusFlatList
         focusScopeKey={`team:${activeLeague.id}`}

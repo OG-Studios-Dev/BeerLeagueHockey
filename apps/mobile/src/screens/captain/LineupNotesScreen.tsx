@@ -139,7 +139,7 @@ Notes:
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   contentActions: { minHeight: 44, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
   cancelBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 999 },
   cancelBtnText: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },

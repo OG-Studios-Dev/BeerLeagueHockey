@@ -14,7 +14,7 @@ function createProviderFixture(initialData: ShellData, leaguePrimary = '#315EA8'
   let data = initialData;
   const runtime = compileCommonJs<{
     MobileShellDataProvider(props: Record<string, unknown>): unknown;
-    useMobileShellData(): { focusAccent: string };
+    useMobileShellData(): { focusAccent: string; homeAccent: string };
   }>(new URL('../../src/navigation/MobileShellDataContext.tsx', import.meta.url), {
     react: harness.react,
     '../config/hockeyLife': { HOCKEY_LIFE_PRIMARY: '#03299B' },
@@ -25,6 +25,7 @@ function createProviderFixture(initialData: ShellData, leaguePrimary = '#315EA8'
   harness.mount(() => runtime.MobileShellDataProvider({ leagueId: 'league-a', leaguePrimary, userId: 'viewer', children: null }));
   return {
     accent: () => runtime.useMobileShellData().focusAccent,
+    homeAccent: () => runtime.useMobileShellData().homeAccent,
     setData(next: ShellData) { data = next; harness.render(); },
   };
 }
@@ -61,5 +62,16 @@ describe('focus accent provider', () => {
     assert.equal(resolveFocusAccent('#6046A8', fixture.accent()), '#6046A8');
     fixture.setData({ identityKey: 'guest:league-home', team: null });
     assert.equal(fixture.accent(), '#237A3B');
+  });
+
+  it('keeps the shared backdrop on the league Home accent instead of the viewer-team focus accent', () => {
+    const fixture = createProviderFixture(
+      { identityKey: 'viewer:league-home', team: { primary_color: '#B31B34' } },
+      '#237A3B',
+    );
+    assert.equal(fixture.accent(), '#B31B34');
+    assert.equal(fixture.homeAccent(), '#237A3B');
+    fixture.setData({ identityKey: 'viewer:league-home', team: { primary_color: '#6046A8' } });
+    assert.equal(fixture.homeAccent(), '#237A3B');
   });
 });

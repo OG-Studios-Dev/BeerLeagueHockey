@@ -25,6 +25,7 @@ import {
 import { getOperationalSeason, getSchedule, getStandings, type Season } from '../lib/supabase/data';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import colors from '../theme/colors';
+import { getSurfacePalette } from '../theme/ui';
 
 type Navigation = { navigate: (screen: string, params?: unknown) => void };
 type LoadState = {
@@ -47,6 +48,7 @@ export function standingsScopeKey(leagueId: string, seasonId: string) {
 export default function StandingsScreen({ navigation }: { navigation: Navigation }) {
   const { activeLeague, activeTheme, activeDivision, setActiveDivision, divisions } = useLeague();
   const { reduceTransparency } = useAccessibilityPreferences();
+  const surfaces = getSurfacePalette(reduceTransparency);
   const [state, setState] = React.useState<LoadState>(initialState);
   const generation = React.useRef(0);
 
@@ -94,7 +96,7 @@ export default function StandingsScreen({ navigation }: { navigation: Navigation
   }, [activeLeague, load]);
 
   if (!activeLeague) {
-    return <SafeAreaView style={[styles.safe, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}><View style={styles.center}><Text style={styles.stateTitle}>Hockey Life access required</Text></View></SafeAreaView>;
+    return <SafeAreaView style={styles.safe} edges={cutIceContentEdges(['top', 'left', 'right'])}><View style={styles.center}><Text style={styles.stateTitle}>Hockey Life access required</Text></View></SafeAreaView>;
   }
 
   const stateMatchesLeague = state.scopeKey === null || state.scopeKey.startsWith(`${activeLeague.id}:`);
@@ -108,7 +110,7 @@ export default function StandingsScreen({ navigation }: { navigation: Navigation
   const positioning = filterAndRerankPositioning(visibleState.teams?.positioning ?? null, activeDivision?.id ?? null);
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: activeTheme.backgroundColor }]} edges={cutIceContentEdges(['top', 'left', 'right'])}>
+    <SafeAreaView style={styles.safe} edges={cutIceContentEdges(['top', 'left', 'right'])}>
       <GuestBanner />
       <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} />
       {visibleState.loading ? <View style={styles.center}><ActivityIndicator color={activeTheme.primaryColor} /></View> : visibleState.error ? (
@@ -116,7 +118,7 @@ export default function StandingsScreen({ navigation }: { navigation: Navigation
       ) : (
         <FocusScrollView focusScopeKey={`standings:${activeLeague.id}`} contentContainerStyle={styles.content}>
           <View testID={`standings-scope:${visibleState.scopeKey ?? 'loading'}`}><Text accessibilityRole="header" style={styles.title}>Standings</Text>{visibleState.season ? <Text style={styles.season}>{visibleState.season.name} Season</Text> : null}</View>
-          {scoped.length ? <FocusCard focusId={`standings:table:${activeLeague.id}`} style={styles.card}>
+          {scoped.length ? <FocusCard focusId={`standings:table:${activeLeague.id}`} style={[styles.card, { backgroundColor: surfaces.surface, borderColor: surfaces.stroke }]}>
             <View style={styles.tableHeader}><Text style={[styles.headerText, styles.teamCol]}>Team</Text><Text style={styles.headerText}>GP</Text><Text style={styles.headerText}>W</Text><Text style={styles.headerText}>L</Text><Text style={styles.headerText}>PTS</Text></View>
             {scoped.map((row, index) => <Pressable key={row.teamId} accessibilityRole="button" accessibilityLabel={`${row.teamName}, ${row.points} points`} onPress={() => navigation.navigate('Team', { screen: 'TeamDetail', params: { teamId: row.teamId, leagueId: activeLeague.id } })} style={[styles.tableRow, index === 0 && styles.leader]}><View style={styles.teamCol}><TeamLogo teamId={row.teamId} logoUrl={row.logoUrl} teamName={row.teamName} primaryColor={row.primaryColor} size={30} /><Text style={styles.teamName}>{row.teamName}</Text></View><Text style={styles.cell}>{row.gamesPlayed}</Text><Text style={styles.cell}>{row.wins}</Text><Text style={styles.cell}>{row.losses}</Text><Text style={[styles.cell, styles.points]}>{row.points}</Text></Pressable>)}
           </FocusCard> : <Text style={styles.muted}>No standings available yet.</Text>}

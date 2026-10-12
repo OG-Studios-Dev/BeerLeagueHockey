@@ -16,8 +16,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
-
-import BrandAtmosphere from '../components/BrandAtmosphere';
 import QuickCheckinActions from '../components/QuickCheckinActions';
 import RevealView from '../components/RevealView';
 import ScheduleConflictList from '../components/ScheduleConflictList';
@@ -417,7 +415,6 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
 
   return (
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
-      <BrandAtmosphere intensity="medium" />
       <View style={styles.updatesActions}>
         <Text accessibilityRole="header" style={styles.updatesContext}>League changes, game-day actions, and team pulse</Text>
         <Pressable
@@ -733,7 +730,7 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   headerButton: {
@@ -742,12 +739,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 999,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderWidth: 1,
     borderColor: colors.glassStroke,
   },
   headerSettingsButton: {
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
   },
   updatesActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 12 },
   updatesContext: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.textSecondary },
@@ -824,7 +821,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
@@ -837,7 +834,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
   },
   scopePillActive: {
     backgroundColor: colors.brandArena,
@@ -876,7 +873,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.bgInteractive,
     paddingHorizontal: 12,
     paddingVertical: 10,
     maxWidth: '100%',
@@ -902,7 +899,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     padding: 16,
     gap: 12,
   },
@@ -948,7 +945,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     padding: 16,
     gap: 10,
   },

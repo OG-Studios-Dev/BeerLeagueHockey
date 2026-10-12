@@ -147,7 +147,7 @@ export const commonStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgBase },
+  safe: { flex: 1 },
   content: { padding: 16, paddingBottom: 24 },
   header: { borderRadius: 24, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgElevated, padding: 20 },
   eyebrow: { color: colors.textInteractive, fontSize: 11, fontWeight: '900', letterSpacing: 1.8, textTransform: 'uppercase' },

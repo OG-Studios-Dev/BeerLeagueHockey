@@ -14,7 +14,7 @@ export default function PlayerPortrait({ uri, name, accent }: { uri: string | nu
 }
 
 const styles = StyleSheet.create({
-  frame: { width: 200, height: 200, maxWidth: '100%', borderRadius: 16, borderWidth: 2, backgroundColor: colors.bgInteractive },
+  frame: { width: 200, height: 200, maxWidth: '100%', borderRadius: 16, borderWidth: 2, backgroundColor: colors.bgMedia },
   fallback: { alignItems: 'center', justifyContent: 'center' },
   initials: { color: colors.textPrimary, fontSize: 58, fontWeight: '900' },
 });

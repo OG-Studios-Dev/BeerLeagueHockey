@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#07111F',
   },
   navigationCanvas: {
-    backgroundColor: '#07111F',
+    backgroundColor: 'transparent',
   },
   authShell: {
     flex: 1,

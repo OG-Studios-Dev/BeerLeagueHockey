@@ -1,12 +1,14 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+
 import {
   formatMembershipDiagnostics,
   type MembershipDiagnostics,
   type MembershipLoadStatus,
 } from '../lib/membershipDiagnostics';
 import colors from '../theme/colors';
+
 
 type Props = {
   diagnostics: MembershipDiagnostics;
@@ -21,6 +23,7 @@ export default function MembershipDiagnosticsCard({
   onRetry,
   initiallyExpanded = false,
 }: Props) {
+
   const [expanded, setExpanded] = React.useState(initiallyExpanded);
   const diagnosticText = React.useMemo(
     () => formatMembershipDiagnostics(diagnostics, status),

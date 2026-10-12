@@ -37,7 +37,7 @@ const virtualizedRoutes = [
   'components/LeagueMarketplace.tsx',
 ];
 
-const handBuiltCardRoutes = [
+const wrappedCardRoutes = [
   'screens/GamePreviewScreen.tsx',
   'screens/games/GameRecapScreen.tsx',
   'screens/TeamScreen.tsx',
@@ -64,70 +64,42 @@ const handBuiltCardRoutes = [
   'components/StatsLeadersCard.tsx',
 ];
 
-describe('routed scroll surface wiring', () => {
+describe('shared card/list layout wiring', () => {
+  it('removes the old scroll-position emphasis machinery from the shared component', () => {
+    const cardLayout = source('components/CardFocus.tsx');
+    assert.doesNotMatch(cardLayout, /Animated|measureInWindow|createCardFocusCoordinator|chooseFocusCandidate|captureMeasurement|emphasis/);
+    assert.match(cardLayout, /testID={wrapperTestID}/);
+    assert.match(cardLayout, /collapsable={false}/);
+  });
+
   for (const file of verticalScrollRoutes) {
-    it(`${file} uses the focus-aware vertical ScrollView adapter`, () => {
+    it(`${file} keeps the shared vertical ScrollView layout adapter`, () => {
       assert.match(source(file), /<FocusScrollView\b/);
     });
   }
 
   for (const file of virtualizedRoutes) {
-    it(`${file} keeps virtualization through the focus-aware list adapter`, () => {
+    it(`${file} keeps virtualization through the shared list adapter`, () => {
       assert.match(source(file), /<FocusFlatList\b/);
     });
   }
 
-  for (const file of handBuiltCardRoutes) {
-    it(`${file} registers hand-built eligible cards`, () => {
+  for (const file of wrappedCardRoutes) {
+    it(`${file} keeps stable card wrappers and test IDs`, () => {
       assert.match(source(file), /<FocusCard\b/);
     });
   }
 
-  it('shared game cards register as focus candidates without changing GlassSurface semantics', () => {
+  it('keeps shared game-card layout wrapped without changing GlassSurface semantics', () => {
     const gameCard = source('components/GameCard.tsx');
     assert.match(gameCard, /<FocusCard\b/);
     assert.match(gameCard, /focusId/);
+    assert.match(gameCard, /<GlassSurface\b/);
   });
 
-  it('mount reveal no longer starts readable content at opacity zero', () => {
+  it('mount reveal does not start readable content at opacity zero', () => {
     const reveal = source('components/RevealView.tsx');
     assert.doesNotMatch(reveal, /new Animated\.Value\(0\)/);
     assert.doesNotMatch(reveal, /opacity:\s*progress/);
-  });
-
-  it('fails Standings closed without Hockey Life access and keeps standings focus out of Schedule', () => {
-    const standings = source('screens/StandingsScreen.tsx');
-    const schedule = source('screens/ScheduleScreen.tsx');
-    assert.match(standings, /Hockey Life access required/);
-    assert.doesNotMatch(standings, /standings:league:/);
-    assert.doesNotMatch(schedule, /focusId={`standings:/);
-    assert.doesNotMatch(schedule, /StandingsPlayoffsPanel|getStandings/);
-  });
-
-  it('treats each schedule game and adjacent check-in as one candidate while excluding sticky headers', () => {
-    const schedule = source('screens/ScheduleScreen.tsx');
-    assert.match(schedule, /focusId={`schedule:game:/);
-    assert.doesNotMatch(schedule, /focusId={`schedule:global-game:/);
-    assert.doesNotMatch(schedule, /focusId=.*sticky/);
-  });
-
-  it('registers Stats player rows as virtualized candidates in addition to the leaders header', () => {
-    const stats = source('screens/StatsScreen.tsx');
-    assert.doesNotMatch(stats, /testID="stats-page-list"[\s\S]{0,80}focusItems={false}/);
-    assert.match(stats, /<StatsLeadersCard\b/);
-  });
-
-  it('pauses modal backgrounds and gives marketplace, gallery, and team modal content an independent owner', () => {
-    const marketplace = source('components/LeagueMarketplace.tsx');
-    const gallery = source('screens/league-pages/GalleryAlbumScreen.tsx');
-    const team = source('screens/TeamScreen/TeamDetailScreen.tsx');
-    assert.match(marketplace, /focusEnabled={selectedLeague == null}/);
-    assert.match(marketplace, /focusScopeKey={`marketplace-modal:/);
-    assert.match(marketplace, /marketplace:membership/);
-    assert.match(marketplace, /marketplace:joined/);
-    assert.match(gallery, /focusEnabled={photo === null}/);
-    assert.match(gallery, /focusScopeKey={`gallery-viewer:/);
-    assert.match(team, /focusEnabled={!subModalVisible && !goalieModalVisible}/);
-    assert.match(team, /focusScopeKey={`team-modal:/);
   });
 });

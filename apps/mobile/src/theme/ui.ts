@@ -1,3 +1,5 @@
+import { LEAGUE_VISUAL_TOKENS } from './league';
+
 export const ui = {
   radius: {
     control: 12,
@@ -37,17 +39,17 @@ export function deriveVisualPreferences(
 export function getSurfacePalette(reduceTransparency: boolean) {
   if (reduceTransparency) {
     return {
-      surface: '#111E32',
-      elevated: '#0C1B31',
+      surface: LEAGUE_VISUAL_TOKENS.surfaceOpaque,
+      elevated: LEAGUE_VISUAL_TOKENS.elevatedOpaque,
       interactive: '#1C2A42',
-      stroke: '#41607F',
+      stroke: LEAGUE_VISUAL_TOKENS.strokeOpaque,
     } as const;
   }
 
   return {
-    surface: 'rgba(12, 27, 49, 0.72)',
-    elevated: 'rgba(10, 22, 40, 0.88)',
-    interactive: 'rgba(28, 42, 66, 0.84)',
-    stroke: 'rgba(96, 165, 250, 0.28)',
+    surface: LEAGUE_VISUAL_TOKENS.surface,
+    elevated: LEAGUE_VISUAL_TOKENS.elevated,
+    interactive: LEAGUE_VISUAL_TOKENS.control,
+    stroke: LEAGUE_VISUAL_TOKENS.stroke,
   } as const;
 }

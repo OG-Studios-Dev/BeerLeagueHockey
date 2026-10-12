@@ -28,7 +28,7 @@ function native(width: number, scrollCalls: ScrollCall[] = []) {
   };
 }
 
-function tableRuntime(kind: 'skater' | 'goalie' = 'skater', width = 320, options: { expandedMetrics?: boolean; initialSync?: any; goalieMetrics?: StatsScopePlayer['goalie'] } = {}) {
+function tableRuntime(kind: 'skater' | 'goalie' = 'skater', width = 320, options: { expandedMetrics?: boolean; initialSync?: any; goalieMetrics?: StatsScopePlayer['goalie']; reduceTransparency?: boolean } = {}) {
   const h = createHookHarness();
   const offsets: Array<{ sourceId: string; offset: number }> = [];
   const scrollCalls: ScrollCall[] = [];
@@ -37,6 +37,12 @@ function tableRuntime(kind: 'skater' | 'goalie' = 'skater', width = 320, options
     'react-native': native(width, scrollCalls),
     './Avatar': (props: any) => createElement('Avatar', props),
     './TeamLogo': (props: any) => createElement('TeamLogo', props),
+    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: options.reduceTransparency ?? false }) },
+    '../theme/ui': { getSurfacePalette: (reduceTransparency: boolean) => ({
+      surface: reduceTransparency ? '#0C1B31' : 'rgba(10, 22, 40, 0.30)',
+      elevated: reduceTransparency ? '#0A1628' : 'rgba(12, 27, 49, 0.38)',
+      stroke: reduceTransparency ? '#41607F' : 'rgba(125, 190, 255, 0.30)',
+    }) },
   });
   const player: StatsScopePlayer = {
     playerId: 'player-a', playerName: 'Avery Longsurname', avatarUrl: null,
@@ -252,6 +258,17 @@ describe('Stats table responsive accessibility', () => {
     assert.match(String(identityStyle.backgroundColor), /rgba\([^)]*,0\.2\)/);
     assert.deepEqual(identity?.props.children.map((child: any) => child.type), ['Text', 'Avatar', 'View', 'TeamLogo']);
     assert.equal(nodeText(identity?.props.children[2]), 'AveryLongsurname');
+  });
+
+  it('renders table headers, identities, and rows with opaque Reduce Transparency surfaces', () => {
+    const { h } = tableRuntime('skater', 320, { reduceTransparency: true });
+    const header = findNode(h.output, (node) => node.props.accessibilityRole === 'summary');
+    const row = findNode(h.output, (node) => node.props.testID === 'stats-table-row-player-a');
+    const identity = findNode(row, (node) => node.type === 'Pressable');
+
+    assert.equal(flattenStyle(header?.props.style).backgroundColor, '#0A1628');
+    assert.equal(flattenStyle(row?.props.style).backgroundColor, '#0C1B31');
+    assert.equal(flattenStyle(identity?.props.style({ pressed: false })).backgroundColor, '#0C1B31');
   });
 });
 

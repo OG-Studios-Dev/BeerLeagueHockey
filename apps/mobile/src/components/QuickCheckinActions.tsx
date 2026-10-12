@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
   },
   buttonIdle: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderColor: colors.glassStroke,
   },
   buttonPressed: {

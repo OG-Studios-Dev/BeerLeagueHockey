@@ -13,8 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
-
-import BrandAtmosphere from '../../components/BrandAtmosphere';
 import SectionHeader from '../../components/SectionHeader';
 import TeamLogo from '../../components/TeamLogo';
 import { useAuth } from '../../context/AuthContext';
@@ -175,7 +173,6 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 
   return (
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
-      <BrandAtmosphere accentColor={colors.brandGold} intensity="low" />
       <FocusScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
@@ -262,7 +259,7 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.bgBase },
+  safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
   emptySub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },

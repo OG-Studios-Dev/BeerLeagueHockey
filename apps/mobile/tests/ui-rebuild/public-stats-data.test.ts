@@ -104,7 +104,7 @@ describe('canonical public stats boundary', () => {
       presentationSeason: { id: SEASON, name: 'S', league_id: LEAGUE, status: 'active' }, source: 'recorded', goalies: [row, row] })), /duplicate/i);
     await assert.rejects(api.getPublicGoalies('harbour', LEAGUE, null, null, async () => response({ ...base,
       presentationSeason: { id: SEASON, name: 'S', league_id: LEAGUE, status: 'active' }, source: 'recorded', goalies: [{ ...row, wins: 1e20 }] })), /wins/i);
-    await assert.rejects(api.getPublicGoalies('harbour', LEAGUE, null, null, async () => ({ ok: true, status: 200, text: async () => ' '.repeat(262145) })), /byte limit/i);
+    await assert.rejects(api.getPublicGoalies('harbour', LEAGUE, null, null, async () => ({ ok: true, status: 200, text: async () => ' '.repeat((1024 * 1024) + 1) })), /byte limit/i);
   });
 
   it('aborts a public read at its timeout', async () => {
@@ -120,7 +120,7 @@ describe('canonical public stats boundary', () => {
       Object.defineProperty(globalThis, 'TextEncoder', { configurable: true, value: undefined });
       const api = moduleWith();
       await assert.rejects(api.getPublicGoalies('harbour', LEAGUE, null, null, async () => ({
-        ok: true, status: 200, text: async () => 'é'.repeat(140_000),
+        ok: true, status: 200, text: async () => 'é'.repeat(525_000),
       })), /byte limit/i);
     } finally {
       Object.defineProperty(globalThis, 'TextEncoder', { configurable: true, value: previous });

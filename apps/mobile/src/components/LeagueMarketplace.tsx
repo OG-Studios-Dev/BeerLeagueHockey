@@ -23,6 +23,7 @@ import { getLeagueMarketplace, type LeagueMatch } from '../lib/leagueMarketplace
 import { subscribeToProfilePreferencesChanges } from '../lib/profileContract';
 import { supabase } from '../lib/supabase/client';
 import colors from '../theme/colors';
+import { getSurfacePalette } from '../theme/ui';
 import { getContrastTextColor } from '../theme/contrast';
 import MembershipDiagnosticsCard from './MembershipDiagnosticsCard';
 import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
@@ -206,6 +207,7 @@ export default function LeagueMarketplace({
   } = useLeague();
   const { session, isGuest, exitGuest } = useAuth();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
+  const surfaces = getSurfacePalette(reduceTransparency);
   const { width, height } = useWindowDimensions();
   const isCompact = width < 390;
 
@@ -383,7 +385,7 @@ export default function LeagueMarketplace({
       ) : null}
       {membershipFailure ? (
         <FocusCard focusId="marketplace:membership">
-          <View style={styles.membershipNotice} accessibilityRole="alert">
+          <View style={[styles.membershipNotice, { backgroundColor: surfaces.surface, borderColor: surfaces.stroke }]} accessibilityRole="alert">
           <Text style={styles.membershipNoticeTitle}>
             {membershipStatus === 'error' ? "Couldn't load leagues" : 'Membership unavailable'}
           </Text>
@@ -575,7 +577,7 @@ export default function LeagueMarketplace({
 
                   {membershipFailure ? (
                     <FocusCard focusId={`marketplace:modal:${selectedLeague.id}:membership`}>
-                      <View style={styles.modalMembershipNotice} accessibilityRole="alert">
+                      <View style={[styles.modalMembershipNotice, { borderColor: surfaces.stroke }]} accessibilityRole="alert">
                       <Text style={styles.membershipNoticeTitle}>
                         {membershipStatus === 'error' ? "Couldn't load leagues" : 'Membership unavailable'}
                       </Text>
@@ -733,7 +735,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.borderCard,
@@ -752,7 +754,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.accentRed,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     padding: 14,
     gap: 8,
     marginBottom: 10,
@@ -790,7 +792,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 14,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderWidth: 1,
     borderColor: colors.borderCard,
   },
@@ -807,7 +809,7 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgInteractive,
     borderRadius: 14,
     borderLeftWidth: 4,
     padding: 14,
