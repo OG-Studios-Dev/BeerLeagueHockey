@@ -37,6 +37,56 @@ describe('player profile native controls', () => {
     assert.match(nodeText(harness.output), /Fixture player improved in Summer/);
   });
 
+  it('renders readable values for every y-axis grid line', () => {
+    const harness = createHookHarness();
+    const Chart = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
+      new URL('../../src/components/PlayerProfile/CareerTrendChart.tsx', import.meta.url),
+      { react: harness.react, 'react-native': nativeMock(), '../../lib/playerPageModel': awaitModel() },
+    ).default;
+    harness.mount(() => Chart({
+      isGoalie: false,
+      accent: '#7026D9',
+      rows: [
+        { seasonId: 'one', seasonName: 'Spring', metrics: { goals: 4 } },
+        { seasonId: 'two', seasonName: 'Summer', metrics: { goals: 7 } },
+      ],
+      hotFacts: [],
+    }));
+
+    assert.equal(nodeText(findNode(harness.output, (node) => node.props.testID === 'career-chart-y-axis-maximum')), '10');
+    assert.equal(nodeText(findNode(harness.output, (node) => node.props.testID === 'career-chart-y-axis-midpoint')), '5');
+    assert.equal(nodeText(findNode(harness.output, (node) => node.props.testID === 'career-chart-y-axis-minimum')), '0');
+  });
+
+  it('reveals a selected chart value in an accessible tooltip', () => {
+    const harness = createHookHarness();
+    const Chart = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
+      new URL('../../src/components/PlayerProfile/CareerTrendChart.tsx', import.meta.url),
+      { react: harness.react, 'react-native': nativeMock(), '../../lib/playerPageModel': awaitModel() },
+    ).default;
+    harness.mount(() => Chart({
+      isGoalie: false,
+      accent: '#7026D9',
+      rows: [
+        { seasonId: 'one', seasonName: 'Spring', metrics: { goals: 4 } },
+        { seasonId: 'two', seasonName: 'Summer', metrics: { goals: 7 } },
+      ],
+      hotFacts: [],
+    }));
+
+    const springPoint = findNode(harness.output, (node) => node.props.testID === 'career-chart-point-one');
+    assert.equal(springPoint?.props.accessibilityRole, 'button');
+    assert.equal(springPoint?.props.accessibilityLabel, 'Show Goals for Spring');
+    assert.equal(findNode(harness.output, (node) => node.props.testID === 'career-chart-tooltip'), undefined);
+    springPoint?.props.onPress();
+    harness.render();
+
+    const tooltip = findNode(harness.output, (node) => node.props.testID === 'career-chart-tooltip');
+    assert.equal(tooltip?.props.accessibilityLiveRegion, 'polite');
+    assert.equal(tooltip?.props.accessibilityLabel, 'Goals, Spring: 4');
+    assert.equal(nodeText(tooltip), 'Spring: 4');
+  });
+
   it('opens one compact season picker and returns career or season identity', () => {
     const harness = createHookHarness();
     const selections: Array<string | null> = [];

@@ -6,7 +6,6 @@ export const PLAYER_SECTION_ORDER = [
   'game-log',
   'matchup-stats',
   'in-the-news',
-  'season-history',
 ] as const;
 
 export type PlayerSection = (typeof PLAYER_SECTION_ORDER)[number];
@@ -25,7 +24,6 @@ export function visiblePlayerSections(counts: {
   if (counts.games > 0) visible.add('game-log');
   if (counts.matchups > 0) visible.add('matchup-stats');
   if (counts.articles > 0) visible.add('in-the-news');
-  if (counts.seasons > 1) visible.add('season-history');
   return PLAYER_SECTION_ORDER.filter((section) => visible.has(section));
 }
 

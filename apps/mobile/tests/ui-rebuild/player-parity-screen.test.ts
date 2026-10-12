@@ -7,14 +7,15 @@ const screen = readFileSync(fileURLToPath(new URL('../../src/screens/PlayerCardS
 const loader = readFileSync(fileURLToPath(new URL('../../src/lib/supabase/playerPage.ts', import.meta.url).toString()), 'utf8');
 
 describe('native Hockey Life player parity screen', () => {
-  it('renders the website sections in exact order and has explicit empty states', () => {
-    const labels = ['Achievements', 'Career Stats', 'Game Log', 'Matchup Stats', 'In The News', 'Season History'];
+  it('renders the retained sections in order without a redundant Season History section', () => {
+    const labels = ['Achievements', 'Career Stats', 'Game Log', 'Matchup Stats', 'In The News'];
     let previous = -1;
     for (const label of labels) {
       const index = screen.indexOf(`title="${label}"`);
-      assert.ok(index > previous, `${label} must appear after the previous parity section`);
+      assert.ok(index > previous, `${label} must appear after the previous player section`);
       previous = index;
     }
+    assert.doesNotMatch(screen, /title="Season History"|historyRow/);
     assert.match(screen, /SeasonPicker/);
     assert.match(screen, /CareerTrendChart/);
     assert.match(screen, /No stats available/);

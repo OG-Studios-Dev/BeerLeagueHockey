@@ -12,10 +12,16 @@ import {
 } from '../../src/lib/playerPageModel.ts';
 
 describe('Hockey Life player page parity model', () => {
-  it('keeps exact website section order while allowing factual empty sections to disappear', () => {
+  it('keeps the player section order without the retired Season History section', () => {
     assert.deepEqual(PLAYER_SECTION_ORDER, [
       'identity', 'achievements', 'season-stats', 'career-stats',
-      'game-log', 'matchup-stats', 'in-the-news', 'season-history',
+      'game-log', 'matchup-stats', 'in-the-news',
+    ]);
+    assert.deepEqual(visiblePlayerSections({
+      achievements: 1, careerSeasons: 2, games: 3, matchups: 4, articles: 5, seasons: 3,
+    }), [
+      'identity', 'achievements', 'season-stats', 'career-stats',
+      'game-log', 'matchup-stats', 'in-the-news',
     ]);
     assert.deepEqual(visiblePlayerSections({
       achievements: 0, careerSeasons: 0, games: 0, matchups: 0, articles: 0, seasons: 1,
