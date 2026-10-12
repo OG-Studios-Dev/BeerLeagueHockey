@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
+import type { PublicGoalie, PublicStatMetric } from '../../src/lib/supabase/publicStats';
 
 import {
   buildGoalieRows,
@@ -25,6 +25,15 @@ function player(overrides: Partial<StatsScopePlayer> & Pick<StatsScopePlayer, 'p
       gamesPlayed: metric(2), goals: metric(2), assists: metric(1), points: metric(3), championships: metric(null),
     },
     goalie: null,
+    ...overrides,
+  };
+}
+
+function publicGoalie(overrides: Partial<PublicGoalie> & Pick<PublicGoalie, 'player_id'>): PublicGoalie {
+  return {
+    player_name: 'Goalie', team_id: 'team-a', team_name: 'Owls', avatar_url: null,
+    games_played: 2, wins: 1, losses: 1, save_percentage: null,
+    goals_against_average: 2.5, shutouts: 0, saves: null, goals_against: 5, estimated: true,
     ...overrides,
   };
 }
@@ -94,6 +103,40 @@ describe('stats presentation model', () => {
     assert.match(columns.ch, /display value —.*unknown.*not recorded.*no provenance source/i);
     assert.match(columns.gpg, /calculated from G.*display value ~2.*roster eligibility.*accepted substitute records.*divided by GP.*display value 4.*imported records.*attendance records/i);
     assert.match(columns.ppg, /unavailable.*points source.*confirmed 4.*recorded 3.*estimated 5.*games played source.*display value 4/i);
+  });
+
+  it('uses a returned current-season goalie estimate when the complete scope marks GAA unknown', () => {
+    const goalie = player({
+      playerId: 'goalie-estimated', playerName: 'Estimated Goalie',
+      displayTeam: { id: 'team-a', name: 'Owls' },
+      skater: null,
+      goalie: { gamesPlayed: metric(2, 'estimated', ['roster_window']), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
+    });
+    const leaders = buildLeaderRows([goalie], 'gaa', [publicGoalie({ player_id: goalie.playerId, player_name: goalie.playerName })]);
+
+    assert.equal(leaders.length, 1);
+    assert.equal(leaders[0].display, '~2.50');
+    assert.deepEqual(leaders[0].value, { value: 2.5, state: 'estimated', sources: [] });
+  });
+
+  it('does not replace conflicted GAA or rank nullable and ambiguous goalie fallback rows', () => {
+    const conflicted = player({
+      playerId: 'conflicted', playerName: 'Conflicted Goalie', displayTeam: { id: 'team-a', name: 'Owls' }, skater: null,
+      goalie: { gamesPlayed: metric(null, 'conflicted'), goalsAgainst: metric(null, 'conflicted'), goalsAgainstAverage: metric(null, 'conflicted'), championships: metric(0) },
+    });
+    const unknown = player({
+      playerId: 'unknown', playerName: 'Unknown Goalie', displayTeam: { id: 'team-a', name: 'Owls' }, skater: null,
+      goalie: { gamesPlayed: metric(2, 'estimated'), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
+    });
+    const transferred = player({ ...unknown, playerId: 'transferred', playerName: 'Transferred Goalie' });
+    const leaders = buildLeaderRows([conflicted, unknown, transferred], 'gaa', [
+      publicGoalie({ player_id: conflicted.playerId, player_name: conflicted.playerName }),
+      publicGoalie({ player_id: unknown.playerId, player_name: unknown.playerName, goals_against_average: null }),
+      publicGoalie({ player_id: transferred.playerId, player_name: transferred.playerName, team_id: 'team-a' }),
+      publicGoalie({ player_id: transferred.playerId, player_name: transferred.playerName, team_id: 'team-b' }),
+    ]);
+
+    assert.deepEqual(leaders, []);
   });
 
   it('ranks a top five only from known values with deterministic ties and ascending GAA', () => {

@@ -22,7 +22,7 @@ describe('approved stats redesign source contract', () => {
     assert.doesNotMatch(screen, /<PlayerRow/);
   });
 
-  it('keeps the stats page within its viewport and confines horizontal scrolling to skater metrics', () => {
+  it('keeps the stats page within its viewport and confines horizontal scrolling to table metrics', () => {
     assert.match(screen, /horizontalOverflow/);
     assert.match(table, /metricScroll/);
     assert.match(table, /showsHorizontalScrollIndicator=[{]false[}]/);

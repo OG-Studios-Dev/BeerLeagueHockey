@@ -1,4 +1,4 @@
-import { formatPublicMetric, type PublicMetricSource, type PublicStatMetric, type PublicTeamRef } from './supabase/publicStats';
+import { formatPublicMetric, type PublicGoalie, type PublicMetricSource, type PublicStatMetric, type PublicTeamRef } from './supabase/publicStats';
 
 export type StatsScopeKind = 'current' | 'single' | 'multiple' | 'all';
 export type StatsScopeSelection = { kind: StatsScopeKind; seasonIds?: string[] };
@@ -258,9 +258,31 @@ export function buildGoalieRows(players: readonly StatsScopePlayer[]): StatsTabl
     });
 }
 
-export function buildLeaderRows(players: readonly StatsScopePlayer[], metric: StatsLeaderMetric): StatsLeaderRow[] {
+function currentGoalieMetric(
+  player: StatsScopePlayer,
+  currentGoalies: readonly PublicGoalie[],
+): PublicStatMetric | undefined {
+  const authoritative = player.goalie?.goalsAgainstAverage;
+  if (!authoritative || authoritative.value !== null || authoritative.state === 'conflicted') return authoritative;
+  const matches = currentGoalies.filter((goalie) => goalie.player_id === player.playerId);
+  if (matches.length !== 1) return authoritative;
+  const goalie = matches[0];
+  if (goalie.goals_against_average === null
+    || (goalie.team_id !== null && goalie.team_id !== player.displayTeam?.id)) return authoritative;
+  return {
+    value: goalie.goals_against_average,
+    state: goalie.estimated ? 'estimated' : 'recorded',
+    sources: goalie.estimated ? [] : ['goalie_stats'],
+  };
+}
+
+export function buildLeaderRows(
+  players: readonly StatsScopePlayer[],
+  metric: StatsLeaderMetric,
+  currentGoalies: readonly PublicGoalie[] = [],
+): StatsLeaderRow[] {
   const candidates = players.flatMap((player) => {
-    const value = metric === 'gaa' ? player.goalie?.goalsAgainstAverage : player.skater?.[metric];
+    const value = metric === 'gaa' ? currentGoalieMetric(player, currentGoalies) : player.skater?.[metric];
     return value && value.value !== null && value.state !== 'unknown' && value.state !== 'conflicted'
       ? [{ ...player, value, display: display(value, metric === 'gaa' ? 2 : undefined) }]
       : [];

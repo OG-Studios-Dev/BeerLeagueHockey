@@ -40,7 +40,13 @@ const career = (name: string) => ({
   leagues: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Harbour', slug: 'harbour', seasonCount: 1, seasons: [{ seasonId: '33333333-3333-4333-8333-333333333333', sourceId: null, seasonName: 'Historical baseline', sortDate: null, teams: [], roles: ['skater'], goalie: null, metrics: { gamesPlayed: metric(10), goals: metric(2, 'reported', ['imported']), assists: metric(3, 'reported', ['imported']), points: metric(5, 'reported', ['imported']), penaltyMinutes: metric(null) } }] }],
 });
 
-function compileStats(h: ReturnType<typeof createHookHarness>, league: any, load: (...args: any[]) => Promise<any>, navigationCalls: any[][] = []) {
+function compileStats(
+  h: ReturnType<typeof createHookHarness>,
+  league: any,
+  load: (...args: any[]) => Promise<any>,
+  navigationCalls: any[][] = [],
+  loadGoalies: (...args: any[]) => Promise<any> = async () => ({ goalies: [] }),
+) {
   return compileCommonJs<any>(new URL('../../src/screens/StatsScreen.tsx', import.meta.url), {
     react: h.react, 'react-native': native(), '@react-navigation/native': { useNavigation: () => ({}) }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     '../components/DivisionFilter': (props: any) => createElement('DivisionFilter', props),
@@ -55,7 +61,7 @@ function compileStats(h: ReturnType<typeof createHookHarness>, league: any, load
     '../context/LeagueContext': { useLeague: () => league },
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(args) },
     '../lib/statsPresentationModel': { buildSkaterRows, buildGoalieRows, buildLeaderRows },
-    '../lib/supabase/publicStats': { getPublicStatsScope: load, formatPublicMetric },
+    '../lib/supabase/publicStats': { getPublicStatsScope: load, getPublicGoalies: loadGoalies, formatPublicMetric },
     '../theme/colors': colors,
   }).default;
 }
@@ -85,6 +91,31 @@ describe('career and scoped Stats screen behavior', () => {
     const lastCall = calls.at(-1);
     assert.ok(lastCall);
     assert.deepEqual(lastCall.slice(0, 4), [league.activeLeague.slug, league.activeLeague.id, { kind: 'current' }, null]);
+  });
+
+  it('hydrates current-season GAA leaders from the validated goalie contract when scope GAA is unknown', async () => {
+    const h = createHookHarness(); const goalieCalls: any[][] = [];
+    const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
+    const scope = scopePayload('Contract Goalie');
+    scope.players[0].goalie!.goalsAgainst = metric(null) as any;
+    scope.players[0].goalie!.goalsAgainstAverage = metric(null) as any;
+    const Stats = compileStats(h, league, async () => scope, [], async (...args: any[]) => {
+      goalieCalls.push(args);
+      return { goalies: [{
+        player_id: scope.players[0].playerId, player_name: scope.players[0].playerName,
+        team_id: team.id, team_name: team.name, avatar_url: null,
+        games_played: 2, wins: 1, losses: 1, save_percentage: null,
+        goals_against_average: 2.5, shutouts: 0, saves: null, goals_against: 5, estimated: true,
+      }] };
+    });
+
+    h.mount(() => Stats()); await settle(h);
+    findNode(h.output, (node) => node.type === 'StatsLeadersCard')!.props.onMetricChange('gaa'); h.render();
+    const card = findNode(h.output, (node) => node.type === 'StatsLeadersCard')!;
+    assert.deepEqual(card.props.leaders.map((leader: any) => [leader.playerId, leader.display, leader.value.state]), [
+      [scope.players[0].playerId, '~2.50', 'estimated'],
+    ]);
+    assert.deepEqual(goalieCalls[0]?.slice(0, 4), [league.activeLeague.slug, league.activeLeague.id, scope.scope.currentSeasonId, null]);
   });
 
   it('keeps failure terminal on both tabs and retries the complete scope rather than showing plausible partial rows', async () => {
@@ -149,15 +180,17 @@ describe('career and scoped Stats screen behavior', () => {
   });
 
   it('makes All time explicitly league-wide while preserving the division for other timelines', async () => {
-    const h = createHookHarness(); const calls: any[][] = [];
+    const h = createHookHarness(); const calls: any[][] = []; const goalieCalls: any[][] = [];
     const division = { id: '77777777-7777-4777-8777-777777777777', name: 'North' };
     const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: division, divisions: [division, { id: '88888888-8888-4888-8888-888888888888', name: 'South' }], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
-    const Stats = compileStats(h, league, async (...args: any[]) => { calls.push(args); const payload = scopePayload(); payload.scope.kind = args[2].kind; payload.scope.label = args[2].kind === 'all' ? 'All time' : 'Server Summer'; return payload; });
+    const Stats = compileStats(h, league, async (...args: any[]) => { calls.push(args); const payload = scopePayload(); payload.scope.kind = args[2].kind; payload.scope.label = args[2].kind === 'all' ? 'All time' : 'Server Summer'; return payload; }, [], async (...args: any[]) => { goalieCalls.push(args); return { goalies: [] }; });
     h.mount(() => Stats()); await settle(h);
+    assert.equal(goalieCalls.length, 1);
     assert.ok(findNode(h.output, (node) => node.type === 'DivisionFilter'));
     findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'all' });
     await settle(h);
     assert.deepEqual(calls.at(-1)?.slice(2, 4), [{ kind: 'all' }, null]);
+    assert.equal(goalieCalls.length, 1, 'all-time scope never reuses a current-season goalie estimate');
     assert.match(nodeText(findNode(h.output, (node) => node.props.testID === 'stats-all-time-league-wide')), /league-wide.*unavailable/i);
     assert.equal(findNode(h.output, (node) => node.type === 'DivisionFilter'), undefined);
     findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'current' });

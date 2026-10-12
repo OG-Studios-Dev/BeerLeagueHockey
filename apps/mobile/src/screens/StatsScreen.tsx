@@ -13,15 +13,16 @@ import { needsExpandedGoalieMetrics, StatsTableHeader, StatsTableRowView, type S
 import StatsTimelineFilter from '../components/StatsTimelineFilter';
 import { useLeague } from '../context/LeagueContext';
 import { buildGoalieRows, buildLeaderRows, buildSkaterRows } from '../lib/statsPresentationModel';
-import { getPublicStatsScope, type PublicStatsScope, type PublicStatsScopeSelection } from '../lib/supabase/publicStats';
+import { getPublicGoalies, getPublicStatsScope, type PublicGoalie, type PublicStatsScope, type PublicStatsScopeSelection } from '../lib/supabase/publicStats';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import type { StatsStackParamList } from '../navigation/types';
 import colors from '../theme/colors';
 
 type StatsTab = 'Skaters' | 'Goalies';
-type Snapshot = { key: string; status: 'loading' | 'ready' | 'error'; payload: PublicStatsScope | null };
+type Snapshot = { key: string; status: 'loading' | 'ready' | 'error'; payload: PublicStatsScope | null; currentGoalies: PublicGoalie[] };
 const tabs: readonly StatsTab[] = ['Skaters', 'Goalies'];
+const emptySnapshot = (key = ''): Snapshot => ({ key, status: 'loading', payload: null, currentGoalies: [] });
 
 function selectionKey(selection: PublicStatsScopeSelection) {
   return `${selection.kind}:${[...(selection.seasonIds ?? [])].sort().join(',')}`;
@@ -36,7 +37,7 @@ export default function StatsScreen() {
   const [retry, setRetry] = React.useState(0);
   const { fontScale } = useWindowDimensions();
   const [horizontalSync, setHorizontalSync] = React.useState<StatsHorizontalSync>({ offset: 0, revision: 0, sourceId: null });
-  const [snapshot, setSnapshot] = React.useState<Snapshot>({ key: '', status: 'loading', payload: null });
+  const [snapshot, setSnapshot] = React.useState<Snapshot>(() => emptySnapshot());
   const leagueId = activeLeague?.id ?? '';
   const leagueSlug = activeLeague?.slug ?? '';
   const selectedDivisionId = activeDivision?.id ?? null;
@@ -54,10 +55,28 @@ export default function StatsScreen() {
   React.useEffect(() => {
     let mounted = true;
     if (!leagueId || !leagueSlug) return;
-    setSnapshot({ key: requestKey, status: 'loading', payload: null });
+    setSnapshot(emptySnapshot(requestKey));
     void getPublicStatsScope(leagueSlug, leagueId, selection, requestDivisionId)
-      .then((payload) => { if (mounted) setSnapshot({ key: requestKey, status: 'ready', payload }); })
-      .catch(() => { if (mounted) setSnapshot({ key: requestKey, status: 'error', payload: null }); });
+      .then(async (payload) => {
+        let currentGoalies: PublicGoalie[] = [];
+        const isCurrentSeasonOnly = (payload.scope.kind === 'current' || payload.scope.kind === 'single')
+          && payload.scope.seasonIds.length === 1
+          && payload.scope.seasonIds[0] === payload.scope.currentSeasonId;
+        if (isCurrentSeasonOnly) {
+          try {
+            currentGoalies = (await getPublicGoalies(
+              leagueSlug,
+              leagueId,
+              payload.scope.currentSeasonId,
+              requestDivisionId,
+            )).goalies;
+          } catch {
+            currentGoalies = [];
+          }
+        }
+        if (mounted) setSnapshot({ key: requestKey, status: 'ready', payload, currentGoalies });
+      })
+      .catch(() => { if (mounted) setSnapshot({ key: requestKey, status: 'error', payload: null, currentGoalies: [] }); });
     return () => { mounted = false; };
   }, [leagueId, leagueSlug, requestDivisionId, requestKey, selection]);
 
@@ -65,11 +84,11 @@ export default function StatsScreen() {
     return <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top', 'left', 'right'])}><View style={styles.emptyWrap}><Text style={styles.emptyTitle}>Hockey Life access required</Text><Text style={styles.emptyBody}>Your account does not have an accessible Hockey Life membership.</Text></View></SafeAreaView>;
   }
 
-  const view = snapshot.key === requestKey ? snapshot : { status: 'loading' as const, payload: null };
+  const view = snapshot.key === requestKey ? snapshot : emptySnapshot(requestKey);
   const players = view.payload?.players ?? [];
   const skaterRows = buildSkaterRows(players);
   const goalieRows = buildGoalieRows(players);
-  const leaders = buildLeaderRows(players, leaderMetric);
+  const leaders = buildLeaderRows(players, leaderMetric, view.currentGoalies);
   const tableRows = selectedTab === 'Skaters' ? skaterRows : goalieRows;
   const expandedGoalieMetrics = selectedTab === 'Goalies' && (fontScale > 1.3 || needsExpandedGoalieMetrics(goalieRows));
   const scopeLabel = view.payload?.scope.label ?? (selection.kind === 'current' ? 'Current season' : selection.kind === 'all' ? 'All time' : selection.kind === 'single' ? 'One season' : `${selection.seasonIds?.length ?? 0} seasons`);
@@ -92,7 +111,7 @@ export default function StatsScreen() {
             ? <View testID="stats-all-time-league-wide" accessible accessibilityRole="text" accessibilityLabel="All time is league-wide. Division filters are unavailable for All time." style={styles.leagueWideNotice}><Text style={styles.leagueWideNoticeText}>All time is league-wide. Division filters are unavailable.</Text></View>
             : <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} />}
           <View style={styles.tabWrap}><PillToggle options={tabs} selected={selectedTab} onChange={setSelectedTab} /></View>
-          <View style={styles.tableMeta}><Text style={styles.scopeCopy}><Text style={styles.scopeStrong}>{selectedTab}</Text> ranked by {selectedTab === 'Skaters' ? 'points' : 'GAA'}</Text><Text accessibilityLabel={expandedGoalieMetrics ? 'Swipe metrics. Long values use an expanded accessible layout.' : undefined} style={styles.swipeHint}>{selectedTab === 'Skaters' ? 'Swipe metrics ↔' : expandedGoalieMetrics ? 'Swipe long values ↔' : 'All metrics ✓'}</Text></View>
+          <View style={styles.tableMeta}><Text style={styles.scopeCopy}><Text style={styles.scopeStrong}>{selectedTab}</Text> ranked by {selectedTab === 'Skaters' ? 'points' : 'GAA'}</Text><Text accessibilityLabel={expandedGoalieMetrics ? 'Swipe metrics. Long values use an expanded accessible layout.' : 'Swipe team and metrics.'} style={styles.swipeHint}>{expandedGoalieMetrics ? 'Swipe long values ↔' : 'Swipe metrics ↔'}</Text></View>
           {view.status === 'ready' && tableRows.length > 0 ? <StatsTableHeader kind={selectedTab === 'Skaters' ? 'skater' : 'goalie'} syncId="header" horizontalSync={horizontalSync} onHorizontalOffset={(sourceId, offset) => setHorizontalSync((current) => ({ offset, revision: current.revision + 1, sourceId }))} expandedMetrics={expandedGoalieMetrics} /> : null}
         </>}
         ListEmptyComponent={view.status === 'loading' ? <View style={styles.tableState}><ActivityIndicator color={activeTheme.primaryColor} /></View>

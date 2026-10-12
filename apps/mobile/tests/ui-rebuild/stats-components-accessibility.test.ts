@@ -113,14 +113,36 @@ describe('Stats table responsive accessibility', () => {
     assert.equal(nodeText(findNode(h.output, (node) => node.props.testID === 'stats-metric-player-a-pts')), 'Review');
   });
 
-  it('fits every goalie metric at 320 and 390 points and keeps skater metrics scrollable', () => {
+  it('keeps the Team column inside the synchronized metrics pane with a readable header width', () => {
+    const runtime = tableRuntime('skater');
+    const header = findNode(runtime.h.output, (node) => node.props.accessibilityRole === 'summary')!;
+    const fixedHeader = header.props.children[0];
+    const scrollingHeader = findNode(header, (node) => node.props.testID === 'header-metrics-scroll')!;
+    const row = findNode(runtime.h.output, (node) => node.props.testID === 'stats-table-row-player-a')!;
+    const fixedIdentity = findNode(row, (node) => node.type === 'Pressable')!;
+    const scrollingRow = findNode(row, (node) => node.props.testID === 'row-player-a-metrics-scroll')!;
+    const teamHeader = findNode(scrollingHeader, (node) => node.props.testID === 'stats-team-header')!;
+    const teamCell = findNode(scrollingRow, (node) => node.props.testID === 'stats-team-player-a')!;
+
+    assert.doesNotMatch(nodeText(fixedHeader), /Team/);
+    assert.equal(findNode(fixedIdentity, (node) => node.type === 'TeamLogo'), undefined);
+    assert.equal(nodeText(teamHeader), 'Team');
+    assert.ok(flattenStyle(teamHeader.props.style).width >= 44);
+    assert.ok(findNode(teamCell, (node) => node.type === 'TeamLogo'));
+  });
+
+  it('keeps Team and every numeric metric horizontally scrollable at phone widths', () => {
     const { Table } = tableRuntime();
     for (const width of [320, 390]) {
       const goalie = Table.getStatsTableLayout('goalie', width, false);
-      assert.equal(goalie.identityWidth + goalie.metricPaneWidth, goalie.contentWidth);
-      assert.ok(goalie.metricCellWidth >= 35, `goalie metric width ${goalie.metricCellWidth} at ${width}`);
+      assert.equal(goalie.identityWidth + goalie.availableMetricsWidth, goalie.contentWidth);
+      assert.ok(goalie.teamCellWidth >= 44, `team width ${goalie.teamCellWidth} at ${width}`);
+      assert.equal(goalie.metricPaneWidth, goalie.teamCellWidth + (goalie.metricCellWidth * goalie.columns.length));
+      assert.ok(goalie.metricPaneWidth > goalie.availableMetricsWidth);
+      assert.ok(goalie.metricCellWidth >= 40, `goalie metric width ${goalie.metricCellWidth} at ${width}`);
       const skater = Table.getStatsTableLayout('skater', width, false);
       assert.equal(skater.identityWidth + skater.availableMetricsWidth, skater.contentWidth);
+      assert.ok(skater.teamCellWidth >= 44, `team width ${skater.teamCellWidth} at ${width}`);
       assert.ok(skater.metricPaneWidth > skater.availableMetricsWidth);
     }
     const skaterRuntime = tableRuntime('skater');
@@ -132,7 +154,7 @@ describe('Stats table responsive accessibility', () => {
     assert.ok(skaterRuntime.scrollCalls.some((call) => call.id === 'header-metrics-scroll' && call.x === 72 && call.animated === false), 'the sibling metrics pane follows the dragged row');
     assert.equal(skaterScroll.props.scrollEnabled, true);
     const goalieRuntime = tableRuntime('goalie');
-    assert.ok(allNodes(goalieRuntime.h.output, (node) => node.type === 'ScrollView').every((node) => node.props.scrollEnabled === false));
+    assert.ok(allNodes(goalieRuntime.h.output, (node) => node.type === 'ScrollView').every((node) => node.props.scrollEnabled === true));
   });
 
   it('keeps the latest user-owned offset through rapid, delayed, and source-switching events', () => {
@@ -256,7 +278,7 @@ describe('Stats table responsive accessibility', () => {
     assert.equal(identityStyle.height, undefined);
     assert.equal(identityStyle.minHeight, 68);
     assert.match(String(identityStyle.backgroundColor), /rgba\([^)]*,0\.2\)/);
-    assert.deepEqual(identity?.props.children.map((child: any) => child.type), ['Text', 'Avatar', 'View', 'TeamLogo']);
+    assert.deepEqual(identity?.props.children.map((child: any) => child.type), ['Text', 'Avatar', 'View']);
     assert.equal(nodeText(identity?.props.children[2]), 'AveryLongsurname');
   });
 

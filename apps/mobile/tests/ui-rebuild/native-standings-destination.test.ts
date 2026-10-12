@@ -135,6 +135,10 @@ describe('native Standings dock destination', () => {
 
     assert.match(nodeText(screen.harness.output), /Standings/);
     assert.match(nodeText(screen.harness.output), /Ice Owls/);
+    for (const [key, label, value] of [['gf', 'GF', '10'], ['ga', 'GA', '4'], ['diff', 'Diff', '+6']] as const) {
+      assert.equal(nodeText(findNode(screen.harness.output, (node) => node.props.testID === `standings-header-${key}`)), label);
+      assert.equal(nodeText(findNode(screen.harness.output, (node) => node.props.testID === `standings-team-owls-${key}`)), value);
+    }
     assert.match(nodeText(screen.harness.output), /Playoffs/);
     assert.match(nodeText(screen.harness.output), /Season Completion/);
     assert.ok(screen.counts().standingsReads > 0);
