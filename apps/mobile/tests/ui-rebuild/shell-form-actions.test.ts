@@ -137,17 +137,23 @@ describe('shell form exits', () => {
       {
         react: harness.react,
         'react-native': {
-          ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
+          ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
           Share: { share: async (payload: Record<string, unknown>) => { shares.push(payload); } },
           StyleSheet: { create: <T>(styles: T) => styles, absoluteFill: {}, hairlineWidth: 1 },
+          useWindowDimensions: () => ({ width: 390, fontScale: 1 }),
         },
         'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
         '@expo/vector-icons': { Ionicons: (props: Record<string, unknown>) => createElement('Ionicons', props) },
         '../components/Avatar': () => null, '../components/BrandAtmosphere': () => null,
         '../components/PlayerProfile/CareerTrendChart': () => null,
         '../components/PlayerProfile/PlayerPortrait': () => null,
+        '../components/PlayerProfile/PlayerProfileHero': (props: Record<string, unknown>) => createElement('Pressable', {
+          accessibilityLabel: props.accessibilityLabel,
+          onPress: props.onShare,
+        }),
         '../components/PlayerProfile/SeasonPicker': () => null,
         '../components/SectionHeader': () => null, '../components/TeamLogo': () => null,
+        '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
         '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#03299B' }) },
         '../lib/supabase/playerPage': { loadHockeyLifePlayerPage: async () => ({
           playerId: 'synthetic-player', rosterId: 'roster-1', fullName: 'Synthetic Player', photoUrl: null,

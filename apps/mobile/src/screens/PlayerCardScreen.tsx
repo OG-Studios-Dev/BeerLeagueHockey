@@ -1,15 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import CareerTrendChart from '../components/PlayerProfile/CareerTrendChart';
-import PlayerPortrait from '../components/PlayerProfile/PlayerPortrait';
+import PlayerProfileHero from '../components/PlayerProfile/PlayerProfileHero';
 import SeasonPicker from '../components/PlayerProfile/SeasonPicker';
 import SectionHeader from '../components/SectionHeader';
-import TeamLogo from '../components/TeamLogo';
 import { HOCKEY_LIFE_ID, HOCKEY_LIFE_PRIMARY, HOCKEY_LIFE_SLUG } from '../config/hockeyLife';
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { createPlayerRequestGate, getPlayerMetricDefinitions } from '../lib/playerPageModel';
 import { loadHockeyLifePlayerPage, type HockeyLifePlayerPage, type PlayerMetricValues } from '../lib/supabase/playerPage';
 import type { PlayerCardParams } from '../navigation/types';
@@ -52,6 +52,8 @@ function DataCell({ children, wide }: { children: React.ReactNode; wide?: boolea
 
 export default function PlayerCardScreen({ route, navigation }: Props) {
   const { focusAccent } = useMobileShellData();
+  const { reduceTransparency } = useAccessibilityPreferences();
+  const { width, fontScale } = useWindowDimensions();
   const playerId = route.params.playerId;
   const gate = React.useMemo(() => createPlayerRequestGate(), []);
   const [selection, setSelection] = React.useState<{ playerId: string; seasonId: string | null | undefined }>({ playerId, seasonId: undefined });
@@ -94,13 +96,24 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
 
   return <SafeAreaView style={styles.safeArea} edges={['left', 'right']} onAccessibilityEscape={navigation.goBack}>
     <FocusScrollView accentColor={accent} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <FocusCard focusId={`player:${data.playerId}:identity`} accentColor={accent} style={[styles.hero, { borderTopColor: accent }]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Share player card" onPress={() => void sharePlayer()} style={styles.shareButton}><Ionicons name="share-outline" size={20} color={colors.textPrimary} /></Pressable>
-        <View style={styles.portraitWrap}><PlayerPortrait uri={data.photoUrl} name={data.fullName} accent={accent} />{data.jerseyNumber != null ? <View style={[styles.jerseyBadge, { backgroundColor: accent }]}><Text style={[styles.jerseyBadgeText, { color: getContrastTextColor(accent) }]}>#{data.jerseyNumber}</Text></View> : null}</View>
-        <Text style={styles.playerName}>{data.fullName}</Text>
-        {heroAwards.some((award) => award.count > 0) ? <View style={styles.heroAwards}>{heroAwards.filter((award) => award.count > 0).map((award) => <View key={award.key} style={styles.heroAward}>{award.imageUrl ? <Image alt={award.label} source={{ uri: award.imageUrl }} resizeMode="contain" accessibilityLabel={award.label} style={styles.trophyImage} /> : <Ionicons name="trophy-outline" size={42} color={accent} />}<Text style={styles.awardCount}>×{award.count}</Text><Text numberOfLines={2} style={styles.awardLabel}>{award.label.toUpperCase()}</Text></View>)}</View> : null}
-        {data.team ? <Pressable accessibilityRole="button" accessibilityLabel={`Open ${data.team.name}`} style={styles.teamLink} onPress={() => navigateToTeamDetail(navigation, { teamId: data.team!.id, leagueId: HOCKEY_LIFE_ID })}><TeamLogo teamId={data.team.id} logoUrl={data.team.logoUrl} teamName={data.team.name} primaryColor={accent} size={34} /><Text style={[styles.teamName, { color: accent }]}>{data.team.name}</Text></Pressable> : null}
-        <View style={styles.metaRow}>{data.position ? <Text style={styles.metaPill}>{data.position.toUpperCase()}</Text> : null}{leadership ? <Text style={styles.leadershipPill}>{leadership.toUpperCase()}</Text> : null}</View>
+      <FocusCard focusId={`player:${data.playerId}:identity`} accentColor={accent} style={styles.heroBleed}>
+        <PlayerProfileHero
+          fullName={data.fullName}
+          jerseyNumber={data.jerseyNumber}
+          position={data.position}
+          leadership={leadership}
+          team={data.team}
+          awards={heroAwards}
+          accent={accent}
+          width={width}
+          fontScale={fontScale}
+          reduceTransparency={reduceTransparency}
+          accessibilityLabel="Share player card"
+          onShare={() => void sharePlayer()}
+          onOpenTeam={() => {
+            if (data.team) navigateToTeamDetail(navigation, { teamId: data.team.id, leagueId: HOCKEY_LIFE_ID });
+          }}
+        />
       </FocusCard>
 
       {filteredBadges.length > 0 ? <ParitySection title="Achievements"><View style={styles.achievements}>{filteredBadges.map((badge) => <View key={badge.id} style={styles.badge}><Ionicons name="trophy-outline" size={24} color={accent} /><View style={styles.listCopy}><Text style={styles.badgeTitle}>{badgeLabel(badge.type)}</Text><Text style={styles.badgeMeta}>{[badge.seasonName, badge.teamName].filter(Boolean).join(' • ') || dateLabel(badge.createdAt)}</Text></View></View>)}</View></ParitySection> : null}
@@ -127,11 +140,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 }, centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
   stateTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '900', textAlign: 'center' }, stateText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
   retry: { minWidth: 96, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: HOCKEY_LIFE_PRIMARY }, retryText: { color: getContrastTextColor(HOCKEY_LIFE_PRIMARY), fontWeight: '900' },
-  content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 150 }, hero: { alignItems: 'center', padding: 18, paddingTop: 24, borderRadius: 26, borderWidth: 1, borderTopWidth: 4, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgSurface, overflow: 'hidden' },
-  shareButton: { position: 'absolute', top: 8, right: 8, zIndex: 2, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgInteractive },
-  portraitWrap: { position: 'relative', marginBottom: 22 }, jerseyBadge: { position: 'absolute', right: -8, bottom: -9, minWidth: 48, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 13, borderWidth: 2, borderColor: colors.bgSurface }, jerseyBadgeText: { fontSize: 17, fontWeight: '900' },
-  playerName: { color: colors.textPrimary, fontSize: 29, lineHeight: 35, fontWeight: '900', textAlign: 'center' }, heroAwards: { width: '100%', flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 8, marginTop: 14 }, heroAward: { width: 92, alignItems: 'center' }, trophyImage: { width: 58, height: 66 }, awardCount: { color: colors.textPrimary, fontSize: 16, fontWeight: '900', marginTop: -12, backgroundColor: colors.bgBase, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }, awardLabel: { color: colors.textSecondary, fontSize: 9, lineHeight: 12, fontWeight: '900', textAlign: 'center', marginTop: 5 },
-  teamLink: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 14 }, teamName: { fontSize: 15, fontWeight: '900' }, metaRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 7, marginTop: 5 }, metaPill: { color: colors.textPrimary, borderWidth: 1, borderColor: colors.glassStrokeStrong, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6, fontSize: 11, fontWeight: '800' }, leadershipPill: { color: '#FBBF24', backgroundColor: 'rgba(251,191,36,0.13)', borderWidth: 1, borderColor: 'rgba(251,191,36,0.45)', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6, fontSize: 11, fontWeight: '900' },
+  content: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 150 },
+  heroBleed: { marginHorizontal: -16, overflow: 'visible' },
   section: { marginTop: 22 }, emptyCard: { minHeight: 70, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, padding: 16 }, emptyText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, textAlign: 'center' },
   achievements: { gap: 8 }, badge: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 15, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, padding: 13 }, badgeTitle: { color: colors.textPrimary, fontSize: 13, fontWeight: '900' }, badgeMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 3 },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, metricCard: { width: '30%', minWidth: 86, flexGrow: 1, alignItems: 'center', borderRadius: 15, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, paddingVertical: 14, paddingHorizontal: 6 }, metricValue: { fontSize: 21, fontWeight: '900' }, metricLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: '800', marginTop: 3 },
