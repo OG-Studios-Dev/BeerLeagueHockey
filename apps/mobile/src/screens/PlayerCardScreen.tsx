@@ -101,6 +101,7 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
           fullName={data.fullName}
           jerseyNumber={data.jerseyNumber}
           position={data.position}
+          isGoalie={data.isGoalie}
           leadership={leadership}
           team={data.team}
           awards={heroAwards}

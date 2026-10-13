@@ -9,13 +9,15 @@ import TeamLogo from '../TeamLogo';
 import { getPlayerProfileHeroLayout, splitPlayerDisplayName } from './playerProfileHeroModel';
 
 /* eslint-disable @typescript-eslint/no-require-imports -- Metro requires a static bundled image reference. */
-const rinkRibbonArtwork = require('../../../assets/league-leaders/jack-foote.png');
+const neutralSkaterArtwork = require('../../../assets/league-leaders/neutral-helmet-player.png');
+const neutralGoalieArtwork = require('../../../assets/league-leaders/neutral-goalie.png');
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 type PlayerProfileHeroProps = {
   fullName: string;
   jerseyNumber: number | null;
   position: string | null;
+  isGoalie: boolean;
   leadership: string | null;
   team: { id: string; name: string; logoUrl: string | null } | null;
   awards: Array<{ key: string; label: string; count: number; imageUrl: string | null }>;
@@ -32,6 +34,7 @@ export default function PlayerProfileHero({
   fullName,
   jerseyNumber,
   position,
+  isGoalie,
   leadership,
   team,
   awards,
@@ -45,6 +48,9 @@ export default function PlayerProfileHero({
 }: PlayerProfileHeroProps) {
   const layout = getPlayerProfileHeroLayout(width, fontScale);
   const displayName = splitPlayerDisplayName(fullName);
+  const artwork = isGoalie ? neutralGoalieArtwork : neutralSkaterArtwork;
+  const surnameLetters = Array.from(displayName.surname);
+  const surnameLetterSize = surnameLetters.length > 10 ? 13 : surnameLetters.length > 7 ? 16 : 20;
   const visibleAwards = awards.filter((award) => award.count > 0);
   return (
     <View testID="player-profile-rink-ribbon-hero" style={[styles.hero, { minHeight: layout.stageHeight }]}>
@@ -63,12 +69,16 @@ export default function PlayerProfileHero({
         <View style={styles.rinkOutline}><View style={[styles.rinkCenterLine, { backgroundColor: `${accent}24` }]} /><View style={styles.rinkCircle} /></View>
         <View style={[styles.leftGlow, reduceTransparency && styles.leftGlowReduced]} />
         <View
-          testID="player-profile-rink-ribbon-curve"
-          style={[styles.ribbonCurve, { top: layout.stageHeight - 128, width: layout.canvasWidth + 126 }]}
+          testID="player-profile-rink-ribbon-content-bed"
+          style={[styles.contentBed, { top: layout.stageHeight - 72 }]}
         />
         <View
-          testID="player-profile-rink-ribbon-glint"
-          style={[styles.ribbonGlint, { top: layout.stageHeight - 85, width: layout.canvasWidth + 100, backgroundColor: `${accent}42` }]}
+          testID="player-profile-rink-ribbon-purple-rail"
+          style={[styles.purpleRail, { top: layout.stageHeight - 86, width: layout.canvasWidth + 138 }]}
+        />
+        <View
+          testID="player-profile-rink-ribbon-yellow-rail"
+          style={[styles.yellowRail, { top: layout.stageHeight - 53, width: layout.canvasWidth + 112 }]}
         />
         <View
           testID="player-profile-rink-ribbon-fog"
@@ -95,7 +105,7 @@ export default function PlayerProfileHero({
       >
         <Image
           testID="player-profile-rink-ribbon-artwork"
-          source={rinkRibbonArtwork}
+          source={artwork}
           alt=""
           resizeMode="contain"
           accessible={false}
@@ -109,13 +119,31 @@ export default function PlayerProfileHero({
         testID="player-profile-rink-ribbon-identity"
         style={[styles.identity, layout.stacked && styles.identityStacked, { width: layout.identityWidth }]}
       >
-        <Text style={[styles.eyebrow, { color: accent }]}>PLAYER PROFILE</Text>
-        {displayName.givenNames ? <Text {...(layout.stacked ? {} : { adjustsFontSizeToFit: true, numberOfLines: 2, minimumFontScale: 0.62 })} style={[styles.givenNames, layout.stacked && styles.stackedName]}>{displayName.givenNames}</Text> : null}
-        <Text
-          testID="player-profile-rink-ribbon-surname"
-          {...(layout.stacked ? {} : { adjustsFontSizeToFit: true, numberOfLines: 2, minimumFontScale: 0.62 })}
-          style={[styles.surname, layout.stacked && styles.stackedSurname]}
-        >{displayName.surname}</Text>
+        <Text style={styles.eyebrow}>FEATURED PLAYER</Text>
+        {layout.stacked ? <>
+          {displayName.givenNames ? <Text style={[styles.givenNames, styles.stackedName]}>{displayName.givenNames}</Text> : null}
+          <Text testID="player-profile-rink-ribbon-surname" style={[styles.surname, styles.stackedSurname]}>{displayName.surname}</Text>
+        </> : <View style={styles.nameLockup}>
+          {displayName.givenNames ? <Text
+            adjustsFontSizeToFit
+            minimumFontScale={0.58}
+            numberOfLines={3}
+            style={styles.givenNames}
+          >{displayName.givenNames}</Text> : null}
+          <View
+            testID="player-profile-rink-ribbon-surname"
+            accessible
+            accessibilityLabel={displayName.surname}
+            style={styles.surnameColumn}
+          >
+            {surnameLetters.map((letter, index) => <Text
+              key={`${letter}-${index}`}
+              accessible={false}
+              importantForAccessibility="no"
+              style={[styles.surnameLetter, { fontSize: surnameLetterSize, lineHeight: surnameLetterSize + 1 }]}
+            >{letter}</Text>)}
+          </View>
+        </View>}
         <View style={styles.metaRow}>
           {jerseyNumber != null ? <Text style={[styles.jersey, { backgroundColor: accent, color: getContrastTextColor(accent) }]}>#{jerseyNumber}</Text> : null}
           {position ? <Text style={styles.meta}>{position.toUpperCase()}</Text> : null}
@@ -149,19 +177,23 @@ const styles = StyleSheet.create({
   rinkCircle: { position: 'absolute', left: '50%', top: '50%', width: 56, height: 56, marginLeft: -28, marginTop: -28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', borderRadius: 28 },
   leftGlow: { position: 'absolute', top: 36, left: -154, width: 420, height: 420, borderRadius: 210, backgroundColor: 'rgba(124,62,204,0.13)' },
   leftGlowReduced: { backgroundColor: 'rgba(124,62,204,0.07)' },
-  ribbonCurve: { position: 'absolute', left: -62, height: 184, borderRadius: 999, backgroundColor: 'rgba(45,24,75,0.88)', transform: [{ rotate: '-7deg' }] },
-  ribbonGlint: { position: 'absolute', left: -44, height: 1.5, borderRadius: 999, transform: [{ rotate: '-7deg' }] },
+  contentBed: { position: 'absolute', zIndex: 1, left: 0, right: 0, minHeight: 148, backgroundColor: 'rgba(16,9,29,0.88)' },
+  purpleRail: { position: 'absolute', zIndex: 2, left: -76, height: 126, borderRadius: 999, backgroundColor: '#7A3FC3', opacity: 0.56, transform: [{ rotate: '-8deg' }] },
+  yellowRail: { position: 'absolute', zIndex: 3, left: -56, height: 5, borderRadius: 999, backgroundColor: '#FFD52F', transform: [{ rotate: '-8deg' }] },
   ribbonFog: { position: 'absolute', left: -38, height: 112, borderRadius: 999, backgroundColor: 'rgba(210,190,245,0.10)', opacity: 0.78, transform: [{ rotate: '-5deg' }] },
   ribbonFogReduced: { backgroundColor: 'rgba(210,190,245,0.04)', opacity: 0.34 },
   shareButton: { position: 'absolute', zIndex: 10, top: 4, right: 10, minWidth: 48, minHeight: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgInteractive },
   artworkShell: { position: 'absolute', left: 0, zIndex: 4, overflow: 'visible' },
   artworkShellStacked: { position: 'relative', alignSelf: 'flex-start', marginTop: 58 },
-  identity: { position: 'absolute', zIndex: 6, top: 88, right: 10, alignItems: 'flex-end' },
+  identity: { position: 'absolute', zIndex: 6, top: 84, right: 10, alignItems: 'flex-end' },
   identityStacked: { position: 'relative', top: 0, right: 0, alignItems: 'flex-start', marginTop: 14, paddingHorizontal: 18 },
-  eyebrow: { fontSize: 9, lineHeight: 13, fontWeight: '900', letterSpacing: 1.7, textAlign: 'right' },
-  givenNames: { color: 'rgba(255,255,255,0.76)', fontSize: 35, lineHeight: 36, fontWeight: '600', letterSpacing: -1.7, textAlign: 'right', textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 7 }, textShadowRadius: 16 },
+  eyebrow: { color: '#FFD52F', fontSize: 9, lineHeight: 13, fontWeight: '900', letterSpacing: 1.7, textAlign: 'right' },
+  nameLockup: { maxWidth: '100%', minHeight: 150, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  givenNames: { flex: 1, minWidth: 0, color: 'rgba(255,255,255,0.76)', fontSize: 34, lineHeight: 34, fontWeight: '600', letterSpacing: -1.7, textAlign: 'right', textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 7 }, textShadowRadius: 16 },
   stackedName: { maxWidth: '100%', fontSize: 31, lineHeight: 38, textAlign: 'left' },
   surname: { color: colors.textPrimary, fontSize: 42, lineHeight: 42, fontWeight: '900', letterSpacing: -2.2, textAlign: 'right', textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.72)', textShadowOffset: { width: 0, height: 7 }, textShadowRadius: 18 },
+  surnameColumn: { flexDirection: 'column', alignItems: 'center', paddingHorizontal: 5, paddingVertical: 4, borderLeftWidth: 2, borderLeftColor: '#FFD52F' },
+  surnameLetter: { color: colors.textPrimary, fontWeight: '900', textAlign: 'center', textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.72)', textShadowOffset: { width: 0, height: 4 }, textShadowRadius: 12 },
   stackedSurname: { maxWidth: '100%', fontSize: 38, lineHeight: 46, textAlign: 'left' },
   metaRow: { maxWidth: '100%', marginTop: 13, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 5 },
   jersey: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5, fontSize: 10, fontWeight: '900' },

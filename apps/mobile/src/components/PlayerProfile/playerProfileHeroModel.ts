@@ -1,4 +1,4 @@
-export const PLAYER_PROFILE_ART_WIDTH = 631;
+export const PLAYER_PROFILE_ART_WIDTH = 643;
 export const PLAYER_PROFILE_ART_HEIGHT = 1050;
 
 export type PlayerProfileHeroLayout = {
@@ -23,17 +23,17 @@ export function splitPlayerDisplayName(fullName: string) {
 export function getPlayerProfileHeroLayout(viewportWidth: number, fontScale: number): PlayerProfileHeroLayout {
   const canvasWidth = clamp(viewportWidth, 280, 430);
   const stacked = fontScale >= 1.3 || canvasWidth < 350;
-  const platformClearance = 24;
+  const platformClearance = 28;
   const artWidth = stacked
     ? clamp(canvasWidth * 0.72, 202, 252)
-    : clamp(canvasWidth * 0.56, 180, 228);
+    : clamp(canvasWidth * 0.58, 194, 236);
   const artHeight = artWidth * (PLAYER_PROFILE_ART_HEIGHT / PLAYER_PROFILE_ART_WIDTH);
-  const artTop = stacked ? 0 : 48;
-  const identityLeft = artWidth * 0.73;
+  const artTop = stacked ? 0 : 54;
+  const identityLeft = artWidth * 0.64;
   const identityWidth = stacked ? canvasWidth : Math.max(112, canvasWidth - identityLeft - 12);
   const stageHeight = stacked
-    ? artHeight + platformClearance + 220
-    : Math.max(374, artTop + artHeight + platformClearance);
+    ? artHeight + platformClearance + 250
+    : Math.max(414, artTop + artHeight + platformClearance);
 
   return {
     canvasWidth,

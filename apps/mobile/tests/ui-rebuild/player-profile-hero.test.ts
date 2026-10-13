@@ -17,22 +17,24 @@ function nativeMock() {
 }
 
 function renderHero(overrides: Record<string, unknown> = {}) {
-  const artwork = { uri: 'bundled-rink-ribbon-artwork' };
+  const skaterArtwork = { uri: 'bundled-neutral-skater-artwork' };
+  const goalieArtwork = { uri: 'bundled-neutral-goalie-artwork' };
   const Hero = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(heroUrl, {
     react: { createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => createElement(type, props, ...children) },
     'react-native': nativeMock(),
     'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
-    '../../../assets/league-leaders/jack-foote.png': artwork,
+    '../../../assets/league-leaders/neutral-helmet-player.png': skaterArtwork,
+    '../../../assets/league-leaders/neutral-goalie.png': goalieArtwork,
     '../TeamLogo': { __esModule: true, default: 'TeamLogo' },
     '../../theme/colors': { __esModule: true, default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', glassStroke: '#333' } },
     '../../theme/contrast': { getContrastTextColor: () => '#000' },
   }).default;
 
-  return { artwork, output: Hero({
+  return { skaterArtwork, goalieArtwork, output: Hero({
     fullName: 'Alexis Marie De La Cruz', jerseyNumber: 19, position: 'Forward', leadership: 'C  Captain',
     team: { id: 'team-one', name: 'Night Owls', logoUrl: null }, awards: [], accent: '#FFD52F',
-    width: 390, fontScale: 1, reduceTransparency: false, onShare: () => undefined, onOpenTeam: () => undefined,
+    isGoalie: false, width: 390, fontScale: 1, reduceTransparency: false, onShare: () => undefined, onOpenTeam: () => undefined,
     ...overrides,
   }) };
 }
@@ -64,23 +66,43 @@ describe('Rink Ribbon player profile hero', () => {
     assert.deepEqual(splitPlayerDisplayName('  Jordan   Lee  '), { givenNames: 'Jordan', surname: 'Lee' });
   });
 
-  it('renders the exact League Home artwork as a decorative, fully contained, non-clipped image', () => {
+  it('selects the identity-neutral League Home skater and goalie artwork without importing the named player likeness', () => {
     const source = readFileSync(fileURLToPath(heroUrl.toString()), 'utf8');
-    assert.match(source, /require\('\.\.\/\.\.\/\.\.\/assets\/league-leaders\/jack-foote\.png'\)/);
+    assert.match(source, /require\('\.\.\/\.\.\/\.\.\/assets\/league-leaders\/neutral-helmet-player\.png'\)/);
+    assert.match(source, /require\('\.\.\/\.\.\/\.\.\/assets\/league-leaders\/neutral-goalie\.png'\)/);
+    assert.doesNotMatch(source, /jack-foote|Jack Foote/i);
 
-    const { artwork, output } = renderHero();
-    const shell = findNode(output, (node) => node.props.testID === 'player-profile-artwork-shell');
-    const image = findNode(output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    const skater = renderHero({ isGoalie: false });
+    const goalie = renderHero({ isGoalie: true, position: 'Goalie' });
+    const shell = findNode(skater.output, (node) => node.props.testID === 'player-profile-artwork-shell');
+    const image = findNode(skater.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    const goalieImage = findNode(goalie.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
     assert.ok(shell);
     assert.ok(image);
-    assert.equal(image.props.source, artwork);
+    assert.equal(image.props.source, skater.skaterArtwork);
+    assert.equal(goalieImage?.props.source, goalie.goalieArtwork);
     assert.equal(image.props.resizeMode, 'contain');
     assert.equal(image.props.accessible, false);
     assert.equal(image.props.alt, '');
     assert.equal(image.props.accessibilityElementsHidden, true);
     assert.equal(flattenStyle(shell.props.style).overflow, 'visible');
+    const hero = findNode(skater.output, (node) => node.props.testID === 'player-profile-rink-ribbon-hero');
+    assert.equal(flattenStyle(hero?.props.style).overflow, 'visible');
     assert.ok(flattenStyle(image.props.style).width > 0);
     assert.ok(flattenStyle(image.props.style).height > 0);
+  });
+
+  it('uses a vertical surname column at normal widths and a full horizontal surname in stacked layouts', () => {
+    const normal = renderHero({ width: 390, fontScale: 1 }).output;
+    const normalSurname = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-surname');
+    assert.equal(flattenStyle(normalSurname?.props.style).flexDirection, 'column');
+    assert.equal(normalSurname?.props.accessibilityLabel, 'Cruz');
+    assert.equal(nodeText(normalSurname), 'Cruz');
+
+    const stacked = renderHero({ width: 320, fontScale: 1.3 }).output;
+    const stackedSurname = findNode(stacked, (node) => node.props.testID === 'player-profile-rink-ribbon-surname');
+    assert.notEqual(flattenStyle(stackedSurname?.props.style).flexDirection, 'column');
+    assert.equal(nodeText(stackedSurname), 'Cruz');
   });
 
   it('renders only loaded identity facts and keeps Share and team actions accessible', () => {
@@ -113,16 +135,24 @@ describe('Rink Ribbon player profile hero', () => {
     assert.equal(openedTeam, 1);
   });
 
-  it('uses layered native ribbon, ice-glow and fog surfaces with an opaque transparency fallback', () => {
+  it('uses explicit hard-yellow and purple curved rails flowing behind the platform into content', () => {
     const normal = renderHero().output;
     const atmosphere = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-atmosphere');
-    const ribbon = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-curve');
-    const glint = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-glint');
+    const purpleRail = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-purple-rail');
+    const yellowRail = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-yellow-rail');
+    const contentBed = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-content-bed');
     const fog = findNode(normal, (node) => node.props.testID === 'player-profile-rink-ribbon-fog');
+    const layout = getPlayerProfileHeroLayout(390, 1);
     assert.equal(atmosphere?.props.pointerEvents, 'none');
     assert.equal(atmosphere?.props.accessible, false);
-    assert.ok(flattenStyle(ribbon?.props.style).borderRadius > 100);
-    assert.ok(flattenStyle(glint?.props.style).height >= 1);
+    assert.equal(flattenStyle(purpleRail?.props.style).backgroundColor, '#7A3FC3');
+    assert.equal(flattenStyle(yellowRail?.props.style).backgroundColor, '#FFD52F');
+    assert.ok(flattenStyle(purpleRail?.props.style).borderRadius > 100);
+    assert.ok(flattenStyle(yellowRail?.props.style).borderRadius > 100);
+    assert.ok(flattenStyle(purpleRail?.props.style).top < layout.stageHeight);
+    assert.ok(flattenStyle(purpleRail?.props.style).top + flattenStyle(purpleRail?.props.style).height > layout.stageHeight);
+    assert.ok(flattenStyle(contentBed?.props.style).top < layout.stageHeight);
+    assert.ok(flattenStyle(contentBed?.props.style).minHeight > layout.platformClearance);
     assert.ok(flattenStyle(fog?.props.style).opacity > 0);
 
     const opaqueOutput = renderHero({
@@ -169,6 +199,7 @@ describe('Rink Ribbon player profile hero', () => {
     assert.match(screen, /fullName=\{data\.fullName\}/);
     assert.match(screen, /jerseyNumber=\{data\.jerseyNumber\}/);
     assert.match(screen, /position=\{data\.position\}/);
+    assert.match(screen, /isGoalie=\{data\.isGoalie\}/);
     assert.match(screen, /leadership=\{leadership\}/);
     assert.match(screen, /team=\{data\.team\}/);
     assert.match(screen, /awards=\{heroAwards\}/);
