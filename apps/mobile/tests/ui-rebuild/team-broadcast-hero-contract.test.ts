@@ -32,4 +32,10 @@ describe('approved C broadcast Team hero source contract', () => {
     assert.doesNotMatch(`${hero}${model}`, /Bad Bunny|bad-bunny/i);
     assert.doesNotMatch(hero, /Ionicons[^\n]*trophy|name=[{]?['"]trophy/i);
   });
+
+  it('keeps both compact rank callouts on one row so win percentage clears the ticker', () => {
+    const hero = readFileSync(fileURLToPath(heroUrl), 'utf8');
+    assert.match(hero, /compact && styles\.heroCalloutCompact/);
+    assert.match(hero, /heroCalloutCompact:\s*\{\s*width:\s*52\s*\}/);
+  });
 });

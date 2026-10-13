@@ -69,7 +69,7 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
       </View>
       <View testID="team-broadcast-callouts" style={[styles.heroCallouts, compact && styles.heroCalloutsCompact]}>
         {callouts.map(([label, value], index) => (
-          <View key={label} style={[styles.heroCallout, index === 2 && styles.heroCalloutWide]}>
+          <View key={label} style={[styles.heroCallout, compact && styles.heroCalloutCompact, index === 2 && styles.heroCalloutWide]}>
             <Text style={styles.heroStatLabel}>{label}</Text>
             <Text testID="team-broadcast-fact-value" style={styles.heroCalloutValue}>{value}</Text>
           </View>
@@ -146,6 +146,7 @@ const styles = StyleSheet.create({
   heroCallouts: { position: 'absolute', zIndex: 8, left: 18, top: 211, width: 126, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 13, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.17)', paddingTop: 11 },
   heroCalloutsCompact: { left: 16, top: 218, width: 116, columnGap: 8, rowGap: 11 },
   heroCallout: { width: 56, minWidth: 0 },
+  heroCalloutCompact: { width: 52 },
   heroCalloutWide: { width: '100%' },
   heroStatLabel: { color: '#8F9BB0', fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.05 },
   heroCalloutValue: { marginTop: 4, color: '#F8FBFF', fontSize: 22, lineHeight: 25, fontWeight: '900', fontVariant: ['tabular-nums'] },
