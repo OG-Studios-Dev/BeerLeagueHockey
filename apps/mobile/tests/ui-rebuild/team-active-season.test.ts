@@ -564,7 +564,9 @@ describe('Team active-season data boundary', () => {
     let output = await settle(runtime);
     const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
     assert.ok(hero);
-    assert.match(nodeText(hero), /North Stars8-2-1/);
+    assert.match(hero.props.accessibilityLabel, /North Stars, record 8-2-1/);
+    assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-primary')), 'North');
+    assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-secondary')), 'Stars');
     const composition = findNode(output, (node) => node.props.testID === 'team-public-composition');
     assert.equal(flattenStyle(composition?.props.style).backgroundColor, 'transparent');
     const props = findNode(output, (node) => node.type === 'TeamPublicPage')?.props;

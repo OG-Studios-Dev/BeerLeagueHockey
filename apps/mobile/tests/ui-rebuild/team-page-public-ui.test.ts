@@ -82,7 +82,7 @@ const snapshot: any = {
   ],
 };
 
-function runtime(width = 390, sourceSnapshot: any = snapshot) {
+function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency = false) {
   const harness = createHookHarness();
   const openedPlayers: string[] = [];
   const openedGames: string[] = [];
@@ -108,7 +108,7 @@ function runtime(width = 390, sourceSnapshot: any = snapshot) {
       '../../assets/team-page/jersey-detail.png': 5,
     },
   ).default;
-  harness.mount(() => Component({ snapshot: sourceSnapshot, reduceTransparency: false, onOpenPlayer: (id: string) => openedPlayers.push(id), onOpenGame: (id: string) => openedGames.push(id) }));
+  harness.mount(() => Component({ snapshot: sourceSnapshot, reduceTransparency, onOpenPlayer: (id: string) => openedPlayers.push(id), onOpenGame: (id: string) => openedGames.push(id) }));
   return { harness, openedPlayers, openedGames };
 }
 
@@ -150,6 +150,15 @@ describe('native Team public composition', () => {
     opaqueHarness.mount(() => Component({ snapshot, reduceTransparency: true, onOpenPlayer: () => undefined, onOpenGame: () => undefined }));
     const opaque = findNode(opaqueHarness.output, (node) => node.props.testID === 'team-public-composition');
     assert.equal(flattenStyle(opaque?.props.style).backgroundColor, '#03070D');
+  });
+
+  it('uses opaque broadcast surfaces when reduced transparency is enabled', () => {
+    const output = runtime(390, snapshot, true).harness.output;
+    const championships = findNode(output, (node) => node.props.testID === 'team-broadcast-championships');
+    const bridge = findNode(output, (node) => node.props.testID === 'team-next-game-bridge');
+
+    assert.equal(flattenStyle(championships?.props.style).backgroundColor, '#05080F');
+    assert.deepEqual(bridge?.props.colors, ['#07111F', '#241644', '#03070D']);
   });
 
   it('renders all five roster statistics with honest zero and unknown values and player navigation', () => {
@@ -235,23 +244,45 @@ describe('native Team public composition', () => {
     assert.match(text, /~Goalie GP\/GAA is derived.*may be incomplete/i);
   });
 
-  it('keeps open crests, reference pill rows and larger podiums while narrow headings can wrap', () => {
+  it('renders the approved C broadcast hierarchy from dynamic team facts with a complete crest at phone widths', () => {
+    const source = {
+      ...snapshot,
+      team: { ...snapshot.team, id: 'aurora', name: 'Aurora Wolves', logoUrl: 'canonical-aurora.webp', primaryColor: '#6046A8' },
+      rank: 4,
+      record: '3-4-1',
+      streak: 'T2',
+      hero: { winPercentage: 3 / 8 },
+      standing: { ...snapshot.standing, teamId: 'aurora', teamName: 'Aurora Wolves', logoUrl: 'canonical-aurora.webp', goalsFor: 17, goalsAgainst: 21, goalDifferential: -4 },
+      championships: { count: 2, latestTitleSeasonName: 'Summer 2026', latestTitleLabel: '2026', titleSeasonIds: ['summer-2026', 'winter-2024'] },
+    };
+
     for (const width of [390, 320]) {
-      const output = runtime(width).harness.output;
-      for (const logo of findNodes(output, (node) => node.type === 'TeamLogo')) assert.equal(logo.props.transparentBacking, true);
+      const output = runtime(width, source).harness.output;
       const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
-      assert.equal(findNode(hero, (node) => node.type === 'TeamLogo')?.props.size, 160);
-      const pillRows = findNodes(hero, (node) => node.props.testID === 'team-hero-pill-row');
-      assert.deepEqual(pillRows.map((row) => findNodes(row, (node) => node.props.testID === 'team-hero-pill').length), [3, 3]);
-      if (width === 320) {
-        assert.deepEqual(pillRows.map((row) => flattenStyle(row.props.style).flexWrap), ['nowrap', 'nowrap']);
-        for (const pill of findNodes(hero, (node) => node.props.testID === 'team-hero-pill')) {
-          const style = flattenStyle(pill.props.style);
-          assert.equal(style.flexBasis, 0);
-          assert.equal(style.flexGrow, 1);
-          assert.equal(style.minWidth, 0);
-        }
-      }
+      assert.ok(hero);
+      assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-primary')), 'Aurora');
+      assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-secondary')), 'Wolves');
+      assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-hero-record')), '3-4-1');
+      assert.match(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-callouts')), /RANK#4STREAKT2WIN PERCENTAGE38%/);
+      assert.match(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-ticker')), /GF17GA21DIFF-4WIN38%/);
+      assert.ok(findNode(hero, (node) => node.props.testID === 'team-broadcast-subject-frame'));
+      assert.ok(findNode(hero, (node) => node.props.testID === 'team-hero-transition'));
+      const logoStage = findNode(hero, (node) => node.props.testID === 'team-broadcast-logo-stage');
+      const logo = findNode(logoStage, (node) => node.type === 'TeamLogo');
+      assert.deepEqual(
+        [logo?.props.teamId, logo?.props.logoUrl, logo?.props.teamName, logo?.props.transparentBacking],
+        ['aurora', 'canonical-aurora.webp', 'Aurora Wolves', true],
+      );
+      assert.equal(logo?.props.size, width === 320 ? 184 : 230);
+      assert.equal(flattenStyle(logoStage?.props.style).overflow, 'visible');
+      const trophy = findNode(hero, (node) => node.props.testID === 'team-broadcast-championships');
+      assert.equal(trophy?.props.accessibilityLabel, '2 championships');
+      assert.ok(findNode(trophy, (node) => node.type === 'Image' && node.props.source === 2 && node.props.resizeMode === 'contain'));
+      assert.match(nodeText(trophy), /x2CHAMPIONSHIPS/);
+      assert.match(nodeText(hero), /LATEST CHAMPIONSHIPSummer 2026 \(2026\)/);
+      assert.match(hero?.props.accessibilityLabel, /Aurora Wolves.*record 3-4-1.*rank 4.*2 championships/i);
+      assert.equal(findNodes(hero, (node) => node.props.testID === 'team-hero-pill').length, 0);
+
       const podium = findNode(output, (node) => node.props.testID === 'team-leader-podium');
       for (const avatar of findNodes(podium, (node) => node.type === 'Avatar')) assert.ok(avatar.props.size >= (width === 390 ? 70 : 54));
       const rosterSection = findNode(output, (node) => node.props.testID === 'team-roster-section');
@@ -264,9 +295,45 @@ describe('native Team public composition', () => {
     }
   });
 
+  it('preserves unknown broadcast facts as dashes and omits unavailable latest-title copy', () => {
+    const output = runtime(320, {
+      ...snapshot,
+      standing: null,
+      rank: null,
+      record: null,
+      streak: null,
+      hero: { winPercentage: null },
+      championships: { count: null, latestTitleSeasonName: null, latestTitleLabel: null, titleSeasonIds: [] },
+    }).harness.output;
+    const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
+
+    assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-hero-record')), '—');
+    assert.match(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-callouts')), /RANK—STREAK—WIN PERCENTAGE—/);
+    assert.match(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-ticker')), /GF—GA—DIFF—WIN—/);
+    const championships = findNode(hero, (node) => node.props.testID === 'team-broadcast-championships');
+    assert.equal(championships?.props.accessibilityLabel, 'Championship count unavailable');
+    assert.match(nodeText(championships), /x—CHAMPIONSHIPS/);
+    assert.equal(findNode(hero, (node) => node.props.testID === 'team-broadcast-latest-championship'), undefined);
+    assert.match(hero?.props.accessibilityLabel, /record unavailable.*rank unavailable.*championship count unavailable/i);
+  });
+
   it('uses the viewed team color for selected Team-page controls instead of a hard-coded cyan', () => {
     const output = runtime(390, { ...snapshot, team: { ...snapshot.team, primaryColor: '#6046A8' }, league: { ...snapshot.league, primaryColor: '#1F6A44' } }).harness.output;
     assert.equal(flattenStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.style).backgroundColor, '#6046A8');
+  });
+
+  it('uses the Hockey Life fallback when team and league accents are invalid without tinting fact text', () => {
+    const output = runtime(390, {
+      ...snapshot,
+      team: { ...snapshot.team, primaryColor: 'purple' },
+      league: { ...snapshot.league, primaryColor: null },
+    }).harness.output;
+    const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
+    const accentBlade = findNode(hero, (node) => node.props.testID === 'team-broadcast-accent');
+    assert.equal(flattenStyle(accentBlade?.props.style).backgroundColor, '#03299B');
+    for (const value of findNodes(hero, (node) => node.props.testID === 'team-broadcast-fact-value')) {
+      assert.equal(flattenStyle(value.props.style).color, '#F8FBFF');
+    }
   });
 
   it('rejects a malformed viewed-team colour and falls back to the validated league accent', () => {
@@ -281,6 +348,21 @@ describe('native Team public composition', () => {
     for (const text of findNodes(jersey, (node) => node.type === 'Text')) assert.equal(text.props.allowFontScaling, false);
   });
 
+  it('dissolves the broadcast atmosphere into the preserved Next Game section instead of a hard cutoff', () => {
+    const output = runtime(390).harness.output;
+    const heroTransition = findNode(output, (node) => node.props.testID === 'team-hero-transition');
+    const nextSection = findNode(output, (node) => node.props.testID === 'team-next-game-section');
+    const nextBridge = findNode(nextSection, (node) => node.props.testID === 'team-next-game-bridge');
+
+    assert.ok(heroTransition);
+    assert.ok(nextBridge);
+    assert.ok(flattenStyle(nextSection?.props.style).marginTop < 0);
+    assert.ok(flattenStyle(nextSection?.props.style).paddingTop >= 48);
+    assert.deepEqual(nextBridge?.props.colors, ['rgba(7,17,31,0)', 'rgba(72,34,126,.22)', 'rgba(7,17,31,0)']);
+    const pageText = nodeText(output);
+    assert.ok(pageText.indexOf('LATEST CHAMPIONSHIP') < pageText.indexOf('Next Game'));
+  });
+
   it('renders the approved section order and public hero hierarchy', () => {
     const output = runtime().harness.output;
     const text = nodeText(output);
@@ -288,8 +370,8 @@ describe('native Team public composition', () => {
     assert.ok(order.every((index) => index >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     assert.ok(findNode(output, (node) => node.props.testID === 'team-public-hero'));
-    assert.match(text, /RANK#2WIN %64%STREAKW1GF34GA22DIFF\+12/);
-    assert.match(text, /Latest championship: Fall 2025 \(2025\)/);
+    assert.match(text, /RANK#2STREAKW1WIN PERCENTAGE64%x1CHAMPIONSHIPSGF34GA22DIFF\+12WIN64%/);
+    assert.match(text, /LATEST CHAMPIONSHIPFall 2025 \(2025\)/);
     assert.doesNotMatch(text, /FEATURED PARTNERS|Rink Shop/);
     assert.equal(findNode(output, (node) => node.props.testID === 'team-partners'), undefined);
   });

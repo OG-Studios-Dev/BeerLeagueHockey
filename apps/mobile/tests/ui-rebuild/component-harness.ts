@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 export type TestProps = Record<string, unknown>;
@@ -63,7 +64,12 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
       };
       return { FocusScrollView, FocusFlatList, FocusSectionList: FocusFlatList, FocusCard, useBottomTabContentInset: () => 0 };
     }
-    return require(id.startsWith('.') ? `${id}.ts` : id);
+    if (id.startsWith('.')) {
+      const tsxPath = resolve(dirname(sourcePath), `${id}.tsx`);
+      if (existsSync(tsxPath)) return compileCommonJs({ toString: () => pathToFileURL(tsxPath).toString() }, mocks);
+      return require(`${id}.ts`);
+    }
+    return require(id);
   }, exports);
 
   return exports;

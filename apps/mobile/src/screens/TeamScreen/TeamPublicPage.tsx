@@ -12,10 +12,10 @@ import { formatPublicMetric } from '../../lib/supabase/publicStats';
 import colors from '../../theme/colors';
 import { resolveFocusAccent } from '../../theme/focusAccent';
 import { ui } from '../../theme/ui';
+import BroadcastTeamHero from './BroadcastTeamHero';
 
 /* eslint-disable @typescript-eslint/no-require-imports -- Metro requires static image requires. */
 const weeklyGamesBackground = require('../../assets/team-page/weekly-games-bg.jpg');
-const trophyArtwork = require('../../assets/team-page/trophy.png');
 const jerseyPrimary = require('../../assets/team-page/jersey-primary.png');
 const jerseySecondary = require('../../assets/team-page/jersey-secondary.png');
 const jerseyDetail = require('../../assets/team-page/jersey-detail.png');
@@ -163,43 +163,6 @@ function SectionHeading({ icon, title, accent }: { icon: React.ComponentProps<ty
   );
 }
 
-function Hero({ snapshot, compact }: { snapshot: TeamPageSnapshot; compact: boolean }) {
-  const team = snapshot.team;
-  const standing = snapshot.standing;
-  const accent = colors.primary;
-  const pills = [
-    ['RANK', snapshot.rank == null ? '—' : `#${snapshot.rank}`],
-    ['WIN %', snapshot.hero.winPercentage == null ? '—' : `${Math.round(snapshot.hero.winPercentage * 100)}%`],
-    ['STREAK', snapshot.streak ?? '—'],
-    ['GF', nullableDisplay(standing?.goalsFor)],
-    ['GA', nullableDisplay(standing?.goalsAgainst)],
-    ['DIFF', standing?.goalDifferential == null ? '—' : nullableDisplay(standing.goalDifferential, standing.goalDifferential > 0 ? '+' : '')],
-  ];
-  return (
-    <FocusCard focusId={`team-public:${team.id}:hero`} testID="team-public-hero" accentColor={team.primaryColor ?? accent} style={styles.hero}>
-      <View style={styles.heroLogoWrap}>
-        <TeamLogo transparentBacking teamId={team.id} logoUrl={team.logoUrl} teamName={team.name} primaryColor={team.primaryColor ?? accent} size={160} />
-        <View style={[styles.trophyWrap, compact && styles.trophyWrapCompact]}>
-          <Image source={trophyArtwork} resizeMode="contain" alt="" accessible={false} style={styles.trophy} />
-          <View style={styles.trophyBadge}><Text style={styles.trophyBadgeText}>x{snapshot.championships.count}</Text></View>
-        </View>
-      </View>
-      <Text style={styles.heroName}>{team.name}</Text>
-      <Text testID="team-hero-record" style={[styles.heroRecord, compact && styles.heroRecordCompact]}>{snapshot.record}</Text>
-      <View style={styles.heroPills}>
-        {[pills.slice(0, 3), pills.slice(3)].map((row, index) => <View key={index} testID="team-hero-pill-row" style={[styles.heroPillRow, compact && styles.heroPillRowCompact]}>{row.map(([label, value]) => (
-          <View key={label} testID="team-hero-pill" style={[styles.heroPill, compact && styles.heroPillCompact]}>
-            <Text style={styles.heroPillLabel}>{label}</Text><Text style={[styles.heroPillValue, label === 'DIFF' && standing?.goalDifferential != null && standing.goalDifferential > 0 && { color: accent }]}>{value}</Text>
-          </View>
-        ))}</View>)}
-      </View>
-      {snapshot.championships.latestTitleSeasonName ? (
-        <Text style={styles.championshipLine}>Latest championship: {snapshot.championships.latestTitleSeasonName}{snapshot.championships.latestTitleLabel ? ` (${snapshot.championships.latestTitleLabel})` : ''}.</Text>
-      ) : null}
-    </FocusCard>
-  );
-}
-
 function MatchupTeam({ team, side, compact }: { team: TeamPageGame['homeTeam']; side: 'AWAY' | 'HOME'; compact: boolean }) {
   return (
     <View style={[styles.matchupTeam, { alignItems: side === 'AWAY' ? 'flex-start' : 'flex-end' }]}>
@@ -210,9 +173,16 @@ function MatchupTeam({ team, side, compact }: { team: TeamPageGame['homeTeam']; 
   );
 }
 
-function NextGame({ game, accent, compact, timeZone, onOpenGame }: { game: TeamPageGame | null; accent: string; compact: boolean; timeZone: string; onOpenGame: (id: string) => void }) {
+function NextGame({ game, accent, compact, reduceTransparency, timeZone, onOpenGame }: { game: TeamPageGame | null; accent: string; compact: boolean; reduceTransparency: boolean; timeZone: string; onOpenGame: (id: string) => void }) {
   return (
-    <View testID="team-next-game-section">
+    <View testID="team-next-game-section" style={styles.nextGameSection}>
+      <LinearGradient
+        testID="team-next-game-bridge"
+        pointerEvents="none"
+        colors={reduceTransparency ? ['#07111F', '#241644', '#03070D'] : ['rgba(7,17,31,0)', 'rgba(72,34,126,.22)', 'rgba(7,17,31,0)']}
+        locations={[0, .48, 1]}
+        style={styles.nextGameBridge}
+      />
       <SectionHeading icon="calendar-outline" title="Next Game" accent={accent} />
       {game ? (
         <FocusCard focusId={`team-public:game:${game.id}`} accentColor={accent}>
@@ -452,7 +422,7 @@ export default function TeamPublicPage({ snapshot, reduceTransparency, onOpenPla
   const { width } = useWindowDimensions();
   const compact = width < 360;
   const accent = resolveFocusAccent(snapshot.team.primaryColor, snapshot.league.primaryColor);
-  return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><Hero snapshot={snapshot} compact={compact} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /></View>;
+  return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><BroadcastTeamHero snapshot={snapshot} compact={compact} reduceTransparency={reduceTransparency} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} reduceTransparency={reduceTransparency} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /></View>;
 }
 
 const styles = StyleSheet.create({
@@ -460,21 +430,8 @@ const styles = StyleSheet.create({
   compositionOpaque: { backgroundColor: '#03070D' },
   sectionHeading: { flexShrink: 1, minWidth: 0, minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionHeadingText: { ...SECTION_HEADING_TEXT_STYLE, flexShrink: 1, color: '#F7FBFF' },
-  hero: { alignItems: 'center', paddingVertical: 16, gap: 10 },
-  heroLogoWrap: { position: 'relative', width: 190, minHeight: 174, alignItems: 'center', justifyContent: 'center' },
-  trophyWrap: { position: 'absolute', right: -14, bottom: -4, width: 86, height: 102 },
-  trophyWrapCompact: { right: -4, width: 76, height: 90 }, trophy: { width: '100%', height: '100%' },
-  trophyBadge: { position: 'absolute', right: -2, bottom: 21, minWidth: 34, minHeight: 26, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(245,204,96,.5)', backgroundColor: 'rgba(0,0,0,.72)', paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
-  trophyBadgeText: { color: '#F5CC60', fontSize: 13, fontWeight: '900' },
-  heroName: { color: '#8E9BAF', fontSize: 11, lineHeight: 15, fontWeight: '800', letterSpacing: 2.25, textTransform: 'uppercase', textAlign: 'center' },
-  heroRecord: { color: '#F7FBFF', fontSize: 34, lineHeight: 40, fontWeight: '900', letterSpacing: -1 }, heroRecordCompact: { fontSize: 32, lineHeight: 38 },
-  heroPills: { width: '100%', alignItems: 'center', gap: 8 },
-  heroPillRow: { maxWidth: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
-  heroPillRowCompact: { width: '100%', flexWrap: 'nowrap', gap: 4 },
-  heroPill: { maxWidth: '100%', minHeight: 34, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,.14)', backgroundColor: 'rgba(255,255,255,.025)', paddingHorizontal: 16, paddingVertical: 8 },
-  heroPillCompact: { flexBasis: 0, flexGrow: 1, minWidth: 0, flexWrap: 'nowrap', gap: 4, paddingHorizontal: 8 },
-  heroPillLabel: { color: '#8E9BAF', fontSize: 10, fontWeight: '800', letterSpacing: .75 }, heroPillValue: { color: '#F7FBFF', fontSize: 13, fontWeight: '900' },
-  championshipLine: { maxWidth: 320, color: '#7E8A9D', fontSize: 11, lineHeight: 16, textAlign: 'center' },
+  nextGameSection: { position: 'relative', marginTop: -56, paddingTop: 60 },
+  nextGameBridge: { position: 'absolute', left: -16, right: -16, top: 0, height: 112 },
   matchupCard: { overflow: 'hidden', borderRadius: 28, minHeight: 328, backgroundColor: '#03070D' }, matchupBackground: { minHeight: 328, justifyContent: 'flex-end', paddingHorizontal: 16, paddingBottom: 20 }, matchupBackgroundCompact: { minHeight: 300, paddingHorizontal: 10 }, matchupImage: { borderRadius: 28 },
   matchupTeams: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, paddingBottom: 16 }, matchupTeam: { minWidth: 0, flex: 1, alignItems: 'center', gap: 5 },
   matchupName: { alignSelf: 'stretch', minHeight: 80, color: '#FFFFFF', fontSize: 30, lineHeight: 30, fontWeight: '900', letterSpacing: -.7, textAlign: 'center' }, matchupNameCompact: { fontSize: 27, lineHeight: 28 }, matchupSide: { color: '#B8C0CE', fontSize: 9, fontWeight: '800', letterSpacing: 2 },
