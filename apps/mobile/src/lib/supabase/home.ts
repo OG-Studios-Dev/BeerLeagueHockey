@@ -449,7 +449,7 @@ function mapPublicGoalieToHomeLeader(goalie: PublicGoalie): HomeLeader {
     goals: null,
     assists: null,
     points: null,
-    gaa: goalie.goals_against_average,
+    gaa: goalie.games_played > 0 ? goalie.goals_against / goalie.games_played : goalie.goals_against_average,
     is_goalie: true,
     estimated: goalie.estimated,
   };

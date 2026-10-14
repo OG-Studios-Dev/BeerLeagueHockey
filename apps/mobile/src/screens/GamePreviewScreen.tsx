@@ -17,6 +17,7 @@ import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
+import { SelectableControl, SelectableControlGroup, type SelectableControlTone } from '../components/SelectableControl';
 
 import { addGameToCalendar } from '../lib/calendar';
 import Avatar from '../components/Avatar';
@@ -357,16 +358,19 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
         {status === 'Upcoming' && userTeamId && !isGuestLeague && (
           <FocusCard focusId={`preview:${gameId}:checkin`} style={styles.checkinCard}>
             <Text style={styles.checkinTitle}>Are you in?</Text>
-            <View style={styles.checkinRow}>
+            <SelectableControlGroup role="radiogroup" accessibilityLabel="Game check-in status" contentContainerStyle={styles.checkinRow}>
               {checkinOptions.map((opt) => {
                 const isSelected = checkinStatus === opt.key;
+                const tone: SelectableControlTone = opt.key === 'confirmed' ? 'success' : opt.key === 'out' ? 'danger' : 'warning';
                 return (
-                  <Pressable
+                  <SelectableControl
                     key={opt.key}
-                    style={[
-                      styles.checkinBtn,
-                      isSelected && { backgroundColor: opt.activeColor, borderColor: opt.activeColor },
-                    ]}
+                    role="radio"
+                    label={opt.label}
+                    selected={isSelected}
+                    tone={tone}
+                    accessibilityLabel={`${opt.label} game check-in status`}
+                    style={styles.checkinBtn}
                     onPress={() => handleCheckin(opt.key)}
                   >
                     <Ionicons
@@ -377,10 +381,10 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
                     <Text style={[styles.checkinBtnText, isSelected && { color: '#fff' }]}>
                       {opt.label}
                     </Text>
-                  </Pressable>
+                  </SelectableControl>
                 );
               })}
-            </View>
+            </SelectableControlGroup>
             {checkinSummary && (
               <Text style={styles.checkinSummary}>
                 ✓ {checkinSummary.confirmed.length} In · {checkinSummary.tentative.length} Maybe · {checkinSummary.out.length} Out

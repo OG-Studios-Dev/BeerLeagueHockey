@@ -18,6 +18,7 @@ import { useLeague } from '../../context/LeagueContext';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
 import { getStatsLeadersFromPublicSeason, type PlayerStatRow } from '../../lib/supabase/data';
 import { formatPublicMetric, getPublicSeasonStats, type PublicSeasonStats } from '../../lib/supabase/publicStats';
+import { splitLeagueLeaderName } from '../../lib/leaderPresentation';
 import { getMetricsOperationalSeason, type TeamActiveSeason } from '../../lib/supabase/team';
 import colors from '../../theme/colors';
 
@@ -147,7 +148,7 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
   return (
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
       <View style={styles.filterWrap}>
-        <PillToggle options={categories} selected={category} onChange={setCategory} />
+        <PillToggle options={categories} selected={category} onChange={setCategory} role="radio" accessibilityLabel="Leaderboard category" />
       </View>
 
       {boundState.userRank !== null && (
@@ -200,9 +201,10 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
             renderItem={({ item }) => {
             const isCurrentUser = user?.id === item.player_id;
             const isTop3 = item.rank <= 3;
+            const name = splitLeagueLeaderName(item.player_name);
             return (
               <Pressable
-                accessibilityLabel={`${item.player_name}, rank ${item.rank}. Open player card`}
+                accessibilityLabel={`${name.fullName}, rank ${item.rank}. Open player card`}
                 accessibilityRole="button"
                 onPress={() => navigateToPlayerCard(navigation, { playerId: item.player_id, leagueId })}
                 style={[
@@ -224,10 +226,8 @@ export default function LeaderboardsScreen({ navigation }: { navigation: { goBac
                 </View>
                 <Avatar uri={item.avatar_url} name={item.player_name} size={36} />
                 <View style={styles.playerInfo}>
-                  <Text style={styles.playerName} numberOfLines={1}>
-                    {item.player_name}
-                    {isCurrentUser ? ' (You)' : ''}
-                  </Text>
+                  <Text style={styles.playerFirstName} numberOfLines={1}>{name.firstLine}{isCurrentUser ? ' (You)' : ''}</Text>
+                  <Text style={styles.playerName} numberOfLines={1}>{name.secondLine || '\u00A0'}</Text>
                   <Text style={styles.teamName} numberOfLines={1}>
                     {item.team_short_name}
                     {category !== 'PIM' ? ` | ${item.metrics ? formatPublicMetric(item.metrics.gamesPlayed).value : item.games_played ?? '—'} GP` : ''}
@@ -304,6 +304,7 @@ const styles = StyleSheet.create({
   rankCol: { width: 28, alignItems: 'center' },
   rankText: { fontSize: 16, fontWeight: '900', color: colors.textSecondary },
   playerInfo: { flex: 1, minWidth: 0 },
+  playerFirstName: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: colors.textSecondary },
   playerName: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
   teamName: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
   statCol: { alignItems: 'center', minWidth: 36 },

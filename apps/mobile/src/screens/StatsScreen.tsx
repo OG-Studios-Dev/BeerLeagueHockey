@@ -35,7 +35,7 @@ export default function StatsScreen() {
   const [leaderMetric, setLeaderMetric] = React.useState<StatsLeaderMetric>('points');
   const [selection, setSelection] = React.useState<PublicStatsScopeSelection>({ kind: 'current' });
   const [retry, setRetry] = React.useState(0);
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width } = useWindowDimensions();
   const [horizontalSync, setHorizontalSync] = React.useState<StatsHorizontalSync>({ offset: 0, revision: 0, sourceId: null });
   const [snapshot, setSnapshot] = React.useState<Snapshot>(() => emptySnapshot());
   const leagueId = activeLeague?.id ?? '';
@@ -105,12 +105,12 @@ export default function StatsScreen() {
         data={view.status === 'ready' ? tableRows : []}
         keyExtractor={(row) => row.playerId}
         ListHeaderComponent={<>
-          <StatsLeadersCard leagueId={activeLeague.id} headerControl={timeline} metric={leaderMetric} leaders={leaders} status={view.status} onMetricChange={setLeaderMetric} onRetry={() => setRetry((value) => value + 1)} onOpenPlayer={openPlayer} />
+          <StatsLeadersCard leagueId={activeLeague.id} width={width} headerControl={timeline} metric={leaderMetric} leaders={leaders} status={view.status} onMetricChange={setLeaderMetric} onRetry={() => setRetry((value) => value + 1)} onOpenPlayer={openPlayer} />
           <View style={styles.tableHeading}><Text accessibilityRole="header" style={styles.tableTitle}>Player stats</Text><Pressable accessibilityRole="button" onPress={() => navigation.navigate('Leaderboards')} style={styles.leaderboardsAction} testID="stats-leaderboards-action"><Text style={styles.leaderboardsActionText}>Leaderboards</Text></Pressable></View>
           {selection.kind === 'all'
             ? <View testID="stats-all-time-league-wide" accessible accessibilityRole="text" accessibilityLabel="All time is league-wide. Division filters are unavailable for All time." style={styles.leagueWideNotice}><Text style={styles.leagueWideNoticeText}>All time is league-wide. Division filters are unavailable.</Text></View>
             : <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} />}
-          <View style={styles.tabWrap}><PillToggle options={tabs} selected={selectedTab} onChange={setSelectedTab} /></View>
+          <View style={styles.tabWrap}><PillToggle options={tabs} selected={selectedTab} onChange={setSelectedTab} role="tab" accessibilityLabel="Player type" /></View>
           <View style={styles.tableMeta}><Text style={styles.scopeCopy}><Text style={styles.scopeStrong}>{selectedTab}</Text> ranked by {selectedTab === 'Skaters' ? 'points' : 'GAA'}</Text><Text accessibilityLabel={expandedGoalieMetrics ? 'Swipe metrics. Long values use an expanded accessible layout.' : 'Swipe team and metrics.'} style={styles.swipeHint}>{expandedGoalieMetrics ? 'Swipe long values ↔' : 'Swipe metrics ↔'}</Text></View>
           {view.status === 'ready' && tableRows.length > 0 ? <StatsTableHeader kind={selectedTab === 'Skaters' ? 'skater' : 'goalie'} syncId="header" horizontalSync={horizontalSync} onHorizontalOffset={(sourceId, offset) => setHorizontalSync((current) => ({ offset, revision: current.revision + 1, sourceId }))} expandedMetrics={expandedGoalieMetrics} /> : null}
         </>}

@@ -1,7 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
-  type AccessibilityActionEvent,
   Image,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -19,10 +17,10 @@ import {
   buildHomeMatchupFacts,
   reconcileHomeMatchupSelection,
   resolveHomeMatchupColors,
-  selectHomeMatchupForScope,
   type HomeWeeklyGame,
 } from '../lib/supabase/home';
 import { HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
+import CarouselPager from './CarouselPager';
 import TeamLogo from './TeamLogo';
 
 type Props = {
@@ -62,11 +60,9 @@ export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueC
   const plinthTop = ceilingHeight + artHeight * 0.585 - 2 * scale;
   const pager = React.useRef<ScrollView>(null);
   const suppressPressUntil = React.useRef(0);
-  const activeScope = React.useRef({ key: scopeKey, generation: 0 });
-  if (activeScope.current.key !== scopeKey) {
-    activeScope.current = { key: scopeKey, generation: activeScope.current.generation + 1 };
-  }
-  const callbackGeneration = activeScope.current.generation;
+  const callbackScope = React.useMemo(() => ({ key: scopeKey }), [scopeKey]);
+  const activeScope = React.useRef(callbackScope);
+  React.useLayoutEffect(() => { activeScope.current = callbackScope; }, [callbackScope]);
   const previousScope = React.useRef(scopeKey);
   const [selection, setSelection] = React.useState(() => reconcileHomeMatchupSelection(games, null, 0, true));
   const gameIds = games.map((game) => game.id).join('|');
@@ -85,15 +81,9 @@ export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueC
   }, [cardWidth, selection.index, scopeKey]);
 
   const select = (index: number, scroll: boolean) => {
-    const next = selectHomeMatchupForScope(
-      games,
-      index,
-      activeScope.current.key,
-      scopeKey,
-      activeScope.current.generation,
-      callbackGeneration,
-    );
-    if (!next) return;
+    if (activeScope.current !== callbackScope || games.length === 0) return;
+    const safeIndex = Math.max(0, Math.min(games.length - 1, index));
+    const next = { gameId: games[safeIndex].id, index: safeIndex };
     setSelection(next);
     if (scroll) pager.current?.scrollTo({ x: next.index * cardWidth, animated: !reduceMotion });
   };
@@ -107,12 +97,6 @@ export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueC
     if (nextIndex < 0 || nextIndex >= games.length) return;
     select(nextIndex, true);
   };
-  const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
-    if (event.nativeEvent.actionName === 'increment') selectAdjacent(1);
-    if (event.nativeEvent.actionName === 'decrement') selectAdjacent(-1);
-  };
-  const isFirstGame = selection.index === 0;
-  const isLastGame = selection.index === games.length - 1;
 
   return (
     <View testID="home-matchup-carousel">
@@ -191,45 +175,16 @@ export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueC
           );
         })}
       </ScrollView>
-      {games.length > 1 ? (
-        <View style={styles.controls}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Previous game"
-            accessibilityState={{ disabled: isFirstGame }}
-            disabled={isFirstGame}
-            style={[styles.control, isFirstGame && styles.controlDisabled]}
-            onPress={() => selectAdjacent(-1)}
-          >
-            <Ionicons name="chevron-back" size={18} color={isFirstGame ? homeTokens.textSecondary : homeTokens.text} />
-          </Pressable>
-          <View
-            testID="home-matchup-position"
-            accessible
-            accessibilityRole="adjustable"
-            accessibilityLabel="This week’s games position"
-            accessibilityActions={[
-              { name: 'increment', label: 'Next game' },
-              { name: 'decrement', label: 'Previous game' },
-            ]}
-            onAccessibilityAction={handleAccessibilityAction}
-            accessibilityValue={{ min: 1, max: games.length, now: selection.index + 1, text: `${selection.index + 1} of ${games.length}` }}
-            style={styles.position}
-          >
-            {games.map((game, index) => <View key={game.id} style={[styles.dot, index === selection.index && styles.dotActive]} />)}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next game"
-            accessibilityState={{ disabled: isLastGame }}
-            disabled={isLastGame}
-            style={[styles.control, isLastGame && styles.controlDisabled]}
-            onPress={() => selectAdjacent(1)}
-          >
-            <Ionicons name="chevron-forward" size={18} color={isLastGame ? homeTokens.textSecondary : homeTokens.text} />
-          </Pressable>
-        </View>
-      ) : null}
+      <CarouselPager
+        currentIndex={selection.index}
+        pageCount={games.length}
+        onPrevious={() => selectAdjacent(-1)}
+        onNext={() => selectAdjacent(1)}
+        previousLabel="Previous game"
+        nextLabel="Next game"
+        positionLabel="This week’s games position"
+        testID="home-matchup"
+      />
     </View>
   );
 }
@@ -249,10 +204,4 @@ const styles = StyleSheet.create({
   live: { color: '#FB7185' },
   versus: { color: homeTokens.text, fontSize: 25, lineHeight: 30, fontWeight: '900' },
   score: { position: 'absolute', bottom: -27, color: homeTokens.text, fontSize: 22, lineHeight: 27, fontWeight: '900' },
-  controls: { minHeight: 44, marginTop: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  control: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
-  controlDisabled: { opacity: 0.35 },
-  position: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#536276' },
-  dotActive: { width: 24, backgroundColor: '#C8B8FF' },
 });

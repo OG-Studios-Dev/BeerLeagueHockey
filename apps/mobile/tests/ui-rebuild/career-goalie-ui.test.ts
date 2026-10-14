@@ -113,7 +113,7 @@ describe('career and scoped Stats screen behavior', () => {
     findNode(h.output, (node) => node.type === 'StatsLeadersCard')!.props.onMetricChange('gaa'); h.render();
     const card = findNode(h.output, (node) => node.type === 'StatsLeadersCard')!;
     assert.deepEqual(card.props.leaders.map((leader: any) => [leader.playerId, leader.display, leader.value.state]), [
-      [scope.players[0].playerId, '~2.50', 'estimated'],
+      [scope.players[0].playerId, '2.5', 'estimated'],
     ]);
     assert.deepEqual(goalieCalls[0]?.slice(0, 4), [league.activeLeague.slug, league.activeLeague.id, scope.scope.currentSeasonId, null]);
   });

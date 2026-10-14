@@ -6,6 +6,7 @@ import jackFooteArt from '../../assets/league-leaders/jack-foote.png';
 import neutralGoalieArt from '../../assets/league-leaders/neutral-goalie.png';
 import neutralHelmetArt from '../../assets/league-leaders/neutral-helmet-player.png';
 import type { HomeLeader } from '../lib/supabase/home';
+import { fitLeagueLeaderNameLine, formatLeagueLeaderGaa, splitLeagueLeaderName } from '../lib/leaderPresentation';
 import { loadPlayerArtworkManifest, type PlayerArtworkManifest } from '../lib/playerArtworkManifest';
 import {
   type HomeLeaderMetric,
@@ -18,6 +19,7 @@ import { HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
 import { FocusCard } from './CardFocus';
 import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
 import TeamLogo from './TeamLogo';
+import { SelectableControl, SelectableControlGroup } from './SelectableControl';
 
 const GENERATED_ART: Record<'jack-foote-v1', ImageSourcePropType> = {
   'jack-foote-v1': jackFooteArt,
@@ -128,46 +130,58 @@ function LeaderArtworkImage({ artwork, leader }: { artwork: LeaderArtwork; leade
 
 function MetricTabs({ value, onChange }: { value: HomeLeaderMetric; onChange: (metric: HomeLeaderMetric) => void }) {
   return (
-    <View accessibilityRole="tablist" style={styles.tabs}>
+    <SelectableControlGroup role="tablist" accessibilityLabel="Home League Leader metric" contentContainerStyle={styles.tabs}>
       {METRICS.map(({ key, label }) => (
-        <Pressable
+        <SelectableControl
           key={key}
           testID={`home-leaders-tab-${key}`}
-          accessibilityRole="tab"
+          role="tab"
+          label={label}
           accessibilityLabel={`Show ${label} leaders`}
-          accessibilityState={{ selected: value === key }}
-          aria-selected={value === key}
+          selected={value === key}
           onPress={() => onChange(key)}
-          style={({ pressed }) => [styles.tab, value === key && styles.tabSelected, pressed && styles.pressed]}
-        >
-          <Text style={[styles.tabText, value === key && styles.tabTextSelected]}>{label}</Text>
-        </Pressable>
+          style={styles.tab}
+        />
       ))}
-    </View>
+    </SelectableControlGroup>
   );
 }
 
-function LeaderRow({ leader, compact, onOpen }: { leader: RankedHomeLeader; compact: boolean; onOpen: () => void }) {
+function LeaderRow({ leader, compact, estimatedNameWidth, onOpen }: { leader: RankedHomeLeader; compact: boolean; estimatedNameWidth: number; onOpen: () => void }) {
   const teamName = leader.display_team_name || leader.team_name || 'Free agent';
+  const name = splitLeagueLeaderName(leader.player_name);
+  const [measuredNameWidth, setMeasuredNameWidth] = React.useState(0);
+  const availableNameWidth = measuredNameWidth > 0 ? measuredNameWidth : estimatedNameWidth;
+  const firstLineFit = fitLeagueLeaderNameLine(name.firstLine, { availableWidth: availableNameWidth, baseFontSize: 13, minimumFontSize: 10 });
+  const secondLineFit = fitLeagueLeaderNameLine(name.secondLine || '\u00A0', { availableWidth: availableNameWidth, baseFontSize: compact ? 14 : 17, minimumFontSize: 9.5 });
   const metricLabel = leader.metric.toUpperCase();
   const metricValue = leader.metric === 'gaa'
-    ? `${leader.estimated ? '~' : ''}${leader.metricValue.toFixed(2)}`
+    ? formatLeagueLeaderGaa(leader.metricValue)
     : String(leader.metricValue);
   const accessibleMetric = leader.metric === 'gaa'
-    ? `${leader.estimated ? 'estimated ' : ''}goals against average ${leader.metricValue.toFixed(2)}`
+    ? `${leader.estimated ? 'estimated ' : ''}goals against average ${formatLeagueLeaderGaa(leader.metricValue)}`
     : `${leader.metricValue} ${leader.metric}`;
   return (
     <FocusCard focusId={`home:leader:${leader.metric}:${leader.player_id}`}>
       <Pressable
         testID={`home-leader-row-${leader.player_id}`}
         accessibilityRole="button"
-        accessibilityLabel={`${leader.rankLabel}. ${leader.player_name}, ${teamName}, ${accessibleMetric}. Open player card.`}
+        accessibilityLabel={`${leader.rankLabel}. ${name.fullName}, ${teamName}, ${accessibleMetric}. Open player card.`}
         onPress={onOpen}
         style={({ pressed }) => [styles.row, compact && styles.rowCompact, pressed && styles.pressed]}
       >
         <Text allowFontScaling={false} style={[styles.rank, compact && styles.rankCompact, leader.tied && styles.tiedRank]}>{leader.rankLabel}</Text>
         <View style={styles.rowCopy}>
-          <Text style={[styles.name, compact && styles.nameCompact]}>{leader.player_name}</Text>
+          <View
+            style={styles.nameLines}
+            onLayout={(event) => {
+              const nextWidth = Math.floor(event.nativeEvent.layout.width);
+              if (nextWidth > 0 && Math.abs(nextWidth - measuredNameWidth) >= 1) setMeasuredNameWidth(nextWidth);
+            }}
+          >
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.nameFirstLine, firstLineFit]}>{name.firstLine}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={compact ? 0.68 : 0.56} style={[styles.name, secondLineFit]}>{name.secondLine || '\u00A0'}</Text>
+          </View>
           <View style={[styles.valueLine, compact && styles.valueLineCompact]}>
             <TeamLogo
               key={`${leader.team_id ?? 'free'}:${leader.display_team_logo_url ?? 'none'}`}
@@ -207,6 +221,7 @@ export default function HomeLeagueLeaders({
   const stacked = fontScale >= 1.3;
   const compact = width <= 340 && !stacked;
   const artStageHeight = stacked ? Math.min(340, Math.max(280, Math.round(width * 0.82))) : 326;
+  const estimatedNameWidth = Math.max(96, Math.floor((width - 32) * (compact ? 0.6 : 0.54) - (compact ? 30 : 41)));
 
   return (
     <View testID="home-league-leaders" style={styles.module}>
@@ -241,7 +256,7 @@ export default function HomeLeagueLeaders({
         <>
           <View testID="home-leaders-layout" style={[styles.layout, compact && styles.layoutCompact, stacked && styles.layoutStacked]}>
             <View style={[styles.ranking, compact && styles.rankingCompact, stacked && styles.rankingStacked]}>
-              {ranked.map((leader) => <LeaderRow key={leader.player_id} leader={leader} compact={compact} onOpen={() => onOpenPlayer(leader.player_id)} />)}
+              {ranked.map((leader) => <LeaderRow key={leader.player_id} leader={leader} compact={compact} estimatedNameWidth={estimatedNameWidth} onOpen={() => onOpenPlayer(leader.player_id)} />)}
             </View>
             {featured && artwork ? (
               <Pressable
@@ -272,10 +287,7 @@ const styles = StyleSheet.create({
   headingCopy: { flex: 1, minWidth: 0 },
   title: { ...SECTION_HEADING_TEXT_STYLE, color: homeTokens.text },
   tabs: { flexDirection: 'row', gap: 6, marginTop: 13, marginBottom: 12 },
-  tab: { flex: 1, minWidth: 0, minHeight: 44, borderRadius: 13, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  tabSelected: { borderColor: 'rgba(172, 101, 255, 0.72)', backgroundColor: 'rgba(103, 48, 151, 0.28)' },
-  tabText: { color: homeTokens.textSecondary, fontSize: 12, lineHeight: 17, fontWeight: '800' },
-  tabTextSelected: { color: homeTokens.text },
+  tab: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   layout: { minHeight: 326, flexDirection: 'row', alignItems: 'stretch', gap: 4 },
   layoutCompact: { gap: 0 },
   layoutStacked: { flexDirection: 'column', minHeight: 0 },
@@ -288,6 +300,8 @@ const styles = StyleSheet.create({
   rankCompact: { width: 28, fontSize: 13 },
   tiedRank: { color: '#B47CFF' },
   rowCopy: { flex: 1, minWidth: 0 },
+  nameLines: { minHeight: 44, justifyContent: 'center' },
+  nameFirstLine: { color: homeTokens.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: '800', flexShrink: 1 },
   name: { color: homeTokens.text, fontSize: 17, lineHeight: 22, fontWeight: '900', flexShrink: 1 },
   nameCompact: { fontSize: 14, lineHeight: 18 },
   valueLine: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },

@@ -1,8 +1,7 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
-import colors from '../theme/colors';
-import { ui } from '../theme/ui';
+import { SelectableControl, SelectableControlGroup } from './SelectableControl';
 
 export type AccessibleChoice<T extends string> = {
   value: T;
@@ -23,53 +22,26 @@ export default function AccessibleChoiceGroup<T extends string>({
   onSelect,
 }: Props<T>) {
   return (
-    <View accessibilityRole="radiogroup" accessibilityLabel={accessibilityLabel} style={styles.group}>
-      {options.map((option) => {
-        const selected = selectedValue === option.value;
-        return (
-          <Pressable
-            key={option.value}
-            accessibilityRole="radio"
-            accessibilityLabel={option.label}
-            accessibilityState={{ selected }}
-            hitSlop={4}
-            onPress={() => onSelect(option.value)}
-            style={[styles.choice, selected && styles.choiceSelected]}
-          >
-            <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>{option.label}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <SelectableControlGroup
+      role="radiogroup"
+      accessibilityLabel={accessibilityLabel}
+      horizontal={false}
+      contentContainerStyle={styles.group}
+    >
+      {options.map((option) => (
+        <SelectableControl
+          key={option.value}
+          role="radio"
+          label={option.label}
+          accessibilityLabel={option.label}
+          selected={selectedValue === option.value}
+          onPress={() => onSelect(option.value)}
+        />
+      ))}
+    </SelectableControlGroup>
   );
 }
 
 const styles = StyleSheet.create({
-  group: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  choice: {
-    minHeight: ui.minTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-    backgroundColor: colors.bgInteractive,
-  },
-  choiceSelected: {
-    borderColor: colors.primary + '50',
-    backgroundColor: colors.primary + '1A',
-  },
-  choiceText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.textSecondary,
-  },
-  choiceTextSelected: {
-    color: colors.primary,
-  },
+  group: { flexWrap: 'wrap' },
 });

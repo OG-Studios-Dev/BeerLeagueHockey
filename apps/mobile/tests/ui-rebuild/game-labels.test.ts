@@ -226,6 +226,11 @@ function renderHome({
       onPress: () => onOpenGame(game.id),
       children: jsx('Text', { children: `Final ${game.location} ${game.away_team?.name} ${game.away_score} ${game.home_team?.name} ${game.home_score}` }),
     })),
+    '../components/CarouselPager': () => null,
+    '../components/SelectableControl': {
+      SelectableControl: ({ label, children, ...props }: Props & { label?: string }) => jsx('Pressable', { ...props, children: children ?? label }),
+      SelectableControlGroup: ({ children, ...props }: Props) => jsx('View', { ...props, children }),
+    },
     '../components/SectionHeader': { SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.

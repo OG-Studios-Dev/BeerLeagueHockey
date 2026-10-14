@@ -16,7 +16,7 @@ describe('player profile native controls', () => {
     const harness = createHookHarness();
     const Chart = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
       new URL('../../src/components/PlayerProfile/CareerTrendChart.tsx', import.meta.url),
-      { react: harness.react, 'react-native': nativeMock(), '../../lib/playerPageModel': awaitModel() },
+      { react: harness.react, 'react-native': nativeMock(), '@expo/vector-icons': { Ionicons: 'Ionicon' }, '../../lib/playerPageModel': awaitModel() },
     ).default;
     harness.mount(() => Chart({
       isGoalie: false,
@@ -41,7 +41,7 @@ describe('player profile native controls', () => {
     const harness = createHookHarness();
     const Chart = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
       new URL('../../src/components/PlayerProfile/CareerTrendChart.tsx', import.meta.url),
-      { react: harness.react, 'react-native': nativeMock(), '../../lib/playerPageModel': awaitModel() },
+      { react: harness.react, 'react-native': nativeMock(), '@expo/vector-icons': { Ionicons: 'Ionicon' }, '../../lib/playerPageModel': awaitModel() },
     ).default;
     harness.mount(() => Chart({
       isGoalie: false,
@@ -62,7 +62,7 @@ describe('player profile native controls', () => {
     const harness = createHookHarness();
     const Chart = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
       new URL('../../src/components/PlayerProfile/CareerTrendChart.tsx', import.meta.url),
-      { react: harness.react, 'react-native': nativeMock(), '../../lib/playerPageModel': awaitModel() },
+      { react: harness.react, 'react-native': nativeMock(), '@expo/vector-icons': { Ionicons: 'Ionicon' }, '../../lib/playerPageModel': awaitModel() },
     ).default;
     harness.mount(() => Chart({
       isGoalie: false,

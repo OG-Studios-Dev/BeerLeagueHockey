@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import type { CheckinStatus } from '../lib/supabase/checkins';
 import colors from '../theme/colors';
+import { SelectableControl, SelectableControlGroup, type SelectableControlTone } from './SelectableControl';
 
 type QuickCheckinActionsProps = {
   value: CheckinStatus | null;
@@ -16,12 +17,12 @@ const OPTIONS: Array<{
   key: CheckinStatus;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  activeBackground: string;
-  activeText: string;
+  tone: SelectableControlTone;
+  color: string;
 }> = [
-  { key: 'confirmed', label: 'In', icon: 'checkmark', activeBackground: colors.accentGreen, activeText: '#000000' },
-  { key: 'tentative', label: 'Maybe', icon: 'help', activeBackground: '#F59E0B', activeText: '#000000' },
-  { key: 'out', label: 'Out', icon: 'close', activeBackground: colors.accentRed, activeText: '#FFFFFF' },
+  { key: 'confirmed', label: 'In', icon: 'checkmark', tone: 'success', color: colors.accentGreen },
+  { key: 'tentative', label: 'Maybe', icon: 'help', tone: 'warning', color: '#F59E0B' },
+  { key: 'out', label: 'Out', icon: 'close', tone: 'danger', color: colors.accentRed },
 ];
 
 export default function QuickCheckinActions({
@@ -31,72 +32,39 @@ export default function QuickCheckinActions({
   compact = false,
 }: QuickCheckinActionsProps) {
   return (
-    <View style={[styles.row, compact ? styles.rowCompact : undefined]}>
-      {OPTIONS.map((option) => {
-        const selected = value === option.key;
-        const textColor = selected ? option.activeText : colors.textSecondary;
-
-        return (
-          <Pressable
-            key={option.key}
-            accessibilityRole="button"
-            accessibilityLabel={`Check in: ${option.label}`}
-            accessibilityState={{ selected, disabled }}
-            style={({ pressed }) => [
-              styles.button,
-              compact ? styles.buttonCompact : undefined,
-              selected
-                ? { backgroundColor: option.activeBackground, borderColor: option.activeBackground }
-                : styles.buttonIdle,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={() => onChange(option.key)}
-            disabled={disabled}
-          >
-            <Ionicons name={option.icon} size={compact ? 13 : 14} color={textColor} />
-            <Text style={[styles.buttonText, compact ? styles.buttonTextCompact : undefined, { color: textColor }]}>
-              {option.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+    <View style={styles.clip}>
+      <SelectableControlGroup role="radiogroup" accessibilityLabel="Check-in status" horizontal={false} contentContainerStyle={[styles.row, compact && styles.rowCompact]}>
+        {OPTIONS.map((option) => {
+          const selected = value === option.key;
+          return (
+            <SelectableControl
+              key={option.key}
+              role="radio"
+              label={option.label}
+              accessibilityLabel={`Check in: ${option.label}`}
+              selected={selected}
+              disabled={disabled}
+              tone={option.tone}
+              compact={compact}
+              onPress={() => onChange(option.key)}
+              style={styles.button}
+            >
+              <Ionicons name={option.icon} size={compact ? 13 : 14} color={selected ? option.color : colors.textSecondary} />
+              <Text style={[styles.buttonText, compact && styles.buttonTextCompact, selected && styles.selectedText]}>{option.label}</Text>
+            </SelectableControl>
+          );
+        })}
+      </SelectableControlGroup>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  clip: { width: '100%', overflow: 'hidden' },
+  row: { flexWrap: 'wrap' },
   rowCompact: { gap: 6 },
-  button: {
-    flexGrow: 1,
-    flexBasis: 0,
-    minWidth: 84,
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  buttonCompact: {
-    minHeight: 44,
-    paddingHorizontal: 8,
-    borderRadius: 9,
-  },
-  buttonIdle: {
-    backgroundColor: colors.bgInteractive,
-    borderColor: colors.glassStroke,
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.985 }],
-  },
-  buttonText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  buttonTextCompact: {
-    fontSize: 12,
-  },
+  button: { flexGrow: 1, flexBasis: 0, minWidth: 84 },
+  buttonText: { color: colors.textSecondary, fontSize: 13, fontWeight: '800' },
+  buttonTextCompact: { fontSize: 12 },
+  selectedText: { color: colors.textPrimary },
 });

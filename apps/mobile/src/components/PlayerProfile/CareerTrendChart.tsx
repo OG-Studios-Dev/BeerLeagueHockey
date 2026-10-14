@@ -5,6 +5,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { getCareerMetricDefinitions, lineChartGeometry } from '../../lib/playerPageModel';
 import type { HockeyLifePlayerPage } from '../../lib/supabase/playerPage';
 import colors from '../../theme/colors';
+import CarouselPager from '../CarouselPager';
+import { SelectableControl, SelectableControlGroup } from '../SelectableControl';
 
 
 type Props = {
@@ -45,10 +47,10 @@ export default function CareerTrendChart({ rows, isGoalie, accent, hotFacts }: P
   const selectedRow = selectedPoint ? rows[selectedPoint.index] : null;
 
   return <View>
-    <View style={styles.controls}>{definitions.map((metric) => {
+    <SelectableControlGroup role="radiogroup" accessibilityLabel="Career metric" contentContainerStyle={styles.controls}>{definitions.map((metric) => {
       const active = metric.key === selected.key;
-      return <Pressable key={metric.key} accessibilityRole="button" accessibilityLabel={`Show ${metric.label} career trend`} accessibilityState={{ selected: active }} onPress={() => { setSelectedKey(metric.key); setSelectedPointIndex(null); }} style={[styles.control, active && { borderColor: accent, backgroundColor: `${accent}22` }]}><Text style={[styles.controlText, active && { color: accent }]}>{metric.label}</Text></Pressable>;
-    })}</View>
+      return <SelectableControl key={metric.key} role="radio" label={metric.label} accessibilityLabel={`Show ${metric.label} career trend`} selected={active} onPress={() => { setSelectedKey(metric.key); setSelectedPointIndex(null); }} style={styles.control} />;
+    })}</SelectableControlGroup>
     <View style={styles.chartFrame}>
       <View accessible accessibilityRole="image" accessibilityLabel={summary}><Text style={styles.chartTitle}>{selected.label} by season</Text></View>
       <View style={styles.chartBody}>
@@ -96,17 +98,15 @@ export default function CareerTrendChart({ rows, isGoalie, accent, hotFacts }: P
       <View style={styles.xAxis}><View style={styles.xAxisSpacer} /><View style={styles.labels}>{rows.map((row) => <Text key={`${row.seasonId}:${row.teamId ?? ''}`} numberOfLines={2} style={styles.axisLabel}>{row.seasonName}</Text>)}</View></View>
     </View>
     {hotFacts.length ? <View style={styles.factCard}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Previous hot take" disabled={hotFacts.length < 2} onPress={() => setFactIndex((factIndex - 1 + hotFacts.length) % hotFacts.length)} style={styles.factButton}><Text style={styles.factArrow}>‹</Text></Pressable>
       <Text style={styles.fact}>{hotFacts[factIndex % hotFacts.length]}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Next hot take" disabled={hotFacts.length < 2} onPress={() => setFactIndex((factIndex + 1) % hotFacts.length)} style={styles.factButton}><Text style={styles.factArrow}>›</Text></Pressable>
+      <CarouselPager currentIndex={factIndex % hotFacts.length} pageCount={hotFacts.length} onPrevious={() => setFactIndex((factIndex - 1 + hotFacts.length) % hotFacts.length)} onNext={() => setFactIndex((factIndex + 1) % hotFacts.length)} previousLabel="Previous hot take" nextLabel="Next hot take" positionLabel="Hot Takes position" loop testID="career-hot-take" />
     </View> : null}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 },
-  control: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.glassStrokeStrong, borderRadius: 999, paddingHorizontal: 13, backgroundColor: colors.bgInteractive },
-  controlText: { color: colors.textSecondary, fontSize: 12, fontWeight: '800' },
+  controls: { marginBottom: 14 },
+  control: { minWidth: 92 },
   chartFrame: { borderWidth: 1, borderColor: colors.glassStroke, borderRadius: 18, backgroundColor: colors.bgSurface, paddingHorizontal: 10, paddingTop: 12, overflow: 'hidden' },
   chartTitle: { color: colors.textPrimary, fontSize: 12, lineHeight: 16, fontWeight: '800', textAlign: 'center', marginBottom: 10 },
   chartBody: { width: '100%', maxWidth: WIDTH, flexDirection: 'row', alignSelf: 'center' },
@@ -124,8 +124,6 @@ const styles = StyleSheet.create({
   xAxisSpacer: { width: Y_AXIS_WIDTH },
   labels: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 4, marginTop: 10, paddingBottom: 12 },
   axisLabel: { flex: 1, color: colors.textSecondary, fontSize: 9, lineHeight: 12, textAlign: 'center' },
-  factCard: { minHeight: 70, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, marginTop: 12 },
-  factButton: { width: 44, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
-  factArrow: { color: colors.textPrimary, fontSize: 27 },
+  factCard: { minHeight: 70, alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgSurface, marginTop: 12 },
   fact: { flex: 1, color: colors.textPrimary, fontSize: 13, lineHeight: 19, textAlign: 'center', paddingVertical: 12 },
 });

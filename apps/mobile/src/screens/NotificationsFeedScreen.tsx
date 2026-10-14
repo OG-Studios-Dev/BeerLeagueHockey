@@ -19,6 +19,7 @@ import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import QuickCheckinActions from '../components/QuickCheckinActions';
 import RevealView from '../components/RevealView';
 import ScheduleConflictList from '../components/ScheduleConflictList';
+import { SelectableControl, SelectableControlGroup } from '../components/SelectableControl';
 import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useLeague } from '../context/LeagueContext';
@@ -490,22 +491,10 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
               ) : null}
 
               {activeLeague ? (
-                <View style={[styles.scopeRow, isCompact && styles.scopeRowCompact]}>
-                  <Pressable
-                    style={[styles.scopePill, scope === 'active' && styles.scopePillActive]}
-                    onPress={() => setScope('active')}
-                  >
-                    <Text style={[styles.scopePillText, scope === 'active' && styles.scopePillTextActive]}>
-                      {activeLeague.name}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.scopePill, scope === 'all' && styles.scopePillActive]}
-                    onPress={() => setScope('all')}
-                  >
-                    <Text style={[styles.scopePillText, scope === 'all' && styles.scopePillTextActive]}>All Updates</Text>
-                  </Pressable>
-                </View>
+                <SelectableControlGroup role="radiogroup" accessibilityLabel="Notification scope" contentContainerStyle={[styles.scopeRow, isCompact && styles.scopeRowCompact]}>
+                  <SelectableControl role="radio" label={activeLeague.name} selected={scope === 'active'} onPress={() => setScope('active')} style={styles.scopePill} />
+                  <SelectableControl role="radio" label="All Updates" selected={scope === 'all'} onPress={() => setScope('all')} style={styles.scopePill} />
+                </SelectableControlGroup>
               ) : null}
             </FocusCard>
           </RevealView>
@@ -828,20 +817,7 @@ const styles = StyleSheet.create({
   summaryActionText: { fontSize: 12, fontWeight: '800', color: colors.textPrimary },
   scopeRow: { flexDirection: 'row', gap: 8 },
   scopeRowCompact: { flexWrap: 'wrap' },
-  scopePill: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    backgroundColor: colors.bgInteractive,
-  },
-  scopePillActive: {
-    backgroundColor: colors.brandArena,
-    borderColor: colors.brandArena,
-  },
-  scopePillText: { fontSize: 12, fontWeight: '800', color: colors.textPrimary },
-  scopePillTextActive: { color: colors.textPrimary },
+  scopePill: { minWidth: 116 },
   cardList: { gap: 12 },
   actionCard: {
     borderRadius: 18,

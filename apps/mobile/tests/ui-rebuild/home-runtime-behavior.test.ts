@@ -454,7 +454,7 @@ describe('Home web-structure runtime', () => {
     assert.match(nodeText(standingsSection), /Server First Bears/);
     assert.doesNotMatch(nodeText(standingsSection), /Server Second Aces/);
     const chips = allNodes(standingsSection).filter((node) => node.props.accessibilityState?.selected !== undefined);
-    assert.deepEqual(chips.map((node) => nodeText(node)), ['B', 'A']);
+    assert.deepEqual(chips.map((node) => nodeText(node)), ['B✓', 'A']);
     chips[1].props.onPress();
     runtime.harness.render();
     assert.match(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-standings-section')), /Server Second Aces/);
@@ -479,7 +479,7 @@ describe('Home web-structure runtime', () => {
     assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Championship recap'));
     pager.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 320 }, layoutMeasurement: { width: 320 } } });
     runtime.harness.render();
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.now, 2);
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.now, 2);
     pager.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0 }, layoutMeasurement: { width: 320 } } });
     runtime.harness.render();
     const next = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story');
@@ -518,18 +518,18 @@ describe('Home web-structure runtime', () => {
     await settle(runtime);
     findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Next story')?.props.onPress();
     runtime.harness.render();
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '2 of 3');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.text, '2 of 3');
 
     runtime.resize(400);
     assert.deepEqual(runtime.scrollCalls.at(-1), { x: 368, animated: false });
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '2 of 3');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.text, '2 of 3');
 
     await refresh(runtime);
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '1 of 3');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.text, '1 of 3');
     assert.deepEqual(runtime.scrollCalls.at(-1), { x: 0, animated: false });
 
     await refresh(runtime);
-    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator')?.props.accessibilityValue.text, '1 of 2');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.text, '1 of 2');
     assert.equal(runtime.animationCalls.length, 0);
   });
 
@@ -544,9 +544,9 @@ describe('Home web-structure runtime', () => {
     assert.ok(allNodes(pager).filter((node) => node.type === 'Image' && typeof node.props.source?.uri === 'string').length <= 3);
     assert.ok(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Latest 1'));
     assert.equal(findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === 'Read Latest 5'), undefined);
-    const indicator = findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-indicator');
+    const indicator = findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position');
     assert.equal(indicator?.props.accessibilityValue.max, 4);
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '1 / 4');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count'), undefined);
     assert.equal(allNodes(indicator).filter((node) => flattenStyle(node.props.style).width === 6).length, 0);
     for (const label of ['Previous story', 'Next story']) {
       const button = findNode(runtime.harness.output, (node) => node.props.accessibilityLabel === label);
@@ -560,9 +560,9 @@ describe('Home web-structure runtime', () => {
     assert.match(nodeText(runtime.harness.output), /Latest 4/);
     assert.doesNotMatch(nodeText(runtime.harness.output), /Latest 5|Latest 6/);
     runtime.resize(320);
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '4 / 4');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.text, '4 of 4');
     runtime.resize(390);
-    assert.equal(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-count')), '4 / 4');
+    assert.equal(findNode(runtime.harness.output, (node) => node.props.testID === 'home-story-position')?.props.accessibilityValue.text, '4 of 4');
   });
 
   it('retains same-period facts with visible stale notes, including an independent photo reel when albums fail', async () => {

@@ -1,10 +1,11 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusScrollView } from '../../components/CardFocus';
 import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
+import { SelectableControl, SelectableControlGroup } from '../../components/SelectableControl';
 
 import { useLeague } from '../../context/LeagueContext';
 import { getLeaguePage, type LeaguePageKind, type LeaguePageResponse, type PageDivision, type PageSeason } from '../../lib/leaguePages';
@@ -110,18 +111,10 @@ export function FilterChips<T extends { id: string; name: string }>({ items, sel
   items: T[]; selectedId: string | null; allLabel?: string; onSelect: (id: string | null) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-      {allLabel ? <Chip label={allLabel} selected={!selectedId} onPress={() => onSelect(null)} /> : null}
-      {items.map((item) => <Chip key={item.id} label={item.name} selected={selectedId === item.id} onPress={() => onSelect(item.id)} />)}
-    </ScrollView>
-  );
-}
-
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[styles.chip, selected && styles.chipSelected]}>
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
-    </Pressable>
+    <SelectableControlGroup role="radiogroup" accessibilityLabel="Filter choices" contentContainerStyle={styles.chips}>
+      {allLabel ? <SelectableControl role="radio" label={allLabel} selected={!selectedId} onPress={() => onSelect(null)} /> : null}
+      {items.map((item) => <SelectableControl key={item.id} role="radio" label={item.name} selected={selectedId === item.id} onPress={() => onSelect(item.id)} />)}
+    </SelectableControlGroup>
   );
 }
 
@@ -160,8 +153,4 @@ const styles = StyleSheet.create({
   controlBlock: { marginTop: 18 },
   controlLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 1.3, textTransform: 'uppercase', marginBottom: 8 },
   chips: { gap: 8, paddingRight: 8 },
-  chip: { minHeight: 44, maxWidth: 220, justifyContent: 'center', borderRadius: 22, backgroundColor: colors.bgInteractive, borderColor: colors.glassStroke, borderWidth: 1, paddingHorizontal: 15 },
-  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { color: colors.textSecondary, fontWeight: '800' },
-  chipTextSelected: { color: colors.textOnPrimary },
 });

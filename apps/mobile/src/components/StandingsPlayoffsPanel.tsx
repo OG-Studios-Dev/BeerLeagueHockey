@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import trophy from '../../assets/playoff-trophy.png';
 import type { StandingsFact } from '../lib/standingsModel';
 import colors from '../theme/colors';
 import { SECTION_HEADING_TEXT_STYLE } from './SectionHeader';
+import { SelectableControl, SelectableControlGroup } from './SelectableControl';
 import TeamLogo from './TeamLogo';
 
 type Seed = StandingsFact;
@@ -113,10 +114,10 @@ export default function StandingsPlayoffsPanel({ picture, predictor, standings, 
     return (rightOdds?.makePlayoffs ?? 0) - (leftOdds?.makePlayoffs ?? 0) || (rightOdds?.firstPlace ?? 0) - (leftOdds?.firstPlace ?? 0);
   });
   return <View style={styles.section}>
-    <View style={styles.heading}><Text style={styles.title}>Playoffs</Text><View style={styles.tabs}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Show playoff preview" accessibilityState={{ selected: panel === 'preview' }} onPress={() => setPanel('preview')} style={[styles.tab, panel === 'preview' && { backgroundColor: accentColor }]}><Text style={styles.tabText}>Preview</Text></Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Show playoff odds" accessibilityState={{ selected: panel === 'odds' }} onPress={() => setPanel('odds')} style={[styles.tab, panel === 'odds' && { backgroundColor: accentColor }]}><Text style={styles.tabText}>Odds</Text></Pressable>
-    </View></View>
+    <View style={styles.heading}><Text style={styles.title}>Playoffs</Text><SelectableControlGroup role="tablist" accessibilityLabel="Playoff view" contentContainerStyle={styles.tabs}>
+      <SelectableControl role="tab" label="Preview" accessibilityLabel="Show playoff preview" selected={panel === 'preview'} onPress={() => setPanel('preview')} style={styles.tab} />
+      <SelectableControl role="tab" label="Odds" accessibilityLabel="Show playoff odds" selected={panel === 'odds'} onPress={() => setPanel('odds')} style={styles.tab} />
+    </SelectableControlGroup></View>
     {panel === 'preview' ? picture.status === 'ready'
       ? picture.groups.map((group) => <ConnectedBracket key={group.key} group={group} />)
       : <Text style={styles.unavailable}>{picture.reason}</Text>
@@ -134,8 +135,8 @@ export default function StandingsPlayoffsPanel({ picture, predictor, standings, 
 
 const styles = StyleSheet.create({
   section: { gap: 16 }, heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary }, tabs: { flexDirection: 'row', borderRadius: 24, borderWidth: 1, borderColor: colors.borderCard, padding: 3 },
-  tab: { minHeight: 44, minWidth: 72, borderRadius: 21, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, tabText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' },
+  title: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary }, tabs: { minWidth: 174 },
+  tab: { minWidth: 78 },
   group: { gap: 8 }, groupTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900' }, bracketScroll: { paddingTop: 22, paddingBottom: 8 },
   bracketCanvas: { width: 520, height: 446, position: 'relative' }, roundLabel: { position: 'absolute', top: -24, color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase' },
   bracketNode: { position: 'absolute', width: 78, height: 78, borderRadius: 18, borderWidth: 2, borderColor: BRACKET_GOLD, backgroundColor: '#16130f', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.26, shadowRadius: 14, elevation: 8 },

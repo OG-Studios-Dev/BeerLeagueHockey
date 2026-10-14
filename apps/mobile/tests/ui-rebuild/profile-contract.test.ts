@@ -6,8 +6,12 @@ import { subscribeToProfilePreferencesChanges } from '../../src/lib/profileContr
 
 const colors = {
   primary: '#0ff', textPrimary: '#fff', textSecondary: '#aaa', textOnPrimary: '#000',
-  bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333', accentRed: '#f00',
+  bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333', glassStrokeStrong: '#475569', accentRed: '#f00',
 };
+
+function profileControl(root: unknown, label: string) {
+  return findNode(root, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === label);
+}
 
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(reason: unknown): void };
 function deferred<T>(): Deferred<T> {
@@ -98,14 +102,47 @@ function mountEditProfile(options: {
 }
 
 describe('native profile database contract', () => {
+  it('renders Position and League Match Level as mutually exclusive shared radio groups', async () => {
+    const mounted = mountEditProfile();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.harness.render();
+
+    const positionGroup = findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Position options');
+    const skillGroup = findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'League Match Level options');
+    assert.equal(positionGroup?.props.accessibilityRole, 'radiogroup');
+    assert.equal(skillGroup?.props.accessibilityRole, 'radiogroup');
+
+    for (const [label, checked] of [['Forward', true], ['Defense', false], ['Goalie', false]] as const) {
+      const control = profileControl(mounted.harness.output, label);
+      assert.equal(control?.props.accessibilityRole, 'radio');
+      assert.equal(control?.props.accessibilityState.checked, checked);
+      assert.equal(control?.props['aria-checked'], checked);
+      assert.ok(Number(flattenStyle(control?.props.style({ pressed: false })).minHeight) >= 44);
+      assert.equal(Boolean(findNode(control, (node) => node.props.testID === `edit-profile-position-${label.toLowerCase()}-selected-mark`)), checked);
+    }
+
+    profileControl(mounted.harness.output, 'Goalie')?.props.onPress();
+    mounted.harness.render();
+    assert.equal(profileControl(mounted.harness.output, 'Forward')?.props.accessibilityState.checked, false);
+    assert.equal(profileControl(mounted.harness.output, 'Goalie')?.props.accessibilityState.checked, true);
+
+    for (const [label, checked] of [['Beginner', false], ['Intermediate', false], ['Advanced', true], ['Expert', false]] as const) {
+      const control = profileControl(mounted.harness.output, label);
+      assert.equal(control?.props.accessibilityRole, 'radio');
+      assert.equal(control?.props.accessibilityState.checked, checked);
+      assert.ok(Number(flattenStyle(control?.props.style({ pressed: false })).minHeight) >= 44);
+      assert.equal(Boolean(findNode(control, (node) => node.props.testID === `edit-profile-skill-${label.toLowerCase()}-selected-mark`)), checked);
+    }
+  });
+
   it('loads skill_level and maps it to the selected edit value', async () => {
     const mounted = mountEditProfile();
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();
 
-    const advanced = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Advanced');
+    const advanced = profileControl(mounted.harness.output, 'Advanced');
     assert.ok(advanced);
-    assert.equal(flattenStyle(advanced.props.style).backgroundColor, colors.primary);
+    assert.equal(advanced.props.accessibilityState.checked, true);
     assert.equal(nodeText(mounted.harness.output).includes("couldn't load"), false);
     await findNode(mounted.harness.output, (node) => node.props.accessibilityLabel === 'Save profile changes')?.props.onPress();
     assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'advanced' }]);
@@ -127,7 +164,7 @@ describe('native profile database contract', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();
 
-    const beginner = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Beginner');
+    const beginner = profileControl(mounted.harness.output, 'Beginner');
     assert.ok(beginner);
     beginner.props.onPress();
     mounted.harness.render();
@@ -137,9 +174,9 @@ describe('native profile database contract', () => {
     assert.equal(mounted.backs, 0);
     assert.equal(mounted.alerts.at(-1)?.title, 'Unable to Save Profile');
     assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'beginner' }]);
-    const selectedBeginner = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Beginner');
+    const selectedBeginner = profileControl(mounted.harness.output, 'Beginner');
     assert.ok(selectedBeginner);
-    assert.equal(flattenStyle(selectedBeginner.props.style).backgroundColor, colors.primary);
+    assert.equal(selectedBeginner.props.accessibilityState.checked, true);
   });
 
   it('rejects an error-free zero-row update and retains the selected draft', async () => {
@@ -149,7 +186,7 @@ describe('native profile database contract', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.harness.render();
 
-    const expert = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Expert');
+    const expert = profileControl(mounted.harness.output, 'Expert');
     assert.ok(expert);
     expert.props.onPress();
     mounted.harness.render();
@@ -161,8 +198,8 @@ describe('native profile database contract', () => {
     assert.deepEqual(mounted.updates, [{ position: 'C', skill_level: 'expert' }]);
     assert.deepEqual(mounted.updateSelects, ['id, position, skill_level']);
     assert.equal(invalidations, 0);
-    const selectedExpert = findNode(mounted.harness.output, (node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Expert');
-    assert.equal(flattenStyle(selectedExpert?.props.style).backgroundColor, colors.primary);
+    const selectedExpert = profileControl(mounted.harness.output, 'Expert');
+    assert.equal(selectedExpert?.props.accessibilityState.checked, true);
     unsubscribe();
   });
 

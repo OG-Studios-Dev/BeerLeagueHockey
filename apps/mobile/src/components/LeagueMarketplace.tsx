@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FocusCard, FocusFlatList, FocusScrollView } from './CardFocus';
+import { SelectableControl, SelectableControlGroup } from './SelectableControl';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { useLeague } from '../context/LeagueContext';
@@ -427,18 +428,9 @@ export default function LeagueMarketplace({
               : '📍 Enable Location'}
           </Text>
         </TouchableOpacity>
-        {(['nearest', 'fit'] as SortMode[]).map((mode) => (
-          <TouchableOpacity
-            key={mode}
-            style={[styles.sortPill, sortMode === mode && styles.sortPillActive]}
-            onPress={() => setSortMode(mode)}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.sortPillText, sortMode === mode && styles.sortPillTextActive]}>
-              {mode === 'nearest' ? 'Nearest' : 'Best Fit'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <SelectableControlGroup role="radiogroup" accessibilityLabel="Marketplace sort" contentContainerStyle={styles.sortChoices}>{(['nearest', 'fit'] as SortMode[]).map((mode) => (
+          <SelectableControl key={mode} role="radio" label={mode === 'nearest' ? 'Nearest' : 'Best Fit'} selected={sortMode === mode} onPress={() => setSortMode(mode)} style={styles.sortPill} />
+        ))}</SelectableControlGroup>
       </View>
 
       {/* Search bar */}
@@ -715,20 +707,8 @@ const styles = StyleSheet.create({
   sortRowCompact: {
     flexWrap: 'wrap',
   },
-  sortPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: colors.bgInteractive,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-  },
-  sortPillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  sortPillText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
-  sortPillTextActive: { color: colors.textOnPrimary },
+  sortChoices: { minWidth: 220 },
+  sortPill: { minWidth: 96 },
 
   searchWrap: {
     flexDirection: 'row',

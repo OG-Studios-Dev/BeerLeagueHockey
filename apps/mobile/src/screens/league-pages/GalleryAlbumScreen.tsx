@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, useWindow
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FocusCard, FocusFlatList, FocusScrollView } from '../../components/CardFocus';
+import CarouselPager from '../../components/CarouselPager';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import type { GalleryPhoto } from '../../lib/leagueContent';
 import type { LeaguePagesStackParamList } from '../../navigation/types';
@@ -106,13 +107,9 @@ export default function GalleryAlbumScreen({ route, navigation }: Props) {
             {fullStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" style={StyleSheet.absoluteFill} /> : null}
             {fullStatus === 'error' ? <View style={styles.fullBroken}><Ionicons name="image-outline" size={64} color="#FFFFFF" /><Text style={styles.viewerText}>Image unavailable</Text></View> : <Image key={`${photo.id}:${photo.imageUrl}`} source={{ uri: photo.imageUrl }} resizeMode="contain" style={StyleSheet.absoluteFill} accessibilityLabel={photo.caption ?? `Photo ${selected! + 1}`} onLoad={() => setFullStatus('loaded')} onLoadEnd={() => setFullStatus(status => status === 'error' ? status : 'loaded')} onError={() => setFullStatus('error')} />}
           </View>
-          {data.photos.length > 1 ? <>
-            <Pressable accessibilityRole="button" accessibilityLabel="Previous photo" onPress={() => move(-1)} style={[styles.nav, styles.prev]}><Ionicons name="chevron-back" size={30} color="#FFFFFF" /></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Next photo" onPress={() => move(1)} style={[styles.nav, styles.next]}><Ionicons name="chevron-forward" size={30} color="#FFFFFF" /></Pressable>
-          </> : null}
           <View style={[styles.viewerFooter, { bottom: insets.bottom + 10, maxHeight: Math.max(84, height * 0.28) }]}>
             {photo.caption ? <FocusScrollView focusEnabled={photo !== null} focusScopeKey={`gallery-viewer:${photo.id}`} includeBottomTabInset={false} showsVerticalScrollIndicator contentContainerStyle={styles.footerScroll}><FocusCard focusId={`gallery-viewer:caption:${photo.id}`}><Text style={styles.viewerText}>{photo.caption}</Text></FocusCard></FocusScrollView> : null}
-            <Text style={styles.counter}>{selected! + 1} of {data.total}</Text>
+            <CarouselPager currentIndex={selected!} pageCount={data.photos.length} onPrevious={() => move(-1)} onNext={() => move(1)} previousLabel="Previous photo" nextLabel="Next photo" positionLabel="Photo viewer position" loop testID="gallery-photo" />
           </View>
         </> : null}
       </View>
@@ -139,11 +136,9 @@ const styles = StyleSheet.create({
   close: { position: 'absolute', zIndex: 4, right: 14, width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(38,38,38,0.96)' },
   fullWrap: { alignSelf: 'center' },
   fullBroken: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  nav: { position: 'absolute', zIndex: 4, top: '46%', width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(38,38,38,0.96)' },
-  prev: { left: 10 },
-  next: { right: 10 },
+
   viewerFooter: { position: 'absolute', left: 58, right: 58, alignItems: 'stretch', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: 'rgba(0,0,0,0.82)' },
   footerScroll: { paddingBottom: 2 },
   viewerText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21, textAlign: 'center' },
-  counter: { color: 'rgba(255,255,255,0.78)', fontSize: 13, marginTop: 5, textAlign: 'center' },
+
 });

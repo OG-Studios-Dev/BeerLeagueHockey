@@ -6,6 +6,7 @@ import AccessibleChoiceGroup from '../../components/AccessibleChoiceGroup';
 import Avatar from '../../components/Avatar';
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
+import { SelectableControl, SelectableControlGroup } from '../../components/SelectableControl';
 import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -405,11 +406,11 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
           return <View key={player.player_id} style={styles.playerRow}>
             <Avatar uri={player.avatar_url ?? null} name={player.player_name} size={36} />
             <View style={styles.playerInfo}><Text style={styles.playerName}>{player.player_name}</Text><Text style={styles.secondary}>#{player.jersey_number ?? '--'} {player.position ?? ''}</Text></View>
-            {captainAccess ? <View style={styles.statusActions}>{STATUS_CHOICES.map((choice) => <Pressable key={choice.value}
-              testID={`captain-status-${player.player_id}-${choice.value}`} accessibilityRole="button"
-              accessibilityState={{ selected: (checkinMap[player.player_id] ?? 'waiting') === choice.value, disabled: statusPending }}
+            {captainAccess ? <SelectableControlGroup role="radiogroup" accessibilityLabel={`${player.player_name} check-in status`} contentContainerStyle={styles.statusActions}>{STATUS_CHOICES.map((choice) => <SelectableControl key={choice.value}
+              testID={`captain-status-${player.player_id}-${choice.value}`} role="radio" label={choice.label}
+              selected={(checkinMap[player.player_id] ?? 'waiting') === choice.value}
               disabled={statusPending} onPress={() => void handleStatusChange(player.player_id, choice.value)} style={styles.statusButton}
-            ><Text style={styles.statusText}>{choice.label}</Text></Pressable>)}</View> : <View style={[styles.dot, { backgroundColor: group.color }]} />}
+            />)}</SelectableControlGroup> : <View style={[styles.dot, { backgroundColor: group.color }]} />}
           </View>;
         })}
       </FocusCard> : null)}
@@ -444,6 +445,6 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.bgSurface, borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, padding: 14, gap: 10 }, gameTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary }, sectionTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary }, secondary: { fontSize: 12, fontWeight: '600', color: colors.textSecondary }, inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   error: { color: colors.accentRed, fontSize: 12, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, primaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.primary }, secondaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.bgInteractive }, buttonText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' }, disabled: { opacity: 0.5 },
   counts: { flexDirection: 'row', gap: 8 }, countCard: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, backgroundColor: colors.bgSurface }, count: { fontSize: 22, fontWeight: '900' }, countLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
-  playerRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingVertical: 8 }, playerInfo: { flex: 1, minWidth: 100 }, playerName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary }, statusActions: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, statusButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.bgInteractive }, statusText: { color: colors.textPrimary, fontSize: 11, fontWeight: '800' }, dot: { width: 10, height: 10, borderRadius: 5 },
+  playerRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingVertical: 8 }, playerInfo: { flex: 1, minWidth: 100 }, playerName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary }, statusActions: { width: '100%', gap: 6 }, statusButton: { minWidth: 88 }, dot: { width: 10, height: 10, borderRadius: 5 },
   emptyCard: { padding: 32, alignItems: 'center', borderRadius: 16, backgroundColor: colors.bgSurface }, emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' }, overlay: { flex: 1, justifyContent: 'center', padding: 16, backgroundColor: '#000000AA' }, modal: { borderRadius: 16, padding: 16, gap: 12, backgroundColor: colors.bgModal, borderWidth: 1, borderColor: colors.glassStroke }, input: { minHeight: 44, borderRadius: 10, paddingHorizontal: 12, color: colors.textPrimary, backgroundColor: colors.bgInteractive },
 });

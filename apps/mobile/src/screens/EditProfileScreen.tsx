@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
+import { SelectableControl, SelectableControlGroup } from '../components/SelectableControl';
 
 import Avatar from '../components/Avatar';
 import { notifyProfilePreferencesChanged, PROFILE_PREFERENCES_SELECT, PROFILE_SKILL_LEVELS, type ProfilePreferencesUpdate } from '../lib/profileContract';
@@ -174,17 +175,25 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
         {/* Fields */}
         <FocusCard focusId="edit-profile:position" style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Position</Text>
-          <View style={[styles.positionRow, isCompact && styles.positionRowCompact]}>
+          <SelectableControlGroup
+            horizontal={false}
+            role="radiogroup"
+            accessibilityLabel="Position options"
+            contentContainerStyle={[styles.positionRow, isCompact && styles.positionRowCompact]}
+          >
             {POSITIONS.map((pos) => (
-              <Pressable
+              <SelectableControl
                 key={pos.value}
-                style={[styles.positionBtn, position === pos.value && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                testID={`edit-profile-position-${pos.label.toLowerCase()}`}
+                role="radio"
+                label={pos.label}
+                selected={position === pos.value}
                 onPress={() => setPosition(pos.value)}
-              >
-                <Text style={[styles.positionBtnText, position === pos.value && { color: '#fff' }]}>{pos.label}</Text>
-              </Pressable>
+                style={styles.positionBtn}
+                textStyle={styles.positionBtnText}
+              />
             ))}
-          </View>
+          </SelectableControlGroup>
         </FocusCard>
 
         <FocusCard focusId="edit-profile:skill" style={styles.fieldCard}>
@@ -192,27 +201,25 @@ export default function EditProfileScreen({ navigation }: { navigation: any }) {
           <Text style={styles.fieldHint}>
             Used to place you in the right Hockey Life division when we do not have enough game data to rate you yet.
           </Text>
-          <View style={styles.skillRow}>
+          <SelectableControlGroup
+            horizontal={false}
+            role="radiogroup"
+            accessibilityLabel="League Match Level options"
+            contentContainerStyle={styles.skillRow}
+          >
             {PROFILE_SKILL_LEVELS.map((skill) => (
-              <Pressable
+              <SelectableControl
                 key={skill.value}
-                style={[
-                  styles.skillBtn,
-                  selfAssessedSkill === skill.value && { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
+                testID={`edit-profile-skill-${skill.label.toLowerCase()}`}
+                role="radio"
+                label={skill.label}
+                selected={selfAssessedSkill === skill.value}
                 onPress={() => setSelfAssessedSkill(skill.value)}
-              >
-                <Text
-                  style={[
-                    styles.skillBtnText,
-                    selfAssessedSkill === skill.value && { color: colors.textOnPrimary },
-                  ]}
-                >
-                  {skill.label}
-                </Text>
-              </Pressable>
+                style={styles.skillBtn}
+                textStyle={styles.skillBtnText}
+              />
             ))}
-          </View>
+          </SelectableControlGroup>
         </FocusCard>
 
         <FocusCard focusId="edit-profile:jersey" style={styles.fieldCard}>
@@ -274,24 +281,15 @@ const styles = StyleSheet.create({
   positionRowCompact: { flexWrap: 'wrap' },
   positionBtn: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-    backgroundColor: colors.bgInteractive,
-    alignItems: 'center',
+    minWidth: 72,
   },
-  positionBtnText: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  positionBtnText: { fontSize: 16 },
   skillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   skillBtn: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-    backgroundColor: colors.bgInteractive,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    minWidth: 116,
+    flexGrow: 1,
   },
-  skillBtnText: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  skillBtnText: { fontSize: 14 },
   formActions: { flexDirection: 'row', alignItems: 'stretch', gap: 10, marginTop: 8 },
   cancelBtn: { minHeight: 52, minWidth: 92, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1, borderColor: colors.borderCard },
   cancelBtnText: { color: colors.textPrimary, fontWeight: '800', fontSize: 16 },

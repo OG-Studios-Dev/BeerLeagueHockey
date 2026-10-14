@@ -1,24 +1,24 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compileCommonJs, createElement, findNode, flattenStyle } from './component-harness.ts';
+import { compileCommonJs, createHookHarness, findNode, flattenStyle } from './component-harness.ts';
 
 describe('AccessibleChoiceGroup', () => {
   it('exposes a named radio group with labelled, selected, 44-point choices', () => {
     const selections: string[] = [];
+    const harness = createHookHarness();
     const ChoiceGroup = compileCommonJs<{
       default: (props: Record<string, unknown>) => unknown;
     }>(new URL('../../src/components/AccessibleChoiceGroup.tsx', import.meta.url), {
-      react: { createElement },
+      react: harness.react,
       'react-native': {
-        Pressable: 'Pressable', Text: 'Text', View: 'View',
+        Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
         StyleSheet: { create: <T>(styles: T) => styles },
       },
-      '../theme/colors': { default: { primary: '#0ff', textSecondary: '#aaa', borderCard: '#333', bgInteractive: '#222' } },
-      '../theme/ui': { ui: { minTouchTarget: 44 } },
+      '../theme/colors': { __esModule: true, default: { textPrimary: '#fff', textSecondary: '#aaa', glassStrokeStrong: '#333', bgInteractive: '#222' } },
     }).default;
 
-    const output = ChoiceGroup({
+    harness.mount(() => ChoiceGroup({
       accessibilityLabel: 'Goalie compensation',
       options: [
         { value: 'Free', label: 'Free' },
@@ -26,7 +26,8 @@ describe('AccessibleChoiceGroup', () => {
       ],
       selectedValue: 'Free',
       onSelect: (value: string) => selections.push(value),
-    });
+    }));
+    const output = harness.output;
 
     const group = findNode(output, (node) => node.props.accessibilityRole === 'radiogroup');
     assert.ok(group);
@@ -38,10 +39,10 @@ describe('AccessibleChoiceGroup', () => {
     assert.ok(paid);
     assert.equal(free.props.accessibilityRole, 'radio');
     assert.equal(paid.props.accessibilityRole, 'radio');
-    assert.deepEqual(free.props.accessibilityState, { selected: true });
-    assert.deepEqual(paid.props.accessibilityState, { selected: false });
-    assert.ok(Number(flattenStyle(free.props.style).minHeight) >= 44);
-    assert.ok(Number(flattenStyle(paid.props.style).minHeight) >= 44);
+    assert.deepEqual(free.props.accessibilityState, { selected: true, disabled: false, checked: true });
+    assert.deepEqual(paid.props.accessibilityState, { selected: false, disabled: false, checked: false });
+    assert.ok(Number(flattenStyle(free.props.style({ pressed: false })).minHeight) >= 44);
+    assert.ok(Number(flattenStyle(paid.props.style({ pressed: false })).minHeight) >= 44);
 
     paid.props.onPress();
     assert.deepEqual(selections, ['Paid']);

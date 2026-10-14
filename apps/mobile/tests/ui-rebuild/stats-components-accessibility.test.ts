@@ -333,8 +333,8 @@ describe('Stats timeline modal behavior', () => {
       selection: { kind: 'current' }, onApply: (selection: any) => applied.push(selection),
     }));
     findNode(h.output, (node) => node.props.testID === 'stats-timeline-open')!.props.onPress(); h.render();
-    const modes = allNodes(h.output, (node) => String(node.props.testID ?? '').startsWith('stats-timeline-mode-'));
-    assert.deepEqual(modes.map((node) => nodeText(node)), ['Current', 'All time', 'Single', 'Multiple']);
+    const modes = allNodes(h.output, (node) => node.type === 'Pressable' && String(node.props.testID ?? '').startsWith('stats-timeline-mode-'));
+    assert.deepEqual(modes.map((node) => node.props.accessibilityLabel), ['Current timeline', 'All time timeline', 'Single timeline', 'Multiple timeline']);
     findNode(h.output, (node) => node.props.testID === 'stats-timeline-mode-multiple')!.props.onPress(); h.render();
     findNode(h.output, (node) => node.props.testID === 'stats-timeline-backdrop')!.props.onPress(); h.render();
     assert.deepEqual(applied, []);

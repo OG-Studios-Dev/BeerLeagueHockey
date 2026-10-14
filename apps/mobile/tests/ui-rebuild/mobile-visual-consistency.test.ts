@@ -131,9 +131,12 @@ describe('mobile-wide league visual foundation', () => {
       assert.match(contents, /useAccessibilityPreferences/, file);
       assert.match(contents, /getSurfacePalette\(reduceTransparency\)/, file);
     }
-    assert.match(source('components/QuickCheckinActions.tsx'), /buttonIdle:\s*\{[^}]*backgroundColor:\s*colors\.bgInteractive/);
-    assert.match(source('components/PillToggle.tsx'), /container:\s*\{[^}]*backgroundColor:\s*colors\.bgInteractive/);
+    const selectable = source('components/SelectableControl.tsx');
+    assert.match(selectable, /inactive:\s*\{[^}]*backgroundColor:\s*colors\.bgInteractive/);
+    assert.match(selectable, /selected:\s*\{[^}]*backgroundColor:\s*'rgba\(142,127,255,0\.28\)'/);
+    for (const file of ['components/QuickCheckinActions.tsx', 'components/PillToggle.tsx', 'components/PlayerProfile/CareerTrendChart.tsx']) {
+      assert.match(source(file), /SelectableControl/);
+    }
     assert.match(source('components/PlayerProfile/SeasonPicker.tsx'), /trigger:\s*\{[^}]*backgroundColor:\s*colors\.bgInteractive/);
-    assert.match(source('components/PlayerProfile/CareerTrendChart.tsx'), /control:\s*\{[^}]*backgroundColor:\s*colors\.bgInteractive/);
   });
 });

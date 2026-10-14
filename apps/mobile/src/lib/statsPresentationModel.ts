@@ -1,4 +1,5 @@
 import { formatPublicMetric, type PublicGoalie, type PublicMetricSource, type PublicStatMetric, type PublicTeamRef } from './supabase/publicStats';
+import { formatLeagueLeaderGaa, splitLeagueLeaderName } from './leaderPresentation';
 
 export type StatsScopeKind = 'current' | 'single' | 'multiple' | 'all';
 export type StatsScopeSelection = { kind: StatsScopeKind; seasonIds?: string[] };
@@ -113,8 +114,8 @@ export function normalizeStatsScope(
 }
 
 export function splitPlayerName(value: string): { givenName: string; surname: string } {
-  const parts = value.trim().split(/\s+/).filter(Boolean);
-  return { givenName: parts[0] ?? 'Unknown', surname: parts.slice(1).join(' ') };
+  const name = splitLeagueLeaderName(value);
+  return { givenName: name.firstLine, surname: name.secondLine };
 }
 
 function display(metric: PublicStatMetric, digits?: number): string {
@@ -270,7 +271,7 @@ function currentGoalieMetric(
   if (goalie.goals_against_average === null
     || (goalie.team_id !== null && goalie.team_id !== player.displayTeam?.id)) return authoritative;
   return {
-    value: goalie.goals_against_average,
+    value: goalie.games_played > 0 ? goalie.goals_against / goalie.games_played : goalie.goals_against_average,
     state: goalie.estimated ? 'estimated' : 'recorded',
     sources: goalie.estimated ? [] : ['goalie_stats'],
   };
@@ -284,7 +285,7 @@ export function buildLeaderRows(
   const candidates = players.flatMap((player) => {
     const value = metric === 'gaa' ? currentGoalieMetric(player, currentGoalies) : player.skater?.[metric];
     return value && value.value !== null && value.state !== 'unknown' && value.state !== 'conflicted'
-      ? [{ ...player, value, display: display(value, metric === 'gaa' ? 2 : undefined) }]
+      ? [{ ...player, value, display: metric === 'gaa' ? formatLeagueLeaderGaa(value.value) : display(value) }]
       : [];
   });
   candidates.sort((left, right) => {

@@ -60,6 +60,7 @@ describe('stats presentation model', () => {
     assert.deepEqual(splitPlayerName('Maria de la Cruz'), { givenName: 'Maria', surname: 'de la Cruz' });
     assert.deepEqual(splitPlayerName('Cher'), { givenName: 'Cher', surname: '' });
     assert.deepEqual(splitPlayerName('  Jean-Luc   Picard  '), { givenName: 'Jean-Luc', surname: 'Picard' });
+    assert.deepEqual(splitPlayerName('  Alex   Smith Jr.  '), { givenName: 'Alex', surname: 'Smith Jr.' });
   });
 
   it('builds the exact skater and goalie columns and derives rates only from known GP', () => {
@@ -115,8 +116,26 @@ describe('stats presentation model', () => {
     const leaders = buildLeaderRows([goalie], 'gaa', [publicGoalie({ player_id: goalie.playerId, player_name: goalie.playerName })]);
 
     assert.equal(leaders.length, 1);
-    assert.equal(leaders[0].display, '~2.50');
+    assert.equal(leaders[0].display, '2.5');
     assert.deepEqual(leaders[0].value, { value: 2.5, state: 'estimated', sources: [] });
+  });
+
+  it('formats leader GAA from raw goals-against and games-played without double rounding', () => {
+    const goalie = player({
+      playerId: 'rounding-boundary', playerName: 'Boundary Goalie',
+      displayTeam: { id: 'team-a', name: 'Owls' }, skater: null,
+      goalie: { gamesPlayed: metric(11, 'estimated'), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
+    });
+    const leaders = buildLeaderRows([goalie], 'gaa', [publicGoalie({
+      player_id: goalie.playerId,
+      games_played: 11,
+      goals_against: 6,
+      goals_against_average: 0.55,
+    })]);
+
+    assert.equal(leaders[0].value.value, 6 / 11);
+    assert.equal(leaders[0].display, '0.5');
+    assert.doesNotMatch(leaders[0].display, /~/);
   });
 
   it('does not replace conflicted GAA or rank nullable and ambiguous goalie fallback rows', () => {

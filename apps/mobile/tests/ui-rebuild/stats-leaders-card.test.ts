@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildLeaderRows, type StatsLeaderMetric, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { buildLeaderRows, type StatsLeaderMetric, type StatsLeaderRow, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
 import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
-import { compileCommonJs, createElement, createHookHarness, findNode, nodeText } from './component-harness';
+import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
 const metric = (value: number | null): PublicStatMetric => ({ value, state: value === null ? 'unknown' : 'recorded', sources: value === null ? [] : ['skater_stats'] });
 const players: StatsScopePlayer[] = [
@@ -25,7 +25,12 @@ function allNodes(root: any, predicate: (node: any) => boolean): any[] {
   return [...(predicate(root) ? [root] : []), ...allNodes(root.props.children, predicate)];
 }
 
-function runtime(initialPlayers: StatsScopePlayer[] = players, initialStatus: 'ready' | 'error' = 'ready', resolveArtwork?: (_league: string, leader: any) => any) {
+function runtime(
+  initialPlayers: StatsScopePlayer[] = players,
+  initialStatus: 'ready' | 'error' = 'ready',
+  resolveArtwork?: (_league: string, leader: any) => any,
+  leaderRows: (rows: readonly StatsScopePlayer[], metric: StatsLeaderMetric) => StatsLeaderRow[] = buildLeaderRows,
+) {
   const h = createHookHarness();
   const opened: string[] = [];
   let retryCount = 0;
@@ -46,7 +51,7 @@ function runtime(initialPlayers: StatsScopePlayer[] = players, initialStatus: 'r
   }).default;
   function Root() {
     const [selected, setSelected] = h.react.useState<StatsLeaderMetric>('points');
-    return Card({ leagueId: 'league-a', metric: selected, leaders: buildLeaderRows(currentPlayers, selected), status: initialStatus, onMetricChange: setSelected, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
+    return Card({ leagueId: 'league-a', width: 320, metric: selected, leaders: leaderRows(currentPlayers, selected), status: initialStatus, onMetricChange: setSelected, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
   }
   h.mount(Root);
   return { h, opened, get retryCount() { return retryCount; }, replacePlayers(next: StatsScopePlayer[]) { currentPlayers = next; h.render(); } };
@@ -86,6 +91,25 @@ describe('Stats top-five leaders card', () => {
     assert.equal(nodeText(children[2]), 'EliEdge');
   });
 
+  it('fits the required multi-token name into exactly two lossless lines without narrowing the rows for artwork', () => {
+    const longName = {
+      ...players[0],
+      playerId: 'long-name',
+      playerName: 'Maximilian de la Cruz-Santamaría',
+    };
+    const result = runtime([longName]);
+    const row = rows(result.h.output)[0];
+    const first = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'Maximilian')!;
+    const second = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'de la Cruz-Santamaría')!;
+    assert.equal(first.props.numberOfLines, 1);
+    assert.equal(second.props.numberOfLines, 1);
+    assert.equal(first.props.adjustsFontSizeToFit, true);
+    assert.equal(second.props.adjustsFontSizeToFit, true);
+    assert.ok(Number(flattenStyle(second.props.style).fontSize) >= 10);
+    assert.equal(flattenStyle(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-rows')?.props.style).width, '78%');
+    assert.match(row.props.accessibilityLabel, /Maximilian de la Cruz-Santamaría/);
+  });
+
   it('updates actual rankings, supports GAA, and opens native player cards', () => {
     const result = runtime();
     for (const [selected, expected] of [['assists', ['e', 'a', 'c', 'd', 'b']], ['goals', ['f', 'a', 'b', 'c', 'd']], ['gaa', ['g1', 'g2']]] as const) {
@@ -95,6 +119,20 @@ describe('Stats top-five leaders card', () => {
     }
     rows(result.h.output)[0].props.onPress();
     assert.deepEqual(result.opened, ['g1']);
+  });
+
+  it('renders Stats League Leader GAA from the raw value to one decimal even when a stale display string has two decimals', () => {
+    const result = runtime(players, 'ready', undefined, (scopePlayers, selected) => buildLeaderRows(scopePlayers, selected).map((row) => (
+      selected === 'gaa' ? { ...row, display: `${row.value.value?.toFixed(2)}` } : row
+    )));
+    findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa')!.props.onPress();
+    result.h.render();
+
+    const goalie = rows(result.h.output)[0];
+    assert.match(nodeText(goalie), /1\.5GAA/);
+    assert.doesNotMatch(nodeText(goalie), /1\.50|~/);
+    assert.match(goalie.props.accessibilityLabel, /1\.5 gaa/i);
+    assert.doesNotMatch(goalie.props.accessibilityLabel, /1\.50|~/);
   });
 
   it('shows honest emptiness without placeholder players', () => {

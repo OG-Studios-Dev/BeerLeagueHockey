@@ -20,11 +20,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import hockeyLifeLogo from '../../assets/hockey-life-logo.png';
 import GuestBanner from '../components/GuestBanner';
+import CarouselPager from '../components/CarouselPager';
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
 import HomeLeagueHero from '../components/HomeLeagueHero';
 import HomeLeagueLeaders from '../components/HomeLeagueLeaders';
 import HomeMatchupCarousel from '../components/HomeMatchupCarousel';
 import RevealView from '../components/RevealView';
+import { SelectableControl, SelectableControlGroup } from '../components/SelectableControl';
 import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
@@ -338,11 +340,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               </Pressable>
             </FocusCard>
           )}
-          {stories.length > 1 ? <View testID="home-story-navigation" style={styles.storyNavigation}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Previous story" style={styles.storyNavigationButton} onPress={() => selectStory(storyIndex - 1)}><Ionicons name="chevron-back" size={18} color={homeTokens.text} /></Pressable>
-            <View testID="home-story-indicator" accessible accessibilityRole="adjustable" accessibilityLabel="Latest News position" accessibilityValue={{ min: 1, max: stories.length, now: storyIndex + 1, text: `${storyIndex + 1} of ${stories.length}` }} style={styles.storyDots}><Text testID="home-story-count" style={[styles.storyCount, { color: accent }]}>{storyIndex + 1} / {stories.length}</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Next story" style={styles.storyNavigationButton} onPress={() => selectStory(storyIndex + 1)}><Ionicons name="chevron-forward" size={18} color={homeTokens.text} /></Pressable>
-          </View> : null}
+          <CarouselPager currentIndex={storyIndex} pageCount={stories.length} onPrevious={() => selectStory(storyIndex - 1)} onNext={() => selectStory(storyIndex + 1)} previousLabel="Previous story" nextLabel="Next story" positionLabel="Latest News position" loop testID="home-story" />
           {renderedPublicHome?.articles.status === 'error' && article ? <Text style={styles.staleNote}>{renderedPublicHome.articles.message} Showing the last loaded story.</Text> : null}
         </View>
 
@@ -373,7 +371,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         <View testID="home-standings-section">
           <SectionHeading title="Standings" fontScale={fontScale} action={<Pressable style={headingActionStyle} accessibilityRole="button" accessibilityLabel="Open standings" onPress={() => navigation?.navigate?.('Standings')}><Text allowFontScaling style={[styles.textLink, headingActionTextStyle, { color: accent }]}>All standings</Text></Pressable>} />
-          {divisions.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.divisionTabs}>{divisions.map((division) => <Pressable key={division.id} accessibilityRole="button" accessibilityState={{ selected: division.id === selectedDivision }} style={[styles.divisionTab, division.id === selectedDivision && styles.metricTabActive]} onPress={() => setDivisionId(division.id)}><Text style={styles.metricTabText}>{division.name}</Text></Pressable>)}</ScrollView> : null}
+          {divisions.length > 1 ? <SelectableControlGroup role="radiogroup" accessibilityLabel="Home standings division" contentContainerStyle={styles.divisionTabs}>{divisions.map((division) => <SelectableControl key={division.id} role="radio" label={division.name} selected={division.id === selectedDivision} onPress={() => setDivisionId(division.id)} />)}</SelectableControlGroup> : null}
           {!renderedPublicHome ? <SectionState loading onRetry={retry} /> : renderedPublicHome.standings.status === 'error' && shownStandings.length === 0 ? <SectionState message={renderedPublicHome.standings.message} onRetry={retry} /> : shownStandings.length === 0 ? <View style={[sectionCard, styles.emptyCard]}><Text style={styles.emptyTitle}>No standings available yet</Text></View> : <FocusCard focusId={`home:standings:${selectedDivision ?? 'all'}`} accentColor={accent} style={[sectionCard, styles.table]}><View style={styles.tableHeader}><Text style={[styles.tableTeam, styles.tableHeaderText]}>TEAM</Text><Text style={styles.tableStat}>GP</Text><Text style={styles.tableStat}>W</Text><Text style={styles.tableStat}>L</Text><Text style={styles.tableStat}>PTS</Text></View>{shownStandings.map((row: HomeStanding) => <Pressable key={row.team_id} accessibilityRole="button" style={styles.tableRow} onPress={() => navigation?.navigate?.('Team', { screen: 'TeamDetail', params: { teamId: row.team_id, leagueId: activeLeague.id } })}><View style={styles.tableTeam}><TeamLogo teamId={row.team_id} logoUrl={row.logo_url} teamName={row.team_name} primaryColor={row.primary_color} size={28} /><Text style={styles.tableTeamName}>{row.team_name}</Text></View><Text style={styles.tableStat}>{row.games_played}</Text><Text style={styles.tableStat}>{row.wins}</Text><Text style={styles.tableStat}>{row.losses}</Text><Text style={[styles.tableStat, { color: accent, fontWeight: '900' }]}>{row.points}</Text></Pressable>)}</FocusCard>}
           {renderedPublicHome?.standings.status === 'error' && shownStandings.length > 0 ? <Text style={styles.staleNote}>{renderedPublicHome.standings.message}</Text> : null}
         </View>
@@ -418,10 +416,7 @@ const styles = StyleSheet.create({
   heroTitle: { color: colors.textPrimary, fontSize: 24, lineHeight: 28, fontWeight: '900', marginTop: 4 },
   heroExcerpt: { color: '#CCD6E5', fontSize: 13, lineHeight: 19, marginTop: 7 },
   newsPager: { width: '100%' },
-  storyNavigation: { width: '100%', minHeight: 44, marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  storyNavigationButton: { width: 44, height: 44, flexShrink: 0, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, backgroundColor: colors.bgInteractive, alignItems: 'center', justifyContent: 'center' },
-  storyDots: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  storyCount: { fontSize: 12, lineHeight: 18, fontWeight: '900', letterSpacing: 1 },
+
   emptyCard: { minHeight: 104, alignItems: 'center', justifyContent: 'center', padding: 18 },
   emptyTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '900', textAlign: 'center' },
   emptyCopy: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 5 },

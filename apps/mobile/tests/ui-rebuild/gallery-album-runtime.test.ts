@@ -114,7 +114,7 @@ describe('virtualized native gallery album', () => {
     findNode(viewer, node => node.props.accessibilityLabel === 'Next photo')!.props.onPress();
     viewer = harness.render();
     assert.ok(findNode(viewer, node => node.type === 'ActivityIndicator'));
-    assert.match(nodeText(viewer), /2 of 100/);
+    assert.equal(findNode(viewer, node => node.props.testID === 'gallery-photo-position')?.props.accessibilityValue.text, '2 of 100');
     fullImage = findNode(viewer, node => node.type === 'Image' && node.props.resizeMode === 'contain');
     assert.equal(fullImage?.props.source.uri, 'https://images.example.test/full-2.jpg');
     fullImage!.props.onLoadEnd();
@@ -123,10 +123,10 @@ describe('virtualized native gallery album', () => {
 
     findNode(viewer, node => node.props.accessibilityLabel === 'Previous photo')!.props.onPress();
     viewer = harness.render();
-    assert.match(nodeText(viewer), /1 of 100/);
+    assert.equal(findNode(viewer, node => node.props.testID === 'gallery-photo-position')?.props.accessibilityValue.text, '1 of 100');
     findNode(viewer, node => node.props.accessibilityLabel === 'Previous photo')!.props.onPress();
     viewer = harness.render();
-    assert.match(nodeText(viewer), /100 of 100/);
+    assert.equal(findNode(viewer, node => node.props.testID === 'gallery-photo-position')?.props.accessibilityValue.text, '100 of 100');
     assert.equal(findNode(viewer, node => node.type === 'Image' && node.props.resizeMode === 'contain')?.props.source.uri, 'https://images.example.test/full-100.jpg');
 
     preferences = { reduceMotion: true, reduceTransparency: true };
@@ -136,7 +136,9 @@ describe('virtualized native gallery album', () => {
     assert.equal(flattenStyle(modalSurface?.props.style).backgroundColor, '#000000');
     assert.equal(flattenStyle(findNode(viewer, node => node.props.accessibilityLabel === 'Close photo viewer')?.props.style).top, 55);
     assert.ok(findNode(viewer, node => flattenStyle(node.props.style).bottom === 44));
-    assert.equal(flattenStyle(findNode(viewer, node => nodeText(node) === '100 of 100')?.props.style).textAlign, 'center');
+    const galleryPosition = findNode(viewer, node => node.props.testID === 'gallery-photo-position')!;
+    assert.equal(flattenStyle(galleryPosition.props.style).justifyContent, 'center');
+    assert.doesNotMatch(nodeText(viewer), /100 of 100/);
 
     findNode(viewer, node => node.props.accessibilityLabel === 'Close photo viewer')!.props.onPress();
     viewer = harness.render();

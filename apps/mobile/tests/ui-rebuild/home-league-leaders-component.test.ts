@@ -31,10 +31,11 @@ const steven: HomeLeader = {
   player_id: 'steven', player_name: 'Steven Wild', avatar_url: null,
   team_id: 'goalie-team', team_name: 'Goalie Team', display_team_name: 'Goalie Team',
   display_team_logo_url: null, position: 'Goalie', goals: null, assists: null, points: null,
-  gaa: 3, is_goalie: true, estimated: true,
+  gaa: 6 / 11, is_goalie: true, estimated: true,
 };
 const aaron: HomeLeader = { ...steven, player_id: 'aaron', player_name: 'Aaron Buehler', gaa: 4 };
 const cody: HomeLeader = { ...steven, player_id: 'cody', player_name: 'Cody Bolman', gaa: 6 };
+const maximilian: HomeLeader = { ...steven, player_id: 'maximilian', player_name: 'Maximilian de la Cruz-Santamaría', gaa: 1.25 };
 
 function loadComponent(harness: ReturnType<typeof createHookHarness>) {
   return compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(
@@ -67,7 +68,7 @@ describe('Home League Leaders component', () => {
     let selected = jack;
     const loader = async () => manifest;
     harness.mount(() => Component({ leagueId, seasonName: null, metric: 'points', leaders: [selected], status: 'ready', width: 390, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {}, onOpenPlayer: () => {}, onOpenAllStats: () => {}, manifestLoader: loader }));
-    assert.match(nodeText(harness.output), /Jack Foote/);
+    assert.match(nodeText(harness.output), /JackFoote/);
     await Promise.resolve(); harness.render();
     let art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
     assert.deepEqual(art.props.source, { uri: manifest.entries[0].imageUrl, cache: 'force-cache' });
@@ -105,14 +106,14 @@ describe('Home League Leaders component', () => {
     const imageStyle = flattenStyle(findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!.props.style);
     assert.equal(imageStyle.width, '100%', 'Override native Image intrinsic width inside the definite stage');
     assert.equal(imageStyle.height, '100%', 'Override native Image intrinsic height inside the definite stage');
-    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === `home-leader-row-${jack.player_id}`)), /T1Jack Foote3POINTS/);
+    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === `home-leader-row-${jack.player_id}`)), /T1JackFoote3POINTS/);
 
     findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-assists')!.props.onPress();
     harness.render();
     const feature = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
     assert.match(feature.props.accessibilityLabel, /Kyle Geraghty, no player photo available/);
     assert.deepEqual(feature.props.source, { asset: 'neutral' });
-    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-kyle')), /1Kyle Geraghty2ASSISTS/);
+    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-kyle')), /1KyleGeraghty2ASSISTS/);
     assert.equal(nodeText(harness.output).includes('Jack Foote featured player artwork'), false);
 
     findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-action')!.props.onPress();
@@ -120,7 +121,7 @@ describe('Home League Leaders component', () => {
     assert.deepEqual(opened, ['kyle', 'kyle']);
   });
 
-  it('selects the exact GAA tab and renders estimated goalie values to two decimals with accessible provenance', () => {
+  it('selects the exact GAA tab and renders raw goalie values to one decimal without a visible estimate marker', () => {
     const harness = createHookHarness();
     const Component = loadComponent(harness);
     const Wrapper = () => {
@@ -142,13 +143,34 @@ describe('Home League Leaders component', () => {
     const selectedGaaTab = findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-gaa')!;
     assert.equal(selectedGaaTab.props.accessibilityState.selected, true);
     const row = findNode(harness.output, (node) => node.props.testID === 'home-leader-row-steven')!;
-    assert.match(nodeText(row), /1Steven Wild~3\.00GAA/);
-    assert.match(row.props.accessibilityLabel, /estimated goals against average 3\.00/i);
-    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-aaron')), /2Aaron Buehler~4\.00GAA/);
-    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-cody')), /3Cody Bolman~6\.00GAA/);
+    assert.match(nodeText(row), /1StevenWild0\.5GAA/);
+    assert.doesNotMatch(nodeText(row), /~/);
+    assert.match(row.props.accessibilityLabel, /estimated goals against average 0\.5/i);
+    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-aaron')), /2AaronBuehler4\.0GAA/);
+    assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-cody')), /3CodyBolman6\.0GAA/);
     const art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
     assert.deepEqual(art.props.source, { asset: 'goalie' });
     assert.match(art.props.accessibilityLabel, /no goalie photo available/i);
+  });
+
+  it('renders the required long name as exactly two fitted lossless lines at 320 points', () => {
+    const harness = createHookHarness();
+    const Component = loadComponent(harness);
+    harness.mount(() => Component({
+      leagueId, seasonName: 'Fall 2026', metric: 'gaa', leaders: [maximilian], status: 'ready',
+      width: 320, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {},
+      onOpenPlayer: () => {}, onOpenAllStats: () => {},
+    }));
+
+    const row = findNode(harness.output, (node) => node.props.testID === 'home-leader-row-maximilian')!;
+    const first = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'Maximilian')!;
+    const second = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'de la Cruz-Santamaría')!;
+    assert.equal(first.props.numberOfLines, 1);
+    assert.equal(second.props.numberOfLines, 1);
+    assert.equal(first.props.adjustsFontSizeToFit, true);
+    assert.equal(second.props.adjustsFontSizeToFit, true);
+    assert.ok(Number(flattenStyle(second.props.style).fontSize) >= 9.5);
+    assert.match(row.props.accessibilityLabel, /Maximilian de la Cruz-Santamaría/);
   });
 
   it('owns generated, photo and neutral attempts and ignores saved stale callbacks', () => {
@@ -253,7 +275,7 @@ describe('Home League Leaders component', () => {
     harness.mount(() => Component(props));
     const tab = findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-points')!;
     assert.equal(flattenStyle(tab.props.style({ pressed: false })).minHeight, 44);
-    assert.deepEqual(tab.props.accessibilityState, { selected: true });
+    assert.deepEqual(tab.props.accessibilityState, { selected: true, disabled: false });
     assert.ok(findNode(harness.output, (node) => node.props.testID === 'home-leaders-loading'));
 
     props.status = 'error';

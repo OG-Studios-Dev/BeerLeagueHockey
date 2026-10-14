@@ -81,7 +81,8 @@ describe('corrected native standings visuals', () => {
     assert.deepEqual([trophyStyle.left, trophyStyle.top, trophyStyle.width, trophyStyle.height], [292, 154, 120, 120]);
     const oddsButton = findNode(harness.output, (node) => node.props.accessibilityLabel === 'Show playoff odds');
     assert.ok(oddsButton);
-    assert.ok((flattenStyle(oddsButton.props.style).minHeight ?? 0) >= 44);
+    const oddsStyle = typeof oddsButton.props.style === 'function' ? oddsButton.props.style({ pressed: false, focused: false }) : oddsButton.props.style;
+    assert.ok((flattenStyle(oddsStyle).minHeight ?? 0) >= 44);
     oddsButton.props.onPress();
     harness.render();
     const text = nodeText(harness.output);

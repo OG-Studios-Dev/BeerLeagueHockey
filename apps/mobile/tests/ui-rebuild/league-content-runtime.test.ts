@@ -37,7 +37,7 @@ describe('mounted native content navigation', () => {
     }).default;
     const route = { params: { leagueId: 'league-1', leagueSlug: 'hockey-life' } };
     const output = harness.mount(() => Screen({ route, navigation: { navigate: (...args: unknown[]) => calls.push(args) } }));
-    assert.match(nodeText(output), /All 6Recaps 6News 0/);
+    assert.match(nodeText(output), /All 6✓Recaps 6News 0/);
     assert.match(nodeText(output), /Mounted synthetic story/);
     assert.match(nodeText(output), /Archive story 5/);
     assert.equal(findNode(output, node => node.type === 'FlatList')?.props.data.length, 6);
