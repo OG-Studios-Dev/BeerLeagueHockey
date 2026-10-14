@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { getPlayerProfileHeroLayout, splitPlayerDisplayName } from '../../src/components/PlayerProfile/playerProfileHeroModel';
-import { compileCommonJs, createElement, findNode, flattenStyle, nodeText } from './component-harness.ts';
+import { compileCommonJs, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness.ts';
 
 const heroUrl = new URL('../../src/components/PlayerProfile/PlayerProfileHero.tsx', import.meta.url);
 const screenUrl = new URL('../../src/screens/PlayerCardScreen.tsx', import.meta.url);
@@ -17,10 +17,11 @@ function nativeMock() {
 }
 
 function renderHero(overrides: Record<string, unknown> = {}) {
+  const harness = createHookHarness();
   const skaterArtwork = { uri: 'bundled-neutral-skater-artwork' };
   const goalieArtwork = { uri: 'bundled-neutral-goalie-artwork' };
   const Hero = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(heroUrl, {
-    react: { createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => createElement(type, props, ...children) },
+    react: harness.react,
     'react-native': nativeMock(),
     'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
@@ -31,12 +32,25 @@ function renderHero(overrides: Record<string, unknown> = {}) {
     '../../theme/contrast': { getContrastTextColor: () => '#000' },
   }).default;
 
-  return { skaterArtwork, goalieArtwork, output: Hero({
+  let props = {
+    playerId: 'player-one', photoUrl: null,
     fullName: 'Alexis Marie De La Cruz', jerseyNumber: 19, position: 'Forward', leadership: 'C  Captain',
     team: { id: 'team-one', name: 'Night Owls', logoUrl: null }, awards: [], accent: '#FFD52F',
     isGoalie: false, width: 390, fontScale: 1, reduceTransparency: false, onShare: () => undefined, onOpenTeam: () => undefined,
     ...overrides,
-  }) };
+  };
+  harness.mount(() => Hero(props));
+
+  return {
+    skaterArtwork,
+    goalieArtwork,
+    harness,
+    get output() { return harness.output; },
+    rerender(next: Record<string, unknown>) {
+      props = { ...props, ...next };
+      return harness.render();
+    },
+  };
 }
 
 describe('Rink Ribbon player profile hero', () => {
@@ -90,6 +104,88 @@ describe('Rink Ribbon player profile hero', () => {
     assert.equal(flattenStyle(hero?.props.style).overflow, 'visible');
     assert.ok(flattenStyle(image.props.style).width > 0);
     assert.ok(flattenStyle(image.props.style).height > 0);
+  });
+
+  it('renders the loaded player mugshot and receives it from the player screen', () => {
+    const photoUrl = 'https://example.test/players/player-one.jpg';
+    const portrait = renderHero({ photoUrl });
+    const image = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    assert.deepEqual(image?.props.source, { uri: photoUrl });
+
+    const screen = readFileSync(fileURLToPath(screenUrl.toString()), 'utf8');
+    assert.match(screen, /playerId=\{data\.playerId\}/);
+    assert.match(screen, /photoUrl=\{data\.photoUrl\}/);
+  });
+
+  it('uses the role-neutral artwork only after the loaded mugshot fails', () => {
+    for (const [isGoalie, expectedFallback] of [[false, 'skater'], [true, 'goalie']] as const) {
+      const portrait = renderHero({
+        isGoalie,
+        position: isGoalie ? 'Goalie' : 'Forward',
+        photoUrl: `https://example.test/players/${expectedFallback}.jpg`,
+      });
+      const remote = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+      assert.equal(typeof remote?.props.onError, 'function');
+      assert.equal(remote?.props.resizeMode, 'contain');
+      assert.equal(remote?.props.accessible, false);
+      assert.equal(remote?.props.alt, '');
+      assert.equal(remote?.props.accessibilityElementsHidden, true);
+
+      remote?.props.onError();
+      portrait.harness.render();
+
+      const fallback = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+      assert.equal(fallback?.props.source, isGoalie ? portrait.goalieArtwork : portrait.skaterArtwork);
+      assert.equal(fallback?.props.onError, undefined);
+    }
+  });
+
+  it('ignores stale and repeated errors while retrying portraits after player or photo changes', () => {
+    const photoA = 'https://example.test/players/a.jpg';
+    const photoB = 'https://example.test/players/b.jpg';
+    const photoC = 'https://example.test/players/c.jpg';
+    const portrait = renderHero({ playerId: 'player-one', photoUrl: photoA });
+    const imageA = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+
+    portrait.rerender({ photoUrl: photoB });
+    const imageB = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    assert.deepEqual(imageB?.props.source, { uri: photoB });
+
+    imageA?.props.onError();
+    portrait.harness.render();
+    assert.deepEqual(
+      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
+      { uri: photoB },
+      'a stale photo A error must not replace current photo B',
+    );
+
+    imageB?.props.onError();
+    portrait.harness.render();
+    assert.equal(
+      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
+      portrait.skaterArtwork,
+    );
+    const updatesAfterFallback = portrait.harness.stateUpdateCount;
+    imageB?.props.onError();
+    portrait.harness.render();
+    assert.equal(portrait.harness.stateUpdateCount, updatesAfterFallback, 'repeated callbacks after fallback are inert');
+
+    portrait.rerender({ playerId: 'player-two' });
+    assert.deepEqual(
+      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
+      { uri: photoB },
+      'a player change retries the current portrait URL',
+    );
+
+    const playerTwoImageB = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    playerTwoImageB?.props.onError();
+    portrait.harness.render();
+    portrait.rerender({ photoUrl: photoC });
+    assert.deepEqual(
+      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
+      { uri: photoC },
+      'a photo change retries the new URL',
+    );
   });
 
   it('uses a vertical surname column at normal widths and a full horizontal surname in stacked layouts', () => {

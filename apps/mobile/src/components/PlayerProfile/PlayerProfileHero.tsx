@@ -14,6 +14,8 @@ const neutralGoalieArtwork = require('../../../assets/league-leaders/neutral-goa
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 type PlayerProfileHeroProps = {
+  playerId: string;
+  photoUrl: string | null;
   fullName: string;
   jerseyNumber: number | null;
   position: string | null;
@@ -31,6 +33,8 @@ type PlayerProfileHeroProps = {
 };
 
 export default function PlayerProfileHero({
+  playerId,
+  photoUrl,
   fullName,
   jerseyNumber,
   position,
@@ -46,9 +50,23 @@ export default function PlayerProfileHero({
   onShare,
   onOpenTeam,
 }: PlayerProfileHeroProps) {
+  const portraitIdentity = React.useMemo(() => ({ playerId, photoUrl }), [playerId, photoUrl]);
+  const [failedPortraitIdentity, setFailedPortraitIdentity] = React.useState<typeof portraitIdentity | null>(null);
+  const portraitFailed = Boolean(photoUrl) && failedPortraitIdentity === portraitIdentity;
+  const portraitGuard = React.useRef({ identity: portraitIdentity, failed: portraitFailed });
+  React.useLayoutEffect(() => {
+    portraitGuard.current = { identity: portraitIdentity, failed: portraitFailed };
+  }, [portraitIdentity, portraitFailed]);
   const layout = getPlayerProfileHeroLayout(width, fontScale);
   const displayName = splitPlayerDisplayName(fullName);
-  const artwork = isGoalie ? neutralGoalieArtwork : neutralSkaterArtwork;
+  const portraitSource = photoUrl && !portraitFailed ? { uri: photoUrl } : null;
+  const artwork = portraitSource ?? (isGoalie ? neutralGoalieArtwork : neutralSkaterArtwork);
+  const handlePortraitError = () => {
+    const current = portraitGuard.current;
+    if (!photoUrl || current.identity !== portraitIdentity || current.failed) return;
+    current.failed = true;
+    setFailedPortraitIdentity(portraitIdentity);
+  };
   const surnameLetters = Array.from(displayName.surname);
   const surnameLetterSize = surnameLetters.length > 10 ? 13 : surnameLetters.length > 7 ? 16 : 20;
   const visibleAwards = awards.filter((award) => award.count > 0);
@@ -106,6 +124,7 @@ export default function PlayerProfileHero({
         <Image
           testID="player-profile-rink-ribbon-artwork"
           source={artwork}
+          onError={portraitSource ? handlePortraitError : undefined}
           alt=""
           resizeMode="contain"
           accessible={false}

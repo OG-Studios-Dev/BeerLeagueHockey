@@ -98,6 +98,8 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
     <FocusScrollView accentColor={accent} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <FocusCard focusId={`player:${data.playerId}:identity`} accentColor={accent} style={styles.heroBleed}>
         <PlayerProfileHero
+          playerId={data.playerId}
+          photoUrl={data.photoUrl}
           fullName={data.fullName}
           jerseyNumber={data.jerseyNumber}
           position={data.position}
