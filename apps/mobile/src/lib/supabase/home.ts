@@ -61,6 +61,7 @@ const MAX_COMPANION_BYTES = 256 * 1024;
 const MAX_LEADERS = 15;
 const MAX_STANDINGS = 200;
 const MAX_DIVISIONS = 64;
+const MAX_PHOTO_POOL = 40;
 const ARTICLE_PAGE_SIZE = 50;
 const MAX_ARTICLE_PAGES = 20;
 const GAME_STATUSES = new Set(['scheduled', 'in_progress', 'completed', 'pending_verification', 'postponed', 'cancelled']);
@@ -627,7 +628,7 @@ export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: strin
     const result = await supabase.from('gallery_photos')
       .select('id,url,caption,gallery_id,league_gallery!inner(id,title,league_id,is_published)')
       .eq('league_gallery.league_id', leagueId).eq('league_gallery.is_published', true)
-      .order('created_at', { ascending: false }).limit(12);
+      .order('created_at', { ascending: false }).limit(MAX_PHOTO_POOL);
     if (result.error) throw result.error;
     return validatePhotos(result.data ?? []);
   });

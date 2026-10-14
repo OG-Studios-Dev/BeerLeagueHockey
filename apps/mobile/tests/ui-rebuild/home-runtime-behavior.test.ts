@@ -202,7 +202,6 @@ describe('Home web-structure runtime', () => {
   const headingActions = [
     { headingText: 'This Week’s GamesFull schedule', title: 'This Week’s Games', actionText: 'Full schedule' },
     { headingText: 'StandingsAll standings', title: 'Standings', actionText: 'All standings' },
-    { headingText: 'League PhotosGallery', title: 'League Photos', actionText: 'Gallery' },
   ];
 
   function findHeading(output: unknown, text: string) {
@@ -240,6 +239,15 @@ describe('Home web-structure runtime', () => {
       { fontSize: flattenStyle(weeklyTitle?.props.style).fontSize, lineHeight: flattenStyle(weeklyTitle?.props.style).lineHeight },
       { fontSize: 22, lineHeight: 28 },
     );
+  });
+
+  it('renders League Photos as a heading only with no visible or semantic Gallery header action', async () => {
+    const output = await settle(createRuntime());
+    const heading = findHeading(output, 'League Photos');
+    assert.ok(heading);
+    assert.equal(nodeText(heading), 'League Photos');
+    assert.equal(findNode(heading, (node) => node.type === 'Pressable'), undefined);
+    assert.equal(findNode(heading, (node) => node.props.accessibilityRole === 'link'), undefined);
   });
 
   it('gives every stacked accessibility-large action full width and scale-derived intrinsic-safe height', async () => {
@@ -829,6 +837,44 @@ describe('Home web-structure runtime', () => {
     }
     assert.doesNotMatch(text, /Rink Shop|Sponsors refresh failed|Featured Sponsors|Premier Partners|Powered by/);
     assert.ok(findNode(runtime.harness.output, (node) => node.props.testID === 'home-photos-section'));
+  });
+
+  it('preserves photo loading, error, empty, and single album-cover fallback states without a rail', async () => {
+    const loading = createRuntime();
+    assert.ok(findNode(loading.harness.output, (node) => node.props.testID === 'home-photos-loading'));
+
+    const unavailable = await settle(createRuntime({ publicData: {
+      ...snapshot,
+      photos: { status: 'error', data: [], message: 'Photos unavailable.' },
+      albums: { status: 'error', data: [], message: 'Albums unavailable.' },
+    } }));
+    const error = findNode(unavailable, (node) => node.props.testID === 'home-photos-error');
+    assert.ok(error);
+    assert.match(nodeText(error), /League photos are temporarily unavailable/);
+    assert.ok(findNode(error, (node) => node.props.accessibilityLabel === 'Retry league home'));
+
+    const empty = await settle(createRuntime({ publicData: {
+      ...snapshot,
+      photos: { status: 'ready', data: [] },
+      albums: { status: 'ready', data: [] },
+    } }));
+    assert.equal(findNode(empty, (node) => /^home-photos-(section|error)$/.test(String(node.props.testID))), undefined);
+
+    const albumRuntime = createRuntime({ publicData: {
+      ...snapshot,
+      photos: { status: 'ready', data: [] },
+      albums: { status: 'ready', data: [{
+        id: 'album-covered', season_id: 'season-1', title: 'Championship album', description: null,
+        cover_photo_url: 'https://images.test/championship-cover.jpg', created_at: '2026-09-10',
+      }] },
+    } });
+    const albumOutput = await settle(albumRuntime);
+    const card = findNode(albumOutput, (node) => node.props.testID === 'home-photo-card');
+    assert.ok(card);
+    assert.equal(allNodes(findNode(albumOutput, (node) => node.props.testID === 'home-photos-section')).filter((node) => node.props.testID === 'home-photo-card').length, 1);
+    assert.equal(findNode(albumOutput, (node) => node.props.testID === 'home-photo-position'), undefined);
+    card.props.onPress();
+    assert.deepEqual(albumRuntime.linkCalls, ['https://harbour-hockey.beerleaguehockey.ca/gallery/album-covered']);
   });
 
   it('retains the validated division scope with stale standings after a same-period endpoint failure', async () => {

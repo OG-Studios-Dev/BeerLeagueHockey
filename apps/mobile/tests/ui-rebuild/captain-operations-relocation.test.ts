@@ -48,6 +48,328 @@ function resultBuilder(result: any) {
   return builder;
 }
 
+type DashboardQueryCall = {
+  table: string;
+  select?: { columns: string; options?: any };
+  predicates: Array<{ method: 'eq' | 'in' | 'is' | 'or' | 'gte'; column?: string; value: any }>;
+};
+
+const activeSeason = {
+  id: 'fall-2026', name: 'Fall 2026', start_date: '2026-09-01', end_date: null,
+  status: 'active', created_at: '2026-08-01T00:00:00.000Z',
+};
+
+const dashboardRosterRows = [
+  {
+    team_id: 'team-current', league_id: HOCKEY_LIFE_ID, season_id: activeSeason.id,
+    leadership_role: 'captain', status: 'active', end_date: null,
+    team: { id: 'team-current', name: 'Bad Bunny', logo_url: null, primary_color: '#123456' },
+    league: { id: HOCKEY_LIFE_ID, name: 'Hockey Life' },
+  },
+  {
+    team_id: 'team-completed', league_id: HOCKEY_LIFE_ID, season_id: 'winter-2025',
+    leadership_role: 'captain', status: 'active', end_date: null,
+    team: { id: 'team-completed', name: 'Completed Captains', logo_url: null, primary_color: '#654321' },
+    league: { id: HOCKEY_LIFE_ID, name: 'Hockey Life' },
+  },
+  {
+    team_id: 'team-archived', league_id: HOCKEY_LIFE_ID, season_id: 'summer-2024',
+    leadership_role: 'alternate_captain', status: 'active', end_date: null,
+    team: { id: 'team-archived', name: 'Archived Alternates', logo_url: null, primary_color: '#abcdef' },
+    league: { id: HOCKEY_LIFE_ID, name: 'Hockey Life' },
+  },
+];
+
+function dashboardBuilder(call: DashboardQueryCall, resolveResult: () => any) {
+  const builder: any = {
+    select: (columns: string, options?: any) => { call.select = { columns, options }; return builder; },
+    eq: (column: string, value: any) => { call.predicates.push({ method: 'eq', column, value }); return builder; },
+    in: (column: string, value: any) => { call.predicates.push({ method: 'in', column, value }); return builder; },
+    is: (column: string, value: any) => { call.predicates.push({ method: 'is', column, value }); return builder; },
+    or: (value: string) => { call.predicates.push({ method: 'or', value }); return builder; },
+    gte: (column: string, value: any) => { call.predicates.push({ method: 'gte', column, value }); return builder; },
+    order: () => builder,
+    limit: () => builder,
+    maybeSingle: async () => resolveResult(),
+    then: (resolve: any, reject: any) => Promise.resolve(resolveResult()).then(resolve, reject),
+  };
+  return builder;
+}
+
+function mountDashboard(options: {
+  user?: any;
+  seasonLoader?: (...args: any[]) => Promise<any>;
+  resolveQuery?: (call: DashboardQueryCall, fallback: any) => any;
+} = {}) {
+  const h = createHookHarness();
+  let dashboardUser = options.user ?? { id: 'captain-1' };
+  const calls: { season: any[][]; queries: DashboardQueryCall[] } = { season: [], queries: [] };
+  const currentGame = {
+    ...validGame,
+    id: 'game-current',
+    home_team_id: 'team-current',
+    season_id: activeSeason.id,
+  };
+  const hasPredicate = (call: DashboardQueryCall, method: string, column: string, value: any) =>
+    call.predicates.some(predicate => predicate.method === method && predicate.column === column && predicate.value === value);
+
+  const Screen = compileCommonJs<{ default: (props: any) => unknown }>(new URL('../../src/screens/captain/CaptainDashboardScreen.tsx', import.meta.url), {
+    react: h.react,
+    'react-native': nativeMock(),
+    '@expo/vector-icons': { Ionicons: 'Ionicons', MaterialCommunityIcons: 'MaterialCommunityIcons' },
+    'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    '../../navigation/cutIceSafeAreaPolicy': { cutIceContentEdges: (value: any) => value },
+    '../../components/TeamLogo': () => null,
+    '../../context/AuthContext': { useAuth: () => ({ user: dashboardUser }) },
+    '../../config/hockeyLife': { HOCKEY_LIFE_ID },
+    '../../lib/supabase/team': {
+      getTeamActiveSeason: async (...args: any[]) => {
+        calls.season.push(args);
+        if (options.seasonLoader) return options.seasonLoader(...args);
+        return { season: activeSeason, error: null };
+      },
+    },
+    '../../lib/supabase/client': { supabase: { from: (table: string) => {
+      const call: DashboardQueryCall = { table, predicates: [] };
+      calls.queries.push(call);
+      return dashboardBuilder(call, () => {
+        let fallback: any;
+        if (table === 'games') fallback = { data: currentGame, error: null };
+        else if (call.select?.options?.head) fallback = { count: 12, error: null };
+        else {
+          const hasSeasonScope = hasPredicate(call, 'eq', 'season_id', activeSeason.id);
+          fallback = {
+            data: hasSeasonScope
+              ? dashboardRosterRows.filter(row => row.season_id === activeSeason.id)
+              : dashboardRosterRows,
+            error: null,
+          };
+        }
+        return options.resolveQuery ? options.resolveQuery(call, fallback) : fallback;
+      });
+    } } },
+    '../../theme/colors': { __esModule: true, default: {
+      bgBase: '#000', bgSurface: '#111', bgElevated: '#181818', bgInteractive: '#222',
+      textPrimary: '#fff', textSecondary: '#aaa', primary: '#06f', brandGold: '#fc0',
+      accentViolet: '#a0f', glassStroke: '#333', glassHighlight: '#191919',
+    } },
+  }).default;
+
+  h.mount(() => Screen({ navigation: { navigate() {}, goBack() {} } }));
+  return {
+    h,
+    calls,
+    setUser(user: any) {
+      dashboardUser = user;
+      h.render();
+    },
+    setUserBeforeEffects(user: any) {
+      dashboardUser = user;
+      const useEffect = h.react.useEffect;
+      h.react.useEffect = ((_effect: () => void | (() => void), _dependencies?: readonly unknown[]) => {
+        h.react.useRef(null);
+      }) as typeof useEffect;
+      try {
+        return h.render();
+      } finally {
+        h.react.useEffect = useEffect;
+      }
+    },
+  };
+}
+
+describe('captain dashboard active-season scoping', () => {
+  it('renders only the current active-season captain team and applies exact dependent query predicates', async () => {
+    const run = mountDashboard();
+    await settle(run.h);
+    await settle(run.h);
+
+    const rendered = nodeText(run.h.output);
+    assert.match(rendered, /Bad Bunny/);
+    assert.doesNotMatch(rendered, /Completed Captains/);
+    assert.doesNotMatch(rendered, /Archived Alternates/);
+    assert.deepEqual(run.calls.season, [[HOCKEY_LIFE_ID]]);
+
+    const leadership = run.calls.queries.find(call => call.table === 'team_rosters' && !call.select?.options?.head);
+    assert.ok(leadership);
+    assert.deepEqual(leadership.predicates.filter(predicate => predicate.method !== 'gte'), [
+      { method: 'eq', column: 'player_id', value: 'captain-1' },
+      { method: 'eq', column: 'league_id', value: HOCKEY_LIFE_ID },
+      { method: 'eq', column: 'season_id', value: activeSeason.id },
+      { method: 'eq', column: 'status', value: 'active' },
+      { method: 'is', column: 'end_date', value: null },
+      { method: 'in', column: 'leadership_role', value: ['captain', 'alternate_captain'] },
+    ]);
+
+    const rosterCount = run.calls.queries.find(call => call.table === 'team_rosters' && call.select?.options?.head);
+    assert.ok(rosterCount);
+    assert.deepEqual(rosterCount.predicates, [
+      { method: 'eq', column: 'team_id', value: 'team-current' },
+      { method: 'eq', column: 'league_id', value: HOCKEY_LIFE_ID },
+      { method: 'eq', column: 'season_id', value: activeSeason.id },
+      { method: 'eq', column: 'status', value: 'active' },
+      { method: 'is', column: 'end_date', value: null },
+    ]);
+
+    const nextGame = run.calls.queries.find(call => call.table === 'games');
+    assert.ok(nextGame);
+    assert.deepEqual(nextGame.predicates.slice(0, 3), [
+      { method: 'eq', column: 'league_id', value: HOCKEY_LIFE_ID },
+      { method: 'eq', column: 'season_id', value: activeSeason.id },
+      { method: 'or', value: 'home_team_id.eq.team-current,away_team_id.eq.team-current' },
+    ]);
+  });
+
+  it('fails closed with an honest error when a dependent captain-team query fails', async () => {
+    const run = mountDashboard({
+      resolveQuery: (call, fallback) => call.select?.options?.head
+        ? { count: null, error: { message: 'roster count failed' } }
+        : fallback,
+    });
+    await settle(run.h);
+
+    const rendered = nodeText(run.h.output);
+    assert.doesNotMatch(rendered, /Bad Bunny/);
+    assert.match(rendered, /Unable to load captain duties/);
+    assert.match(rendered, /Captain duties are temporarily unavailable/);
+  });
+
+  it('binds the first committed A-to-B render to B loading before passive effects run', async () => {
+    const replacementRow = {
+      ...dashboardRosterRows[0],
+      team_id: 'team-replacement',
+      team: { ...dashboardRosterRows[0].team, id: 'team-replacement', name: 'Replacement Rabbits' },
+    };
+    const run = mountDashboard({
+      resolveQuery: (call, fallback) => {
+        if (call.table !== 'team_rosters' || call.select?.options?.head) return fallback;
+        const playerId = call.predicates.find(predicate => predicate.method === 'eq' && predicate.column === 'player_id')?.value;
+        return playerId === 'captain-2' ? { data: [replacementRow], error: null } : fallback;
+      },
+    });
+    await settle(run.h);
+    assert.match(nodeText(run.h.output), /Bad Bunny/);
+
+    const firstReplacementRender = run.setUserBeforeEffects({ id: 'captain-2' });
+    const rendered = nodeText(firstReplacementRender);
+    assert.doesNotMatch(rendered, /Bad Bunny/);
+    assert.doesNotMatch(rendered, /No captain duties|Unable to load captain duties/);
+    assert.ok(findNode(firstReplacementRender, node => node.type === 'ActivityIndicator'), 'replacement user gets an honest loading state immediately');
+
+    await settle(run.h);
+    assert.match(nodeText(run.h.output), /Replacement Rabbits/);
+  });
+
+  it('suppresses every pending current-request state effect after unmount', async () => {
+    const pending = deferred<any>();
+    const run = mountDashboard({
+      resolveQuery: (call, fallback) => call.table === 'team_rosters' && !call.select?.options?.head
+        ? pending.promise
+        : fallback,
+    });
+    await settle(run.h);
+    assert.ok(run.calls.queries.some(call => call.table === 'team_rosters' && !call.select?.options?.head), 'current request is pending before unmount');
+
+    const updatesBeforeUnmount = run.h.stateUpdateCount;
+    const warnings: any[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => { warnings.push(args); };
+    try {
+      run.h.unmount();
+      pending.resolve({ data: [dashboardRosterRows[0]], error: null });
+      await settle(run.h);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    assert.equal(run.h.stateUpdateCount, updatesBeforeUnmount);
+    assert.deepEqual(warnings, []);
+  });
+
+  it('keeps the newest overlapping refresh pending when the older refresh settles first', async () => {
+    const olderRoster = deferred<any>();
+    const newestRoster = deferred<any>();
+    const olderRow = {
+      ...dashboardRosterRows[0],
+      team_id: 'team-older-refresh',
+      team: { ...dashboardRosterRows[0].team, id: 'team-older-refresh', name: 'Older Refresh Owls' },
+    };
+    const newestRow = {
+      ...dashboardRosterRows[0],
+      team_id: 'team-newest-refresh',
+      team: { ...dashboardRosterRows[0].team, id: 'team-newest-refresh', name: 'Newest Refresh Narwhals' },
+    };
+    let leadershipReads = 0;
+    const run = mountDashboard({
+      resolveQuery: (call, fallback) => {
+        if (call.table !== 'team_rosters' || call.select?.options?.head) return fallback;
+        leadershipReads += 1;
+        if (leadershipReads === 2) return olderRoster.promise;
+        if (leadershipReads === 3) return newestRoster.promise;
+        return fallback;
+      },
+    });
+    await settle(run.h);
+    assert.match(nodeText(run.h.output), /Bad Bunny/);
+
+    const initialScroll = findNode(run.h.output, node => node.type === 'ScrollView');
+    assert.ok(initialScroll?.props.refreshControl);
+    const olderRefresh = initialScroll.props.refreshControl.props.onRefresh();
+    await settle(run.h);
+    assert.equal(leadershipReads, 2);
+
+    const refreshingScroll = findNode(run.h.output, node => node.type === 'ScrollView');
+    const newestRefresh = refreshingScroll?.props.refreshControl.props.onRefresh();
+    await settle(run.h);
+    assert.equal(leadershipReads, 3);
+    assert.equal(findNode(run.h.output, node => node.type === 'ScrollView')?.props.refreshControl.props.refreshing, true);
+
+    olderRoster.resolve({ data: [olderRow], error: null });
+    await olderRefresh;
+    await settle(run.h);
+    assert.equal(findNode(run.h.output, node => node.type === 'ScrollView')?.props.refreshControl.props.refreshing, true, 'older completion cannot clear the newest refresh indicator');
+    assert.doesNotMatch(nodeText(run.h.output), /Older Refresh Owls/);
+
+    newestRoster.resolve({ data: [newestRow], error: null });
+    await newestRefresh;
+    await settle(run.h);
+    const rendered = nodeText(run.h.output);
+    assert.equal(findNode(run.h.output, node => node.type === 'ScrollView')?.props.refreshControl.props.refreshing, false);
+    assert.match(rendered, /Newest Refresh Narwhals/);
+    assert.doesNotMatch(rendered, /Older Refresh Owls/);
+  });
+
+  it('does not let a stale user load replace the next user dashboard', async () => {
+    const firstUser = deferred<any>();
+    const replacementRow = {
+      ...dashboardRosterRows[0],
+      team_id: 'team-replacement',
+      team: { ...dashboardRosterRows[0].team, id: 'team-replacement', name: 'Replacement Rabbits' },
+    };
+    const run = mountDashboard({
+      resolveQuery: (call, fallback) => {
+        if (call.table !== 'team_rosters' || call.select?.options?.head) return fallback;
+        const playerId = call.predicates.find(predicate => predicate.method === 'eq' && predicate.column === 'player_id')?.value;
+        return playerId === 'captain-1'
+          ? firstUser.promise
+          : { data: [replacementRow], error: null };
+      },
+    });
+    await settle(run.h);
+
+    run.setUser({ id: 'captain-2' });
+    await settle(run.h);
+    assert.match(nodeText(run.h.output), /Replacement Rabbits/);
+
+    firstUser.resolve({ data: [dashboardRosterRows[0]], error: null });
+    await settle(run.h);
+    const rendered = nodeText(run.h.output);
+    assert.match(rendered, /Replacement Rabbits/);
+    assert.doesNotMatch(rendered, /Bad Bunny/);
+  });
+});
+
 async function refresh(run: ReturnType<typeof mountAvailability>) {
   const scroll = findNode(run.h.output, node => node.type === 'ScrollView');
   assert.ok(scroll?.props.refreshControl);
@@ -128,6 +450,7 @@ describe('private captain operations relocation', () => {
       '../../components/BrandAtmosphere': () => null, '../../components/SectionHeader': ({ title }: any) => createElement('Text', {}, title),
       '../../components/TeamLogo': () => null, '../../context/AuthContext': { useAuth: () => ({ user: dashboardUser }) },
       '../../config/hockeyLife': { HOCKEY_LIFE_ID },
+      '../../lib/supabase/team': { getTeamActiveSeason: async () => ({ season: activeSeason, error: null }) },
       '../../lib/supabase/client': { supabase: { from: (table: string) => {
         if (table === 'games') return resultBuilder({ data: validGame, error: null });
         teamRosterCalls += 1;

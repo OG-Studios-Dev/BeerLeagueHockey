@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import { supabase } from '../../lib/supabase/client';
 import { type CaptainRole } from '../../lib/supabase/captain';
+import { getTeamActiveSeason } from '../../lib/supabase/team';
 import colors from '../../theme/colors';
 
 type CaptainTeam = {
@@ -38,32 +39,91 @@ type CaptainTeam = {
   } | null;
 };
 
+type CaptainDashboardState = {
+  ownerId: string | null;
+  captainTeams: CaptainTeam[];
+  loadError: string | null;
+  loading: boolean;
+};
+
+const CAPTAIN_DASHBOARD_ERROR = 'Captain duties are temporarily unavailable.';
+
+function loadingDashboardState(ownerId: string | null): CaptainDashboardState {
+  return { ownerId, captainTeams: [], loadError: null, loading: true };
+}
+
 export default function CaptainDashboardScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
-  const [captainTeams, setCaptainTeams] = React.useState<CaptainTeam[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const userId = user?.id ?? null;
+  const [dashboardState, setDashboardState] = React.useState<CaptainDashboardState>(() => loadingDashboardState(userId));
   const [refreshing, setRefreshing] = React.useState(false);
+  const loadRequestRef = React.useRef(0);
+  const refreshRequestRef = React.useRef(0);
+  const currentUserIdRef = React.useRef<string | null>(userId);
+  const mountedRef = React.useRef(false);
+  const lifecycleGenerationRef = React.useRef(0);
+  currentUserIdRef.current = userId;
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    lifecycleGenerationRef.current += 1;
+    return () => {
+      mountedRef.current = false;
+      lifecycleGenerationRef.current += 1;
+      loadRequestRef.current += 1;
+      refreshRequestRef.current += 1;
+    };
+  }, []);
 
   const loadData = React.useCallback(async () => {
-    if (!user) return;
+    const requestId = ++loadRequestRef.current;
+    const lifecycleGeneration = lifecycleGenerationRef.current;
+    const isCurrentRequest = () =>
+      mountedRef.current &&
+      lifecycleGenerationRef.current === lifecycleGeneration &&
+      loadRequestRef.current === requestId &&
+      currentUserIdRef.current === userId;
+    if (!userId) {
+      if (isCurrentRequest()) {
+        setDashboardState({ ownerId: userId, captainTeams: [], loadError: null, loading: false });
+      }
+      return;
+    }
 
     try {
-      // Get all teams the user is on with leadership roles
-      const { data: rosterRows } = await supabase
+      if (isCurrentRequest()) {
+        setDashboardState(current => current.ownerId === userId
+          ? { ...current, loadError: null }
+          : loadingDashboardState(userId));
+      }
+      const { season, error: seasonError } = await getTeamActiveSeason(HOCKEY_LIFE_ID);
+      if (!isCurrentRequest()) return;
+      if (seasonError) throw new Error(seasonError);
+      if (!season || !['active', 'playoffs'].includes(season.status)) {
+        setDashboardState({ ownerId: userId, captainTeams: [], loadError: null, loading: false });
+        return;
+      }
+
+      // Get current-season teams the user is on with leadership roles
+      const { data: rosterRows, error: rosterError } = await supabase
         .from('team_rosters')
         .select(`
           team_id, league_id, leadership_role,
           team:teams!team_rosters_team_id_fkey(id, name, logo_url, primary_color),
           league:leagues!team_rosters_league_id_fkey(id, name)
         `)
-        .eq('player_id', user.id)
+        .eq('player_id', userId)
         .eq('league_id', HOCKEY_LIFE_ID)
+        .eq('season_id', season.id)
         .eq('status', 'active')
+        .is('end_date', null)
         .in('leadership_role', ['captain', 'alternate_captain']);
+      if (!isCurrentRequest()) return;
+      if (rosterError) throw rosterError;
 
       const rows = (rosterRows as any[]) ?? [];
       if (rows.length === 0) {
-        setCaptainTeams([]);
+        setDashboardState({ ownerId: userId, captainTeams: [], loadError: null, loading: false });
         return;
       }
 
@@ -75,15 +135,19 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
         if (!team || !league) continue;
 
         // Get roster count
-        const { count: rosterCount } = await supabase
+        const { count: rosterCount, error: rosterCountError } = await supabase
           .from('team_rosters')
           .select('id', { count: 'exact', head: true })
           .eq('team_id', row.team_id)
           .eq('league_id', row.league_id)
-          .eq('status', 'active');
+          .eq('season_id', season.id)
+          .eq('status', 'active')
+          .is('end_date', null);
+        if (!isCurrentRequest()) return;
+        if (rosterCountError) throw rosterCountError;
 
         // Get next game
-        const { data: nextGameData } = await supabase
+        const { data: nextGameData, error: nextGameError } = await supabase
           .from('games')
           .select(`
             id, scheduled_at, location, home_team_id, away_team_id,
@@ -91,12 +155,15 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
             away_team:teams!games_away_team_id_fkey(name)
           `)
           .eq('league_id', row.league_id)
+          .eq('season_id', season.id)
           .or(`home_team_id.eq.${row.team_id},away_team_id.eq.${row.team_id}`)
           .eq('status', 'scheduled')
           .gte('scheduled_at', new Date().toISOString())
           .order('scheduled_at', { ascending: true })
           .limit(1)
           .maybeSingle();
+        if (!isCurrentRequest()) return;
+        if (nextGameError) throw nextGameError;
 
         let nextGame: CaptainTeam['nextGame'] = null;
         if (nextGameData) {
@@ -126,21 +193,52 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
         });
       }
 
-      setCaptainTeams(teams);
+      if (isCurrentRequest()) {
+        setDashboardState({ ownerId: userId, captainTeams: teams, loadError: null, loading: false });
+      }
+    } catch {
+      if (isCurrentRequest()) {
+        setDashboardState({
+          ownerId: userId,
+          captainTeams: [],
+          loadError: CAPTAIN_DASHBOARD_ERROR,
+          loading: false,
+        });
+      }
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) {
+        setDashboardState(current => current.ownerId === userId && current.loading
+          ? { ...current, loading: false }
+          : current);
+      }
     }
-  }, [user]);
+  }, [userId]);
 
   React.useEffect(() => {
+    refreshRequestRef.current += 1;
+    setRefreshing(false);
+    setDashboardState(loadingDashboardState(userId));
     void loadData();
-  }, [loadData]);
+  }, [loadData, userId]);
 
   const onRefresh = React.useCallback(async () => {
+    const refreshRequest = ++refreshRequestRef.current;
+    const lifecycleGeneration = lifecycleGenerationRef.current;
+    const refreshOwnerId = userId;
+    const isCurrentRefresh = () =>
+      mountedRef.current &&
+      lifecycleGenerationRef.current === lifecycleGeneration &&
+      refreshRequestRef.current === refreshRequest &&
+      currentUserIdRef.current === refreshOwnerId;
+    if (!isCurrentRefresh()) return;
+
     setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  }, [loadData]);
+    try {
+      await loadData();
+    } finally {
+      if (isCurrentRefresh()) setRefreshing(false);
+    }
+  }, [loadData, userId]);
 
   function formatGameDate(iso: string) {
     const d = new Date(iso);
@@ -148,6 +246,11 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
       ' at ' +
       d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
+
+  const visibleState = dashboardState.ownerId === userId
+    ? dashboardState
+    : loadingDashboardState(userId);
+  const { captainTeams, loadError, loading } = visibleState;
 
   if (loading) {
     return (
@@ -164,8 +267,10 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
       <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
         <View style={styles.centered}>
           <MaterialCommunityIcons name="shield-crown-outline" size={40} color={colors.textSecondary} />
-          <Text style={styles.emptyTitle}>No captain duties</Text>
-          <Text style={styles.emptySub}>You are not a captain or assistant captain on any teams.</Text>
+          <Text style={styles.emptyTitle}>{loadError ? 'Unable to load captain duties' : 'No captain duties'}</Text>
+          <Text style={styles.emptySub}>
+            {loadError ?? 'You are not a captain or assistant captain on any teams.'}
+          </Text>
         </View>
       </SafeAreaView>
     );

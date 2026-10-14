@@ -117,6 +117,8 @@ describe('web-contract Home data boundary', () => {
     assert.ok(has('games', 'gte', 'scheduled_at'));
     assert.ok(has('games', 'lte', 'scheduled_at'));
     assert.ok(has('gallery_photos', 'eq', 'league_gallery.is_published', true));
+    const photoLimit = calls.find(([table, method]) => table === 'gallery_photos' && method === 'limit')?.[2][0];
+    assert.equal(photoLimit, 40, 'mobile samples ten photos from a bounded published pool larger than twelve');
     assert.ok(has('league_sponsors', 'eq', 'is_active', true));
     assert.equal(calls.some(([, method]) => method === 'rpc'), false);
   });

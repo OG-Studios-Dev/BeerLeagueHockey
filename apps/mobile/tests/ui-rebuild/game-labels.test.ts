@@ -234,7 +234,7 @@ function renderHome({
     '../components/SectionHeader': { SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
     // Peripheral presentation is outside the two label regressions. Keep
     // wrappers' children intact; team names still come from real HomeScreen Text.
-    ...Object.fromEntries(['GuestBanner', 'HomeLeagueHero', 'HomeLeagueLeaders', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
+    ...Object.fromEntries(['GuestBanner', 'HomeLeagueHero', 'HomeLeagueLeaders', 'HomePhotoCarousel', 'LeagueMarketplace', 'RevealView', 'TeamLogo'].map((name) => [`../components/${name}`, name])),
     '../components/CardFocus': {
       FocusCard: (props: Props) => jsx('View', props),
       FocusScrollView: ({ children, ...props }: Props) => jsx('ScrollView', { ...props, children }),

@@ -123,9 +123,10 @@ describe('shared mobile carousel pager', () => {
     assert.deepEqual(finite, [-1, -1]);
   });
 
-  it('is the only pager control used by all five audited carousel consumers', () => {
+  it('is the only pager control used by all six audited carousel consumers', () => {
     const consumers = [
       ['screens/HomeScreen.tsx', /<CarouselPager[\s\S]*?testID="home-story"/],
+      ['components/HomePhotoCarousel.tsx', /<CarouselPager[\s\S]*?testID="home-photo"/],
       ['components/HomeMatchupCarousel.tsx', /<CarouselPager[\s\S]*?testID="home-matchup"/],
       ['screens/TeamScreen/TeamPublicPage.tsx', /<CarouselPager[\s\S]*?testID="team-rival"/],
       ['screens/league-pages/GalleryAlbumScreen.tsx', /<CarouselPager[\s\S]*?testID="gallery-photo"/],

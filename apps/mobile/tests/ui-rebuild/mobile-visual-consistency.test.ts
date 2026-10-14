@@ -114,7 +114,7 @@ describe('mobile-wide league visual foundation', () => {
     assert.match(source('components/NativeNewspaperEdition.tsx'), /artwork:[^\n]*backgroundColor:\s*colors\.bgMedia/);
     assert.match(source('components/PlayerProfile/SeasonPicker.tsx'), /sheet:[^\n]*backgroundColor:\s*colors\.bgModal/);
     assert.match(source('screens/captain/GameAvailabilityScreen.tsx'), /modal:[^\n]*backgroundColor:\s*colors\.bgModal/);
-    assert.match(source('screens/HomeScreen.tsx'), /photo:\s*\{[^}]*backgroundColor:\s*colors\.bgMedia/);
+    assert.match(source('components/HomePhotoCarousel.tsx'), /card:\s*\{[^}]*backgroundColor:\s*colors\.bgMedia/);
     assert.match(source('screens/PlayerCardScreen.tsx'), /articleImage:\s*\{[^}]*backgroundColor:\s*colors\.bgMedia/);
     const players = source('screens/league-pages/PlayersDirectoryScreen.tsx');
     assert.match(players, /portraitFrame:\s*\{[^}]*backgroundColor:\s*colors\.bgMedia/);
