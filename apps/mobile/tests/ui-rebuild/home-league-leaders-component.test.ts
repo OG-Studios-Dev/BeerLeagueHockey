@@ -295,7 +295,7 @@ describe('Home League Leaders component', () => {
   });
 
   it('keys artwork and crest lifetimes to exact changing identities', () => {
-    const source = readFileSync(new URL('../../src/components/HomeLeagueLeaders.tsx', import.meta.url).pathname, 'utf8');
+    const source = readFileSync(new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url).pathname, 'utf8');
     assert.match(source, /import jackFooteArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/jack-foote\.png['"]/);
     assert.match(source, /import neutralGoalieArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/neutral-goalie\.png['"]/);
     assert.match(source, /import neutralHelmetArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/neutral-helmet-player\.png['"]/);

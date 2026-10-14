@@ -241,7 +241,7 @@ describe('canonical selectable-control foundation', () => {
     const directConsumers = [
       'components/PillToggle.tsx',
       'components/DivisionFilter.tsx',
-      'components/HomeLeagueLeaders.tsx',
+      'components/LeagueLeadersPresentation.tsx',
       'components/StatsLeadersCard.tsx',
       'components/StatsTimelineFilter.tsx',
       'components/PlayerProfile/CareerTrendChart.tsx',
@@ -303,12 +303,12 @@ describe('League Leaders presentation consistency', () => {
     const helper = src('lib/leaderPresentation.ts');
     assert.match(helper, /export function splitLeagueLeaderName/);
     for (const file of [
-      'components/HomeLeagueLeaders.tsx',
+      'components/LeagueLeadersPresentation.tsx',
       'components/StatsLeadersCard.tsx',
       'lib/statsPresentationModel.ts',
       'screens/stats/LeaderboardsScreen.tsx',
     ]) assert.match(src(file), /splitLeagueLeaderName/, file);
-    for (const file of ['components/HomeLeagueLeaders.tsx', 'components/StatsLeadersCard.tsx', 'screens/stats/LeaderboardsScreen.tsx']) {
+    for (const file of ['components/LeagueLeadersPresentation.tsx', 'components/StatsLeadersCard.tsx', 'screens/stats/LeaderboardsScreen.tsx']) {
       const contents = src(file);
       assert.match(contents, /firstLine/);
       assert.match(contents, /secondLine/);

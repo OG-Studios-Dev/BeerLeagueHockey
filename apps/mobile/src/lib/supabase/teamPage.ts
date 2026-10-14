@@ -2,6 +2,7 @@ import { supabase } from './client';
 import { getMetricsOperationalSeason } from './team';
 import { getPublicSeasonStats, type PublicGoalieMetrics, type PublicSeasonPlayer, type PublicSeasonStats } from './publicStats';
 import type { PublicStatMetric } from './publicStats';
+import type { HomeLeader } from './home';
 
 export type TeamLeaderMetric = 'points' | 'goals' | 'assists' | 'penaltyMinutes';
 export type TeamStatProvenance = 'authoritative' | 'estimated' | null;
@@ -109,6 +110,7 @@ export type TeamPageSnapshot = {
   hero: { winPercentage: number | null };
   roster: TeamPageRosterPlayer[];
   leaders: Record<TeamLeaderMetric, TeamPageLeader[]>;
+  leagueLeaders: HomeLeader[];
   games: TeamPageGame[];
   collapsedSchedule: TeamPageGame[];
   nextGame: TeamPageGame | null;
@@ -389,6 +391,37 @@ function buildLeaders(roster: TeamPageRosterPlayer[], publicPlayers?: PublicSeas
     .slice(0, 3)])) as Record<TeamLeaderMetric, TeamPageLeader[]>;
 }
 
+export function buildTeamLeagueLeaderPopulation(
+  publicStats: Pick<PublicSeasonStats, 'players'> | undefined,
+  team: TeamPageIdentity,
+): HomeLeader[] {
+  if (!publicStats) return [];
+  return publicStats.players.flatMap((player) => {
+    const isTeamScoped = Array.isArray(player.teams)
+      && player.teams.length === 1
+      && player.teams[0].id === team.id
+      && (!player.displayTeam || player.displayTeam.id === team.id);
+    if (!isTeamScoped) return [];
+    const gaa = player.goalie?.goalsAgainstAverage ?? null;
+    return [{
+      player_id: player.playerId,
+      player_name: player.playerName,
+      avatar_url: player.avatarUrl,
+      team_id: team.id,
+      team_name: team.name,
+      display_team_name: team.name,
+      display_team_logo_url: team.logoUrl,
+      position: null,
+      goals: player.roles.includes('skater') ? player.metrics.goals.value : null,
+      assists: player.roles.includes('skater') ? player.metrics.assists.value : null,
+      points: player.roles.includes('skater') ? player.metrics.points.value : null,
+      gaa: gaa?.value ?? null,
+      is_goalie: player.roles.includes('goalie'),
+      estimated: gaa?.state === 'estimated',
+    }];
+  });
+}
+
 function rankValue(standings: TeamPageStanding[], teamId: string, key: 'goalsFor' | 'goalsAgainst', direction: 'asc' | 'desc'): number | null {
   const eligible = standings.filter((row) => row[key] != null).sort((left, right) => {
     const difference = (left[key] ?? 0) - (right[key] ?? 0);
@@ -605,6 +638,7 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
   });
 
   const standings = standingsFrom(input);
+  const team = identity(input.team);
   const standing = standings.find((row) => row.teamId === input.teamId) ?? null;
   const games = buildGames(input);
   const past = games.filter((game) => game.status === 'completed' || game.status === 'pending_verification').sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime());
@@ -615,10 +649,13 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
   const championships = championshipSummary(input, now);
   return {
     season: { id: String(input.season.id), name: stringValue(input.season.name) ?? 'Current Season', status: stringValue(input.season.status) ?? 'active', startDate: stringValue(input.season.start_date), endDate: stringValue(input.season.end_date) },
-    team: identity(input.team),
+    team,
     league: { id: String(input.league.id), name: stringValue(input.league.name) ?? 'League', slug: stringValue(input.league.slug), primaryColor: stringValue(input.league.primary_color), timezone: stringValue(input.league.timezone) ?? 'America/Toronto' },
     standing, standings, rank: rank < 0 ? null : rank + 1, record: recordLabel(standing), streak: computeStreak(games, input.teamId), hero: { winPercentage },
-    roster, leaders: buildLeaders(roster, input.publicSeasonStats?.players), games,
+    roster,
+    leaders: buildLeaders(roster, input.publicSeasonStats?.players),
+    leagueLeaders: buildTeamLeagueLeaderPopulation(input.publicSeasonStats, team),
+    games,
     collapsedSchedule: [...past.slice(0, 2).reverse(), ...upcoming.slice(0, 2)],
     nextGame,
     rivals: buildRivals(input, games, standings),

@@ -9,7 +9,7 @@ it('builds dynamic broadcast facts while preserving every unavailable value hone
   assert.ok(existsSync(fileURLToPath(modelUrl)), 'teamBroadcastHeroModel.ts must isolate TeamPageSnapshot presentation facts');
   const { buildBroadcastTeamHeroModel } = await import(modelUrl.href);
   const base = {
-    team: { name: 'Aurora Wolves', primaryColor: '#6046A8' },
+    team: { name: 'Aurora Wolves', primaryColor: '#6046A8', secondaryColor: '#D9B64C' },
     league: { primaryColor: '#1F6A44' },
     standing: { goalsFor: 17, goalsAgainst: 21, goalDifferential: -4 },
     rank: 4,
@@ -19,7 +19,7 @@ it('builds dynamic broadcast facts while preserving every unavailable value hone
     championships: { count: 2, latestTitleSeasonName: 'Summer 2026', latestTitleLabel: '2026' },
   };
   const known = buildBroadcastTeamHeroModel(base);
-  assert.deepEqual([known.primaryName, known.secondaryName], ['Aurora', 'Wolves']);
+  assert.deepEqual(known.tickerColors, ['#6046A8', '#D9B64C']);
   assert.deepEqual(known.callouts, [['RANK', '#4'], ['STREAK', 'T2'], ['WIN PERCENTAGE', '38%']]);
   assert.deepEqual(known.ticker, [['GF', '17'], ['GA', '21'], ['DIFF', '-4'], ['WIN', '38%']]);
   assert.deepEqual(
@@ -29,7 +29,7 @@ it('builds dynamic broadcast facts while preserving every unavailable value hone
 
   const unknown = buildBroadcastTeamHeroModel({
     ...base,
-    team: { name: 'Solo', primaryColor: 'purple' },
+    team: { name: 'Solo', primaryColor: 'purple', secondaryColor: 'pink' },
     league: { primaryColor: null },
     standing: null,
     rank: null,
@@ -38,7 +38,7 @@ it('builds dynamic broadcast facts while preserving every unavailable value hone
     hero: { winPercentage: null },
     championships: { count: null, latestTitleSeasonName: null, latestTitleLabel: null },
   });
-  assert.deepEqual([unknown.primaryName, unknown.secondaryName], ['Solo', null]);
+  assert.deepEqual(unknown.tickerColors, ['#03299B', '#03299B']);
   assert.deepEqual(unknown.callouts, [['RANK', '—'], ['STREAK', '—'], ['WIN PERCENTAGE', '—']]);
   assert.deepEqual(unknown.ticker, [['GF', '—'], ['GA', '—'], ['DIFF', '—'], ['WIN', '—']]);
   assert.deepEqual(

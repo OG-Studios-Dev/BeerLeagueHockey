@@ -224,8 +224,12 @@ function createRuntime({
       'react-native': { Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: {}, hairlineWidth: 1 }, useWindowDimensions: () => ({ width, height: 844, fontScale: 1 }) },
       '@expo/vector-icons': { Ionicons: 'Ionicon' }, 'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       '../../components/Avatar': (props: Row) => createElement('Avatar', props), '../../components/TeamLogo': (props: Row) => createElement('TeamLogo', props),
+      './TeamLogo': (props: Row) => createElement('TeamLogo', props),
       '../../lib/supabase/publicStats': { formatPublicMetric: (metric: any) => ({ value: metric.state === 'conflicted' ? 'Needs review' : metric.value == null ? '—' : `${metric.state === 'estimated' ? '~' : ''}${metric.value}`, hint: metric.state === 'unknown' ? 'Not recorded.' : metric.state === 'estimated' ? 'Estimated.' : 'Recorded.' }) },
       '../../theme/colors': { __esModule: true, default: colors }, '../../theme/ui': { ui: { minTouchTarget: 44 } },
+      '../../assets/league-leaders/jack-foote.png': 6,
+      '../../assets/league-leaders/neutral-goalie.png': 7,
+      '../../assets/league-leaders/neutral-helmet-player.png': 8,
       '../../assets/team-page/weekly-games-bg.jpg': 1, '../../assets/team-page/trophy.png': 2, '../../assets/team-page/jersey-primary.png': 3, '../../assets/team-page/jersey-secondary.png': 4, '../../assets/team-page/jersey-detail.png': 5,
     },
   ).default;
@@ -420,7 +424,7 @@ describe('Team active-season data boundary', () => {
 
     assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.season.id, 'season-old');
     assert.equal(findNode(output, (node) => node.props.testID === 'team-operations-wrapper'), undefined);
-    assert.match(text, /Historical Harper/i);
+    assert.match(text, /HARPER/i);
     assert.doesNotMatch(text, /No active season/);
   });
 
@@ -470,9 +474,8 @@ describe('Team active-season data boundary', () => {
     const text = nodeText(output);
     const player = findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.roster.find((row: Row) => row.playerId === 'player-current');
     assert.deepEqual([player.gamesPlayed, player.goals, player.assists, player.points], [4, 2, 3, 5]);
-    assert.match(text, /GP/);
-    assert.match(text, /Current Casey/);
-    assert.match(text, /Current Casey5#12 • ~4 GP/);
+    assert.match(text, /CASEY/);
+    assert.doesNotMatch(text, /~4 GP/);
     assert.match(text, /Current Opponent/);
     assert.match(text, /Current Season Arena/);
     assert.doesNotMatch(text, /Historical Opponent|Historical Arena|90/);
@@ -565,8 +568,8 @@ describe('Team active-season data boundary', () => {
     const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
     assert.ok(hero);
     assert.match(hero.props.accessibilityLabel, /North Stars, record 8-2-1/);
-    assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-primary')), 'North');
-    assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-secondary')), 'Stars');
+    assert.equal(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-primary'), undefined);
+    assert.equal(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-secondary'), undefined);
     const composition = findNode(output, (node) => node.props.testID === 'team-public-composition');
     assert.equal(flattenStyle(composition?.props.style).backgroundColor, 'transparent');
     const props = findNode(output, (node) => node.type === 'TeamPublicPage')?.props;
@@ -610,7 +613,7 @@ describe('Team active-season data boundary', () => {
       captainApi: { getCaptainRole: async () => 'captain' },
     });
     const memberOutput = await settle(member);
-    for (const testID of ['team-schedule-game-game-current', 'team-roster-player-player-current']) {
+    for (const testID of ['schedule-matchup-card-body-game-current', 'team-roster-player-player-current']) {
       const action = findNode(memberOutput, (node) => node.props.testID === testID);
       assert.ok(action, `Missing preserved action: ${testID}`);
       const style = typeof action.props.style === 'function' ? action.props.style({ pressed: false }) : action.props.style;
@@ -660,7 +663,7 @@ describe('Team active-season data boundary', () => {
   it('uses public schedule facts while preserving full native GamePreview navigation', async () => {
     const runtime = createRuntime();
     const output = await settle(runtime);
-    const gameCard = findNode(output, (node) => node.props.testID === 'team-schedule-game-game-current');
+    const gameCard = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-body-game-current');
     const goBack = findNode(output, (node) => node.type === 'Pressable' && node.props.accessibilityLabel === 'Go back');
     const safeArea = findNode(output, (node) => node.type === 'SafeAreaView');
 
@@ -702,7 +705,7 @@ describe('Team active-season data boundary', () => {
     const playerName = findNode(output, (node) => node.type === 'Text' && nodeText(node) === longPlayerName);
     assert.ok(playerName);
     assert.equal(playerName.props.numberOfLines, undefined);
-    const gameCard = findNode(output, (node) => node.props.testID === 'team-schedule-game-game-current');
+    const gameCard = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-body-game-current');
     assert.ok(gameCard?.props.accessibilityLabel.includes(longVenue));
   });
 });

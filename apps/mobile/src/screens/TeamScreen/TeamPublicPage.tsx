@@ -6,10 +6,15 @@ import { Image, ImageBackground, Pressable, StyleSheet, Text, useWindowDimension
 import Avatar from '../../components/Avatar';
 import CarouselPager from '../../components/CarouselPager';
 import { FocusCard } from '../../components/CardFocus';
+import LeagueLeadersPresentation from '../../components/LeagueLeadersPresentation';
+import ScheduleMatchupCard from '../../components/ScheduleMatchupCard';
 import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import { SelectableControl, SelectableControlGroup } from '../../components/SelectableControl';
 import TeamLogo from '../../components/TeamLogo';
-import type { TeamLeaderMetric, TeamPageGame, TeamPageLeader, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
+import type { HomeLeaderMetric } from '../../lib/homeLeagueLeaders';
+import { buildScheduleRows, selectTeamScheduleGames, type SchedulePresentationRow } from '../../lib/schedulePresentation';
+import type { GameRow } from '../../lib/supabase/data';
+import type { TeamPageGame, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { formatPublicMetric } from '../../lib/supabase/publicStats';
 import colors from '../../theme/colors';
 import { resolveFocusAccent } from '../../theme/focusAccent';
@@ -22,15 +27,6 @@ const jerseyPrimary = require('../../assets/team-page/jersey-primary.png');
 const jerseySecondary = require('../../assets/team-page/jersey-secondary.png');
 const jerseyDetail = require('../../assets/team-page/jersey-detail.png');
 /* eslint-enable @typescript-eslint/no-require-imports */
-
-const METRICS: Array<{ key: TeamLeaderMetric; label: string }> = [
-  { key: 'points', label: 'P' },
-  { key: 'goals', label: 'G' },
-  { key: 'assists', label: 'A' },
-  { key: 'penaltyMinutes', label: 'PM' },
-];
-
-const METRIC_NAMES: Record<TeamLeaderMetric, string> = { points: 'points', goals: 'goals', assists: 'assists', penaltyMinutes: 'penalty minutes' };
 
 function gameStatus(status: string | null): string {
   return status === 'completed' ? 'Final' : status === 'pending_verification' ? 'Pending verification' : status === 'in_progress' || status === 'live' ? 'Live' : (status ?? 'Scheduled').replace(/_/g, ' ');
@@ -209,72 +205,75 @@ function NextGame({ game, accent, compact, reduceTransparency, timeZone, onOpenG
   );
 }
 
-function LeaderCard({ leader, place, accent, metric, onOpenPlayer }: { leader: TeamPageLeader; place: number; accent: string; metric: TeamLeaderMetric; onOpenPlayer: (id: string) => void }) {
-  const { width } = useWindowDimensions();
-  const portraitSize = width < 360 ? 54 : 70;
-  const tone = place === 1 ? '#E4C85A' : place === 2 ? '#CBD5E1' : '#CD7F32';
-  return (
-    <Pressable testID={`team-leader-${leader.playerId}`} accessibilityRole="button" accessibilityLabel={`${leader.name}, ${leader.value} ${METRIC_NAMES[metric]}, ${leader.gamesPlayed == null ? 'games played unknown' : `${leader.gamesPlayedProvenance === 'estimated' ? 'approximately ' : ''}${leader.gamesPlayed} games played`}. Open player card.`} onPress={() => onOpenPlayer(leader.playerId)} style={[styles.leaderCard, place === 1 ? styles.leaderFirst : place === 2 ? styles.leaderSecond : styles.leaderThird, { borderColor: `${tone}88`, backgroundColor: `${tone}18` }]}>
-      <View style={[styles.leaderAvatarHalo, { width: portraitSize + 10, height: portraitSize + 10, borderColor: tone }]}><View style={[styles.leaderAvatarInner, { borderColor: `${tone}88` }]}><Avatar uri={leader.photoUrl} name={leader.name} size={portraitSize} /></View></View>
-      <Text numberOfLines={2} style={styles.leaderName}>{leader.name}</Text>
-      <Text style={[styles.leaderValue, { color: accent }]}>{leader.value}</Text>
-      <Text style={styles.leaderMeta}>{leader.jerseyNumber == null ? 'No #' : `#${leader.jerseyNumber}`} • {leader.gamesPlayedMetric ? formatPublicMetric(leader.gamesPlayedMetric).value : estimatedDisplay(leader.gamesPlayed, leader.gamesPlayedProvenance === 'estimated')} GP</Text>
-    </Pressable>
-  );
-}
-
-function Leaders({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPageSnapshot; accent: string; onOpenPlayer: (id: string) => void }) {
-  const [metric, setMetric] = React.useState<TeamLeaderMetric>('points');
-  const [bars, setBars] = React.useState(false);
-  const leaders = snapshot.leaders[metric] ?? [];
-  const podium = leaders.length <= 1 ? leaders : leaders.length === 2 ? [leaders[1], leaders[0]] : [leaders[1], leaders[0], leaders[2]];
-  const allPlayers = leaders;
-  const max = Math.max(1, ...allPlayers.map((player) => player.value));
+function Leaders({ snapshot, width, fontScale, reduceTransparency, onOpenPlayer }: { snapshot: TeamPageSnapshot; width: number; fontScale: number; reduceTransparency: boolean; onOpenPlayer: (id: string) => void }) {
+  const [metric, setMetric] = React.useState<HomeLeaderMetric>('points');
   return (
     <View testID="team-leaders-section">
-      <SectionHeading icon="bar-chart-outline" title="Team Leaders" accent={accent} />
-      <FocusCard focusId={`team-public:${snapshot.team.id}:leaders`} accentColor={accent} style={styles.readingPanel}>
-        <View style={styles.leaderControls}>
-          <SelectableControlGroup role="tablist" accessibilityLabel="Team leader metric" contentContainerStyle={styles.segmented}>
-            {METRICS.map((item) => {
-              const active = metric === item.key;
-              return <SelectableControl key={item.key} testID={`team-leader-metric-${item.label.toLowerCase()}`} role="tab" label={item.label} accessibilityLabel={METRIC_NAMES[item.key]} selected={active} onPress={() => setMetric(item.key)} style={styles.metricButton} />;
-            })}
-          </SelectableControlGroup>
-          <Pressable testID="team-leader-chart-toggle" accessibilityRole="switch" accessibilityLabel="Toggle bar chart view" accessibilityState={{ checked: bars }} aria-checked={bars} onPress={() => setBars((value) => !value)} style={[styles.chartToggle, bars && { borderColor: accent, backgroundColor: `${accent}1F` }]}><Ionicons name="bar-chart-outline" size={20} color={bars ? accent : colors.textSecondary} /></Pressable>
-        </View>
-        {bars ? (
-          <View testID="team-leader-bars" style={styles.bars}>
-            {allPlayers.map((player) => {
-              const value = player.value;
-              return <Pressable key={player.playerId} accessibilityRole="button" accessibilityLabel={`${player.name}, ${value} ${METRIC_NAMES[metric]}, ${player.gamesPlayed == null ? 'games played unknown' : `${player.gamesPlayedProvenance === 'estimated' ? 'approximately ' : ''}${player.gamesPlayed} games played`}. Open player card.`} onPress={() => onOpenPlayer(player.playerId)} style={styles.barRow}><View style={styles.barIdentity}><Avatar uri={player.photoUrl} name={player.name} size={32} /><Text numberOfLines={1} style={styles.barName}>{player.name}</Text><Text style={[styles.barValue, { color: accent }]}>{value}</Text></View><View style={styles.barTrack}><View style={[styles.barFill, { width: `${Math.max(value > 0 ? 8 : 0, value / max * 100)}%`, backgroundColor: accent }]} /></View></Pressable>;
-            })}
-          </View>
-        ) : leaders.length ? (
-          <View testID="team-leader-podium" style={styles.podium}>{podium.map((leader) => <LeaderCard key={leader.playerId} leader={leader} metric={metric} place={leaders.findIndex((row) => row.playerId === leader.playerId) + 1} accent={accent} onOpenPlayer={onOpenPlayer} />)}</View>
-        ) : <View style={styles.emptyPanel}><Text style={styles.emptyTitle}>No team leaders yet</Text><Text style={styles.emptyBody}>Leader cards will populate once current-season player stats are recorded.</Text></View>}
-      </FocusCard>
+      <LeagueLeadersPresentation
+        leagueId={snapshot.league.id}
+        seasonName={snapshot.season.name}
+        metric={metric}
+        leaders={snapshot.leagueLeaders}
+        status="ready"
+        width={width}
+        fontScale={fontScale}
+        reduceTransparency={reduceTransparency}
+        onMetricChange={setMetric}
+        onRetry={() => {}}
+        onOpenPlayer={onOpenPlayer}
+        onOpenAllStats={() => {}}
+        testIDPrefix="team"
+        focusPrefix={`team-public:${snapshot.team.id}`}
+        showAllStats={false}
+      />
     </View>
   );
 }
 
-function Schedule({ snapshot, accent, onOpenGame }: { snapshot: TeamPageSnapshot; accent: string; onOpenGame: (id: string) => void }) {
-  const [expanded, setExpanded] = React.useState(false);
-  if (snapshot.games.length === 0) return null;
-  const games = expanded ? snapshot.games : snapshot.collapsedSchedule;
+function toScheduleGame(game: TeamPageGame, seasonId: string): GameRow {
+  const team = (value: TeamPageGame['homeTeam']) => ({
+    id: value.id,
+    name: value.name,
+    primary_color: value.primaryColor,
+    logo_url: value.logoUrl,
+  });
+  return {
+    id: game.id,
+    home_team_id: game.homeTeam.id,
+    away_team_id: game.awayTeam.id,
+    home_score: game.homeScore,
+    away_score: game.awayScore,
+    scheduled_at: game.scheduledAt,
+    status: game.status,
+    location: game.location,
+    season_id: seasonId,
+    home_team: team(game.homeTeam),
+    away_team: team(game.awayTeam),
+  };
+}
+
+function Schedule({ snapshot, accent, reduceTransparency, onOpenGame }: { snapshot: TeamPageSnapshot; accent: string; reduceTransparency: boolean; onOpenGame: (id: string) => void }) {
+  const games = selectTeamScheduleGames(snapshot.games.map((game) => toScheduleGame(game, snapshot.season.id)));
+  const rows = buildScheduleRows(games, snapshot.league.timezone);
+  if (rows.length === 0) return null;
   return (
     <View testID="team-schedule-section">
       <SectionHeading icon="calendar-clear-outline" title="Schedule" accent={accent} />
-      <FocusCard focusId={`team-public:${snapshot.team.id}:schedule`} accentColor={accent} style={styles.readingPanel}>
-        {games.length ? games.map((game) => {
-          const viewedHome = game.homeTeam.id === snapshot.team.id;
-          const showScore = ['completed', 'pending_verification', 'in_progress', 'live'].includes(game.status ?? '');
-          const mine = viewedHome ? game.homeScore : game.awayScore;
-          const theirs = viewedHome ? game.awayScore : game.homeScore;
-          return <Pressable key={game.id} testID={`team-schedule-game-${game.id}`} accessibilityRole="button" accessibilityLabel={gameLabel(game, snapshot.league.timezone)} onPress={() => onOpenGame(game.id)} style={styles.scheduleRow}><View style={styles.scheduleMatchup}><TeamLogo transparentBacking teamId={game.awayTeam.id} logoUrl={game.awayTeam.logoUrl} teamName={game.awayTeam.name} primaryColor={game.awayTeam.primaryColor ?? accent} size={28} /><Text style={styles.scheduleTeamName}>{game.awayTeam.name}</Text><Text style={styles.scheduleVs}>vs</Text><TeamLogo transparentBacking teamId={game.homeTeam.id} logoUrl={game.homeTeam.logoUrl} teamName={game.homeTeam.name} primaryColor={game.homeTeam.primaryColor ?? accent} size={28} /><Text style={styles.scheduleTeamName}>{game.homeTeam.name}</Text></View><View style={styles.scheduleFacts}><Text style={styles.scheduleMeta}>{formatDate(game.scheduledAt, snapshot.league.timezone)} · {formatTime(game.scheduledAt, snapshot.league.timezone)}</Text><Text numberOfLines={2} style={styles.scheduleMeta}>{game.location ?? 'Venue TBD'}</Text></View><View style={styles.scheduleResult}><Text style={styles.scheduleStatus}>{gameStatus(game.status).toUpperCase()}</Text>{showScore ? <Text style={styles.scheduleScore}>{nullableDisplay(mine)}–{nullableDisplay(theirs)}</Text> : null}</View></Pressable>;
-        }) : <Text style={styles.emptyBody}>No current-season games are posted.</Text>}
-        {snapshot.games.length > snapshot.collapsedSchedule.length ? <Pressable testID="team-schedule-toggle" accessibilityRole="button" accessibilityLabel={expanded ? 'Show fewer games' : 'Show full schedule'} accessibilityState={{ expanded }} onPress={() => setExpanded((value) => !value)} style={styles.showAll}><Text style={[styles.showAllText, { color: accent }]}>{expanded ? 'SHOW LESS' : 'SHOW FULL SCHEDULE'}</Text><Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={accent} /></Pressable> : null}
-      </FocusCard>
+      <View style={styles.teamScheduleList}>
+        {rows.map((row: SchedulePresentationRow) => row.type === 'date' ? (
+          <View key={row.id} style={styles.dateHeader}><Text accessibilityRole="header" style={styles.dateHeaderText}>{row.title}</Text></View>
+        ) : (
+          <FocusCard focusId={`team-public:${snapshot.team.id}:schedule:${row.game.id}`} key={row.id}>
+            <ScheduleMatchupCard
+              game={row.game}
+              timezone={snapshot.league.timezone}
+              leagueColor={snapshot.league.primaryColor}
+              reduceTransparency={reduceTransparency}
+              onOpenGame={onOpenGame}
+            />
+          </FocusCard>
+        ))}
+      </View>
     </View>
   );
 }
@@ -421,10 +420,10 @@ function CaptainContact({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPage
 }
 
 export default function TeamPublicPage({ snapshot, reduceTransparency, onOpenPlayer, onOpenGame }: { snapshot: TeamPageSnapshot; reduceTransparency: boolean; onOpenPlayer: (playerId: string) => void; onOpenGame: (gameId: string) => void }) {
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
   const compact = width < 360;
   const accent = resolveFocusAccent(snapshot.team.primaryColor, snapshot.league.primaryColor);
-  return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><BroadcastTeamHero snapshot={snapshot} compact={compact} reduceTransparency={reduceTransparency} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} reduceTransparency={reduceTransparency} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /></View>;
+  return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><BroadcastTeamHero snapshot={snapshot} compact={compact} reduceTransparency={reduceTransparency} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} reduceTransparency={reduceTransparency} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} width={width} fontScale={fontScale} reduceTransparency={reduceTransparency} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} reduceTransparency={reduceTransparency} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /></View>;
 }
 
 const styles = StyleSheet.create({
@@ -440,10 +439,10 @@ const styles = StyleSheet.create({
   gameMetaPill: { minHeight: ui.minTouchTarget, alignSelf: 'center', maxWidth: '100%', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,.14)', backgroundColor: 'rgba(3,7,13,.82)', paddingHorizontal: 12, paddingVertical: 9 }, gameMetaText: { flexShrink: 1, color: '#C1CAD8', fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: .2 }, gameMetaVenue: { flexBasis: '100%', marginTop: 4, textAlign: 'center' }, metaDivider: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#536176', marginHorizontal: 7 },
   readingPanel: { borderRadius: 28, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgSurface, padding: 16 },
   estimateNote: { color: '#8D9AAF', fontSize: 9, lineHeight: 13, textAlign: 'center', marginBottom: 8 },
-  leaderControls: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 20 }, segmented: { flexDirection: 'row', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', backgroundColor: '#080D14', padding: 3 }, metricButton: { minWidth: ui.minTouchTarget, minHeight: ui.minTouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: 999, paddingHorizontal: 8 }, metricText: { color: '#9BA7B8', fontSize: 12, fontWeight: '800' }, metricTextActive: { color: '#02111B' }, chartToggle: { width: ui.minTouchTarget, height: ui.minTouchTarget, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', alignItems: 'center', justifyContent: 'center' },
-  podium: { minHeight: 220, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 7 }, leaderCard: { minWidth: 0, flex: 1, alignItems: 'center', borderRadius: 20, borderWidth: 1, paddingHorizontal: 5, paddingTop: 14, paddingBottom: 12 }, leaderFirst: { minHeight: 214, paddingTop: 22 }, leaderSecond: { minHeight: 206 }, leaderThird: { minHeight: 206 }, leaderAvatarHalo: { width: 58, height: 58, borderRadius: 40, borderWidth: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: '#03070D' }, leaderAvatarInner: { borderRadius: 40, borderWidth: 2 }, leaderName: { minHeight: 34, marginTop: 8, color: '#F7FBFF', fontSize: 12, lineHeight: 16, fontWeight: '900', textAlign: 'center' }, leaderValue: { marginTop: 7, fontSize: 18, fontWeight: '900' }, leaderMeta: { marginTop: 8, color: '#778396', fontSize: 9, fontWeight: '700' },
-  bars: { gap: 12 }, barRow: { minHeight: ui.minTouchTarget, gap: 6 }, barIdentity: { flexDirection: 'row', alignItems: 'center', gap: 9 }, barName: { minWidth: 0, flex: 1, color: '#E8EEF7', fontSize: 13, fontWeight: '800' }, barValue: { fontSize: 14, fontWeight: '900' }, barTrack: { height: 7, borderRadius: 4, backgroundColor: '#151C27', overflow: 'hidden' }, barFill: { height: 7, borderRadius: 4 },
-  scheduleRow: { minHeight: 86, borderRadius: 18, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgInteractive, paddingHorizontal: 10, paddingVertical: 9, marginBottom: 8 }, scheduleMatchup: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 6 }, scheduleTeamName: { minWidth: 0, flex: 1, color: '#F7FBFF', fontSize: 11, lineHeight: 15, fontWeight: '900' }, scheduleVs: { color: '#758196', fontSize: 9, fontWeight: '800' }, scheduleFacts: { minWidth: 0, flex: 1, marginTop: 4, paddingRight: 72 }, scheduleMeta: { marginTop: 2, color: '#9AA6B8', fontSize: 9, lineHeight: 13 }, scheduleResult: { position: 'absolute', right: 10, bottom: 9, alignItems: 'flex-end' }, scheduleStatus: { color: '#758196', fontSize: 8, fontWeight: '900', letterSpacing: .5 }, scheduleScore: { marginTop: 3, color: '#F7FBFF', fontSize: 12, fontWeight: '900' }, showAll: { minHeight: ui.minTouchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }, showAllText: { fontSize: 10, fontWeight: '900', letterSpacing: .8 },
+
+  teamScheduleList: { minWidth: 0 },
+  dateHeader: { paddingTop: 4, paddingBottom: 8 },
+  dateHeaderText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: '900' },
   rosterHeadingCopy: { flex: 1, minWidth: 0 }, rosterHeadingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, iconToggle: { width: 96, minWidth: 96, flexShrink: 0, marginBottom: 12, flexDirection: 'row', gap: 8 }, iconToggleButton: { width: ui.minTouchTarget, minWidth: ui.minTouchTarget, height: ui.minTouchTarget, paddingHorizontal: 0, gap: 2, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }, rosterTruth: { marginTop: 0, marginBottom: 14, color: '#738095', fontSize: 10, fontWeight: '700' },
   substitutionNotes: { gap: 7, marginTop: 10, marginBottom: 14 }, substitutionNote: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 }, substitutionNoteText: { flex: 1, color: '#A8B4C8', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   lineup: { gap: 15, paddingHorizontal: 10, paddingVertical: 16 }, groupLabel: { marginBottom: 4, color: '#758196', fontSize: 9, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center' }, forwardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 3, rowGap: 7 }, lowerLineup: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 5 }, defenceGroup: { flex: 2 }, goalieGroup: { flex: 1, alignItems: 'center' }, defenceGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 3 }, lineupSlot: { width: '32%', minWidth: 92, minHeight: 91, alignItems: 'center', justifyContent: 'center' }, defenceSlot: { width: '48%', minWidth: 82 }, goalieSlot: { width: '100%', minWidth: 82 }, emptyJersey: { width: 92, height: 78, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(124,58,237,.65)', borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(124,58,237,.04)' }, emptyJerseyCompact: { width: 82, height: 70 },

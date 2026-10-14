@@ -38,6 +38,30 @@ export function filterScheduleGamesByTeam(games: GameRow[], teamId: string | nul
   return games.filter((game) => game.home_team_id === teamId || game.away_team_id === teamId);
 }
 
+type TeamScheduleGame = Pick<GameRow, 'id' | 'scheduled_at' | 'status'>;
+
+function scheduledTime(game: TeamScheduleGame): number | null {
+  const value = new Date(game.scheduled_at).getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+export function selectTeamScheduleGames<T extends TeamScheduleGame>(games: T[]): T[] {
+  const valid = games.filter((game) => scheduledTime(game) !== null);
+  const recent = valid
+    .filter((game) => game.status === 'completed' || game.status === 'pending_verification')
+    .sort((left, right) => scheduledTime(right)! - scheduledTime(left)! || left.id.localeCompare(right.id))
+    .slice(0, 2);
+  const next = valid
+    .filter((game) => game.status === 'in_progress')
+    .sort((left, right) => scheduledTime(left)! - scheduledTime(right)! || left.id.localeCompare(right.id))[0]
+    ?? valid
+      .filter((game) => game.status === 'scheduled')
+      .sort((left, right) => scheduledTime(left)! - scheduledTime(right)! || left.id.localeCompare(right.id))[0]
+    ?? null;
+  return [...recent, ...(next ? [next] : [])]
+    .sort((left, right) => scheduledTime(left)! - scheduledTime(right)! || left.id.localeCompare(right.id));
+}
+
 export type ScheduleTeamSelection = { scopeKey: string; teamId: string | null };
 
 export function resolveScheduleTeamSelection(

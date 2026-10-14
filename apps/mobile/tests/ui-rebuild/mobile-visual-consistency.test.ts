@@ -88,10 +88,13 @@ describe('mobile-wide league visual foundation', () => {
 
   it('keeps Team public panels translucent and its reduced-transparency composition opaque', () => {
     const publicPage = source('screens/TeamScreen/TeamPublicPage.tsx');
+    const scheduleCard = source('components/ScheduleMatchupCard.tsx');
     const teamDetail = source('screens/TeamScreen/TeamDetailScreen.tsx');
     assert.match(publicPage, /compositionOpaque:\s*\{\s*backgroundColor:\s*'#03070D'/);
     assert.match(publicPage, /readingPanel:[^\n]*backgroundColor:\s*colors\.bgSurface/);
-    assert.match(publicPage, /scheduleRow:[^\n]*backgroundColor:\s*colors\.bgInteractive/);
+    assert.match(publicPage, /<ScheduleMatchupCard/);
+    assert.match(scheduleCard, /getHomeVisualPreferences\(reduceTransparency, false\)/);
+    assert.match(scheduleCard, /backgroundColor:\s*preferences\.surface/);
     assert.match(publicPage, /rivalPanel:[^\n]*backgroundColor:\s*colors\.bgSurface/);
     assert.match(publicPage, /emptyPanel:[^\n]*backgroundColor:\s*colors\.bgSurface/);
     assert.match(teamDetail, /const publicSurface = getSurfacePalette\(reduceTransparency\)/);

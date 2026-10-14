@@ -20,8 +20,7 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
   const { team } = snapshot;
   const {
     accent,
-    primaryName,
-    secondaryName,
+    tickerColors,
     record,
     championshipDisplay,
     championshipLabel,
@@ -47,14 +46,7 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
       />
       <View pointerEvents="none" style={[styles.heroAccentGlow, { backgroundColor: `${accent}24` }]} />
       <View testID="team-broadcast-subject-frame" pointerEvents="none" style={[styles.heroSubjectFrame, compact && styles.heroSubjectFrameCompact, { borderLeftColor: `${accent}99` }]} />
-      <View style={styles.heroKickerRow}>
-        <View testID="team-broadcast-accent" style={[styles.heroKickerBlade, { backgroundColor: accent }]} />
-        <Text style={styles.heroKicker}>HOCKEY LIFE // TEAM PROFILE</Text>
-      </View>
-      <View style={[styles.heroNameBlock, compact && styles.heroNameBlockCompact]}>
-        <Text testID="team-broadcast-name-primary" numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.62} style={[styles.heroNamePrimary, compact && styles.heroNamePrimaryCompact]}>{primaryName}</Text>
-        {secondaryName ? <Text testID="team-broadcast-name-secondary" numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.62} style={[styles.heroNameSecondary, compact && styles.heroNameSecondaryCompact]}>{secondaryName}</Text> : null}
-      </View>
+      <View testID="team-broadcast-accent" pointerEvents="none" style={[styles.heroAccentBlade, { backgroundColor: accent }]} />
       <Text testID="team-hero-record" adjustsFontSizeToFit numberOfLines={1} style={[styles.heroRecord, compact && styles.heroRecordCompact]}>{record}</Text>
       <View testID="team-broadcast-logo-stage" pointerEvents="box-none" style={[styles.heroLogoStage, compact && styles.heroLogoStageCompact]}>
         <TeamLogo
@@ -89,8 +81,8 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
       </View>
       <LinearGradient
         testID="team-broadcast-ticker"
-        colors={['#6A18D7', '#D21BA4', '#FF3EAD']}
-        locations={[0, .66, 1]}
+        colors={tickerColors}
+        locations={[0, 1]}
         start={{ x: 0, y: .5 }}
         end={{ x: 1, y: .5 }}
         style={[styles.heroTicker, compact && styles.heroTickerCompact]}
@@ -125,46 +117,38 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
 }
 
 const styles = StyleSheet.create({
-  hero: { position: 'relative', height: 520, marginHorizontal: -16, overflow: 'hidden', backgroundColor: '#07111F' },
-  heroCompact: { height: 508 },
+  hero: { position: 'relative', height: 448, marginHorizontal: -16, overflow: 'hidden', backgroundColor: '#07111F' },
+  heroCompact: { height: 438 },
   heroAccentGlow: { position: 'absolute', zIndex: 1, right: -76, top: -54, width: 292, height: 292, borderRadius: 146, opacity: .58 },
-  heroSubjectFrame: { position: 'absolute', zIndex: 2, right: -20, top: 18, width: 250, height: 282, overflow: 'visible', borderLeftWidth: 1, backgroundColor: 'rgba(255,62,173,.07)', transform: [{ skewX: '-7deg' }] },
-  heroSubjectFrameCompact: { right: -12, top: 32, width: 202, height: 252 },
-  heroKickerRow: { position: 'absolute', zIndex: 7, left: 18, top: 18, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  heroKickerBlade: { width: 3, height: 10, borderRadius: 2 },
-  heroKicker: { color: '#FF69D4', fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.8 },
-  heroNameBlock: { position: 'absolute', zIndex: 7, left: 18, top: 51, width: 160 },
-  heroNameBlockCompact: { top: 55, width: 126 },
-  heroNamePrimary: { color: '#FFFFFF', fontSize: 44, lineHeight: 42, fontWeight: '900', letterSpacing: -1.5, textTransform: 'uppercase' },
-  heroNamePrimaryCompact: { fontSize: 37, lineHeight: 36 },
-  heroNameSecondary: { color: 'rgba(255,255,255,.54)', fontSize: 42, lineHeight: 39, fontWeight: '900', letterSpacing: -1.4, textTransform: 'uppercase', textShadowColor: 'rgba(255,255,255,.42)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 1 },
-  heroNameSecondaryCompact: { fontSize: 34, lineHeight: 33 },
-  heroRecord: { position: 'absolute', zIndex: 7, left: 18, top: 144, width: 154, color: '#F7FBFF', fontSize: 42, lineHeight: 48, fontWeight: '900', letterSpacing: -1.7 },
-  heroRecordCompact: { top: 151, width: 126, fontSize: 36, lineHeight: 43 },
-  heroLogoStage: { position: 'absolute', zIndex: 5, right: 3, top: 42, width: 230, height: 240, overflow: 'visible', alignItems: 'center', justifyContent: 'center' },
-  heroLogoStageCompact: { right: 4, top: 62, width: 184, height: 196 },
-  heroCallouts: { position: 'absolute', zIndex: 8, left: 18, top: 211, width: 126, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 13, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.17)', paddingTop: 11 },
-  heroCalloutsCompact: { left: 16, top: 218, width: 116, columnGap: 8, rowGap: 11 },
+  heroSubjectFrame: { position: 'absolute', zIndex: 2, right: -20, top: 0, width: 250, height: 252, overflow: 'visible', borderLeftWidth: 1, backgroundColor: 'rgba(255,255,255,.04)', transform: [{ skewX: '-7deg' }] },
+  heroSubjectFrameCompact: { right: -12, top: 4, width: 202, height: 232 },
+  heroAccentBlade: { position: 'absolute', zIndex: 7, left: 18, top: 25, width: 4, height: 28, borderRadius: 2 },
+  heroRecord: { position: 'absolute', zIndex: 7, left: 32, top: 18, width: 154, color: '#F7FBFF', fontSize: 42, lineHeight: 48, fontWeight: '900', letterSpacing: -1.7 },
+  heroRecordCompact: { top: 22, width: 126, fontSize: 36, lineHeight: 43 },
+  heroLogoStage: { position: 'absolute', zIndex: 5, right: 3, top: 0, width: 230, height: 230, overflow: 'visible', alignItems: 'center', justifyContent: 'center' },
+  heroLogoStageCompact: { right: 4, top: 8, width: 184, height: 190 },
+  heroCallouts: { position: 'absolute', zIndex: 8, left: 18, top: 91, width: 126, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 13, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.17)', paddingTop: 11 },
+  heroCalloutsCompact: { left: 16, top: 94, width: 116, columnGap: 8, rowGap: 11 },
   heroCallout: { width: 56, minWidth: 0 },
   heroCalloutCompact: { width: 52 },
   heroCalloutWide: { width: '100%' },
   heroStatLabel: { color: '#8F9BB0', fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.05 },
   heroCalloutValue: { marginTop: 4, color: '#F8FBFF', fontSize: 22, lineHeight: 25, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  heroChampionships: { position: 'absolute', zIndex: 10, right: 18, top: 288, minWidth: 142, minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 8, borderLeftWidth: 1, borderLeftColor: 'rgba(244,200,102,.6)', backgroundColor: 'rgba(5,8,15,.78)', paddingVertical: 3, paddingHorizontal: 8 },
-  heroChampionshipsCompact: { right: 10, top: 286, minWidth: 136 },
+  heroChampionships: { position: 'absolute', zIndex: 10, right: 18, top: 211, minWidth: 142, minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 8, borderLeftWidth: 1, borderLeftColor: 'rgba(244,200,102,.6)', backgroundColor: 'rgba(5,8,15,.78)', paddingVertical: 3, paddingHorizontal: 8 },
+  heroChampionshipsCompact: { right: 10, top: 207, minWidth: 136 },
   heroChampionshipsOpaque: { backgroundColor: '#05080F' },
   heroTrophyArtwork: { width: 38, height: 52 },
   heroChampionshipCopy: { alignItems: 'flex-start', gap: 1 },
   heroChampionshipCount: { color: '#F4C866', fontSize: 18, lineHeight: 20, fontWeight: '900', letterSpacing: .4 },
   heroChampionshipWord: { color: '#D7C38C', fontSize: 7, lineHeight: 9, fontWeight: '900', letterSpacing: 1 },
-  heroTicker: { position: 'absolute', zIndex: 9, left: -5, right: -5, top: 354, height: 84, justifyContent: 'center', transform: [{ rotate: '-2deg' }] },
-  heroTickerCompact: { top: 350, height: 82 },
+  heroTicker: { position: 'absolute', zIndex: 9, left: -5, right: -5, top: 277, height: 84, justifyContent: 'center', transform: [{ rotate: '-2deg' }] },
+  heroTickerCompact: { top: 273, height: 82 },
   heroTickerInner: { height: '100%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, transform: [{ rotate: '2deg' }] },
   heroTickerStat: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
   heroTickerStatBorder: { borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,.26)' },
   heroTickerLabel: { color: 'rgba(255,255,255,.74)', fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.05 },
   heroTickerValue: { marginTop: 6, color: '#FFFFFF', fontSize: 25, lineHeight: 29, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  heroLatestChampionship: { position: 'absolute', zIndex: 8, left: 18, right: 18, top: 453, minHeight: 36, flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  heroLatestChampionship: { position: 'absolute', zIndex: 8, left: 18, right: 18, top: 371, minHeight: 36, flexDirection: 'row', alignItems: 'stretch', gap: 8 },
   heroLatestRule: { width: 2, borderRadius: 1, backgroundColor: '#F4C866' },
   heroLatestCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
   heroLatestLabel: { color: '#8E9AAF', fontSize: 8, lineHeight: 10, fontWeight: '800', letterSpacing: .9 },

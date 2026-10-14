@@ -18,7 +18,7 @@ describe('mobile section heading typography contract', () => {
 
   it('applies the shared contract to actual section-heading aliases across mobile surfaces', () => {
     const included = [
-      'screens/HomeScreen.tsx', 'components/HomeLeagueLeaders.tsx', 'components/StatsLeadersCard.tsx',
+      'screens/HomeScreen.tsx', 'components/LeagueLeadersPresentation.tsx', 'components/StatsLeadersCard.tsx',
       'screens/StandingsScreen.tsx', 'components/StandingsPlayoffsPanel.tsx', 'screens/TeamScreen/TeamPublicPage.tsx',
       'screens/league-pages/LeaguePageCommon.tsx', 'screens/auth/LeagueSelectScreen.tsx', 'screens/StatsScreen.tsx',
       'screens/stats/CareerStatsScreen.tsx', 'screens/captain/GameAvailabilityScreen.tsx',
@@ -50,9 +50,11 @@ describe('mobile section heading typography contract', () => {
 
   it('removes Home heading decoration and season copy while retaining the title and leader season prop semantics', () => {
     const home = read('screens/HomeScreen.tsx');
-    const leaders = read('components/HomeLeagueLeaders.tsx');
+    const homeLeaders = read('components/HomeLeagueLeaders.tsx');
+    const leaders = read('components/LeagueLeadersPresentation.tsx');
     for (const removed of ['LATEST', 'AROUND THE LEAGUE', 'TABLE', 'FROM THE RINK', 'CONNECT']) assert.doesNotMatch(home, new RegExp(`>${removed}<|eyebrow="${removed}"`));
     assert.doesNotMatch(leaders, />LEAGUE<|\{seasonName \? <Text/);
+    assert.match(homeLeaders, /LeagueLeadersPresentation/);
     assert.match(leaders, /seasonName/);
     assert.match(leaders, />League Leaders</);
   });

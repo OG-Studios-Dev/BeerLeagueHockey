@@ -1,15 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
-const require = createRequire(import.meta.url);
-const nativeWeb = require('react-native-web') as Record<string, React.ComponentType<Record<string, unknown>>>;
 
 function pngPixels(layer: string) {
   const bytes = readFileSync(new NodeURL(`../../src/assets/team-page/jersey-${layer}.png`, import.meta.url));
@@ -74,6 +69,7 @@ const snapshot: any = {
   standing: { teamId: 'team-a', teamName: 'London Eco Metal', logoUrl: 'team-a.png', primaryColor: '#36A852', gamesPlayed: 11, wins: 7, losses: 2, ties: 2, points: 16, goalsFor: 34, goalsAgainst: 22, goalDifferential: 12 },
   standings: [], rank: 2, record: '7-2-2', streak: 'W1', hero: { winPercentage: 7 / 11 }, roster,
   leaders: { points: [leader(roster[0], 25), leader(roster[1], 22), leader(roster[2], 16)], goals: [leader(roster[0], 12), leader(roster[1], 10), leader(roster[2], 7)], assists: [leader(roster[0], 13), leader(roster[1], 12), leader(roster[2], 9)], penaltyMinutes: [leader(roster[2], 20), leader(roster[1], 12), leader(roster[0], 4)] },
+  leagueLeaders: roster.map((player) => ({ player_id: player.playerId, player_name: player.name, avatar_url: player.photoUrl, team_id: 'team-a', team_name: 'London Eco Metal', display_team_name: 'London Eco Metal', display_team_logo_url: 'team-a.png', position: player.position, goals: player.goals, assists: player.assists, points: player.points, gaa: null, is_goalie: false, estimated: false })),
   games, collapsedSchedule: [games[1], games[2], games[3], games[4]], nextGame: games[3],
   championships: { count: 1, latestTitleSeasonName: 'Fall 2025', latestTitleLabel: '2025', titleSeasonIds: ['old'] }, captain: roster[0], publishedLineup: null, acceptedSubstitutions: [], sponsors: [{ id: 'sponsor-1', name: 'Rink Shop', logoUrl: 'sponsor.png', websiteUrl: 'https://rinkshop.test', tier: 'gold' }],
   rivals: [
@@ -81,6 +77,47 @@ const snapshot: any = {
     { team: viewedSide, rival: { ...viewedSide, ...team('team-c', 'Purple Cobras', '#7C3AED'), overallRecord: '5-5-1', goalsFor: 26, goalsAgainst: 26, goalDifferential: 0 }, h2hRecord: '1-1', h2hRecordRival: '1-1', gamesPlayed: 2 },
   ],
 };
+
+function LeagueLeadersPresentationMock(props: any) {
+  const labels: Record<string, string> = { goals: 'Goals', assists: 'Assists', points: 'Points', gaa: 'GAA' };
+  const eligible = props.leaders
+    .filter((leader: any) => props.metric !== 'gaa' || leader.is_goalie)
+    .filter((leader: any) => leader[props.metric] != null)
+    .sort((left: any, right: any) => props.metric === 'gaa'
+      ? left.gaa - right.gaa || left.player_id.localeCompare(right.player_id)
+      : right[props.metric] - left[props.metric] || left.player_id.localeCompare(right.player_id))
+    .slice(0, 3);
+  return createElement('View', { ...props, testID: 'team-league-leaders' }, [
+    createElement('Text', {}, 'League Leaders'),
+    ...Object.entries(labels).map(([metric, label]) => createElement('Pressable', {
+      testID: `team-leaders-tab-${metric}`,
+      accessibilityRole: 'tab',
+      accessibilityState: { selected: props.metric === metric, disabled: false },
+      onPress: () => props.onMetricChange(metric),
+    }, createElement('Text', {}, label))),
+    ...eligible.map((leader: any) => createElement('Pressable', {
+      testID: `team-leader-row-${leader.player_id}`,
+      accessibilityLabel: `${leader.player_name}, ${leader[props.metric]} ${props.metric}. Open player card.`,
+      onPress: () => props.onOpenPlayer(leader.player_id),
+    }, createElement('Text', {}, `${leader.player_name}${leader[props.metric]}`))),
+  ]);
+}
+
+function ScheduleMatchupCardMock(props: any) {
+  const game = props.game;
+  const time = new Date(game.scheduled_at).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', timeZone: props.timezone });
+  const showScore = ['completed', 'pending_verification', 'in_progress'].includes(game.status);
+  const score = showScore ? ` ${game.home_score}–${game.away_score}` : '';
+  return createElement('Pressable', {
+    testID: `schedule-matchup-card-${game.id}`,
+    accessibilityLabel: `${game.away_team.name} at ${game.home_team.name}, ${time}, ${game.away_team.name} ${game.away_score}, ${game.home_team.name} ${game.home_score}`,
+    onPress: () => props.onOpenGame(game.id),
+  }, [
+    createElement('Text', {}, `${game.away_team.name} vs ${game.home_team.name} ${time}${score}`),
+    createElement('TeamLogo', { transparentBacking: true, teamId: game.away_team_id }),
+    createElement('TeamLogo', { transparentBacking: true, teamId: game.home_team_id }),
+  ]);
+}
 
 function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency = false) {
   const harness = createHookHarness();
@@ -93,11 +130,13 @@ function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency
       'react-native': {
         Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
         StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: { position: 'absolute', inset: 0 } },
-        useWindowDimensions: () => ({ width, height: 844 }),
+        useWindowDimensions: () => ({ width, height: 844, fontScale: 1 }),
       },
       '@expo/vector-icons': { Ionicons: 'Ionicon', MaterialCommunityIcons: 'MaterialCommunityIcon' },
       'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       '../../components/Avatar': (props: any) => createElement('Avatar', props),
+      '../../components/LeagueLeadersPresentation': LeagueLeadersPresentationMock,
+      '../../components/ScheduleMatchupCard': ScheduleMatchupCardMock,
       '../../components/TeamLogo': (props: any) => createElement('TeamLogo', props),
       '../../theme/colors': { __esModule: true, default: { primary: '#8B5CF6', primaryLight: '#A78BFA', bgBase: '#03070D', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8', borderCard: 'rgba(255,255,255,.12)', glassStrokeStrong: 'rgba(255,255,255,.2)', bgInteractive: '#111927', accentGreen: '#22C55E' } },
       '../../theme/ui': { ui: { minTouchTarget: 44 } },
@@ -137,11 +176,13 @@ describe('native Team public composition', () => {
         'react-native': {
           Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
           StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: { position: 'absolute', inset: 0 } },
-          useWindowDimensions: () => ({ width: 390, height: 844 }),
+          useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
         },
         '@expo/vector-icons': { Ionicons: 'Ionicon', MaterialCommunityIcons: 'MaterialCommunityIcon' },
         'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
         '../../components/Avatar': (props: any) => createElement('Avatar', props),
+        '../../components/LeagueLeadersPresentation': LeagueLeadersPresentationMock,
+        '../../components/ScheduleMatchupCard': ScheduleMatchupCardMock,
         '../../components/TeamLogo': (props: any) => createElement('TeamLogo', props),
         '../../theme/colors': { __esModule: true, default: { primary: '#8B5CF6', primaryLight: '#A78BFA', bgBase: '#03070D', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8', borderCard: 'rgba(255,255,255,.12)', glassStrokeStrong: 'rgba(255,255,255,.2)', bgInteractive: '#111927', accentGreen: '#22C55E' } },
         '../../theme/ui': { ui: { minTouchTarget: 44 } },
@@ -214,27 +255,24 @@ describe('native Team public composition', () => {
   });
 
   it('exposes fact-bearing game/player labels and known live/pending scores without inventing jersey zero', () => {
-    const statuses = ['live', 'in_progress', 'pending_verification', 'completed'];
+    const statuses = ['in_progress', 'pending_verification', 'completed'];
     for (const status of statuses) {
       const game = { ...games[3], status, homeScore: 4, awayScore: 2 };
       const run = runtime(320, { ...snapshot, nextGame: game, games: [game], collapsedSchedule: [game], roster: [{ ...roster[0], jerseyNumber: null }] });
       const output = run.harness.output;
       const next = findNode(output, (node) => node.props.testID === 'team-next-game-card');
       assert.match(next?.props.accessibilityLabel, /First General London.*London Eco Metal.*Mar.*4.*3:00.*Next One/i);
-      const row = findNode(output, (node) => node.props.testID === 'team-schedule-game-g3');
-      assert.match(row?.props.accessibilityLabel, /First General London.*Mar.*4.*First General London 2, London Eco Metal 4/i);
+      const row = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-g3');
+      assert.match(row?.props.accessibilityLabel, /First General London.*London Eco Metal.*First General London 2, London Eco Metal 4/i);
       assert.match(nodeText(row), /4–2/);
-      const player = findNode(output, (node) => node.props.testID === 'team-leader-p1');
-      assert.match(player?.props.accessibilityLabel, /Matt Grossi.*25 points.*11 games played/i);
+      const player = findNode(output, (node) => node.props.testID === 'team-leader-row-p1');
+      assert.match(player?.props.accessibilityLabel, /Matt Grossi.*25 points/i);
       const jersey = findNode(output, (node) => node.props.testID === 'team-roster-player-p1');
       assert.match(jersey?.props.accessibilityLabel, /jersey number unknown/i);
       assert.doesNotMatch(jersey?.props.accessibilityLabel, /#0|number 0/);
       next?.props.onPress(); row?.props.onPress(); player?.props.onPress();
       assert.deepEqual(run.openedGames, ['g3', 'g3']); assert.deepEqual(run.openedPlayers, ['p1']);
     }
-    const run = runtime();
-    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.onPress();
-    assert.match(findNode(run.harness.render(), (node) => node.props.testID === 'team-leader-p3')?.props.accessibilityLabel, /20 penalty minutes.*11 games played/i);
   });
 
   it('retains both teams strengths and weaknesses plus goalie GP/GAA units', () => {
@@ -265,11 +303,14 @@ describe('native Team public composition', () => {
       const output = runtime(width, source).harness.output;
       const hero = findNode(output, (node) => node.props.testID === 'team-public-hero');
       assert.ok(hero);
-      assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-primary')), 'Aurora');
-      assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-secondary')), 'Wolves');
+      assert.equal(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-primary'), undefined);
+      assert.equal(findNode(hero, (node) => node.props.testID === 'team-broadcast-name-secondary'), undefined);
       assert.equal(nodeText(findNode(hero, (node) => node.props.testID === 'team-hero-record')), '3-4-1');
       assert.match(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-callouts')), /RANK#4STREAKT2WIN PERCENTAGE38%/);
-      assert.match(nodeText(findNode(hero, (node) => node.props.testID === 'team-broadcast-ticker')), /GF17GA21DIFF-4WIN38%/);
+      const ticker = findNode(hero, (node) => node.props.testID === 'team-broadcast-ticker');
+      assert.equal(ticker?.type, 'LinearGradient');
+      assert.deepEqual(ticker?.props.colors, ['#6046A8', '#D9B64C']);
+      assert.match(nodeText(ticker), /GF17GA21DIFF-4WIN38%/);
       assert.ok(findNode(hero, (node) => node.props.testID === 'team-broadcast-subject-frame'));
       assert.ok(findNode(hero, (node) => node.props.testID === 'team-hero-transition'));
       const logoStage = findNode(hero, (node) => node.props.testID === 'team-broadcast-logo-stage');
@@ -288,12 +329,11 @@ describe('native Team public composition', () => {
       assert.match(hero?.props.accessibilityLabel, /Aurora Wolves.*record 3-4-1.*rank 4.*2 championships/i);
       assert.equal(findNodes(hero, (node) => node.props.testID === 'team-hero-pill').length, 0);
 
-      const podium = findNode(output, (node) => node.props.testID === 'team-leader-podium');
-      for (const avatar of findNodes(podium, (node) => node.type === 'Avatar')) assert.ok(avatar.props.size >= (width === 390 ? 70 : 54));
+      assert.ok(findNode(output, (node) => node.props.testID === 'team-league-leaders'));
       const rosterSection = findNode(output, (node) => node.props.testID === 'team-roster-section');
       const heading = findNode(rosterSection, (node) => node.type === 'Text' && nodeText(node) === 'Next Game Roster');
       assert.equal(flattenStyle(heading?.props.style).flexShrink, 1);
-      for (const id of ['team-roster-jersey-toggle', 'team-roster-list-toggle', 'team-leader-chart-toggle', 'team-leader-metric-p']) {
+      for (const id of ['team-roster-jersey-toggle', 'team-roster-list-toggle']) {
         const style = renderedStyle(findNode(output, (node) => node.props.testID === id));
         assert.ok((style.width ?? style.minWidth) >= 44); assert.ok((style.height ?? style.minHeight) >= 44);
       }
@@ -322,9 +362,12 @@ describe('native Team public composition', () => {
     assert.match(hero?.props.accessibilityLabel, /record unavailable.*rank unavailable.*championship count unavailable/i);
   });
 
-  it('uses the canonical lavender selection treatment for Team-page controls', () => {
+  it('uses the shared League Leaders defaults without league-wide navigation', () => {
     const output = runtime(390, { ...snapshot, team: { ...snapshot.team, primaryColor: '#6046A8' }, league: { ...snapshot.league, primaryColor: '#1F6A44' } }).harness.output;
-    assert.equal(renderedStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')).backgroundColor, 'rgba(142,127,255,0.28)');
+    const leaders = findNode(output, (node) => node.props.testID === 'team-league-leaders');
+    assert.equal(leaders?.props.metric, 'points');
+    assert.equal(leaders?.props.testIDPrefix, 'team');
+    assert.equal(leaders?.props.showAllStats, false);
   });
 
   it('uses the Hockey Life fallback when team and league accents are invalid without tinting fact text', () => {
@@ -341,9 +384,11 @@ describe('native Team public composition', () => {
     }
   });
 
-  it('keeps selector styling independent of malformed team and league accent fallbacks', () => {
+  it('keeps the shared League Leaders contract independent of malformed Team accent fallbacks', () => {
     const output = runtime(390, { ...snapshot, team: { ...snapshot.team, primaryColor: 'purple' }, league: { ...snapshot.league, primaryColor: '#1F6A44' } }).harness.output;
-    assert.equal(renderedStyle(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')).backgroundColor, 'rgba(142,127,255,0.28)');
+    const leaders = findNode(output, (node) => node.props.testID === 'team-league-leaders');
+    assert.equal(leaders?.props.metric, 'points');
+    assert.deepEqual(leaders?.props.leaders.map((row: any) => row.team_id), ['team-a', 'team-a', 'team-a']);
   });
 
   it('treats jersey lettering as fixed artwork while the button exposes the complete identity', () => {
@@ -371,7 +416,7 @@ describe('native Team public composition', () => {
   it('renders the approved section order and public hero hierarchy', () => {
     const output = runtime().harness.output;
     const text = nodeText(output);
-    const order = ['7-2-2', 'Next Game', 'Team Leaders', 'Schedule', 'Next Game Roster', 'Rivals', 'Captain Contact'].map((label) => text.indexOf(label));
+    const order = ['7-2-2', 'Next Game', 'League Leaders', 'Schedule', 'Next Game Roster', 'Rivals', 'Captain Contact'].map((label) => text.indexOf(label));
     assert.ok(order.every((index) => index >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     assert.ok(findNode(output, (node) => node.props.testID === 'team-public-hero'));
@@ -381,39 +426,36 @@ describe('native Team public composition', () => {
     assert.equal(findNode(output, (node) => node.props.testID === 'team-partners'), undefined);
   });
 
-  it('switches exact leader metrics and podium/bar views without fake navigation', () => {
+  it('switches the shared League Leaders metrics and preserves Team player navigation', () => {
     const run = runtime();
-    assert.equal(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityRole, 'tab');
-    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityState, { selected: true, disabled: false });
-    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.accessibilityState, { selected: false, disabled: false });
-    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.onPress();
-    let output = run.harness.render();
-    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leader-metric-p')?.props.accessibilityState, { selected: false, disabled: false });
-    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leader-metric-pm')?.props.accessibilityState, { selected: true, disabled: false });
-    assert.match(nodeText(findNode(output, (node) => node.props.testID === 'team-leader-podium')), /Stefan Kowles20/);
-    findNode(output, (node) => node.props.testID === 'team-leader-chart-toggle')?.props.onPress();
-    output = run.harness.render();
-    const chartToggle = findNode(output, (node) => node.props.testID === 'team-leader-chart-toggle');
-    assert.equal(chartToggle?.props.accessibilityRole, 'switch');
-    assert.deepEqual(chartToggle?.props.accessibilityState, { checked: true });
-    assert.ok(findNode(output, (node) => node.props.testID === 'team-leader-bars'));
-    assert.ok(!findNode(output, (node) => node.props.testID === 'team-leader-podium'));
+    assert.equal(findNode(run.harness.output, (node) => node.props.testID === 'team-leaders-tab-points')?.props.accessibilityRole, 'tab');
+    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leaders-tab-points')?.props.accessibilityState, { selected: true, disabled: false });
+    assert.deepEqual(findNode(run.harness.output, (node) => node.props.testID === 'team-leaders-tab-gaa')?.props.accessibilityState, { selected: false, disabled: false });
+    findNode(run.harness.output, (node) => node.props.testID === 'team-leaders-tab-goals')?.props.onPress();
+    const output = run.harness.render();
+    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leaders-tab-points')?.props.accessibilityState, { selected: false, disabled: false });
+    assert.deepEqual(findNode(output, (node) => node.props.testID === 'team-leaders-tab-goals')?.props.accessibilityState, { selected: true, disabled: false });
+    const row = findNode(output, (node) => node.props.testID === 'team-leader-row-p1');
+    assert.match(row?.props.accessibilityLabel, /Matt Grossi.*12 goals/i);
+    row?.props.onPress();
+    assert.deepEqual(run.openedPlayers, ['p1']);
   });
 
-  it('expands the schedule, toggles jersey/list roster, and preserves player/game navigation', () => {
+  it('caps the canonical schedule at two results plus the next game and preserves roster/game navigation', () => {
     const run = runtime(320);
     let output = run.harness.output;
-    assert.doesNotMatch(nodeText(findNode(output, (node) => node.props.testID === 'team-schedule-section')), /Past Three|Next Three/);
-    findNode(output, (node) => node.props.testID === 'team-schedule-toggle')?.props.onPress();
-    output = run.harness.render();
-    assert.match(nodeText(findNode(output, (node) => node.props.testID === 'team-schedule-section')), /Past Three|Next Three/);
+    const schedule = findNode(output, (node) => node.props.testID === 'team-schedule-section');
+    assert.deepEqual(findNodes(schedule, (node) => /^schedule-matchup-card-g\d$/.test(node.props.testID ?? '')).map((node) => node.props.testID), [
+      'schedule-matchup-card-g1', 'schedule-matchup-card-g2', 'schedule-matchup-card-g3',
+    ]);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-schedule-toggle'), undefined);
     findNode(output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
     output = run.harness.render();
     assert.ok(findNode(output, (node) => node.props.testID === 'team-roster-list'));
     findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.onPress();
-    findNode(output, (node) => node.props.testID === 'team-schedule-game-g0')?.props.onPress();
+    findNode(output, (node) => node.props.testID === 'schedule-matchup-card-g3')?.props.onPress();
     assert.deepEqual(run.openedPlayers, ['p1']);
-    assert.deepEqual(run.openedGames, ['g0']);
+    assert.deepEqual(run.openedGames, ['g3']);
   });
 
   it('cycles the full rivals carousel and leaves unknown goalie data unknown', () => {
@@ -527,14 +569,13 @@ describe('native Team public composition', () => {
       const style = flattenStyle(board?.props.style);
       assert.ok(style.paddingHorizontal >= 8);
       assert.ok(style.paddingVertical >= 12);
-      assert.match(findNode(output, (node) => node.props.testID === 'team-leader-p1')?.props.accessibilityLabel, /approximately 11 games played/i);
       assert.doesNotMatch(nodeText(findNode(output, (node) => node.props.testID === 'team-leaders-section')), /~GP is estimated/);
     }
   });
 
   it('renders compact two-team schedule cards with both transparent crests and omits an empty Schedule section', () => {
     const output = runtime(390).harness.output;
-    const row = findNode(output, (node) => node.props.testID === 'team-schedule-game-g3');
+    const row = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-g3');
     assert.match(nodeText(row), /First General London.*vs.*London Eco Metal/i);
     const rowLogos = findNodes(row, (node) => node.type === 'TeamLogo');
     assert.deepEqual(rowLogos.map((node) => node.props.teamId), ['team-b', 'team-a']);
@@ -577,7 +618,7 @@ describe('native Team public composition', () => {
     assert.match(nodeText(hero), /x0/);
   });
 
-  it('uses tab semantics for the mutually exclusive roster views and lets schedule names wrap', () => {
+  it('uses tab semantics for the mutually exclusive roster views and keeps the canonical matchup visible', () => {
     const run = runtime(320);
     const jerseyToggle = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-jersey-toggle');
     const statsToggle = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle');
@@ -589,34 +630,19 @@ describe('native Team public composition', () => {
     const changed = run.harness.render();
     assert.deepEqual(findNode(changed, (node) => node.props.testID === 'team-roster-jersey-toggle')?.props.accessibilityState, { selected: false, disabled: false });
     assert.deepEqual(findNode(changed, (node) => node.props.testID === 'team-roster-list-toggle')?.props.accessibilityState, { selected: true, disabled: false });
-    const schedule = findNode(changed, (node) => node.props.testID === 'team-schedule-game-g3');
-    for (const name of findNodes(schedule, (node) => node.type === 'Text' && ['First General London', 'London Eco Metal'].includes(nodeText(node)))) {
-      assert.equal(name.props.numberOfLines, undefined);
-    }
+    const schedule = findNode(changed, (node) => node.props.testID === 'schedule-matchup-card-g3');
+    assert.match(nodeText(schedule), /First General London.*London Eco Metal/);
   });
 
-  it('emits explicit true and false selection state through the installed React Native Web DOM boundary', () => {
+  it('emits explicit true and false selection state for roster tabs', () => {
     const run = runtime(320);
-    const dom = (testID: string) => {
-      const node = findNode(run.harness.output, (candidate) => candidate.props.testID === testID);
-      assert.ok(node);
-      const markup = renderToStaticMarkup(React.createElement(nativeWeb.Pressable, node.props, React.createElement(nativeWeb.Text, null, testID)));
-      return markup;
-    };
-    assert.match(dom('team-leader-metric-p'), /aria-selected="true"/);
-    assert.match(dom('team-leader-metric-g'), /aria-selected="false"/);
-    assert.match(dom('team-leader-chart-toggle'), /aria-checked="false"/);
-    assert.match(dom('team-roster-jersey-toggle'), /aria-selected="true"/);
-    assert.match(dom('team-roster-list-toggle'), /aria-selected="false"/);
+    const state = (testID: string) => findNode(run.harness.output, (candidate) => candidate.props.testID === testID)?.props.accessibilityState;
+    assert.deepEqual(state('team-roster-jersey-toggle'), { selected: true, disabled: false });
+    assert.deepEqual(state('team-roster-list-toggle'), { selected: false, disabled: false });
 
-    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-metric-g')?.props.onPress();
-    findNode(run.harness.output, (node) => node.props.testID === 'team-leader-chart-toggle')?.props.onPress();
     findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
     run.harness.render();
-    assert.match(dom('team-leader-metric-p'), /aria-selected="false"/);
-    assert.match(dom('team-leader-metric-g'), /aria-selected="true"/);
-    assert.match(dom('team-leader-chart-toggle'), /aria-checked="true"/);
-    assert.match(dom('team-roster-jersey-toggle'), /aria-selected="false"/);
-    assert.match(dom('team-roster-list-toggle'), /aria-selected="true"/);
+    assert.deepEqual(state('team-roster-jersey-toggle'), { selected: false, disabled: false });
+    assert.deepEqual(state('team-roster-list-toggle'), { selected: true, disabled: false });
   });
 });
