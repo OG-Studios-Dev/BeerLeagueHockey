@@ -29,7 +29,7 @@
     ],
     "ios": {
       "bundleIdentifier": "ca.beerleaguehockey.app",
-      "buildNumber": "33",
+      "buildNumber": "43",
       "supportsTablet": false,
       "usesAppleSignIn": true,
       "infoPlist": {
