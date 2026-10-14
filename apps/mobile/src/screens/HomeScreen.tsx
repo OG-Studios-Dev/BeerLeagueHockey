@@ -66,6 +66,14 @@ function articleLabel(type: string | null) {
   return 'LEAGUE STORY';
 }
 
+function countNoun(value: number, singular: string, plural = `${singular}s`) {
+  return `${value} ${value === 1 ? singular : plural}`;
+}
+
+function standingsRowAccessibilityLabel(row: HomeStanding) {
+  return `${row.team_name}. ${countNoun(row.wins, 'win')}, ${countNoun(row.losses, 'loss', 'losses')}, ${countNoun(row.points, 'point')}. Open team.`;
+}
+
 
 function mergeSection<T>(previous: HomeSection<T>, next: HomeSection<T>, hasFacts: (value: T) => boolean) {
   if (next.status === 'error' && hasFacts(previous.data)) return { ...next, data: previous.data };
@@ -282,6 +290,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   };
 
   const sectionCard = [styles.card, { backgroundColor: visuals.surface, borderColor: visuals.stroke }];
+  const standingsPanel = [
+    styles.card,
+    styles.table,
+    {
+      backgroundColor: reduceTransparency ? homeTokens.surfaceOpaque : 'rgba(3, 10, 19, 0.78)',
+      borderColor: reduceTransparency ? homeTokens.strokeOpaque : 'rgba(125, 190, 255, 0.14)',
+    },
+  ];
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <GuestBanner />
@@ -372,7 +388,46 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         <View testID="home-standings-section">
           <SectionHeading title="Standings" fontScale={fontScale} action={<Pressable style={headingActionStyle} accessibilityRole="button" accessibilityLabel="Open standings" onPress={() => navigation?.navigate?.('Standings')}><Text allowFontScaling style={[styles.textLink, headingActionTextStyle, { color: accent }]}>All standings</Text></Pressable>} />
           {divisions.length > 1 ? <SelectableControlGroup role="radiogroup" accessibilityLabel="Home standings division" contentContainerStyle={styles.divisionTabs}>{divisions.map((division) => <SelectableControl key={division.id} role="radio" label={division.name} selected={division.id === selectedDivision} onPress={() => setDivisionId(division.id)} />)}</SelectableControlGroup> : null}
-          {!renderedPublicHome ? <SectionState loading onRetry={retry} /> : renderedPublicHome.standings.status === 'error' && shownStandings.length === 0 ? <SectionState message={renderedPublicHome.standings.message} onRetry={retry} /> : shownStandings.length === 0 ? <View style={[sectionCard, styles.emptyCard]}><Text style={styles.emptyTitle}>No standings available yet</Text></View> : <FocusCard focusId={`home:standings:${selectedDivision ?? 'all'}`} accentColor={accent} style={[sectionCard, styles.table]}><View style={styles.tableHeader}><Text style={[styles.tableTeam, styles.tableHeaderText]}>TEAM</Text><Text style={styles.tableStat}>GP</Text><Text style={styles.tableStat}>W</Text><Text style={styles.tableStat}>L</Text><Text style={styles.tableStat}>PTS</Text></View>{shownStandings.map((row: HomeStanding) => <Pressable key={row.team_id} accessibilityRole="button" style={styles.tableRow} onPress={() => navigation?.navigate?.('Team', { screen: 'TeamDetail', params: { teamId: row.team_id, leagueId: activeLeague.id } })}><View style={styles.tableTeam}><TeamLogo teamId={row.team_id} logoUrl={row.logo_url} teamName={row.team_name} primaryColor={row.primary_color} size={28} /><Text style={styles.tableTeamName}>{row.team_name}</Text></View><Text style={styles.tableStat}>{row.games_played}</Text><Text style={styles.tableStat}>{row.wins}</Text><Text style={styles.tableStat}>{row.losses}</Text><Text style={[styles.tableStat, { color: accent, fontWeight: '900' }]}>{row.points}</Text></Pressable>)}</FocusCard>}
+          {!renderedPublicHome ? <SectionState loading onRetry={retry} /> : renderedPublicHome.standings.status === 'error' && shownStandings.length === 0 ? <SectionState message={renderedPublicHome.standings.message} onRetry={retry} /> : shownStandings.length === 0 ? <View style={[sectionCard, styles.emptyCard]}><Text style={styles.emptyTitle}>No standings available yet</Text></View> : (
+            <FocusCard focusId={`home:standings:${selectedDivision ?? 'all'}`} accentColor={accent} style={standingsPanel}>
+              {!reduceTransparency ? (
+                <LinearGradient
+                  testID="home-standings-sheen"
+                  pointerEvents="none"
+                  colors={['rgba(180, 124, 255, 0.10)', 'rgba(125, 190, 255, 0.035)', 'rgba(3, 10, 19, 0)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              ) : null}
+              {shownStandings.map((row: HomeStanding, index) => (
+                <Pressable
+                  key={row.team_id}
+                  accessibilityRole="button"
+                  accessibilityLabel={standingsRowAccessibilityLabel(row)}
+                  style={[styles.tableRow, index === 0 && styles.tableRowFirst]}
+                  onPress={() => navigation?.navigate?.('Team', { screen: 'TeamDetail', params: { teamId: row.team_id, leagueId: activeLeague.id } })}
+                >
+                  <View style={styles.standingsLogo}>
+                    <TeamLogo
+                      teamId={row.team_id}
+                      logoUrl={row.logo_url}
+                      teamName={row.team_name}
+                      primaryColor={row.primary_color}
+                      size={58}
+                      transparentBacking
+                      decorative
+                    />
+                  </View>
+                  <Text allowFontScaling maxFontSizeMultiplier={1.3} style={styles.standingsRecord}>{`W ${row.wins} · L ${row.losses}`}</Text>
+                  <View style={styles.standingsPoints}>
+                    <Text allowFontScaling={false} style={styles.standingsPointsValue}>{row.points}</Text>
+                    <Text allowFontScaling maxFontSizeMultiplier={1.3} style={styles.standingsPointsLabel}>PTS</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </FocusCard>
+          )}
           {renderedPublicHome?.standings.status === 'error' && shownStandings.length > 0 ? <Text style={styles.staleNote}>{renderedPublicHome.standings.message}</Text> : null}
         </View>
 
@@ -425,13 +480,14 @@ const styles = StyleSheet.create({
   metricTabText: { color: colors.textSecondary, fontSize: 11, fontWeight: '800' },
   divisionTabs: { gap: 7, paddingBottom: 8 },
   divisionTab: { minHeight: 44, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: colors.glassStroke, alignItems: 'center', justifyContent: 'center' },
-  table: { padding: 8 },
-  tableHeader: { minHeight: 32, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 },
-  tableHeaderText: { color: colors.textSecondary, fontSize: 9, fontWeight: '900' },
-  tableRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.glassStroke, paddingHorizontal: 6 },
-  tableTeam: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  tableTeamName: { flex: 1, color: colors.textPrimary, fontSize: 11, fontWeight: '800' },
-  tableStat: { width: 30, color: colors.textSecondary, fontSize: 11, textAlign: 'center' },
+  table: { padding: 0 },
+  tableRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.glassStroke, paddingHorizontal: 12 },
+  tableRowFirst: { borderTopWidth: 0 },
+  standingsLogo: { width: 58, height: 58, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  standingsRecord: { flex: 1, minWidth: 0, marginLeft: 10, color: homeTokens.text, fontSize: 12, lineHeight: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  standingsPoints: { width: 64, flexShrink: 0, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-end', gap: 4 },
+  standingsPointsValue: { color: '#B47CFF', fontSize: 29, lineHeight: 34, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  standingsPointsLabel: { flexShrink: 1, color: homeTokens.textSecondary, fontSize: 9, lineHeight: 13, fontWeight: '900', letterSpacing: 0.8 },
   photoRail: { gap: 10 },
   photo: { width: 150, height: 110, borderRadius: 16, backgroundColor: colors.bgMedia },
   album: { width: 158, minHeight: 130 },

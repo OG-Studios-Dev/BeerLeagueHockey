@@ -47,6 +47,7 @@ const snapshot = {
 function createRuntime({
   guest = false,
   reduceMotion = false,
+  reduceTransparency = false,
   width = 320,
   fontScale = 1,
   updateResults = [] as Array<{ success: boolean }>,
@@ -131,7 +132,7 @@ function createRuntime({
     '../components/RevealView': ({ children, ...props }: Record<string, unknown>) => createElement('RevealView', props, children),
     '../components/SectionHeader': { SECTION_HEADING_TEXT_STYLE: { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' } },
     '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
-    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion }) },
+    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency, reduceMotion }) },
     '../context/AuthContext': { useAuth: () => ({ user: currentUser, isGuest: guest }) },
     '../context/LeagueContext': { useLeague: () => ({ activeLeague: currentLeague, activeTheme: { primaryColor: '#34D399' }, isGuestLeague: guest }) },
     '../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44', homeAccent: '#34D399' }) },
@@ -329,6 +330,239 @@ describe('Home web-structure runtime', () => {
     assert.equal(runtime.queryCalls.length, 0);
   });
 
+  it('renders the approved dynamic standings row without table chrome while preserving identity and navigation', async () => {
+    const standing = {
+      ...snapshot.standings.data[0],
+      team_id: 'acceptance-wolves',
+      team_name: 'Acceptance Wolves',
+      logo_url: 'https://images.test/acceptance-wolves.png',
+      games_played: 13,
+      wins: 8,
+      losses: 5,
+      points: 23,
+    };
+    const runtime = createRuntime({
+      publicData: { ...snapshot, standings: { status: 'ready', data: [standing] } },
+    });
+    const output = await settle(runtime);
+    const panel = findNode(output, (node) => node.props.testID === 'focus-card-home:standings:all');
+    assert.ok(panel);
+
+    assert.equal(nodeText(panel), `W ${standing.wins} · L ${standing.losses}${standing.points}PTS`);
+    assert.doesNotMatch(nodeText(panel), /TEAM|GP|Acceptance Wolves|13|\b1\b/);
+
+    const row = findNode(panel, (node) => node.type === 'Pressable');
+    assert.ok(row);
+    assert.equal(
+      row.props.accessibilityLabel,
+      `${standing.team_name}. ${standing.wins} wins, ${standing.losses} losses, ${standing.points} points. Open team.`,
+    );
+    const logo = findNode(row, (node) => node.type === 'TeamLogo');
+    assert.deepEqual(
+      { teamId: logo?.props.teamId, logoUrl: logo?.props.logoUrl, teamName: logo?.props.teamName, size: logo?.props.size },
+      { teamId: standing.team_id, logoUrl: standing.logo_url, teamName: standing.team_name, size: 58 },
+    );
+
+    const value = findNode(row, (node) => node.type === 'Text' && nodeText(node) === String(standing.points));
+    assert.deepEqual(
+      {
+        color: flattenStyle(value?.props.style).color,
+        fontSize: flattenStyle(value?.props.style).fontSize,
+        lineHeight: flattenStyle(value?.props.style).lineHeight,
+        fontWeight: flattenStyle(value?.props.style).fontWeight,
+        fontVariant: flattenStyle(value?.props.style).fontVariant,
+        fontFamily: flattenStyle(value?.props.style).fontFamily,
+        fontStyle: flattenStyle(value?.props.style).fontStyle,
+      },
+      {
+        color: '#B47CFF',
+        fontSize: 29,
+        lineHeight: 34,
+        fontWeight: '900',
+        fontVariant: ['tabular-nums'],
+        fontFamily: undefined,
+        fontStyle: undefined,
+      },
+    );
+
+    row.props.onPress();
+    assert.deepEqual(runtime.navigationCalls.at(-1), [
+      'Team',
+      { screen: 'TeamDetail', params: { teamId: standing.team_id, leagueId: league.id } },
+    ]);
+  });
+
+  it('uses one black-glass standings panel with a restrained sheen and only inter-row hairlines', async () => {
+    const secondStanding = {
+      ...snapshot.standings.data[0],
+      team_id: 'otters',
+      team_name: 'River Otters',
+      wins: 4,
+      losses: 6,
+      points: 9,
+    };
+    const output = await settle(createRuntime({
+      publicData: {
+        ...snapshot,
+        standings: { status: 'ready', data: [snapshot.standings.data[0], secondStanding] },
+      },
+    }));
+    const panel = findNode(output, (node) => node.props.testID === 'focus-card-home:standings:all');
+    assert.ok(panel);
+    const panelStyle = flattenStyle(panel.props.style);
+    assert.equal(panelStyle.backgroundColor, 'rgba(3, 10, 19, 0.78)');
+    assert.equal(panelStyle.borderColor, 'rgba(125, 190, 255, 0.14)');
+    assert.equal(panelStyle.padding, 0);
+
+    const sheen = findNode(panel, (node) => node.type === 'LinearGradient' && node.props.testID === 'home-standings-sheen');
+    assert.ok(sheen);
+    assert.deepEqual(sheen.props.colors, [
+      'rgba(180, 124, 255, 0.10)',
+      'rgba(125, 190, 255, 0.035)',
+      'rgba(3, 10, 19, 0)',
+    ]);
+
+    const rows = allNodes(panel).filter((node) => node.type === 'Pressable');
+    assert.equal(rows.length, 2);
+    assert.equal(flattenStyle(rows[0].props.style).borderTopWidth, 0);
+    assert.equal(flattenStyle(rows[1].props.style).borderTopWidth, 1);
+    assert.equal(allNodes(panel).filter((node) => String(node.props.testID).startsWith('focus-card-')).length, 1);
+    for (const row of rows) {
+      const style = flattenStyle(row.props.style);
+      assert.equal(style.backgroundColor, undefined);
+      assert.equal(style.borderRadius, undefined);
+    }
+  });
+
+  it('keeps every standings destination on a calm 68-point minimum row', async () => {
+    const output = await settle(createRuntime());
+    const panel = findNode(output, (node) => node.props.testID === 'focus-card-home:standings:all');
+    const rows = allNodes(panel).filter((node) => node.type === 'Pressable');
+    assert.equal(rows.length, 1);
+    for (const row of rows) {
+      const style = flattenStyle(row.props.style);
+      assert.equal(style.minHeight, 68);
+      assert.ok(style.minHeight >= 44);
+      assert.equal(style.height, undefined, 'enlarged text must be able to grow the row');
+    }
+  });
+
+  it('places the crest first with the record immediately claiming the remaining row space', async () => {
+    const output = await settle(createRuntime());
+    const panel = findNode(output, (node) => node.props.testID === 'focus-card-home:standings:all');
+    const row = findNode(panel, (node) => node.type === 'Pressable');
+    assert.ok(row);
+    const children = Array.isArray(row.props.children) ? row.props.children : [row.props.children];
+    const logoFrame = children[0] as TestNode;
+    const record = children[1] as TestNode;
+    const points = children[2] as TestNode;
+
+    assert.ok(findNode(logoFrame, (node) => node.type === 'TeamLogo'));
+    assert.deepEqual(
+      { width: flattenStyle(logoFrame.props.style).width, flex: flattenStyle(logoFrame.props.style).flex },
+      { width: 58, flex: undefined },
+      'the removed rank/name columns must not survive as a flexible empty gutter',
+    );
+    assert.equal(nodeText(record), 'W 7 · L 3');
+    assert.deepEqual(
+      {
+        flex: flattenStyle(record.props.style).flex,
+        minWidth: flattenStyle(record.props.style).minWidth,
+        marginLeft: flattenStyle(record.props.style).marginLeft,
+      },
+      { flex: 1, minWidth: 0, marginLeft: 10 },
+    );
+    assert.equal(flattenStyle(points.props.style).flexShrink, 0);
+  });
+
+  it('replaces the standings sheen with an opaque readable surface under Reduce Transparency', async () => {
+    const output = await settle(createRuntime({ reduceTransparency: true }));
+    const panel = findNode(output, (node) => node.props.testID === 'focus-card-home:standings:all');
+    assert.ok(panel);
+    const panelStyle = flattenStyle(panel.props.style);
+    assert.equal(panelStyle.backgroundColor, '#0C1B31');
+    assert.equal(panelStyle.borderColor, '#41607F');
+    assert.equal(findNode(panel, (node) => node.props.testID === 'home-standings-sheen'), undefined);
+
+    const record = findNode(panel, (node) => node.type === 'Text' && nodeText(node) === 'W 7 · L 3');
+    const points = findNode(panel, (node) => node.type === 'Text' && nodeText(node) === '14');
+    const label = findNode(panel, (node) => node.type === 'Text' && nodeText(node) === 'PTS');
+    assert.equal(flattenStyle(record?.props.style).color, '#F8FBFF');
+    assert.equal(flattenStyle(points?.props.style).color, '#B47CFF');
+    assert.equal(flattenStyle(label?.props.style).color, '#A9B8CC');
+  });
+
+  it('renders each standings record from its own row and pluralizes the complete accessible facts', async () => {
+    const facts = [
+      { wins: 1, losses: 1, points: 2 },
+      { wins: 2, losses: 4, points: 8 },
+      { wins: 9, losses: 0, points: 27 },
+      { wins: 0, losses: 12, points: 3 },
+    ];
+    const standings = facts.map((fact, index) => ({
+      ...snapshot.standings.data[0],
+      ...fact,
+      team_id: `dynamic-team-${index + 1}`,
+      team_name: `Dynamic Team ${index + 1}`,
+      games_played: 70 + index,
+    }));
+    const runtime = createRuntime({
+      publicData: { ...snapshot, standings: { status: 'ready', data: standings } },
+    });
+    const output = await settle(runtime);
+    const panel = findNode(output, (node) => node.props.testID === 'focus-card-home:standings:all');
+    const rows = allNodes(panel).filter((node) => node.type === 'Pressable');
+    assert.equal(rows.length, standings.length);
+
+    for (const [index, row] of rows.entries()) {
+      const standing = standings[index];
+      assert.equal(nodeText(row), `W ${standing.wins} · L ${standing.losses}${standing.points}PTS`);
+      assert.equal(
+        row.props.accessibilityLabel,
+        `${standing.team_name}. ${standing.wins} ${standing.wins === 1 ? 'win' : 'wins'}, ${standing.losses} ${standing.losses === 1 ? 'loss' : 'losses'}, ${standing.points} points. Open team.`,
+      );
+      assert.doesNotMatch(nodeText(row), new RegExp(`${standing.games_played}|${standing.team_name}`));
+      row.props.onPress();
+      assert.deepEqual(runtime.navigationCalls.at(-1), [
+        'Team',
+        { screen: 'TeamDetail', params: { teamId: standing.team_id, leagueId: league.id } },
+      ]);
+    }
+  });
+
+  it('keeps the standings facts flexible and readable at 320, 390, and 430 points with 130% text', async () => {
+    for (const width of [320, 390, 430]) {
+      const output = await settle(createRuntime({ width, fontScale: 1.3 }));
+      const nodes = allNodes(output);
+      const section = findNode(output, (node) => node.props.testID === 'home-standings-section');
+      const panel = findNode(section, (node) => node.props.testID === 'focus-card-home:standings:all');
+      const row = findNode(panel, (node) => node.type === 'Pressable');
+      const record = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'W 7 · L 3');
+      const value = findNode(row, (node) => node.type === 'Text' && nodeText(node) === '14');
+      const label = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'PTS');
+      const logo = findNode(row, (node) => node.type === 'TeamLogo');
+      assert.ok(panel && row && record && value && label && logo, `complete standings row at ${width}`);
+
+      assert.equal(flattenStyle(panel.props.style).width, undefined);
+      assert.equal(flattenStyle(row.props.style).height, undefined);
+      assert.equal(flattenStyle(record.props.style).flex, 1);
+      assert.equal(flattenStyle(record.props.style).minWidth, 0);
+      assert.equal(record.props.allowFontScaling, true);
+      assert.equal(record.props.maxFontSizeMultiplier, 1.3);
+      assert.equal(record.props.numberOfLines, undefined, 'record may grow rather than clip');
+      assert.equal(value.props.allowFontScaling, false, 'the 29/34 League Leaders value treatment stays exact');
+      assert.equal(label.props.allowFontScaling, true);
+      assert.equal(label.props.maxFontSizeMultiplier, 1.3);
+      assert.equal(logo.props.size, 58);
+
+      const heading = findHeading(output, 'StandingsAll standings');
+      assert.equal(flattenStyle(heading?.props.style).flexDirection, 'column');
+      const standingsIndex = nodes.findIndex((node) => node.props.testID === 'home-standings-section');
+      const photosIndex = nodes.findIndex((node) => node.props.testID === 'home-photos-section');
+      assert.ok(standingsIndex >= 0 && photosIndex > standingsIndex, `next Home section remains after standings at ${width}`);
+    }
+  });
+
   it('uses the league Home accent instead of the unrelated viewer-team focus accent', async () => {
     const output = await settle(createRuntime());
     const story = findNode(output, (node) => node.props.testID === 'focus-card-home:story:story-1');
@@ -451,13 +685,24 @@ describe('Home web-structure runtime', () => {
     const runtime = createRuntime({ publicData: multiDivision });
     const output = await settle(runtime);
     const standingsSection = findNode(output, (node) => node.props.testID === 'home-standings-section');
-    assert.match(nodeText(standingsSection), /Server First Bears/);
-    assert.doesNotMatch(nodeText(standingsSection), /Server Second Aces/);
+    assert.doesNotMatch(nodeText(standingsSection), /Server First Bears|Server Second Aces/);
+    let row = findNode(standingsSection, (node) => node.props.accessibilityLabel === 'Server First Bears. 7 wins, 3 losses, 14 points. Open team.');
+    assert.ok(row);
     const chips = allNodes(standingsSection).filter((node) => node.props.accessibilityState?.selected !== undefined);
     assert.deepEqual(chips.map((node) => nodeText(node)), ['B✓', 'A']);
+
+    row.props.onPress();
+    assert.deepEqual(runtime.navigationCalls.at(-1), ['Team', { screen: 'TeamDetail', params: { teamId: 'team-b', leagueId: league.id } }]);
+    findNode(standingsSection, (node) => node.props.accessibilityLabel === 'Open standings')?.props.onPress();
+    assert.deepEqual(runtime.navigationCalls.at(-1), ['Standings']);
+
     chips[1].props.onPress();
     runtime.harness.render();
-    assert.match(nodeText(findNode(runtime.harness.output, (node) => node.props.testID === 'home-standings-section')), /Server Second Aces/);
+    const switchedSection = findNode(runtime.harness.output, (node) => node.props.testID === 'home-standings-section');
+    assert.doesNotMatch(nodeText(switchedSection), /Server First Bears|Server Second Aces/);
+    row = findNode(switchedSection, (node) => node.props.accessibilityLabel === 'Server Second Aces. 7 wins, 3 losses, 14 points. Open team.');
+    assert.ok(row);
+    assert.ok(findNode(switchedSection, (node) => node.props.testID === 'focus-card-home:standings:division-a'));
   });
 
   it('makes every loaded story reachable with its own destination and resets safely when the story identity shrinks', async () => {
@@ -596,8 +841,9 @@ describe('Home web-structure runtime', () => {
     await settle(runtime);
     await refresh(runtime);
     const section = findNode(runtime.harness.output, (node) => node.props.testID === 'home-standings-section');
-    assert.match(nodeText(section), /First Division Team/);
-    assert.doesNotMatch(nodeText(section), /Second Division Team/);
+    assert.doesNotMatch(nodeText(section), /First Division Team|Second Division Team/);
+    assert.ok(findNode(section, (node) => node.props.accessibilityLabel === 'First Division Team. 7 wins, 3 losses, 14 points. Open team.'));
+    assert.equal(findNode(section, (node) => String(node.props.accessibilityLabel).startsWith('Second Division Team.')), undefined);
     assert.match(nodeText(section), /Feed unavailable/);
   });
 
