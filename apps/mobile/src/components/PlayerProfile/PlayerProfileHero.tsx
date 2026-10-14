@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import colors from '../../theme/colors';
 import { getContrastTextColor } from '../../theme/contrast';
@@ -70,8 +70,15 @@ export default function PlayerProfileHero({
   const surnameLetters = Array.from(displayName.surname);
   const surnameLetterSize = surnameLetters.length > 10 ? 13 : surnameLetters.length > 7 ? 16 : 20;
   const visibleAwards = awards.filter((award) => award.count > 0);
+  const [identityBottom, setIdentityBottom] = React.useState(0);
+  const handleIdentityLayout = React.useCallback((event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    const measuredBottom = y + height;
+    setIdentityBottom((current) => Math.abs(current - measuredBottom) < 0.5 ? current : measuredBottom);
+  }, []);
+  const flowBoundary = layout.stacked ? layout.stageHeight : Math.max(layout.stageHeight, identityBottom);
   return (
-    <View testID="player-profile-rink-ribbon-hero" style={[styles.hero, { minHeight: layout.stageHeight }]}>
+    <View testID="player-profile-rink-ribbon-hero" style={[styles.hero, { minHeight: flowBoundary }]}>
       <View
         testID="player-profile-rink-ribbon-atmosphere"
         pointerEvents="none"
@@ -136,6 +143,7 @@ export default function PlayerProfileHero({
 
       <View
         testID="player-profile-rink-ribbon-identity"
+        onLayout={layout.stacked ? undefined : handleIdentityLayout}
         style={[styles.identity, layout.stacked && styles.identityStacked, { width: layout.identityWidth }]}
       >
         <Text style={styles.eyebrow}>FEATURED PLAYER</Text>
@@ -176,7 +184,7 @@ export default function PlayerProfileHero({
 
       {visibleAwards.length > 0 ? <View
         testID="player-profile-rink-ribbon-awards"
-        style={[styles.awards, { marginTop: layout.stacked ? 22 : layout.stageHeight }]}
+        style={[styles.awards, { marginTop: layout.stacked ? 22 : flowBoundary }]}
       >
         {visibleAwards.map((award) => <View key={award.key} style={[styles.award, reduceTransparency && styles.awardOpaque]} accessible accessibilityLabel={`${award.label}, ${award.count}`}>
           {award.imageUrl ? <Image source={{ uri: award.imageUrl }} alt="" resizeMode="contain" accessible={false} accessibilityElementsHidden style={styles.awardImage} /> : <Ionicons name="trophy-outline" size={27} color={accent} />}

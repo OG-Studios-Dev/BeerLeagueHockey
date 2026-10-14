@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
@@ -8,6 +9,15 @@ import { compileCommonJs, createHookHarness, findNode, flattenStyle, nodeText } 
 
 const heroUrl = new URL('../../src/components/PlayerProfile/PlayerProfileHero.tsx', import.meta.url);
 const screenUrl = new URL('../../src/screens/PlayerCardScreen.tsx', import.meta.url);
+
+function mountedReactRuntime() {
+  const require = createRequire(import.meta.url);
+  const pnpmDirectory = fileURLToPath(new URL('../../../../node_modules/.pnpm/', import.meta.url).href);
+  const jsdomEntry = readdirSync(pnpmDirectory).find((entry) => entry.startsWith('jsdom@'));
+  assert.ok(jsdomEntry, 'the frozen workspace lockfile must provision jsdom for mounted lifecycle tests');
+  const requireJsdom = createRequire(`${pnpmDirectory}${jsdomEntry}/node_modules/jsdom/package.json`);
+  return { React: require('react'), createRoot: require('react-dom/client').createRoot, JSDOM: requireJsdom('jsdom').JSDOM };
+}
 
 function nativeMock() {
   return {
@@ -69,6 +79,44 @@ describe('Rink Ribbon player profile hero', () => {
     assert.equal(enlarged.stacked, true);
     assert.equal(enlarged.identityWidth, enlarged.canvasWidth);
     assert.ok(enlarged.artHeight + enlarged.platformClearance <= enlarged.stageHeight);
+  });
+
+  it('grows the 390-point hero flow boundary around a measured long-name identity and two-line team control', () => {
+    const teamName = 'First General London Hockey Club';
+    const rendered = renderHero({
+      width: 390,
+      fontScale: 1,
+      fullName: 'Maximilian Alexander Bartholomew Worthington-Smythe',
+      leadership: 'Alternate Captain',
+      photoUrl: null,
+      team: { id: 'team-one', name: teamName, logoUrl: null },
+      awards: [{ key: 'champion', label: 'League Champion', count: 1, imageUrl: null }],
+    });
+    const layout = getPlayerProfileHeroLayout(390, 1);
+    const identity = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-identity');
+    const teamControl = findNode(rendered.output, (node) => node.props.accessibilityLabel === `Open ${teamName}`);
+    const teamLabel = findNode(teamControl, (node) => node.type === 'Text');
+
+    assert.equal(layout.stacked, false);
+    assert.equal(flattenStyle(teamControl?.props.style).minHeight, 48);
+    assert.equal(teamLabel?.props.numberOfLines, 2);
+    assert.equal(typeof identity?.props.onLayout, 'function', 'the absolute identity must report its real rendered extent to the hero flow');
+
+    const measuredIdentity = { x: 147, y: 84, width: layout.identityWidth, height: 400 };
+    identity?.props.onLayout({ nativeEvent: { layout: measuredIdentity } });
+    rendered.harness.render();
+
+    const hero = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-hero');
+    const awards = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-awards');
+    const measuredBottom = measuredIdentity.y + measuredIdentity.height;
+    assert.ok(
+      flattenStyle(hero?.props.style).minHeight >= measuredBottom,
+      'the following surface must start at or below the measured team-control edge',
+    );
+    assert.ok(
+      flattenStyle(awards?.props.style).marginTop >= measuredBottom,
+      'awards must remain below the measured identity rather than covering its team control',
+    );
   });
 
   it('derives editorial name lines from the loaded full name without inventing a subject', () => {
@@ -186,6 +234,86 @@ describe('Rink Ribbon player profile hero', () => {
       { uri: photoC },
       'a photo change retries the new URL',
     );
+  });
+
+  it('keeps the active portrait through a mounted A-to-B-to-A transition when the old A callback fires', async () => {
+    const { React, createRoot, JSDOM } = mountedReactRuntime();
+    const dom = new JSDOM('<!doctype html><div id="root"></div>');
+    const previous = {
+      window: globalThis.window,
+      document: globalThis.document,
+      navigator: globalThis.navigator,
+      act: (globalThis as any).IS_REACT_ACT_ENVIRONMENT,
+    };
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window });
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document });
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator });
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+    try {
+      const renderedPortraits: Array<{ uri: string; onError: () => void }> = [];
+      const element = (type: string) => {
+        function MockElement({ children, testID, accessibilityLabel }: any) {
+          return React.createElement(type, { 'data-testid': testID, 'aria-label': accessibilityLabel }, children);
+        }
+        MockElement.displayName = `Mock${type}`;
+        return MockElement;
+      };
+      const Image = ({ source, onError, testID }: any) => {
+        const uri = source?.uri ?? 'bundled-neutral-artwork';
+        if (onError) renderedPortraits.push({ uri, onError });
+        return React.createElement('img', { 'data-testid': testID, src: uri });
+      };
+      const Hero = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(heroUrl, {
+        react: React,
+        'react-native': {
+          Image,
+          Pressable: element('button'),
+          Text: element('span'),
+          View: element('div'),
+          StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: { position: 'absolute', inset: 0 } },
+        },
+        'expo-linear-gradient': { LinearGradient: element('div') },
+        '@expo/vector-icons': { Ionicons: element('span') },
+        '../../../assets/league-leaders/neutral-helmet-player.png': { uri: 'bundled-neutral-skater-artwork' },
+        '../../../assets/league-leaders/neutral-goalie.png': { uri: 'bundled-neutral-goalie-artwork' },
+        '../TeamLogo': { __esModule: true, default: element('span') },
+        '../../theme/colors': { __esModule: true, default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', glassStroke: '#333' } },
+        '../../theme/contrast': { getContrastTextColor: () => '#000' },
+      }).default;
+      const root = createRoot(dom.window.document.getElementById('root')!);
+      const photoA = 'https://example.test/players/a.jpg';
+      const photoB = 'https://example.test/players/b.jpg';
+      const props = {
+        playerId: 'player-one', photoUrl: photoA, fullName: 'Alex Example', jerseyNumber: 19, position: 'Forward', leadership: null,
+        team: null, awards: [], accent: '#FFD52F', isGoalie: false, width: 390, fontScale: 1, reduceTransparency: false,
+        onShare: () => undefined, onOpenTeam: () => undefined,
+      };
+      const draw = async () => React.act(async () => {
+        root.render(React.createElement(React.StrictMode, null, React.createElement(Hero, props)));
+      });
+
+      await draw();
+      const staleAError = renderedPortraits.find((entry) => entry.uri === photoA)!.onError;
+      props.photoUrl = photoB;
+      await draw();
+      props.photoUrl = photoA;
+      await draw();
+      await React.act(async () => staleAError());
+
+      assert.equal(
+        dom.window.document.querySelector('[data-testid="player-profile-rink-ribbon-artwork"]')?.getAttribute('src'),
+        photoA,
+        'an error retained from the old A lifetime must not replace the newly active A portrait',
+      );
+      await React.act(async () => root.unmount());
+    } finally {
+      dom.window.close();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: previous.window });
+      Object.defineProperty(globalThis, 'document', { configurable: true, value: previous.document });
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: previous.navigator });
+      (globalThis as any).IS_REACT_ACT_ENVIRONMENT = previous.act;
+    }
   });
 
   it('uses a vertical surname column at normal widths and a full horizontal surname in stacked layouts', () => {
