@@ -1,16 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
+import { resolveTeamRosterJerseyVariant } from '../../src/screens/TeamScreen/teamRosterJerseyVariant';
 
 
-function pngPixels(layer: string) {
-  const bytes = readFileSync(new NodeURL(`../../src/assets/team-page/jersey-${layer}.png`, import.meta.url));
+function pngPixels(asset: string) {
+  const bytes = readFileSync(new NodeURL(`../../src/assets/team-page/${asset}.png`, import.meta.url));
   const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
   assert.equal(bytes[24], 8);
-  assert.equal(bytes[25], 6, '8-bit RGBA tint mask');
+  assert.equal(bytes[25], 6, '8-bit RGBA artwork');
   const chunks: Buffer[] = [];
   for (let offset = 8; offset < bytes.length;) {
     const size = bytes.readUInt32BE(offset);
@@ -27,25 +28,44 @@ function pngPixels(layer: string) {
       pixels[i] = (raw[y * (stride + 1) + 1 + x] + predictor) & 255;
     }
   }
-  return { width, height, alpha: (x: number, y: number) => pixels[(y * width + x) * 4 + 3], pixels };
+  return {
+    width,
+    height,
+    alpha: (x: number, y: number) => pixels[(y * width + x) * 4 + 3],
+    rgba: (x: number, y: number) => [...pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4)],
+    pixels,
+  };
 }
 
-it('ships transparent jersey silhouette, stripe and detail masks, not opaque rectangles', () => {
-  for (const layer of ['primary', 'secondary', 'detail']) {
-    const image = pngPixels(layer);
-    assert.deepEqual([image.width, image.height], [560, 480]);
-    assert.equal(image.alpha(0, 0), 0, `${layer}: transparent corner`);
-    assert.equal(image.alpha(559, 479), 0);
+it('ships only efficient 2x transparent full-colour jersey variants with real palette pixels', () => {
+  const variants = [
+    ['jersey-back-bad-bunny', [243, 74, 154]],
+    ['jersey-back-first-general-london', [118, 201, 239]],
+    ['jersey-back-liuna', [21, 24, 29]],
+    ['jersey-back-fitzrays', [217, 38, 53]],
+    ['jersey-back-fallback', [137, 149, 168]],
+  ] as const;
+  const signatures = new Set<string>();
+  for (const [asset, palettePixel] of variants) {
+    const image = pngPixels(asset);
+    assert.deepEqual([image.width, image.height], [240, 224]);
+    assert.equal(image.alpha(0, 0), 0, `${asset}: transparent corner`);
+    assert.equal(image.alpha(239, 223), 0);
     const alpha = [...image.pixels].filter((_, index) => index % 4 === 3);
-    assert.ok(alpha.some((value) => value === 255), `${layer}: visible paint`);
-    assert.ok(alpha.filter((value) => value > 0).length < alpha.length * .65);
+    assert.ok(alpha.some((value) => value === 255), `${asset}: visible opaque paint`);
+    assert.ok(alpha.filter((value) => value > 0).length < alpha.length * .7, `${asset}: genuine exterior transparency`);
+    const colours = new Set<string>();
+    for (let index = 0; index < image.pixels.length; index += 4) {
+      if (image.pixels[index + 3] > 0) colours.add(`${image.pixels[index]},${image.pixels[index + 1]},${image.pixels[index + 2]}`);
+    }
+    assert.ok(colours.size > 500, `${asset}: gradients, texture, highlights and seams survive rasterization`);
+    assert.ok(colours.has(palettePixel.join(',')), `${asset}: exact palette colour is painted`);
+    signatures.add(`${image.rgba(120, 110)}|${image.rgba(48, 106)}|${image.rgba(120, 45)}`);
   }
-  assert.equal(pngPixels('primary').alpha(280, 240), 255, 'solid torso');
-  assert.equal(pngPixels('secondary').alpha(280, 240), 0, 'stripe leaves torso open');
-  for (const [x, y] of [[80, 348], [480, 348], [280, 440], [280, 126]]) {
-    assert.equal(pngPixels('secondary').alpha(x, y), 255, `stripe at ${x},${y}`);
+  assert.equal(signatures.size, variants.length, 'every team and fallback ships distinct rendered pixels');
+  for (const legacyMask of ['jersey-primary', 'jersey-secondary', 'jersey-detail']) {
+    assert.equal(existsSync(new NodeURL(`../../src/assets/team-page/${legacyMask}.png`, import.meta.url)), false, `${legacyMask} is replaced rather than shipped alongside full-colour art`);
   }
-  assert.equal(pngPixels('detail').alpha(280, 240), 0, 'detail cannot cover tint');
 });
 
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
@@ -142,9 +162,11 @@ function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency
       '../../theme/ui': { ui: { minTouchTarget: 44 } },
       '../../assets/team-page/weekly-games-bg.jpg': 1,
       '../../assets/team-page/trophy.png': 2,
-      '../../assets/team-page/jersey-primary.png': 3,
-      '../../assets/team-page/jersey-secondary.png': 4,
-      '../../assets/team-page/jersey-detail.png': 5,
+      '../../assets/team-page/jersey-back-bad-bunny.png': 6,
+      '../../assets/team-page/jersey-back-first-general-london.png': 7,
+      '../../assets/team-page/jersey-back-liuna.png': 8,
+      '../../assets/team-page/jersey-back-fitzrays.png': 9,
+      '../../assets/team-page/jersey-back-fallback.png': 10,
     },
   ).default;
   harness.mount(() => Component({ snapshot: sourceSnapshot, reduceTransparency, onOpenPlayer: (id: string) => openedPlayers.push(id), onOpenGame: (id: string) => openedGames.push(id) }));
@@ -188,9 +210,11 @@ describe('native Team public composition', () => {
         '../../theme/ui': { ui: { minTouchTarget: 44 } },
         '../../assets/team-page/weekly-games-bg.jpg': 1,
         '../../assets/team-page/trophy.png': 2,
-        '../../assets/team-page/jersey-primary.png': 3,
-        '../../assets/team-page/jersey-secondary.png': 4,
-        '../../assets/team-page/jersey-detail.png': 5,
+        '../../assets/team-page/jersey-back-bad-bunny.png': 6,
+        '../../assets/team-page/jersey-back-first-general-london.png': 7,
+        '../../assets/team-page/jersey-back-liuna.png': 8,
+        '../../assets/team-page/jersey-back-fitzrays.png': 9,
+        '../../assets/team-page/jersey-back-fallback.png': 10,
       },
     ).default;
     opaqueHarness.mount(() => Component({ snapshot, reduceTransparency: true, onOpenPlayer: () => undefined, onOpenGame: () => undefined }));
@@ -396,6 +420,61 @@ describe('native Team public composition', () => {
     const jersey = findNode(output, (node) => node.props.testID === 'team-roster-player-p1');
     assert.match(jersey?.props.accessibilityLabel, /Matt Grossi.*jersey number 96/);
     for (const text of findNodes(jersey, (node) => node.type === 'Text')) assert.equal(text.props.allowFontScaling, false);
+  });
+
+  it('selects the approved static jersey by canonical team ID and optically centers dynamic lettering', () => {
+    const source = {
+      ...snapshot,
+      team: { ...snapshot.team, id: '093f611c-0cdc-4509-afde-9c661b5833c9', name: 'Renamed Club', slug: 'renamed-club' },
+      roster: [{ ...roster[0], name: 'Alex Longsurnamerson', jerseyNumber: 123 }],
+    };
+    const output = runtime(320, source).harness.output;
+    const jersey = findNode(output, (node) => node.props.testID === 'team-roster-player-p1');
+    const art = findNode(jersey, (node) => node.props.testID === 'team-roster-art-p1');
+    const name = findNode(jersey, (node) => node.props.testID === 'team-roster-name-p1');
+    const number = findNode(jersey, (node) => node.props.testID === 'team-roster-number-p1');
+
+    assert.ok(art, 'the fitted Variation A jersey is rendered as one static native image');
+    assert.equal(art?.props.source, 6, 'canonical team ID wins over changed display text');
+    assert.equal(findNodes(jersey, (node) => node.type === 'Image').length, 1);
+    assert.equal(nodeText(name), 'LONGSURNAMERSON', 'the complete surname is rendered rather than truncated');
+    assert.equal(nodeText(number), '123');
+    const nameStyle = renderedStyle(name);
+    assert.ok(nameStyle.fontSize >= 5, 'long surname remains legible at compact width');
+    assert.deepEqual(nameStyle.transform, [{ scaleX: 0.72 }], 'compact long surname uses an explicit visual fit instead of browser-unsupported adjustsFontSizeToFit');
+    assert.deepEqual([nameStyle.left, nameStyle.right], ['25%', '25%'], 'long-name layout provides enough pre-transform width to avoid ellipsis');
+    assert.equal(name?.props.numberOfLines, 1, 'surname remains a single raised-nameplate line');
+    assert.equal(name?.props.adjustsFontSizeToFit, true, 'native text fitting preserves surnames longer than the visual fixture');
+    assert.equal(name?.props.minimumFontScale, 0.5);
+    assert.ok(renderedStyle(jersey).minHeight >= 44, 'player navigation remains a 44-point Pressable');
+    const numberStyle = renderedStyle(number);
+    assert.deepEqual([numberStyle.left, numberStyle.right, numberStyle.textAlign], [0, 0, 'center']);
+    assert.deepEqual(numberStyle.transform, [{ translateX: -1.5 }], 'italic numeral receives the approved left optical correction');
+  });
+
+  it('resolves every live team ID, canonical identity, and legacy alias to one jersey variant with a safe fallback', () => {
+    const identities = [
+      ['bad-bunny', '093f611c-0cdc-4509-afde-9c661b5833c9', 'Bad Bunny', 'bad-bunny', 'London Eco Metal', 'london-eco-metal'],
+      ['first-general-london', '453d62d9-80b4-4f26-a2ee-861f0c063402', 'First General London', 'first-general-london', null, null],
+      ['liuna', '346833e0-2780-492d-86db-94df0b0cb3e1', 'Liuna', 'liuna', 'FitzRays Premier', 'fitzrays-premier'],
+      ['fitzrays', 'e4be829d-952c-4531-8376-215907fab3b7', 'Fitzrays', 'fitzrays', 'FitzRays Flyers', 'fitzrays-flyers'],
+    ] as const;
+    const expectedSources = { 'bad-bunny': 6, 'first-general-london': 7, liuna: 8, fitzrays: 9 } as const;
+
+    for (const [variant, id, name, slug, legacyName, legacySlug] of identities) {
+      assert.equal(resolveTeamRosterJerseyVariant({ id, name: 'Renamed Club', slug: 'renamed-club' }), variant, `${variant} ID`);
+      assert.equal(resolveTeamRosterJerseyVariant({ id: 'unknown', name, slug: null }), variant, `${variant} canonical name`);
+      assert.equal(resolveTeamRosterJerseyVariant({ id: 'unknown', name: 'Renamed Club', slug }), variant, `${variant} canonical slug`);
+      if (legacyName) assert.equal(resolveTeamRosterJerseyVariant({ id: 'unknown', name: legacyName, slug: null }), variant, `${variant} legacy name`);
+      if (legacySlug) assert.equal(resolveTeamRosterJerseyVariant({ id: 'unknown', name: 'Renamed Club', slug: legacySlug }), variant, `${variant} legacy slug`);
+
+      const output = runtime(390, { ...snapshot, team: { ...snapshot.team, id, name: 'Renamed Club', slug: 'renamed-club' } }).harness.output;
+      assert.equal(findNode(output, (node) => node.props.testID === 'team-roster-art-p1')?.props.source, expectedSources[variant]);
+    }
+
+    assert.equal(resolveTeamRosterJerseyVariant({ id: 'unknown', name: 'Unknown Club', slug: 'unknown-club' }), 'fallback');
+    const fallback = runtime(390, { ...snapshot, team: { ...snapshot.team, id: 'unknown', name: 'Unknown Club', slug: 'unknown-club' } }).harness.output;
+    assert.equal(findNode(fallback, (node) => node.props.testID === 'team-roster-art-p1')?.props.source, 10);
   });
 
   it('dissolves the broadcast atmosphere into the preserved Next Game section instead of a hard cutoff', () => {

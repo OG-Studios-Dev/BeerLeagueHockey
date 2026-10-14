@@ -230,7 +230,13 @@ function createRuntime({
       '../../assets/league-leaders/jack-foote.png': 6,
       '../../assets/league-leaders/neutral-goalie.png': 7,
       '../../assets/league-leaders/neutral-helmet-player.png': 8,
-      '../../assets/team-page/weekly-games-bg.jpg': 1, '../../assets/team-page/trophy.png': 2, '../../assets/team-page/jersey-primary.png': 3, '../../assets/team-page/jersey-secondary.png': 4, '../../assets/team-page/jersey-detail.png': 5,
+      '../../assets/team-page/weekly-games-bg.jpg': 1,
+      '../../assets/team-page/trophy.png': 2,
+      '../../assets/team-page/jersey-back-bad-bunny.png': 3,
+      '../../assets/team-page/jersey-back-first-general-london.png': 4,
+      '../../assets/team-page/jersey-back-liuna.png': 5,
+      '../../assets/team-page/jersey-back-fitzrays.png': 6,
+      '../../assets/team-page/jersey-back-fallback.png': 7,
     },
   ).default;
 

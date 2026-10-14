@@ -19,6 +19,7 @@ export type BroadcastTeamHeroSnapshot = {
 export type BroadcastTeamHeroModel = {
   accent: string;
   tickerColors: [string, string];
+  tickerTextColors: [string, string, string, string];
   record: string;
   championshipDisplay: string;
   championshipLabel: string;
@@ -32,10 +33,30 @@ function nullableDisplay(value: number | null | undefined, prefix = ''): string 
   return value == null ? '—' : `${prefix}${value}`;
 }
 
+function interpolateHexColor(start: string, end: string, ratio: number): string {
+  const channel = (offset: number) => Math.round(
+    parseInt(start.slice(offset, offset + 2), 16)
+      + (parseInt(end.slice(offset, offset + 2), 16) - parseInt(start.slice(offset, offset + 2), 16)) * ratio,
+  ).toString(16).padStart(2, '0');
+  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase();
+}
+
+function guaranteedContrastTextColor(background: string): '#000000' | '#FFFFFF' {
+  const channels = [1, 3, 5].map((offset) => parseInt(background.slice(offset, offset + 2), 16) / 255)
+    .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  const blackContrast = (luminance + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  return blackContrast >= whiteContrast ? '#000000' : '#FFFFFF';
+}
+
 export function buildBroadcastTeamHeroModel(snapshot: BroadcastTeamHeroSnapshot): BroadcastTeamHeroModel {
   const { team, standing } = snapshot;
   const accent = resolveFocusAccent(team.primaryColor, snapshot.league.primaryColor);
   const secondaryAccent = resolveFocusAccent(team.secondaryColor, accent);
+  const tickerTextColors = [0.125, 0.375, 0.625, 0.875].map((ratio) =>
+    guaranteedContrastTextColor(interpolateHexColor(accent, secondaryAccent, ratio)),
+  ) as [string, string, string, string];
   const rank = snapshot.rank == null ? '—' : `#${snapshot.rank}`;
   const winPercentage = snapshot.hero.winPercentage == null ? '—' : `${Math.round(snapshot.hero.winPercentage * 100)}%`;
   const streak = snapshot.streak ?? '—';
@@ -73,6 +94,7 @@ export function buildBroadcastTeamHeroModel(snapshot: BroadcastTeamHeroSnapshot)
   return {
     accent,
     tickerColors: [accent, secondaryAccent],
+    tickerTextColors,
     record,
     championshipDisplay,
     championshipLabel,

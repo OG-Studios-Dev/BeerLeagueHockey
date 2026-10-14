@@ -21,6 +21,7 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
   const {
     accent,
     tickerColors,
+    tickerTextColors,
     record,
     championshipDisplay,
     championshipLabel,
@@ -90,8 +91,8 @@ export default function BroadcastTeamHero({ snapshot, compact, reduceTransparenc
         <View style={styles.heroTickerInner}>
           {ticker.map(([label, value], index) => (
             <View key={label} style={[styles.heroTickerStat, index < ticker.length - 1 && styles.heroTickerStatBorder]}>
-              <Text style={styles.heroTickerLabel}>{label}</Text>
-              <Text style={styles.heroTickerValue}>{value}</Text>
+              <Text style={[styles.heroTickerLabel, { color: tickerTextColors[index] }]}>{label}</Text>
+              <Text style={[styles.heroTickerValue, { color: tickerTextColors[index] }]}>{value}</Text>
             </View>
           ))}
         </View>

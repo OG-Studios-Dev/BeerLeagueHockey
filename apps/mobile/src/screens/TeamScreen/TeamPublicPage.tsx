@@ -20,13 +20,32 @@ import colors from '../../theme/colors';
 import { resolveFocusAccent } from '../../theme/focusAccent';
 import { ui } from '../../theme/ui';
 import BroadcastTeamHero from './BroadcastTeamHero';
+import { resolveTeamRosterJerseyVariant, type TeamRosterJerseyVariant } from './teamRosterJerseyVariant';
 
 /* eslint-disable @typescript-eslint/no-require-imports -- Metro requires static image requires. */
 const weeklyGamesBackground = require('../../assets/team-page/weekly-games-bg.jpg');
-const jerseyPrimary = require('../../assets/team-page/jersey-primary.png');
-const jerseySecondary = require('../../assets/team-page/jersey-secondary.png');
-const jerseyDetail = require('../../assets/team-page/jersey-detail.png');
+const jerseyBackBadBunny = require('../../assets/team-page/jersey-back-bad-bunny.png');
+const jerseyBackFirstGeneralLondon = require('../../assets/team-page/jersey-back-first-general-london.png');
+const jerseyBackLiuna = require('../../assets/team-page/jersey-back-liuna.png');
+const jerseyBackFitzrays = require('../../assets/team-page/jersey-back-fitzrays.png');
+const jerseyBackFallback = require('../../assets/team-page/jersey-back-fallback.png');
 /* eslint-enable @typescript-eslint/no-require-imports */
+
+const JERSEY_ART: Record<TeamRosterJerseyVariant, number> = {
+  'bad-bunny': jerseyBackBadBunny,
+  'first-general-london': jerseyBackFirstGeneralLondon,
+  liuna: jerseyBackLiuna,
+  fitzrays: jerseyBackFitzrays,
+  fallback: jerseyBackFallback,
+};
+
+const JERSEY_LETTERING: Record<TeamRosterJerseyVariant, { fill: string; outline: string }> = {
+  'bad-bunny': { fill: '#FFFFFF', outline: '#F34A9A' },
+  'first-general-london': { fill: '#FFFFFF', outline: '#71C7F2' },
+  liuna: { fill: '#111317', outline: '#FFFFFF' },
+  fitzrays: { fill: '#FFFFFF', outline: '#E2303E' },
+  fallback: { fill: '#FFFFFF', outline: '#8995A8' },
+};
 
 function gameStatus(status: string | null): string {
   return status === 'completed' ? 'Final' : status === 'pending_verification' ? 'Pending verification' : status === 'in_progress' || status === 'live' ? 'Live' : (status ?? 'Scheduled').replace(/_/g, ' ');
@@ -66,7 +85,7 @@ function positionBucket(player: Pick<TeamPageRosterPlayer, 'position' | 'isGoali
 
 function surname(name: string): string {
   const parts = name.trim().split(/\s+/);
-  return (parts[parts.length - 1] || name).toUpperCase().slice(0, 12);
+  return (parts[parts.length - 1] || name).toUpperCase();
 }
 
 type LineupSlot = 'forward' | 'defence' | 'goalie';
@@ -278,24 +297,29 @@ function Schedule({ snapshot, accent, reduceTransparency, onOpenGame }: { snapsh
   );
 }
 
-function Jersey({ player, primary, secondary, compact, onOpenPlayer }: { player: DisplayRosterPlayer; primary: string; secondary: string; compact: boolean; onOpenPlayer: (id: string) => void }) {
+function Jersey({ player, variant, compact, onOpenPlayer }: { player: DisplayRosterPlayer; variant: TeamRosterJerseyVariant; compact: boolean; onOpenPlayer: (id: string) => void }) {
+  const playerSurname = surname(player.name);
+  const number = player.jerseyNumber == null ? '00' : String(player.jerseyNumber).padStart(2, '0');
+  const lettering = JERSEY_LETTERING[variant];
+  const fittedNameStyle = playerSurname.length >= 10
+    ? (compact ? styles.jerseyNameLongCompact : styles.jerseyNameLong)
+    : playerSurname.length >= 7 ? styles.jerseyNameMedium : null;
   return (
     <Pressable testID={`team-roster-player-${player.playerId}`} accessibilityRole="button" accessibilityLabel={`${player.name}, ${player.jerseyNumber == null ? 'jersey number unknown' : `jersey number ${player.jerseyNumber}`}. Open player card.`} onPress={() => onOpenPlayer(player.playerId)} style={[styles.jerseySlot, compact && styles.jerseySlotCompact]}>
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden pointerEvents="none" style={[styles.jerseyArt, compact && styles.jerseyArtCompact]}>
-        <Image source={jerseyPrimary} resizeMode="contain" alt="" accessible={false} style={[styles.jerseyLayer, { tintColor: primary }]} />
-        <Image source={jerseySecondary} resizeMode="contain" alt="" accessible={false} style={[styles.jerseyLayer, { tintColor: secondary }]} />
-        <Image source={jerseyDetail} resizeMode="contain" alt="" accessible={false} style={styles.jerseyLayer} />
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} allowFontScaling={false} style={styles.jerseyName}>{surname(player.name)}</Text>
-        <Text adjustsFontSizeToFit allowFontScaling={false} style={styles.jerseyNumber}>{player.jerseyNumber == null ? '00' : String(player.jerseyNumber).padStart(2, '0')}</Text>
+        <Image testID={`team-roster-art-${player.playerId}`} source={JERSEY_ART[variant]} resizeMode="contain" alt="" accessible={false} style={styles.jerseyLayer} />
+        <Text testID={`team-roster-name-${player.playerId}`} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} allowFontScaling={false} style={[styles.jerseyName, fittedNameStyle, { color: lettering.fill }]}>{playerSurname}</Text>
+        <Text importantForAccessibility="no-hide-descendants" accessibilityElementsHidden allowFontScaling={false} style={styles.jerseyNumberShadow}>{number}</Text>
+        <Text testID={`team-roster-number-${player.playerId}`} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} allowFontScaling={false} style={[styles.jerseyNumber, { color: lettering.fill, textShadowColor: lettering.outline }]}>{number}</Text>
       </View>
     </Pressable>
   );
 }
 
-function LineupJerseySlot({ slot, index, player, primary, secondary, compact, onOpenPlayer }: { slot: LineupSlot; index: number; player: DisplayRosterPlayer | null; primary: string; secondary: string; compact: boolean; onOpenPlayer: (id: string) => void }) {
+function LineupJerseySlot({ slot, index, player, variant, compact, onOpenPlayer }: { slot: LineupSlot; index: number; player: DisplayRosterPlayer | null; variant: TeamRosterJerseyVariant; compact: boolean; onOpenPlayer: (id: string) => void }) {
   return (
     <View testID={`team-lineup-${slot}-slot-${index}`} accessible={!player} accessibilityLabel={!player ? `Empty ${slot} slot ${index + 1}` : undefined} style={[styles.lineupSlot, slot === 'defence' && styles.defenceSlot, slot === 'goalie' && styles.goalieSlot, compact && styles.jerseySlotCompact]}>
-      {player ? <Jersey player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} /> : <View importantForAccessibility="no-hide-descendants" style={[styles.emptyJersey, compact && styles.emptyJerseyCompact]}><Ionicons name="add" size={28} color="#6E7788" /></View>}
+      {player ? <Jersey player={player} variant={variant} compact={compact} onOpenPlayer={onOpenPlayer} /> : <View importantForAccessibility="no-hide-descendants" style={[styles.emptyJersey, compact && styles.emptyJerseyCompact]}><Ionicons name="add" size={28} color="#6E7788" /></View>}
     </View>
   );
 }
@@ -362,8 +386,7 @@ function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPag
     goalies: display.players.filter((player) => positionBucket(player) === 'goalie'),
   };
   const slots = { forwards: slotLineup(groups.forwards, 6), defence: slotLineup(groups.defence, 4), goalies: slotLineup(groups.goalies, 1) };
-  const primary = snapshot.team.primaryColor ?? accent;
-  const secondary = snapshot.team.secondaryColor ?? '#D9B64C';
+  const jerseyVariant = resolveTeamRosterJerseyVariant(snapshot.team);
   return (
     <View testID="team-roster-section">
       <View style={styles.rosterHeadingRow}><View style={styles.rosterHeadingCopy}><SectionHeading icon="people-outline" title={snapshot.nextGame ? 'Next Game Roster' : 'Roster'} accent={accent} /></View><SelectableControlGroup horizontal={false} role="tablist" accessibilityLabel="Roster view" contentContainerStyle={styles.iconToggle}><SelectableControl testID="team-roster-jersey-toggle" role="tab" label="Jersey" accessibilityLabel="Show jersey roster" selected={!listView} onPress={() => setListView(false)} style={styles.iconToggleButton}><Ionicons name="shirt-outline" size={19} color={!listView ? '#F7FBFF' : colors.textSecondary} /></SelectableControl><SelectableControl testID="team-roster-list-toggle" role="tab" label="Stats" accessibilityLabel="Show roster stats" selected={listView} onPress={() => setListView(true)} style={styles.iconToggleButton}><Ionicons name="list" size={20} color={listView ? '#F7FBFF' : colors.textSecondary} /></SelectableControl></SelectableControlGroup></View>
@@ -371,8 +394,8 @@ function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPag
         <FocusCard focusId={`team-public:${snapshot.team.id}:roster-list`} testID="team-roster-list" accentColor={accent} style={styles.readingPanel}>{snapshot.roster.map((player) => <RosterStatRow key={player.playerId} player={player} onOpenPlayer={onOpenPlayer} />)}</FocusCard>
       ) : (
         <FocusCard focusId={`team-public:${snapshot.team.id}:roster-jerseys`} testID="team-roster-jerseys" accentColor={accent} style={styles.lineup}>
-          <Text style={styles.groupLabel}>FORWARDS</Text><View style={styles.forwardGrid}>{slots.forwards.map((player, index) => <LineupJerseySlot key={`forward-${index}`} slot="forward" index={index} player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View>
-          <View style={styles.lowerLineup}><View style={styles.defenceGroup}><Text style={styles.groupLabel}>DEFENCE</Text><View style={styles.defenceGrid}>{slots.defence.map((player, index) => <LineupJerseySlot key={`defence-${index}`} slot="defence" index={index} player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View><View style={styles.goalieGroup}><Text style={styles.groupLabel}>GOALIE</Text>{slots.goalies.map((player, index) => <LineupJerseySlot key={`goalie-${index}`} slot="goalie" index={index} player={player} primary={primary} secondary={secondary} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View>
+          <Text style={styles.groupLabel}>FORWARDS</Text><View style={styles.forwardGrid}>{slots.forwards.map((player, index) => <LineupJerseySlot key={`forward-${index}`} slot="forward" index={index} player={player} variant={jerseyVariant} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View>
+          <View style={styles.lowerLineup}><View style={styles.defenceGroup}><Text style={styles.groupLabel}>DEFENCE</Text><View style={styles.defenceGrid}>{slots.defence.map((player, index) => <LineupJerseySlot key={`defence-${index}`} slot="defence" index={index} player={player} variant={jerseyVariant} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View><View style={styles.goalieGroup}><Text style={styles.groupLabel}>GOALIE</Text>{slots.goalies.map((player, index) => <LineupJerseySlot key={`goalie-${index}`} slot="goalie" index={index} player={player} variant={jerseyVariant} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View>
           {!display.published && display.players.length === 0 ? <Text style={styles.emptyBody}>No active players are listed for this season.</Text> : null}
         </FocusCard>
       )}
@@ -446,7 +469,7 @@ const styles = StyleSheet.create({
   rosterHeadingCopy: { flex: 1, minWidth: 0 }, rosterHeadingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, iconToggle: { width: 96, minWidth: 96, flexShrink: 0, marginBottom: 12, flexDirection: 'row', gap: 8 }, iconToggleButton: { width: ui.minTouchTarget, minWidth: ui.minTouchTarget, height: ui.minTouchTarget, paddingHorizontal: 0, gap: 2, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }, rosterTruth: { marginTop: 0, marginBottom: 14, color: '#738095', fontSize: 10, fontWeight: '700' },
   substitutionNotes: { gap: 7, marginTop: 10, marginBottom: 14 }, substitutionNote: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 }, substitutionNoteText: { flex: 1, color: '#A8B4C8', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   lineup: { gap: 15, paddingHorizontal: 10, paddingVertical: 16 }, groupLabel: { marginBottom: 4, color: '#758196', fontSize: 9, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center' }, forwardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 3, rowGap: 7 }, lowerLineup: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 5 }, defenceGroup: { flex: 2 }, goalieGroup: { flex: 1, alignItems: 'center' }, defenceGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 3 }, lineupSlot: { width: '32%', minWidth: 92, minHeight: 91, alignItems: 'center', justifyContent: 'center' }, defenceSlot: { width: '48%', minWidth: 82 }, goalieSlot: { width: '100%', minWidth: 82 }, emptyJersey: { width: 92, height: 78, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(124,58,237,.65)', borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(124,58,237,.04)' }, emptyJerseyCompact: { width: 82, height: 70 },
-  jerseySlot: { width: '32%', minWidth: 92, minHeight: ui.minTouchTarget, alignItems: 'center' }, jerseySlotCompact: { minWidth: 82 }, jerseyArt: { position: 'relative', width: 106, height: 91 }, jerseyArtCompact: { width: 92, height: 79 }, jerseyLayer: { position: 'absolute', width: '100%', height: '100%' }, jerseyName: { position: 'absolute', left: 25, right: 25, top: '29%', color: '#111111', fontSize: 7, fontWeight: '900', textAlign: 'center', textShadowColor: '#FFFFFF', textShadowRadius: 1 }, jerseyNumber: { position: 'absolute', left: 22, right: 22, top: '42%', color: '#111111', fontSize: 26, lineHeight: 32, fontWeight: '900', textAlign: 'center', textShadowColor: '#FFFFFF', textShadowRadius: 1.5 },
+  jerseySlot: { width: '32%', minWidth: 92, minHeight: ui.minTouchTarget, alignItems: 'center' }, jerseySlotCompact: { minWidth: 82 }, jerseyArt: { position: 'relative', width: 106, height: 99 }, jerseyArtCompact: { width: 92, height: 86 }, jerseyLayer: { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }, jerseyName: { position: 'absolute', left: '31%', right: '31%', top: '27%', overflow: 'visible', fontSize: 6.4, lineHeight: 8, fontWeight: '900', letterSpacing: .25, textAlign: 'center', textShadowColor: 'rgba(0,0,0,.72)', textShadowOffset: { width: 0, height: .5 }, textShadowRadius: .8 }, jerseyNameMedium: { fontSize: 5.5, lineHeight: 7, letterSpacing: .05 }, jerseyNameLong: { left: '25%', right: '25%', fontSize: 5.2, lineHeight: 6.5, letterSpacing: 0, transform: [{ scaleX: .8 }] }, jerseyNameLongCompact: { left: '25%', right: '25%', fontSize: 5, lineHeight: 6, letterSpacing: 0, transform: [{ scaleX: .72 }] }, jerseyNumberShadow: { position: 'absolute', left: 0, right: 0, top: '40.5%', color: 'rgba(0,0,0,.55)', fontSize: 30, lineHeight: 36, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1, textAlign: 'center', transform: [{ translateX: .5 }, { translateY: 1.25 }] }, jerseyNumber: { position: 'absolute', left: 0, right: 0, top: '40.5%', fontSize: 30, lineHeight: 36, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1, textAlign: 'center', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 1.6, transform: [{ translateX: -1.5 }] },
   rosterListRow: { minHeight: 88, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,.13)', paddingVertical: 12 },
   rosterListIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rosterListCopy: { flex: 1, minWidth: 0 }, rosterListName: { color: '#F7FBFF', fontSize: 13, lineHeight: 18, fontWeight: '900' }, rosterListMeta: { marginTop: 3, color: '#A8B4C8', fontSize: 10, lineHeight: 14 },

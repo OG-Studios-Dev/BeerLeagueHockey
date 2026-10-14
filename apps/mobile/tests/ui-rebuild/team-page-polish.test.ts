@@ -6,23 +6,22 @@ import { describe, it } from 'node:test';
 import { compileCommonJs } from './component-harness.ts';
 import { rankHomeLeaders } from '../../src/lib/homeLeagueLeaders.ts';
 import * as schedulePresentation from '../../src/lib/schedulePresentation.ts';
+import { buildBroadcastTeamHeroModel } from '../../src/screens/TeamScreen/teamBroadcastHeroModel.ts';
 
 const heroSourceUrl = new URL('../../src/screens/TeamScreen/BroadcastTeamHero.tsx', import.meta.url);
-const heroModelUrl = new URL('../../src/screens/TeamScreen/teamBroadcastHeroModel.ts', import.meta.url);
 const teamModelUrl = new URL('../../src/lib/supabase/teamPage.ts', import.meta.url);
 const leadersCoreUrl = new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url);
 const homeLeadersUrl = new URL('../../src/components/HomeLeagueLeaders.tsx', import.meta.url);
 const teamPageUrl = new URL('../../src/screens/TeamScreen/TeamPublicPage.tsx', import.meta.url);
 
-function loadHeroModel() {
-  return compileCommonJs<Record<string, (...args: any[]) => any>>(heroModelUrl, {
-    '../../theme/focusAccent': {
-      resolveFocusAccent: (team: unknown, league: unknown) => {
-        const valid = (value: unknown) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : null;
-        return valid(team) ?? valid(league) ?? '#03299B';
-      },
-    },
-  });
+function contrastRatio(first: string, second: string) {
+  const luminance = (hex: string) => {
+    const channels = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+      .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const values = [luminance(first), luminance(second)].sort((left, right) => right - left);
+  return (values[0] + 0.05) / (values[1] + 0.05);
 }
 
 const heroSnapshot = {
@@ -39,7 +38,7 @@ const heroSnapshot = {
 describe('Team page polish contract', () => {
   it('keeps team identity accessible without rendering the profile kicker or duplicate team name', () => {
     const source = readFileSync(heroSourceUrl.pathname, 'utf8');
-    const model = loadHeroModel().buildBroadcastTeamHeroModel(heroSnapshot);
+    const model = buildBroadcastTeamHeroModel(heroSnapshot);
 
     assert.doesNotMatch(source, /HOCKEY LIFE \/\/ TEAM PROFILE/);
     assert.doesNotMatch(source, /team-broadcast-name-primary|team-broadcast-name-secondary/);
@@ -49,17 +48,16 @@ describe('Team page polish contract', () => {
   });
 
   it('uses validated team primary and secondary colors for the GF/GA ribbon', () => {
-    const model = loadHeroModel();
-    const valid = model.buildBroadcastTeamHeroModel(heroSnapshot);
+    const valid = buildBroadcastTeamHeroModel(heroSnapshot);
     assert.deepEqual(valid.tickerColors, ['#123456', '#ABCDEF']);
 
-    const missingSecondary = model.buildBroadcastTeamHeroModel({
+    const missingSecondary = buildBroadcastTeamHeroModel({
       ...heroSnapshot,
       team: { ...heroSnapshot.team, secondaryColor: 'pink' },
     });
     assert.deepEqual(missingSecondary.tickerColors, ['#123456', '#123456']);
 
-    const invalidPrimary = model.buildBroadcastTeamHeroModel({
+    const invalidPrimary = buildBroadcastTeamHeroModel({
       ...heroSnapshot,
       team: { ...heroSnapshot.team, primaryColor: 'purple', secondaryColor: null },
     });
@@ -68,6 +66,28 @@ describe('Team page polish contract', () => {
     const source = readFileSync(heroSourceUrl.pathname, 'utf8');
     assert.match(source, /colors=\{tickerColors\}/);
     assert.doesNotMatch(source, /#6A18D7|#D21BA4|#FF3EAD/i);
+
+    const bright = buildBroadcastTeamHeroModel({
+      ...heroSnapshot,
+      team: { ...heroSnapshot.team, primaryColor: '#38BDF8', secondaryColor: '#38BDF8' },
+    });
+    assert.ok(bright.tickerTextColors.every((color) => contrastRatio('#38BDF8', color) >= 4.5));
+
+    const dark = buildBroadcastTeamHeroModel({
+      ...heroSnapshot,
+      team: { ...heroSnapshot.team, primaryColor: '#123456', secondaryColor: '#123456' },
+    });
+    assert.ok(dark.tickerTextColors.every((color) => contrastRatio('#123456', color) >= 4.5));
+
+    const adversarial = buildBroadcastTeamHeroModel({
+      ...heroSnapshot,
+      team: { ...heroSnapshot.team, primaryColor: '#E41480', secondaryColor: '#E41480' },
+    });
+    assert.ok(
+      adversarial.tickerTextColors.every((color) => contrastRatio('#E41480', color) >= 4.5),
+      'every label and value must retain WCAG AA contrast for valid team colours',
+    );
+    assert.match(source, /color:\s*tickerTextColors\[index\]/);
   });
 
   it('builds the Team League Leaders population only from team-scoped current-season public facts', () => {
