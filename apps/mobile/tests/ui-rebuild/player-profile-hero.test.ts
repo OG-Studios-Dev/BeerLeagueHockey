@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
+import { PLAYER_ARTWORK_LEAGUE_ID, PLAYER_ARTWORK_STYLE_VERSION, resolvePlayerProfileArtwork, type PlayerArtworkManifest } from '../../src/lib/playerArtworkManifest';
 import { getPlayerProfileHeroLayout, splitPlayerDisplayName } from '../../src/components/PlayerProfile/playerProfileHeroModel';
 import { compileCommonJs, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness.ts';
 
@@ -26,10 +27,14 @@ function nativeMock() {
   };
 }
 
-function renderHero(overrides: Record<string, unknown> = {}) {
+function renderHero(
+  overrides: Record<string, unknown> = {},
+  options: { loadManifest?: (options?: { signal?: AbortSignal }) => Promise<PlayerArtworkManifest | null> } = {},
+) {
   const harness = createHookHarness();
   const skaterArtwork = { uri: 'bundled-neutral-skater-artwork' };
   const goalieArtwork = { uri: 'bundled-neutral-goalie-artwork' };
+  const loadManifest = options.loadManifest ?? (() => new Promise<PlayerArtworkManifest | null>(() => {}));
   const Hero = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(heroUrl, {
     react: harness.react,
     'react-native': nativeMock(),
@@ -40,6 +45,11 @@ function renderHero(overrides: Record<string, unknown> = {}) {
     '../TeamLogo': { __esModule: true, default: 'TeamLogo' },
     '../../theme/colors': { __esModule: true, default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', glassStroke: '#333' } },
     '../../theme/contrast': { getContrastTextColor: () => '#000' },
+    '../../lib/playerArtworkManifest': {
+      PLAYER_ARTWORK_LEAGUE_ID,
+      loadPlayerArtworkManifest: loadManifest,
+      resolvePlayerProfileArtwork,
+    },
   }).default;
 
   let props = {
@@ -60,6 +70,26 @@ function renderHero(overrides: Record<string, unknown> = {}) {
       props = { ...props, ...next };
       return harness.render();
     },
+  };
+}
+
+function approvedManifest(playerId: string, photoUrl: string, width: 631 | 628 | 643 = 631): PlayerArtworkManifest {
+  const imageSha256 = 'a'.repeat(64);
+  return {
+    schemaVersion: 1,
+    leagueId: PLAYER_ARTWORK_LEAGUE_ID,
+    styleVersion: PLAYER_ARTWORK_STYLE_VERSION,
+    generatedAt: '2026-10-06T18:13:23.235Z',
+    entries: [{
+      playerId,
+      sourcePortraitUrl: photoUrl,
+      sourcePortraitSha256: 'b'.repeat(64),
+      imageUrl: `https://ntplczcmhvfkijjxavdl.supabase.co/storage/v1/object/public/player-artwork/approved/hockey-life/${playerId}/${imageSha256}.png`,
+      imageSha256,
+      width,
+      height: 1050,
+      approvedAt: '2026-10-06T18:12:55.000Z',
+    }],
   };
 }
 
@@ -154,116 +184,175 @@ describe('Rink Ribbon player profile hero', () => {
     assert.ok(flattenStyle(image.props.style).height > 0);
   });
 
-  it('renders the loaded player mugshot and receives it from the player screen', () => {
+  it('renders the role-correct complete platform immediately instead of the standalone portrait', () => {
     const photoUrl = 'https://example.test/players/player-one.jpg';
-    const portrait = renderHero({ photoUrl });
-    const image = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
-    assert.deepEqual(image?.props.source, { uri: photoUrl });
+    for (const isGoalie of [false, true]) {
+      const rendered = renderHero({ isGoalie, photoUrl });
+      const image = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+      assert.equal(image?.props.source, isGoalie ? rendered.goalieArtwork : rendered.skaterArtwork);
+      assert.notDeepEqual(image?.props.source, { uri: photoUrl });
+    }
 
     const screen = readFileSync(fileURLToPath(screenUrl.toString()), 'utf8');
     assert.match(screen, /playerId=\{data\.playerId\}/);
     assert.match(screen, /photoUrl=\{data\.photoUrl\}/);
+    assert.match(screen, /isGoalie=\{data\.isGoalie\}/);
   });
 
-  it('uses the role-neutral artwork only after the loaded mugshot fails', () => {
-    for (const [isGoalie, expectedFallback] of [[false, 'skater'], [true, 'goalie']] as const) {
-      const portrait = renderHero({
-        isGoalie,
-        position: isGoalie ? 'Goalie' : 'Forward',
-        photoUrl: `https://example.test/players/${expectedFallback}.jpg`,
-      });
-      const remote = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
-      assert.equal(typeof remote?.props.onError, 'function');
-      assert.equal(remote?.props.resizeMode, 'contain');
-      assert.equal(remote?.props.accessible, false);
-      assert.equal(remote?.props.alt, '');
-      assert.equal(remote?.props.accessibilityElementsHidden, true);
+  it('does not attach a failure path to a raw portrait that must never enter the hero', () => {
+    const rendered = renderHero({ photoUrl: 'https://example.test/players/player-one.jpg' });
+    const image = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    assert.equal(image?.props.source, rendered.skaterArtwork);
+    assert.equal(image?.props.onError, undefined);
+    assert.equal(image?.props.resizeMode, 'contain');
+    assert.equal(image?.props.accessible, false);
+    assert.equal(image?.props.alt, '');
+    assert.equal(image?.props.accessibilityElementsHidden, true);
+  });
 
-      remote?.props.onError();
-      portrait.harness.render();
+  it('transitions from immediate neutral art only to an exact approved role-compatible composite', async () => {
+    const playerId = '11111111-1111-4111-8111-111111111111';
+    const photoUrl = 'https://example.test/players/current.png';
+    const manifest = approvedManifest(playerId, photoUrl, 631);
+    const rendered = renderHero(
+      { playerId, photoUrl, isGoalie: false },
+      { loadManifest: async () => manifest },
+    );
+    const initial = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    assert.equal(initial?.props.source, rendered.skaterArtwork);
+    assert.equal(initial?.props.onError, undefined);
 
-      const fallback = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
-      assert.equal(fallback?.props.source, isGoalie ? portrait.goalieArtwork : portrait.skaterArtwork);
-      assert.equal(fallback?.props.onError, undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+    rendered.harness.render();
+
+    const approved = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+    assert.deepEqual(approved?.props.source, { uri: manifest.entries[0].imageUrl, cache: 'force-cache' });
+    assert.equal(typeof approved?.props.onError, 'function');
+    assert.notDeepEqual(approved?.props.source, { uri: photoUrl });
+  });
+
+  it('keeps missing, failed, stale-photo and role-mismatched manifest states on immediate role-neutral art', async () => {
+    const playerId = '11111111-1111-4111-8111-111111111111';
+    const photoUrl = 'https://example.test/players/current.png';
+    const cases: Array<{
+      label: string;
+      isGoalie: boolean;
+      load: () => Promise<PlayerArtworkManifest | null>;
+    }> = [
+      { label: 'missing', isGoalie: false, load: async () => null },
+      { label: 'failed', isGoalie: true, load: async () => { throw new Error('offline'); } },
+      { label: 'stale portrait', isGoalie: false, load: async () => approvedManifest(playerId, `${photoUrl}?old=1`, 631) },
+      { label: 'role mismatch', isGoalie: true, load: async () => approvedManifest(playerId, photoUrl, 631) },
+    ];
+
+    for (const state of cases) {
+      const rendered = renderHero(
+        { playerId, photoUrl, isGoalie: state.isGoalie },
+        { loadManifest: state.load },
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      rendered.harness.render();
+      const image = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+      assert.equal(image?.props.source, state.isGoalie ? rendered.goalieArtwork : rendered.skaterArtwork, state.label);
+      assert.equal(image?.props.onError, undefined, state.label);
+      assert.notDeepEqual(image?.props.source, { uri: photoUrl }, state.label);
     }
   });
 
-  it('ignores stale and repeated errors while retrying portraits after player or photo changes', () => {
-    const photoA = 'https://example.test/players/a.jpg';
-    const photoB = 'https://example.test/players/b.jpg';
-    const photoC = 'https://example.test/players/c.jpg';
-    const portrait = renderHero({ playerId: 'player-one', photoUrl: photoA });
-    const imageA = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+  it('falls directly from failed approved composites to role-correct neutral art and makes repeated failures inert', async () => {
+    for (const [isGoalie, width] of [[false, 631], [true, 643]] as const) {
+      const playerId = isGoalie ? '33333333-3333-4333-8333-333333333333' : '11111111-1111-4111-8111-111111111111';
+      const photoUrl = `https://example.test/players/${isGoalie ? 'goalie' : 'skater'}.png`;
+      const manifest = approvedManifest(playerId, photoUrl, width);
+      const rendered = renderHero({ playerId, photoUrl, isGoalie }, { loadManifest: async () => manifest });
+      await Promise.resolve();
+      await Promise.resolve();
+      rendered.harness.render();
 
-    portrait.rerender({ photoUrl: photoB });
-    const imageB = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
-    assert.deepEqual(imageB?.props.source, { uri: photoB });
+      const remote = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+      assert.deepEqual(remote?.props.source, { uri: manifest.entries[0].imageUrl, cache: 'force-cache' });
+      remote?.props.onError();
+      rendered.harness.render();
 
-    imageA?.props.onError();
-    portrait.harness.render();
-    assert.deepEqual(
-      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
-      { uri: photoB },
-      'a stale photo A error must not replace current photo B',
+      const fallback = findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
+      assert.equal(fallback?.props.source, isGoalie ? rendered.goalieArtwork : rendered.skaterArtwork);
+      assert.notDeepEqual(fallback?.props.source, { uri: photoUrl });
+      assert.equal(fallback?.props.onError, undefined);
+      const updatesAfterFallback = rendered.harness.stateUpdateCount;
+      remote?.props.onError();
+      rendered.harness.render();
+      assert.equal(rendered.harness.stateUpdateCount, updatesAfterFallback, 'repeated callbacks after neutral fallback are inert');
+    }
+  });
+
+  it('ignores stale manifest completions across player and portrait A-to-B-to-A changes', async () => {
+    const playerA = '11111111-1111-4111-8111-111111111111';
+    const playerB = '22222222-2222-4222-8222-222222222222';
+    const photoA = 'https://example.test/players/a.png';
+    const photoB = 'https://example.test/players/b.png';
+    const requests: Array<(manifest: PlayerArtworkManifest | null) => void> = [];
+    const rendered = renderHero(
+      { playerId: playerA, photoUrl: photoA },
+      { loadManifest: () => new Promise((resolve) => requests.push(resolve)) },
     );
+    rendered.rerender({ playerId: playerB, photoUrl: photoB });
+    rendered.rerender({ playerId: playerA, photoUrl: photoA });
+    assert.equal(requests.length, 3);
 
-    imageB?.props.onError();
-    portrait.harness.render();
+    requests[0](approvedManifest(playerA, photoA));
+    requests[1](approvedManifest(playerB, photoB));
+    await Promise.resolve();
+    await Promise.resolve();
+    rendered.harness.render();
     assert.equal(
-      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
-      portrait.skaterArtwork,
-    );
-    const updatesAfterFallback = portrait.harness.stateUpdateCount;
-    imageB?.props.onError();
-    portrait.harness.render();
-    assert.equal(portrait.harness.stateUpdateCount, updatesAfterFallback, 'repeated callbacks after fallback are inert');
-
-    portrait.rerender({ playerId: 'player-two' });
-    assert.deepEqual(
-      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
-      { uri: photoB },
-      'a player change retries the current portrait URL',
+      findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
+      rendered.skaterArtwork,
+      'late manifests from obsolete A and B lifetimes must not promote or demote current A',
     );
 
-    const playerTwoImageB = findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork');
-    playerTwoImageB?.props.onError();
-    portrait.harness.render();
-    portrait.rerender({ photoUrl: photoC });
+    const currentA = approvedManifest(playerA, photoA);
+    requests[2](currentA);
+    await Promise.resolve();
+    await Promise.resolve();
+    rendered.harness.render();
     assert.deepEqual(
-      findNode(portrait.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
-      { uri: photoC },
-      'a photo change retries the new URL',
+      findNode(rendered.output, (node) => node.props.testID === 'player-profile-rink-ribbon-artwork')?.props.source,
+      { uri: currentA.entries[0].imageUrl, cache: 'force-cache' },
     );
   });
 
-  it('keeps the active portrait through a mounted A-to-B-to-A transition when the old A callback fires', async () => {
+  it('keeps the active approved composite through mounted A-to-B-to-A when an old A error fires', async () => {
     const { React, createRoot, JSDOM } = mountedReactRuntime();
     const dom = new JSDOM('<!doctype html><div id="root"></div>');
+    const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
     const previous = {
       window: globalThis.window,
       document: globalThis.document,
       navigator: globalThis.navigator,
-      act: (globalThis as any).IS_REACT_ACT_ENVIRONMENT,
+      act: actEnvironment.IS_REACT_ACT_ENVIRONMENT,
     };
     Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window });
     Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document });
     Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator });
-    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
 
     try {
-      const renderedPortraits: Array<{ uri: string; onError: () => void }> = [];
+      const renderedRemotes: Array<{ uri: string; onError: () => void }> = [];
       const element = (type: string) => {
-        function MockElement({ children, testID, accessibilityLabel }: any) {
+        function MockElement({ children, testID, accessibilityLabel }: { children?: unknown; testID?: string; accessibilityLabel?: string }) {
           return React.createElement(type, { 'data-testid': testID, 'aria-label': accessibilityLabel }, children);
         }
         MockElement.displayName = `Mock${type}`;
         return MockElement;
       };
-      const Image = ({ source, onError, testID }: any) => {
+      const Image = ({ source, onError, testID }: { source?: { uri?: string }; onError?: () => void; testID?: string }) => {
         const uri = source?.uri ?? 'bundled-neutral-artwork';
-        if (onError) renderedPortraits.push({ uri, onError });
+        if (onError) renderedRemotes.push({ uri, onError });
         return React.createElement('img', { 'data-testid': testID, src: uri });
       };
+      let manifest: PlayerArtworkManifest;
       const Hero = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(heroUrl, {
         react: React,
         'react-native': {
@@ -280,31 +369,47 @@ describe('Rink Ribbon player profile hero', () => {
         '../TeamLogo': { __esModule: true, default: element('span') },
         '../../theme/colors': { __esModule: true, default: { textPrimary: '#fff', textSecondary: '#aaa', bgSurface: '#111', bgInteractive: '#222', glassStroke: '#333' } },
         '../../theme/contrast': { getContrastTextColor: () => '#000' },
+        '../../lib/playerArtworkManifest': {
+          PLAYER_ARTWORK_LEAGUE_ID,
+          loadPlayerArtworkManifest: async () => manifest,
+          resolvePlayerProfileArtwork,
+        },
       }).default;
       const root = createRoot(dom.window.document.getElementById('root')!);
-      const photoA = 'https://example.test/players/a.jpg';
-      const photoB = 'https://example.test/players/b.jpg';
+      const playerA = '11111111-1111-4111-8111-111111111111';
+      const playerB = '22222222-2222-4222-8222-222222222222';
+      const photoA = 'https://example.test/players/a.png';
+      const photoB = 'https://example.test/players/b.png';
+      const manifestA = approvedManifest(playerA, photoA);
+      const manifestB = approvedManifest(playerB, photoB);
+      manifest = manifestA;
       const props = {
-        playerId: 'player-one', photoUrl: photoA, fullName: 'Alex Example', jerseyNumber: 19, position: 'Forward', leadership: null,
+        playerId: playerA, photoUrl: photoA, fullName: 'Alex Example', jerseyNumber: 19, position: 'Forward', leadership: null,
         team: null, awards: [], accent: '#FFD52F', isGoalie: false, width: 390, fontScale: 1, reduceTransparency: false,
         onShare: () => undefined, onOpenTeam: () => undefined,
       };
       const draw = async () => React.act(async () => {
         root.render(React.createElement(React.StrictMode, null, React.createElement(Hero, props)));
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
       await draw();
-      const staleAError = renderedPortraits.find((entry) => entry.uri === photoA)!.onError;
+      const staleAError = renderedRemotes.find((entry) => entry.uri === manifestA.entries[0].imageUrl)!.onError;
+      props.playerId = playerB;
       props.photoUrl = photoB;
+      manifest = manifestB;
       await draw();
+      props.playerId = playerA;
       props.photoUrl = photoA;
+      manifest = manifestA;
       await draw();
       await React.act(async () => staleAError());
 
       assert.equal(
         dom.window.document.querySelector('[data-testid="player-profile-rink-ribbon-artwork"]')?.getAttribute('src'),
-        photoA,
-        'an error retained from the old A lifetime must not replace the newly active A portrait',
+        manifestA.entries[0].imageUrl,
+        'an error retained from the old A lifetime must not replace the newly active A composite',
       );
       await React.act(async () => root.unmount());
     } finally {
@@ -312,7 +417,7 @@ describe('Rink Ribbon player profile hero', () => {
       Object.defineProperty(globalThis, 'window', { configurable: true, value: previous.window });
       Object.defineProperty(globalThis, 'document', { configurable: true, value: previous.document });
       Object.defineProperty(globalThis, 'navigator', { configurable: true, value: previous.navigator });
-      (globalThis as any).IS_REACT_ACT_ENVIRONMENT = previous.act;
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = previous.act;
     }
   });
 

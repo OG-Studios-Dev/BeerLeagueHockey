@@ -234,6 +234,51 @@ export function findApprovedPlayerArtwork(manifest: PlayerArtworkManifest | null
   return manifest.entries.find((entry) => entry.playerId === playerId && entry.sourcePortraitUrl === portraitUrl) ?? null;
 }
 
+export type PlayerProfileArtwork =
+  | { kind: 'remote'; identityKey: string; uri: string }
+  | { kind: 'neutral'; identityKey: string; artworkId: 'neutral-helmet-v1' | 'neutral-goalie-v1' };
+
+type PlayerProfileArtworkInput = {
+  manifest: PlayerArtworkManifest | null | undefined;
+  leagueId: string;
+  playerId: string;
+  photoUrl: string | null;
+  isGoalie: boolean;
+};
+
+/**
+ * Manifest v1 has no semantic role field. Player Profile therefore accepts
+ * only the fixed hl-leader-podium-v1 geometry that identifies the approved
+ * complete skater (631/628x1050) and goalie (643x1050) compositions.
+ */
+export function resolvePlayerProfileArtwork({
+  manifest,
+  leagueId,
+  playerId,
+  photoUrl,
+  isGoalie,
+}: PlayerProfileArtworkInput): PlayerProfileArtwork {
+  const role = isGoalie ? 'goalie' : 'skater';
+  const neutralArtworkId = isGoalie ? 'neutral-goalie-v1' : 'neutral-helmet-v1';
+  const identityBase = `${leagueId}:${playerId}:${photoUrl ?? 'no-photo'}:${role}`;
+  const neutral: PlayerProfileArtwork = {
+    kind: 'neutral',
+    artworkId: neutralArtworkId,
+    identityKey: `${identityBase}:${neutralArtworkId}`,
+  };
+  const approved = findApprovedPlayerArtwork(manifest, leagueId, playerId, photoUrl);
+  if (!approved || approved.height !== 1050) return neutral;
+  const roleMatches = isGoalie
+    ? approved.width === 643
+    : approved.width === 631 || approved.width === 628;
+  if (!roleMatches) return neutral;
+  return {
+    kind: 'remote',
+    identityKey: `${identityBase}:${approved.imageSha256}`,
+    uri: approved.imageUrl,
+  };
+}
+
 export function __resetPlayerArtworkManifestCacheForTests() {
   cached = null;
   inflight = null;

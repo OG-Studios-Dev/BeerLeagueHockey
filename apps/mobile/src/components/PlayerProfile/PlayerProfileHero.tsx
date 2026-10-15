@@ -5,6 +5,13 @@ import { Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from
 
 import colors from '../../theme/colors';
 import { getContrastTextColor } from '../../theme/contrast';
+import {
+  PLAYER_ARTWORK_LEAGUE_ID,
+  loadPlayerArtworkManifest,
+  resolvePlayerProfileArtwork,
+  type PlayerArtworkManifest,
+  type PlayerProfileArtwork,
+} from '../../lib/playerArtworkManifest';
 import TeamLogo from '../TeamLogo';
 import { getPlayerProfileHeroLayout, splitPlayerDisplayName } from './playerProfileHeroModel';
 
@@ -32,6 +39,44 @@ type PlayerProfileHeroProps = {
   onOpenTeam: () => void;
 };
 
+type PlayerProfileArtworkImageProps = {
+  artwork: PlayerProfileArtwork;
+  isGoalie: boolean;
+  width: number;
+  height: number;
+};
+
+function PlayerProfileArtworkImage({ artwork, isGoalie, width, height }: PlayerProfileArtworkImageProps) {
+  const [remoteFailed, setRemoteFailed] = React.useState(false);
+  const lifecycle = React.useRef({ mounted: true, failed: false });
+  React.useLayoutEffect(() => {
+    const owner = lifecycle.current;
+    owner.mounted = true;
+    return () => { owner.mounted = false; };
+  }, []);
+  const remoteActive = artwork.kind === 'remote' && !remoteFailed;
+  const source = remoteActive
+    ? { uri: artwork.uri, cache: 'force-cache' as const }
+    : isGoalie ? neutralGoalieArtwork : neutralSkaterArtwork;
+  const handleRemoteError = remoteActive ? () => {
+    if (!lifecycle.current.mounted || lifecycle.current.failed) return;
+    lifecycle.current.failed = true;
+    setRemoteFailed(true);
+  } : undefined;
+
+  return <Image
+    testID="player-profile-rink-ribbon-artwork"
+    source={source}
+    onError={handleRemoteError}
+    alt=""
+    resizeMode="contain"
+    accessible={false}
+    accessibilityElementsHidden
+    importantForAccessibility="no-hide-descendants"
+    style={{ width, height }}
+  />;
+}
+
 export default function PlayerProfileHero({
   playerId,
   photoUrl,
@@ -50,23 +95,36 @@ export default function PlayerProfileHero({
   onShare,
   onOpenTeam,
 }: PlayerProfileHeroProps) {
-  const portraitIdentity = React.useMemo(() => ({ playerId, photoUrl }), [playerId, photoUrl]);
-  const [failedPortraitIdentity, setFailedPortraitIdentity] = React.useState<typeof portraitIdentity | null>(null);
-  const portraitFailed = Boolean(photoUrl) && failedPortraitIdentity === portraitIdentity;
-  const portraitGuard = React.useRef({ identity: portraitIdentity, failed: portraitFailed });
-  React.useLayoutEffect(() => {
-    portraitGuard.current = { identity: portraitIdentity, failed: portraitFailed };
-  }, [portraitIdentity, portraitFailed]);
   const layout = getPlayerProfileHeroLayout(width, fontScale);
   const displayName = splitPlayerDisplayName(fullName);
-  const portraitSource = photoUrl && !portraitFailed ? { uri: photoUrl } : null;
-  const artwork = portraitSource ?? (isGoalie ? neutralGoalieArtwork : neutralSkaterArtwork);
-  const handlePortraitError = () => {
-    const current = portraitGuard.current;
-    if (!photoUrl || current.identity !== portraitIdentity || current.failed) return;
-    current.failed = true;
-    setFailedPortraitIdentity(portraitIdentity);
-  };
+  const artworkIdentity = `${playerId}:${photoUrl ?? 'no-photo'}:${isGoalie ? 'goalie' : 'skater'}`;
+  const [loadedManifest, setLoadedManifest] = React.useState<{
+    identity: string;
+    manifest: PlayerArtworkManifest | null;
+  } | null>(null);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void loadPlayerArtworkManifest({ signal: controller.signal }).then(
+      (manifest) => {
+        if (active) setLoadedManifest({ identity: artworkIdentity, manifest });
+      },
+      () => {
+        if (active) setLoadedManifest({ identity: artworkIdentity, manifest: null });
+      },
+    );
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [artworkIdentity]);
+  const artwork = resolvePlayerProfileArtwork({
+    manifest: loadedManifest?.identity === artworkIdentity ? loadedManifest.manifest : null,
+    leagueId: PLAYER_ARTWORK_LEAGUE_ID,
+    playerId,
+    photoUrl,
+    isGoalie,
+  });
   const surnameLetters = Array.from(displayName.surname);
   const surnameLetterSize = surnameLetters.length > 10 ? 13 : surnameLetters.length > 7 ? 16 : 20;
   const visibleAwards = awards.filter((award) => award.count > 0);
@@ -128,16 +186,12 @@ export default function PlayerProfileHero({
           { top: layout.artTop, width: layout.artWidth, height: layout.artHeight },
         ]}
       >
-        <Image
-          testID="player-profile-rink-ribbon-artwork"
-          source={artwork}
-          onError={portraitSource ? handlePortraitError : undefined}
-          alt=""
-          resizeMode="contain"
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          style={{ width: layout.artWidth, height: layout.artHeight }}
+        <PlayerProfileArtworkImage
+          key={artwork.identityKey}
+          artwork={artwork}
+          isGoalie={isGoalie}
+          width={layout.artWidth}
+          height={layout.artHeight}
         />
       </View>
 

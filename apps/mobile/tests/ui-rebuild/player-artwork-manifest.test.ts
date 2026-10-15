@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import * as artworkManifestModule from '../../src/lib/playerArtworkManifest';
 import {
   PLAYER_ARTWORK_LEAGUE_ID,
   PLAYER_ARTWORK_MANIFEST_URL,
@@ -28,6 +29,32 @@ function response(body: string) {
 }
 
 describe('approved player artwork manifest', () => {
+  it('selects only exact identity-bound profile artwork with role-compatible podium geometry', () => {
+    const resolvePlayerProfileArtwork = (artworkManifestModule as Record<string, unknown>).resolvePlayerProfileArtwork;
+    assert.equal(typeof resolvePlayerProfileArtwork, 'function', 'a pure profile-specific selector must enforce the role geometry contract');
+    const resolve = resolvePlayerProfileArtwork as (input: Record<string, unknown>) => { kind: string; artworkId?: string; uri?: string };
+    const skater631 = parsePlayerArtworkManifest(manifest);
+    const skater628 = parsePlayerArtworkManifest({ ...manifest, entries: [{ ...entry, width: 628 }] });
+    const goalie643 = parsePlayerArtworkManifest({ ...manifest, entries: [{ ...entry, width: 643 }] });
+    const wrongHeight = parsePlayerArtworkManifest({ ...manifest, entries: [{ ...entry, height: 1049 }] });
+    const input = { leagueId: PLAYER_ARTWORK_LEAGUE_ID, playerId, photoUrl: portraitUrl };
+
+    assert.equal(resolve({ ...input, isGoalie: false, manifest: skater631 }).kind, 'remote');
+    assert.equal(resolve({ ...input, isGoalie: false, manifest: skater628 }).kind, 'remote');
+    assert.equal(resolve({ ...input, isGoalie: true, manifest: goalie643 }).kind, 'remote');
+    assert.deepEqual(resolve({ ...input, isGoalie: false, manifest: goalie643 }), {
+      kind: 'neutral', artworkId: 'neutral-helmet-v1', identityKey: `${PLAYER_ARTWORK_LEAGUE_ID}:${playerId}:${portraitUrl}:skater:neutral-helmet-v1`,
+    });
+    assert.deepEqual(resolve({ ...input, isGoalie: true, manifest: skater631 }), {
+      kind: 'neutral', artworkId: 'neutral-goalie-v1', identityKey: `${PLAYER_ARTWORK_LEAGUE_ID}:${playerId}:${portraitUrl}:goalie:neutral-goalie-v1`,
+    });
+    assert.equal(resolve({ ...input, isGoalie: false, manifest: wrongHeight }).kind, 'neutral');
+    assert.equal(resolve({ ...input, photoUrl: `${portraitUrl}?stale=1`, isGoalie: false, manifest: skater631 }).kind, 'neutral');
+    assert.equal(resolve({ ...input, playerId: '22222222-2222-4222-8222-222222222222', isGoalie: false, manifest: skater631 }).kind, 'neutral');
+    assert.equal(resolve({ ...input, leagueId: '22222222-2222-4222-8222-222222222222', isGoalie: false, manifest: skater631 }).kind, 'neutral');
+    assert.equal(resolve({ ...input, isGoalie: false, manifest: null }).kind, 'neutral');
+  });
+
   it('accepts only the fixed tenant/version/canonical content-addressed shape and exact portrait identity', () => {
     const parsed = parsePlayerArtworkManifest(manifest);
     assert.equal(findApprovedPlayerArtwork(parsed, PLAYER_ARTWORK_LEAGUE_ID, playerId, portraitUrl)?.imageSha256, hash);
