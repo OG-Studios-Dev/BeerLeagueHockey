@@ -3,7 +3,14 @@
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { verifyLeagueOwnerAccess } from './permissions';
-import { syncArticleEntityTags } from './article-entities';
+import { syncArticleEntityTags } from '@/lib/news/sync-article-entity-tags';
+import {
+  isNewspaperLinkedArticle,
+  isTitleOnlyUpdate,
+  isVisibilityOnlyUpdate,
+  NEWSPAPER_ARTICLE_FROZEN_ERROR,
+} from '@/lib/news/newspaper-article-guard';
+import { validateArticleContentForStorage } from '@hockey-life/ui/news-article-format';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -27,6 +34,7 @@ export interface NewsArticle {
   game_id: string | null;
   created_at: string;
   updated_at: string;
+  newspaper_linked?: boolean;
 }
 
 export interface CreateNewsArticleParams {
@@ -45,6 +53,7 @@ export interface CreateNewsArticleParams {
 
 export interface UpdateNewsArticleParams {
   title?: string;
+  expectedTitle?: string;
   content?: string;
   excerpt?: string;
   imageUrl?: string;
@@ -142,8 +151,8 @@ export async function getNewsArticle(articleId: string): Promise<ActionResult<Ne
     if (!access.authorized) {
       return { success: false, error: access.error || 'Not authorized' };
     }
-
-    return { success: true, data: normalizeNewsArticle(article) };
+    const newspaperLinked = await isNewspaperLinkedArticle(supabase as never, articleId);
+    return { success: true, data: { ...normalizeNewsArticle(article), newspaper_linked: newspaperLinked } };
   } catch (error) {
     if (isDevelopment) {
       console.error('Unexpected error in getNewsArticle:', error);
@@ -213,6 +222,9 @@ export async function createNewsArticle(params: CreateNewsArticleParams): Promis
   if (!access.authorized) {
     return { success: false, error: access.error || 'Not authorized' };
   }
+  if (!validateArticleContentForStorage(content)) {
+    return { success: false, error: 'Invalid article content format' };
+  }
 
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
@@ -276,7 +288,6 @@ export async function updateNewsArticle(
   articleId: string,
   updates: UpdateNewsArticleParams
 ): Promise<ActionResult<NewsArticle>> {
-  const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
 
   try {
@@ -295,6 +306,43 @@ export async function updateNewsArticle(
     const access = await verifyLeagueOwnerAccess(existingArticle.league_id);
     if (!access.authorized) {
       return { success: false, error: access.error || 'Not authorized' };
+    }
+    const newspaperLinked = await isNewspaperLinkedArticle(serviceSupabase as never, articleId);
+    if (newspaperLinked && !isVisibilityOnlyUpdate(updates) && !isTitleOnlyUpdate(updates)) {
+      return { success: false, error: NEWSPAPER_ARTICLE_FROZEN_ERROR };
+    }
+    if (newspaperLinked && isTitleOnlyUpdate(updates)) {
+      const title = updates.title?.trim() || '';
+      if (typeof updates.expectedTitle !== 'string') {
+        return { success: false, error: 'Reload this article before changing its title.' };
+      }
+      if (!title) return { success: false, error: 'Title is required' };
+      if (title.length > 200) return { success: false, error: 'Title must be 200 characters or fewer' };
+      const client = await createClient();
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return { success: false, error: 'Not authenticated' };
+      const renamed = await (serviceSupabase.rpc as any)('rename_newspaper_article', {
+        p_article_id: articleId,
+        p_league_id: existingArticle.league_id,
+        p_changed_by: user.id,
+        p_expected_title: updates.expectedTitle,
+        p_title: title,
+      });
+      if (renamed.error) {
+        const message = String(renamed.error.message || renamed.error);
+        if (message.includes('STALE_NEWSPAPER_ARTICLE_TITLE')) {
+          return { success: false, error: 'The article title changed while you were editing. Reload and try again.' };
+        }
+        return { success: false, error: 'Failed to update article title' };
+      }
+      revalidatePath(`/dashboard/leagues/${existingArticle.league_id}/news`);
+      return { success: true, data: normalizeNewsArticle(renamed.data) };
+    }
+    if (
+      updates.content !== undefined &&
+      !validateArticleContentForStorage(updates.content)
+    ) {
+      return { success: false, error: 'Invalid article content format' };
     }
 
     // Build update object
@@ -323,13 +371,20 @@ export async function updateNewsArticle(
       return { success: false, error: 'Failed to update article' };
     }
 
-    await syncArticleEntityTags({
-      articleId,
-      linkedPlayerIds: updates.linkedPlayerIds,
-      linkedTeamIds: updates.linkedTeamIds,
-      linkedGameIds: updates.linkedGameIds,
-      primaryGameId: updates.primaryGameId,
-    });
+    if (
+      updates.linkedPlayerIds !== undefined ||
+      updates.linkedTeamIds !== undefined ||
+      updates.linkedGameIds !== undefined ||
+      updates.primaryGameId !== undefined
+    ) {
+      await syncArticleEntityTags({
+        articleId,
+        linkedPlayerIds: updates.linkedPlayerIds,
+        linkedTeamIds: updates.linkedTeamIds,
+        linkedGameIds: updates.linkedGameIds,
+        primaryGameId: updates.primaryGameId,
+      });
+    }
 
     revalidatePath(`/dashboard/leagues/${existingArticle.league_id}/news`);
     return { success: true, data: normalizeNewsArticle(article) };
@@ -381,6 +436,9 @@ export async function deleteNewsArticle(articleId: string): Promise<ActionResult
     const access = await verifyLeagueOwnerAccess(article.league_id);
     if (!access.authorized) {
       return { success: false, error: access.error || 'Not authorized' };
+    }
+    if (await isNewspaperLinkedArticle(supabase as never, articleId)) {
+      return { success: false, error: NEWSPAPER_ARTICLE_FROZEN_ERROR };
     }
 
     const { error } = await supabase

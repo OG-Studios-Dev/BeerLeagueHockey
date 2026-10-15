@@ -14,6 +14,8 @@ import {
 import { NewsArticleActions } from './NewsArticleActions';
 import { AnnouncementComposerButton } from '@/components/news/AnnouncementComposerButton';
 import { requireLeagueDashboardAccess } from '@/lib/auth/league-dashboard-access';
+import { getHockeyLifeTimesSetup } from '@/lib/actions/hockey-life-times';
+import { HockeyLifeTimesGenerator } from '@/components/news/HockeyLifeTimesGenerator';
 
 type Props = {
   params: Promise<{ locale: string; id: string }>;
@@ -40,6 +42,7 @@ export default async function LeagueNewsPage({ params }: Props) {
   // Get news articles
   const result = await getAllLeagueArticles(leagueId);
   const articles = result.success ? result.data : [];
+  const newspaperSetup = await getHockeyLifeTimesSetup(leagueId);
 
   return (
     <div className="min-h-screen bg-neutral-950">
@@ -78,6 +81,10 @@ export default async function LeagueNewsPage({ params }: Props) {
             </div>
           </div>
         </div>
+
+        {newspaperSetup.success && newspaperSetup.data.enabled && (
+          <HockeyLifeTimesGenerator leagueId={leagueId} seasons={newspaperSetup.data.seasons} />
+        )}
 
         {/* Articles List */}
         {articles.length > 0 ? (

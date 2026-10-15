@@ -4,6 +4,8 @@ import { useState, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import type { GameData, CheckinPlayer } from '@/lib/actions/scorekeeper';
 import { updateScorekeeperCheckin, updateGameStatus } from '@/lib/actions/scorekeeper';
+import { SyncStatusBanner, useOnlineStatus } from './SyncStatusBanner';
+import { confirmUndecidedPlayers, OFFLINE_ACTION_ERROR } from './ui-reliability';
 
 interface PreGameCheckinProps {
   game: GameData;
@@ -16,6 +18,8 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
   const [checkins, setCheckins] = useState(initialCheckins);
   const [loading, setLoading] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const isOnline = useOnlineStatus();
   // Track whether each team has been reviewed (user visited the tab)
   const [reviewed, setReviewed] = useState<{ home: boolean; away: boolean }>({ home: true, away: false });
 
@@ -48,6 +52,10 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
 
   const handleSetStatus = useCallback(async (player: CheckinPlayer, newStatus: 'confirmed' | 'out') => {
     if (player.checkinStatus === newStatus) return; // Already set
+    if (!isOnline) {
+      setActionError(OFFLINE_ACTION_ERROR);
+      return;
+    }
     const teamId = activeTab === 'home' ? homeTeam.id : awayTeam.id;
 
     setLoading(player.id);
@@ -63,7 +71,12 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
       };
     });
 
-    const result = await updateScorekeeperCheckin(game.id, player.id, teamId, newStatus);
+    let result: { success: boolean; error?: string };
+    try {
+      result = await updateScorekeeperCheckin(game.id, player.id, teamId, newStatus);
+    } catch {
+      result = { success: false, error: 'Check-in request failed' };
+    }
 
     if (!result.success) {
       // Revert on failure
@@ -76,38 +89,59 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
           ),
         };
       });
+      setActionError(result.error || `Failed to update ${player.fullName}`);
+    } else {
+      setActionError(null);
     }
 
     setLoading(null);
-  }, [activeTab, homeTeam.id, awayTeam.id, game.id]);
+  }, [activeTab, homeTeam.id, awayTeam.id, game.id, isOnline]);
 
   const handleCheckAllIn = useCallback(async () => {
+    if (!isOnline) {
+      setActionError(OFFLINE_ACTION_ERROR);
+      return;
+    }
     const key = activeTab === 'home' ? 'homeTeam' : 'awayTeam';
     const teamId = activeTab === 'home' ? homeTeam.id : awayTeam.id;
-    const pending = checkins[key].filter(p => p.checkinStatus !== 'confirmed');
+    const pending = checkins[key].filter(
+      p => p.checkinStatus === null || p.checkinStatus === 'tentative'
+    );
 
     if (pending.length === 0) return;
-
-    // Optimistic: mark all as confirmed
-    setCheckins(prev => ({
-      ...prev,
-      [key]: prev[key].map(p => ({ ...p, checkinStatus: 'confirmed' as const })),
-    }));
-
-    // Fire updates in parallel
-    await Promise.all(
-      pending.map(p => updateScorekeeperCheckin(game.id, p.id, teamId, 'confirmed'))
+    setLoading('__bulk__');
+    const result = await confirmUndecidedPlayers(checkins[key], (player) =>
+      updateScorekeeperCheckin(game.id, player.id, teamId, 'confirmed')
     );
-  }, [activeTab, homeTeam.id, awayTeam.id, game.id, checkins]);
+    setCheckins(prev => ({ ...prev, [key]: result.players }));
+    setActionError(
+      result.errors.length > 0
+        ? `${result.errors.length} check-in${result.errors.length === 1 ? '' : 's'} failed: ${result.errors.join('; ')}`
+        : null
+    );
+    setLoading(null);
+  }, [activeTab, homeTeam.id, awayTeam.id, game.id, checkins, isOnline]);
 
   const handleStartGame = useCallback(async () => {
-    setStarting(true);
-    const result = await updateGameStatus(game.id, 'in_progress');
-    if (result.success) {
-      onGameStarted();
+    if (!isOnline) {
+      setActionError(OFFLINE_ACTION_ERROR);
+      return;
     }
-    setStarting(false);
-  }, [game.id, onGameStarted]);
+    setStarting(true);
+    try {
+      const result = await updateGameStatus(game.id, 'in_progress');
+      if (result.success) {
+        setActionError(null);
+        onGameStarted();
+      } else {
+        setActionError(result.error || 'Failed to start game');
+      }
+    } catch {
+      setActionError('Failed to start game');
+    } finally {
+      setStarting(false);
+    }
+  }, [game.id, onGameStarted, isOnline]);
 
   // Sorted roster: goalies first, then by jersey number
   const sortedRoster = useMemo(() => {
@@ -133,6 +167,14 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
 
   return (
     <div className="flex flex-col min-h-screen">
+      <div className="px-4 pt-2">
+        <SyncStatusBanner syncState={{ isOnline, isSyncing: false, pendingCount: 0, lastError: null, lastSyncAt: null }} />
+        {actionError && (
+          <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">
+            {actionError}
+          </div>
+        )}
+      </div>
       {/* Header */}
       <div className="px-4 py-3 border-b border-[var(--color-border)]">
         <div className="text-center">
@@ -175,6 +217,7 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
         </div>
         <button
           onClick={handleCheckAllIn}
+          disabled={!isOnline || loading !== null}
           className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors bg-green-500/10 text-green-400 hover:bg-green-500/20 active:scale-95"
         >
           All IN
@@ -276,6 +319,7 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
                       <>
                         <button
                           onClick={() => handleSetStatus(player, 'confirmed')}
+                          disabled={!isOnline || loading !== null}
                           className={`px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 ${
                             isConfirmed
                               ? 'bg-green-500 text-white shadow-sm shadow-green-500/30'
@@ -286,6 +330,7 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
                         </button>
                         <button
                           onClick={() => handleSetStatus(player, 'out')}
+                          disabled={!isOnline || loading !== null}
                           className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 ${
                             isOut
                               ? 'bg-red-500 text-white shadow-sm shadow-red-500/30'
@@ -336,7 +381,7 @@ export function PreGameCheckin({ game, checkins: initialCheckins, onGameStarted 
         ) : (
           <button
             onClick={handleStartGame}
-            disabled={starting || !bothReviewed}
+            disabled={starting || !bothReviewed || !isOnline}
             className="w-full py-4 rounded-xl bg-[var(--league-primary,#d4af37)] text-[var(--color-accent-text,#000)] font-bold text-base transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed"
           >
             {starting ? 'Starting...' : !bothReviewed ? 'Check in both teams first' : 'Start Game'}

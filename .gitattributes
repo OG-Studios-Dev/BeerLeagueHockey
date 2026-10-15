@@ -7,3 +7,4 @@ package-lock.json text eol=lf
 *.tsx text eol=lf
 *.mjs text eol=lf
 *.cjs text eol=lf
+packages/hockey-life-times/tests/fixtures/approved-revision/approved-proof.pdf binary

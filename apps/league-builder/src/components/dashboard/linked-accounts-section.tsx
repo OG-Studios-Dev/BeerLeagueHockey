@@ -6,6 +6,8 @@ import { cn } from '@hockey-life/ui/lib/utils';
 import { Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { UserIdentity } from '@supabase/supabase-js';
+import { useSearchParams } from 'next/navigation';
+import { oauthRecoveryCode } from '@/lib/auth/oauth-errors';
 
 type OAuthProvider = 'google' | 'apple';
 
@@ -52,21 +54,30 @@ const PROVIDER_ICONS: Record<OAuthProvider, React.FC<{ className?: string }>> = 
 
 export function LinkedAccountsSection() {
   const t = useTranslations('orgSettings.linkedAccounts');
+  const searchParams = useSearchParams();
   const [identities, setIdentities] = useState<UserIdentity[]>([]);
   const [loading, setLoading] = useState(true);
   const [linkingProvider, setLinkingProvider] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const oauthError = oauthRecoveryCode(searchParams.get('oauth_error'));
+  const callbackError = oauthError === 'consent_canceled'
+    ? t('consentCanceled')
+    : oauthError === 'identity_conflict'
+      ? t('identityConflict')
+      : oauthError === 'oauth_failed'
+        ? t('oauthFailed')
+        : null;
 
   const fetchIdentities = useCallback(async () => {
     const supabase = createClient();
     const { data, error } = await supabase.auth.getUserIdentities();
     if (error) {
-      setError(error.message);
+      setError(t('loadFailed'));
     } else {
       setIdentities(data.identities);
     }
     setLoading(false);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -83,7 +94,8 @@ export function LinkedAccountsSection() {
     const supabase = createClient();
     const origin = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
     const callbackUrl = new URL('/api/auth/callback', origin);
-    callbackUrl.searchParams.set('next', '/dashboard/settings');
+    callbackUrl.searchParams.set('next', window.location.pathname);
+    callbackUrl.searchParams.set('flow', 'link');
 
     const { error } = await supabase.auth.linkIdentity({
       provider,
@@ -93,7 +105,7 @@ export function LinkedAccountsSection() {
     });
 
     if (error) {
-      setError(error.message);
+      setError(t('oauthFailed'));
       setLinkingProvider(null);
     }
     // If no error, browser redirects to the provider
@@ -111,7 +123,7 @@ export function LinkedAccountsSection() {
     const { error } = await supabase.auth.unlinkIdentity(identity);
 
     if (error) {
-      setError(error.message);
+      setError(t('unlinkFailed'));
     } else {
       setIdentities((prev) => prev.filter((i) => i.id !== identity.id));
     }
@@ -203,8 +215,10 @@ export function LinkedAccountsSection() {
         })}
       </div>
 
-      {error && (
-        <p className="text-sm text-red-400 mt-3">{error}</p>
+      {(error || callbackError) && (
+        <p className="text-sm text-red-400 mt-3" aria-live="polite">
+          {error || callbackError}
+        </p>
       )}
     </section>
   );

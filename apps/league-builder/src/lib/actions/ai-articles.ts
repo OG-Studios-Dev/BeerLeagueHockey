@@ -3,6 +3,10 @@
 import { revalidatePath } from 'next/cache';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { verifyLeagueOwnerAccess } from './permissions';
+import {
+  isNewspaperLinkedArticle,
+  NEWSPAPER_ARTICLE_FROZEN_ERROR,
+} from '@/lib/news/newspaper-article-guard';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -156,6 +160,11 @@ export async function updateArticleImage(
     const access = await verifyLeagueOwnerAccess(article.league_id);
     if (!access.authorized) {
       return { success: false, error: access.error || 'Not authorized' };
+    }
+
+    const serviceSupabase = createServiceRoleClient();
+    if (await isNewspaperLinkedArticle(serviceSupabase as never, articleId)) {
+      return { success: false, error: NEWSPAPER_ARTICLE_FROZEN_ERROR };
     }
 
     const { error } = await supabase

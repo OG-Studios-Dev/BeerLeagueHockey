@@ -5,9 +5,10 @@ import type { UseGameTimerReturn } from '@/hooks/useGameTimer';
 interface GameTimerProps {
   timer: UseGameTimerReturn;
   periodCount: number;
+  disabled?: boolean;
 }
 
-export function GameTimer({ timer, periodCount }: GameTimerProps) {
+export function GameTimer({ timer, periodCount, disabled = false }: GameTimerProps) {
   const periodLabel = timer.isOvertime
     ? 'OT'
     : `P${timer.currentPeriod}`;
@@ -39,7 +40,10 @@ export function GameTimer({ timer, periodCount }: GameTimerProps) {
           <>
             {/* Start/Stop */}
             <button
-              onClick={timer.isRunning ? timer.stop : timer.start}
+              onClick={() => {
+                if (!disabled) (timer.isRunning ? timer.stop : timer.start)();
+              }}
+              disabled={disabled}
               className={`
                 flex items-center justify-center w-12 h-12 rounded-xl
                 transition-all duration-200 active:scale-95
@@ -64,7 +68,10 @@ export function GameTimer({ timer, periodCount }: GameTimerProps) {
 
             {/* End Period */}
             <button
-              onClick={timer.endPeriod}
+              onClick={() => {
+                if (!disabled) timer.endPeriod();
+              }}
+              disabled={disabled}
               className="flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-emphasis)] transition-all duration-200 active:scale-95"
               aria-label="End period"
               title="End period"
@@ -77,7 +84,10 @@ export function GameTimer({ timer, periodCount }: GameTimerProps) {
         ) : (
           /* Next Period */
           <button
-            onClick={() => timer.startPeriod(timer.currentPeriod + 1)}
+            onClick={() => {
+              if (!disabled) timer.startPeriod(timer.currentPeriod + 1);
+            }}
+            disabled={disabled}
             className="px-4 py-2.5 rounded-xl bg-[var(--league-primary,#d4af37)] text-[var(--color-accent-text,#000)] font-semibold text-sm transition-all duration-200 hover:opacity-90 active:scale-95"
           >
             {timer.currentPeriod >= periodCount ? 'Start OT' : `Start P${timer.currentPeriod + 1}`}

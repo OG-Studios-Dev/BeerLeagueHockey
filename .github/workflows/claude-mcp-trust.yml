@@ -1,0 +1,39 @@
+name: Claude MCP trust policy
+
+on:
+  push:
+    branches: [main, production]
+    paths:
+      - "**/.claude/settings.json"
+      - "**/.claude/settings.local.json"
+      - ".gitignore"
+      - "scripts/security/check_claude_mcp_trust.py"
+      - "scripts/tests/test_claude_mcp_trust.py"
+      - ".github/workflows/claude-mcp-trust.yml"
+  pull_request:
+    branches: [main, production]
+    paths:
+      - "**/.claude/settings.json"
+      - "**/.claude/settings.local.json"
+      - ".gitignore"
+      - "scripts/security/check_claude_mcp_trust.py"
+      - "scripts/tests/test_claude_mcp_trust.py"
+      - ".github/workflows/claude-mcp-trust.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Claude MCP Trust Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Enforce tracked MCP trust policy
+        run: python3 scripts/security/check_claude_mcp_trust.py
+      - name: Run guard tests
+        run: python3 -m unittest scripts/tests/test_claude_mcp_trust.py

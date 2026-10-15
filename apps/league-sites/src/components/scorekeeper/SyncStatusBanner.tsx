@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cn } from '@hockey-life/ui';
 
 // TODO: Wire to useSyncState once offline infrastructure is integrated
 // For now, provides a static online indicator that can be extended
 
-interface SyncState {
+export interface SyncState {
   isOnline: boolean;
   isSyncing: boolean;
   pendingCount: number;
@@ -18,14 +18,9 @@ interface SyncStatusBannerProps {
   syncState?: SyncState;
 }
 
-/**
- * SyncStatusBanner - Shows sync status (online/offline/syncing)
- * Displays at top of scorekeeper UI
- * iPad-optimized with large touch targets
- */
-export function SyncStatusBanner({ syncState }: SyncStatusBannerProps) {
-  // Hydration-safe: always render "online" on server, check navigator on client
+export function useOnlineStatus(): boolean {
   const [isOnline, setIsOnline] = useState(true);
+
   useEffect(() => {
     queueMicrotask(() => setIsOnline(navigator.onLine));
     const goOnline = () => setIsOnline(true);
@@ -37,6 +32,18 @@ export function SyncStatusBanner({ syncState }: SyncStatusBannerProps) {
       window.removeEventListener('offline', goOffline);
     };
   }, []);
+
+  return isOnline;
+}
+
+/**
+ * SyncStatusBanner - Shows sync status (online/offline/syncing)
+ * Displays at top of scorekeeper UI
+ * iPad-optimized with large touch targets
+ */
+export function SyncStatusBanner({ syncState }: SyncStatusBannerProps) {
+  // Hydration-safe: always render "online" on server, check navigator on client.
+  const isOnline = useOnlineStatus();
 
   // Default to online if no sync state provided
   const state: SyncState = syncState ?? {
@@ -50,8 +57,8 @@ export function SyncStatusBanner({ syncState }: SyncStatusBannerProps) {
   const getStatusConfig = () => {
     if (!state.isOnline) {
       return {
-        label: 'Offline Mode',
-        description: 'Changes will sync when you reconnect',
+        label: 'Scoring unavailable offline',
+        description: 'Changes are not saved. Reconnect before continuing.',
         icon: OfflineIcon,
         bgClass: 'bg-amber-500/10 border-amber-500/30',
         textClass: 'text-amber-400',

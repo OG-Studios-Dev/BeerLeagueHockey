@@ -1,7 +1,7 @@
 'use client';
 
 import { signIn } from '@/lib/actions/auth';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -10,6 +10,8 @@ import { Loader2 } from 'lucide-react';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { posthog } from '@/lib/posthog-client';
 import { OAuthProviderButton } from '@/components/auth/OAuthProviderButton';
+import { oauthRecoveryCode } from '@/lib/auth/oauth-errors';
+import { validatedAuthLocale } from '@/lib/auth/oauth-redirect';
 
 export default function LoginPage() {
   return (
@@ -31,11 +33,20 @@ export default function LoginPage() {
 
 function LoginForm() {
   const t = useTranslations();
+  const locale = validatedAuthLocale(useLocale());
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const redirectTo = searchParams.get('redirect');
+  const oauthError = oauthRecoveryCode(searchParams.get('oauth_error'));
+  const oauthErrorMessage = oauthError === 'consent_canceled'
+    ? t('auth.oauthConsentCanceled')
+    : oauthError === 'identity_conflict'
+      ? t('auth.oauthIdentityConflict')
+      : oauthError === 'oauth_failed'
+        ? t('auth.oauthFailed')
+        : null;
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -72,16 +83,24 @@ function LoginForm() {
         {t('auth.enterEmail')}
       </p>
 
+      {oauthErrorMessage && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-6" aria-live="polite">
+          <p className="text-sm text-red-400">{oauthErrorMessage}</p>
+        </div>
+      )}
+
       {/* OAuth Providers */}
       <div className="space-y-3">
         <OAuthProviderButton
           provider="google"
           label={t('auth.continueWithGoogle')}
+          locale={locale}
           redirectTo={redirectTo || undefined}
         />
         <OAuthProviderButton
           provider="apple"
           label={t('auth.continueWithApple')}
+          locale={locale}
           redirectTo={redirectTo || undefined}
         />
       </div>

@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import React from 'react';
 import { Megaphone, ChevronRight } from 'lucide-react';
+import { stripMarkdownLinks } from '@/lib/news/rich-text';
 
 interface AnnouncementBannerProps {
   announcement: {
@@ -14,7 +16,7 @@ interface AnnouncementBannerProps {
 }
 
 export function AnnouncementBanner({ announcement, leagueSlug }: AnnouncementBannerProps) {
-  const displayText = announcement.excerpt || announcement.content.slice(0, 200);
+  const displayText = stripMarkdownLinks(announcement.excerpt || announcement.content).slice(0, 200);
   const timeAgo = getTimeAgo(announcement.publishedAt);
   const href = announcement.slug
     ? `/${leagueSlug}/news/${announcement.slug}`

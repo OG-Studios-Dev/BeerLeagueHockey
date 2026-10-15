@@ -10,6 +10,7 @@ export interface ImportedCareerBaselineRow {
   source_row_id: string;
   player_id: string;
   profile_id: string | null;
+  profile_id_league_verified?: boolean;
   player_name: string;
   avatar_url: string | null;
   team_id: string;
@@ -35,11 +36,17 @@ export interface ImportedCareerBaselineRow {
   ties: number;
   championships: number;
   saves: number;
+  saves_known?: boolean;
   goals_against: number;
+  goals_against_known?: boolean;
   shots_against: number;
+  shots_against_known?: boolean;
+  games_played_known?: boolean;
   shutouts: number;
   save_percentage_ratio: number | null;
+  save_percentage_known?: boolean;
   goals_against_average: number | null;
+  goals_against_average_known?: boolean;
 }
 
 type LeagueScope = {
@@ -98,6 +105,10 @@ function pickNumber(row: RawBaselineRow, keys: string[]): number | null {
   }
 
   return null;
+}
+
+function hasNumber(row: RawBaselineRow, keys: string[]): boolean {
+  return pickNumber(row, keys) != null;
 }
 
 function pickBoolean(row: RawBaselineRow, keys: string[]): boolean | null {
@@ -221,7 +232,13 @@ export function normalizeImportedCareerBaselineRows(
 
     const position = pickString(row, ['position', 'player_position', 'role']);
     const isGoalie = pickBoolean(row, ['is_goalie', 'goalie']) ?? isGoaliePosition(position);
-    const gamesPlayed = toSafeNumber(pickNumber(row, ['games_played', 'gp']));
+    const gamesPlayedKeys = ['games_played', 'gp'];
+    const savesKeys = ['saves', 'sv'];
+    const goalsAgainstKeys = ['goals_against', 'ga'];
+    const shotsAgainstKeys = ['shots_against', 'sa'];
+    const savePercentageKeys = ['save_percentage', 'save_pct', 'sv_pct'];
+    const gaaKeys = ['goals_against_average', 'gaa'];
+    const gamesPlayed = toSafeNumber(pickNumber(row, gamesPlayedKeys));
     const goals = toSafeNumber(pickNumber(row, ['goals', 'g']));
     const assists = toSafeNumber(pickNumber(row, ['assists', 'a']));
     const points = toSafeNumber(pickNumber(row, ['points', 'pts'])) || goals + assists;
@@ -231,17 +248,35 @@ export function normalizeImportedCareerBaselineRows(
     const losses =
       toSafeNumber(pickNumber(row, ['losses', 'l'])) ||
       Math.max(gamesPlayed - wins - ties, 0);
-    const saves = toSafeNumber(pickNumber(row, ['saves', 'sv']));
-    const goalsAgainst = toSafeNumber(pickNumber(row, ['goals_against', 'ga']));
-    const shotsAgainst =
-      toSafeNumber(pickNumber(row, ['shots_against', 'sa'])) ||
-      saves + goalsAgainst;
+    const saves = toSafeNumber(pickNumber(row, savesKeys));
+    const goalsAgainst = toSafeNumber(pickNumber(row, goalsAgainstKeys));
+    const shotsAgainstKnown = hasNumber(row, shotsAgainstKeys);
+    const savesRecorded = hasNumber(row, savesKeys);
+    const goalsAgainstRecorded = hasNumber(row, goalsAgainstKeys);
+    const rawSavePercentage = pickNumber(row, savePercentageKeys);
+    const rawGaa = pickNumber(row, gaaKeys);
+    const defaultedImportedGoalieSource = options.sourceTable === 'legacy_players'
+      || options.sourceTable === 'player_career_baselines'
+      || options.sourceTable === 'league_player_career_baselines';
+    const savesKnown = shotsAgainstKnown
+      ? savesRecorded
+      : defaultedImportedGoalieSource
+        ? saves > 0 && goalsAgainstRecorded
+        : savesRecorded;
+    const shotsAgainst = shotsAgainstKnown
+      ? toSafeNumber(pickNumber(row, shotsAgainstKeys))
+      : savesKnown && goalsAgainstRecorded ? saves + goalsAgainst : 0;
+    const savePercentageKnown = shotsAgainst > 0 && savesKnown;
+    const gaaKnown = gamesPlayed > 0 && goalsAgainstRecorded
+      || (!defaultedImportedGoalieSource && rawGaa != null);
 
     normalized.push({
       source_table: options.sourceTable,
       source_row_id: pickString(row, ['id']) || `${options.sourceTable}:${playerId}`,
       player_id: playerId,
       profile_id: getProfileId(row, options.sourceTable, playerId),
+      profile_id_league_verified: options.sourceTable === 'player_career_baselines'
+        && Boolean(options.leagueId && pickString(row, LEAGUE_ID_KEYS) === options.leagueId),
       player_name: getPlayerName(row),
       avatar_url: pickString(row, ['avatar_url']),
       team_id: pickString(row, ['team_id', 'baseline_team_id']) || '',
@@ -267,11 +302,17 @@ export function normalizeImportedCareerBaselineRows(
       ties,
       championships,
       saves,
+      saves_known: savesKnown,
       goals_against: goalsAgainst,
+      goals_against_known: goalsAgainstRecorded,
       shots_against: shotsAgainst,
+      shots_against_known: shotsAgainstKnown || (savesKnown && goalsAgainstRecorded),
+      games_played_known: hasNumber(row, gamesPlayedKeys),
       shutouts: toSafeNumber(pickNumber(row, ['shutouts', 'so'])),
-      save_percentage_ratio: normalizeSavePercentageRatio(pickNumber(row, ['save_percentage', 'save_pct', 'sv_pct'])),
-      goals_against_average: pickNumber(row, ['goals_against_average', 'gaa']),
+      save_percentage_ratio: savePercentageKnown ? normalizeSavePercentageRatio(rawSavePercentage) : null,
+      save_percentage_known: savePercentageKnown,
+      goals_against_average: gaaKnown ? rawGaa : null,
+      goals_against_average_known: gaaKnown,
     });
   }
 
@@ -511,6 +552,8 @@ type GoalieAccumulator = {
   shots_against: number;
   shutouts: number;
   save_percentage_ratio_fallback: number | null;
+  save_percentage_complete: boolean;
+  goals_against_average_complete: boolean;
   metadata_priority: number;
 };
 
@@ -539,6 +582,17 @@ function upsertPreferredGoalieMetadata(
   }
 }
 
+function baselineSavePercentageKnown(row: ImportedCareerBaselineRow) {
+  if (row.save_percentage_known !== undefined) return row.save_percentage_known;
+  return row.shots_against_known === undefined || row.shots_against_known === true;
+}
+
+function baselineGaaKnown(row: ImportedCareerBaselineRow) {
+  if (row.goals_against_average_known !== undefined) return row.goals_against_average_known;
+  const hasKnowledge = row.games_played_known !== undefined || row.goals_against_known !== undefined;
+  return !hasKnowledge || (row.games_played_known === true && row.goals_against_known === true);
+}
+
 export function buildHistoricalBaselineGoalieRows(
   baselineRows: ImportedCareerBaselineRow[],
 ): UnifiedGoalieStatsRow[] {
@@ -563,11 +617,13 @@ export function buildHistoricalBaselineGoalieRows(
         : row.save_percentage_ratio != null
           ? roundStatValue(row.save_percentage_ratio * 100, 1)
           : null,
+      save_percentage_provenance: baselineSavePercentageKnown(row) ? 'measured' : 'unmeasured',
       goals_against_average: row.games_played > 0
         ? roundStatValue(row.goals_against / row.games_played)
         : row.goals_against_average != null
           ? roundStatValue(row.goals_against_average)
           : null,
+      goals_against_average_provenance: baselineGaaKnown(row) ? 'measured' : 'unmeasured',
       shutouts: row.shutouts,
     }));
 }
@@ -606,6 +662,8 @@ export function mergeAllTimeGoalieRows(
       shots_against: 0,
       shutouts: 0,
       save_percentage_ratio_fallback: row.save_percentage_ratio,
+      save_percentage_complete: true,
+      goals_against_average_complete: true,
       metadata_priority: 0,
     });
 
@@ -617,6 +675,8 @@ export function mergeAllTimeGoalieRows(
     current.goals_against += row.goals_against;
     current.shots_against += row.shots_against;
     current.shutouts += row.shutouts;
+    current.save_percentage_complete = current.save_percentage_complete && baselineSavePercentageKnown(row);
+    current.goals_against_average_complete = current.goals_against_average_complete && baselineGaaKnown(row);
     if (current.save_percentage_ratio_fallback == null) {
       current.save_percentage_ratio_fallback = row.save_percentage_ratio;
     }
@@ -640,6 +700,8 @@ export function mergeAllTimeGoalieRows(
       shots_against: 0,
       shutouts: 0,
       save_percentage_ratio_fallback: row.save_percentage != null ? row.save_percentage / 100 : null,
+      save_percentage_complete: true,
+      goals_against_average_complete: true,
       metadata_priority: 1,
     });
 
@@ -651,6 +713,9 @@ export function mergeAllTimeGoalieRows(
     current.goals_against += row.goals_against;
     current.shots_against += row.saves + row.goals_against;
     current.shutouts += row.shutouts;
+    current.save_percentage_complete = current.save_percentage_complete && row.save_percentage_provenance !== 'unmeasured';
+    current.goals_against_average_complete = current.goals_against_average_complete
+      && row.goals_against_average_provenance !== 'unmeasured';
     upsertPreferredGoalieMetadata(current, row, 1);
   }
 
@@ -669,14 +734,16 @@ export function mergeAllTimeGoalieRows(
     saves: row.saves,
     goals_against: row.goals_against,
     shots_against: row.shots_against,
-    save_percentage: row.shots_against > 0
+    save_percentage: !row.save_percentage_complete ? null : row.shots_against > 0
       ? roundStatValue((row.saves / row.shots_against) * 100, 1)
       : row.save_percentage_ratio_fallback != null
         ? roundStatValue(row.save_percentage_ratio_fallback * 100, 1)
         : null,
-    goals_against_average: row.games_played > 0
+    save_percentage_provenance: row.save_percentage_complete ? 'measured' : 'unmeasured',
+    goals_against_average: !row.goals_against_average_complete ? null : row.games_played > 0
       ? roundStatValue(row.goals_against / row.games_played)
       : null,
+    goals_against_average_provenance: row.goals_against_average_complete ? 'measured' : 'unmeasured',
     shutouts: row.shutouts,
   }));
 }

@@ -84,7 +84,12 @@ jobs:
 
       - name: Run Hockey Life Times renderer tests
         if: hashFiles('packages/hockey-life-times/package.json') != ''
-        run: pnpm exec tsx --test packages/hockey-life-times/tests/renderer.test.ts
+        run: >-
+          pnpm exec tsx --test
+          packages/hockey-life-times/tests/renderer.test.ts
+          packages/hockey-life-times/tests/approved-import.test.mjs
+          packages/hockey-life-times/tests/approved-revision.test.mjs
+          supabase/migrations/__tests__/newspaper-editorial-revision.test.mjs
 
       - name: Require the complete shipped mobile test suite
         if: github.ref == 'refs/heads/release/mobile-auth-env-fix' || github.base_ref == 'release/mobile-auth-env-fix'

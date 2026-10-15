@@ -17,6 +17,8 @@ import {
 } from '@/lib/supabase/server';
 import {
   getOrCreateCaptainScorekeeperSession,
+  finalizeGameStats,
+  updateGameStatus,
   submitGameForVerification,
   verifyCaptainStats,
 } from '../scorekeeper';
@@ -168,6 +170,28 @@ describe('captain self-scoring', () => {
       set: jest.fn(),
       delete: jest.fn(),
     } as any);
+  });
+
+  it('allows start only through an atomic session-bound transition', async () => {
+    const { client, steps } = createMockClient([
+      { type: 'select', target: 'scorekeeper_sessions', result: { data: {
+        id: 'session-1', game_id: 'game-1', league_id: 'league-1', session_type: 'single',
+        is_active: true, expires_at: hoursFromNowIso(2), created_by: 'user-1',
+      }, error: null } },
+      { type: 'rpc', target: 'start_scorekeeper_game_atomic', result: { data: {}, error: null },
+        assert: ({ rpcArgs }) => expect(rpcArgs).toEqual({ p_game_id: 'game-1', p_session_id: 'session-1' }) },
+    ]);
+    mockCreateServiceRoleClient.mockReturnValue(client);
+    expect(await updateGameStatus('game-1', 'in_progress')).toEqual({ success: true });
+    expect(steps).toHaveLength(0);
+  });
+
+  it.each(['completed', 'pending_verification', 'scheduled', 'cancelled', 'postponed'])('rejects arbitrary status %s before any service mutation', async (status) => {
+    const { client, from } = createMockClient([]);
+    mockCreateServiceRoleClient.mockReturnValue(client);
+    expect((await updateGameStatus('game-1', status)).success).toBe(false);
+    expect(from).not.toHaveBeenCalled();
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
   it('creates a captain self-score session with initiating team metadata', async () => {
@@ -460,32 +484,20 @@ describe('captain self-scoring', () => {
         },
       },
       {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual(
-            expect.objectContaining({
-              status: 'pending_verification',
-              home_captain_verified: true,
-              home_verification_token: null,
-              home_verification_token_expires_at: null,
-            }),
-          );
-          expect(typeof payload.away_verification_token).toBe('string');
-          expect(typeof payload.away_verification_token_expires_at).toBe('string');
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: {
-            home_verified_at: '2026-03-30T19:00:00.000Z',
-            away_verified_at: null,
-          },
-          error: null,
+        type: 'rpc',
+        target: 'submit_game_for_verification_atomic',
+        result: { data: { status: 'pending_verification' }, error: null },
+        assert: ({ rpcArgs }) => {
+          expect(rpcArgs).toEqual(expect.objectContaining({
+            p_game_id: 'game-1',
+            p_session_id: 'session-1',
+            p_mode: 'opponent_only',
+            p_initiating_team_type: 'home',
+            p_penalty_capture_status: null,
+            p_goalie_capture_status: null,
+          }));
+          expect(rpcArgs.p_home_token).toBeNull();
+          expect(typeof rpcArgs.p_away_token).toBe('string');
         },
       },
     ]);
@@ -546,72 +558,9 @@ describe('captain self-scoring', () => {
         },
       },
       {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual(
-            expect.objectContaining({
-              status: 'pending_verification',
-              home_captain_verified: true,
-              home_verification_token: null,
-              home_verification_token_expires_at: null,
-            }),
-          );
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: {
-            home_verified_at: '2026-03-30T19:10:00.000Z',
-            away_verified_at: '2026-03-30T19:00:00.000Z',
-          },
-          error: null,
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: { status: 'pending_verification' },
-          error: null,
-        },
-      },
-      {
         type: 'rpc',
-        target: 'rollup_game_stats',
-        result: { data: null, error: null },
-      },
-      {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual(expect.objectContaining({ status: 'completed' }));
-          expect(typeof payload.stats_locked_at).toBe('string');
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: { status: 'completed', season_id: null, league_id: null },
-          error: null,
-        },
-      },
-      {
-        type: 'select',
-        target: 'game_events',
-        result: { data: [], error: null },
-      },
-      {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
+        target: 'submit_game_for_verification_atomic',
+        result: { data: { status: 'completed' }, error: null },
       },
     ]);
 
@@ -655,20 +604,16 @@ describe('captain self-scoring', () => {
         },
       },
       {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual(
-            expect.objectContaining({
-              status: 'pending_verification',
-              home_captain_verified: false,
-              away_captain_verified: false,
-            }),
-          );
-          expect(typeof payload.home_verification_token).toBe('string');
-          expect(typeof payload.away_verification_token).toBe('string');
+        type: 'rpc',
+        target: 'submit_game_for_verification_atomic',
+        result: { data: { status: 'pending_verification' }, error: null },
+        assert: ({ rpcArgs }) => {
+          expect(rpcArgs).toEqual(expect.objectContaining({
+            p_game_id: 'game-1', p_session_id: 'session-1', p_mode: 'both_captains',
+            p_penalty_capture_status: null, p_goalie_capture_status: null,
+          }));
+          expect(typeof rpcArgs.p_home_token).toBe('string');
+          expect(typeof rpcArgs.p_away_token).toBe('string');
         },
       },
     ]);
@@ -692,90 +637,10 @@ describe('captain self-scoring', () => {
     const { client, functions, steps } = createMockClient([
       {
         type: 'rpc',
-        target: 'validate_captain_token',
-        result: {
-          data: [{ is_valid: true, game_id: 'game-1', team_type: 'away' }],
-          error: null,
-        },
+        target: 'verify_and_finalize_game_stats_atomic',
+        result: { data: { game_id: 'game-1', team_type: 'away', status: 'completed' }, error: null },
         assert: ({ rpcArgs }) => {
           expect(rpcArgs).toEqual({ p_token: 'VERIFYTOKEN' });
-        },
-      },
-      {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual(
-            expect.objectContaining({
-              away_captain_verified: true,
-            }),
-          );
-          expect(typeof payload.away_verified_at).toBe('string');
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: {
-            home_verified_at: '2026-03-30T19:00:00.000Z',
-            away_verified_at: '2026-03-30T19:05:00.000Z',
-          },
-          error: null,
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: { status: 'pending_verification' },
-          error: null,
-        },
-      },
-      {
-        type: 'rpc',
-        target: 'rollup_game_stats',
-        result: { data: null, error: null },
-        assert: ({ rpcArgs }) => {
-          expect(rpcArgs).toEqual({ p_game_id: 'game-1' });
-        },
-      },
-      {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual(
-            expect.objectContaining({
-              status: 'completed',
-            }),
-          );
-          expect(typeof payload.stats_locked_at).toBe('string');
-        },
-      },
-      {
-        type: 'select',
-        target: 'games',
-        result: {
-          data: { status: 'completed', season_id: null, league_id: null },
-          error: null,
-        },
-      },
-      {
-        type: 'select',
-        target: 'game_events',
-        result: { data: [], error: null },
-      },
-      {
-        type: 'update',
-        target: 'games',
-        result: { data: null, error: null },
-        assert: ({ payload, filters }) => {
-          expect(filters).toContainEqual(['eq', 'id', 'game-1']);
-          expect(payload).toEqual({ home_score: 0, away_score: 0 });
         },
       },
     ]);
@@ -791,5 +656,34 @@ describe('captain self-scoring', () => {
     });
     expect(functions.invoke).not.toHaveBeenCalled();
     expect(steps).toHaveLength(0);
+  });
+
+  it('never gives the exported scorekeeper finalizer the unverified override', async () => {
+    const futureIso = hoursFromNowIso(2);
+    const { client, steps } = createMockClient([
+      { type: 'select', target: 'scorekeeper_sessions', result: { data: {
+        id: 'session-1', created_by: 'scorekeeper-1', game_id: 'game-1', league_id: 'league-1',
+        expires_at: futureIso, access_count: 0, session_type: 'single', session_origin: 'assigned_scorekeeper',
+        initiating_team_id: null, initiating_team_type: null, initiating_captain_id: null,
+        games: { status: 'pending_verification', scheduled_at: futureIso, home_team: { name: 'Home' }, away_team: { name: 'Away' } },
+      }, error: null } },
+      { type: 'select', target: 'games', result: { data: { status: 'pending_verification', league_id: 'league-1', leagues: null }, error: null } },
+      { type: 'rpc', target: 'finalize_game_stats_atomic', result: { data: null, error: { message: 'Both captain verifications are required' } },
+        assert: ({ rpcArgs }) => expect(rpcArgs).toEqual({ p_game_id: 'game-1', p_allow_unverified: false }) },
+    ]);
+    mockCreateServiceRoleClient.mockReturnValue(client);
+    await expect(finalizeGameStats('game-1')).resolves.toEqual({ success: false, error: 'Failed to finalize stats' });
+    expect(steps).toHaveLength(0);
+  });
+
+  it('returns a retryable finalization error without claiming the captain token is invalid', async () => {
+    const { client } = createMockClient([{ type: 'rpc', target: 'verify_and_finalize_game_stats_atomic', result: {
+      data: null, error: { message: 'forced standings failure' },
+    } }]);
+    mockCreateServiceRoleClient.mockReturnValue(client);
+    await expect(verifyCaptainStats('VERIFYTOKEN')).resolves.toEqual({
+      success: false,
+      error: 'Verification was saved but finalization failed. Please retry with the same link.',
+    });
   });
 });

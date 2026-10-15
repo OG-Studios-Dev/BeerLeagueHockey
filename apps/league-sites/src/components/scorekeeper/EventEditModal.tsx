@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { GameEventData, PlayerData } from '@/lib/actions/scorekeeper';
 import { updateGameEvent } from '@/lib/actions/scorekeeper';
 import { DEFAULT_PENALTIES, type PenaltyRule } from './PenaltyEntry';
+import { OFFLINE_ACTION_ERROR } from './ui-reliability';
 
 interface EventEditModalProps {
   event: GameEventData;
@@ -12,6 +13,7 @@ interface EventEditModalProps {
   periodCount: number;
   showTimePeriods: boolean;
   penaltyRules?: PenaltyRule[];
+  isOnline: boolean;
   onSaved: () => void;
   onClose: () => void;
 }
@@ -35,6 +37,7 @@ export function EventEditModal({
   periodCount,
   showTimePeriods,
   penaltyRules,
+  isOnline,
   onSaved,
   onClose,
 }: EventEditModalProps) {
@@ -69,6 +72,10 @@ export function EventEditModal({
 
   async function handleSave() {
     if (isPending) return;
+    if (!isOnline) {
+      setError(OFFLINE_ACTION_ERROR);
+      return;
+    }
     setError(null);
 
     let gameTimeSeconds: number | null = null;
@@ -83,8 +90,9 @@ export function EventEditModal({
     }
 
     setIsPending(true);
-    const result = await updateGameEvent(
-      isGoal
+    try {
+      const result = await updateGameEvent(
+        isGoal
         ? {
             eventId: event.id,
             period: showTimePeriods ? period : null,
@@ -104,14 +112,18 @@ export function EventEditModal({
             penaltyType,
             penaltyMinutes,
           },
-    );
-    setIsPending(false);
+      );
 
-    if (!result.success) {
-      setError(result.error || 'Failed to save changes.');
-      return;
+      if (!result.success) {
+        setError(result.error || 'Failed to save changes.');
+        return;
+      }
+      onSaved();
+    } catch {
+      setError('Failed to save changes. Your edits are still here.');
+    } finally {
+      setIsPending(false);
     }
-    onSaved();
   }
 
   return (
@@ -298,7 +310,7 @@ export function EventEditModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={isPending}
+            disabled={isPending || !isOnline}
             className="flex-1 py-2.5 rounded-xl bg-[var(--league-primary,#d4af37)] text-black text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {isPending ? 'Saving…' : 'Save changes'}

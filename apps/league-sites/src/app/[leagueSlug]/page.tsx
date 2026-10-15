@@ -22,7 +22,6 @@ import {
   getSeasons,
   getTeams,
   getUnifiedSkaterStatsRows,
-  getLeagueSponsors,
 } from '@/lib/data';
 import type {
   GalleryAlbum,
@@ -460,7 +459,6 @@ export default async function HomePage({ params, searchParams }: HomePageProps) 
     allAlbums,
     teams,
     seasons,
-    sponsors,
     reelPhotosRaw,
   ] = await Promise.all([
     getLeagueStats(league.id, currentSeason?.id),
@@ -476,7 +474,6 @@ export default async function HomePage({ params, searchParams }: HomePageProps) 
     getGalleryAlbums(league.id),
     getTeams(league.id),
     getSeasons(league.id),
-    getLeagueSponsors(league.id),
     getRecentPhotosForReel(league.id, 12),
   ]);
 

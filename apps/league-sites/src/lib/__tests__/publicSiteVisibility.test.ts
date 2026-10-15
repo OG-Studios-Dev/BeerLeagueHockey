@@ -3,6 +3,7 @@ import {
   filterPublicTeams,
   isPublicFacingTeamName,
   shouldShowDefaultPublicNavPage,
+  shouldShowPublicSponsors,
 } from '@/lib/publicSiteVisibility';
 
 describe('public site visibility helpers', () => {
@@ -32,5 +33,10 @@ describe('public site visibility helpers', () => {
     expect(shouldShowDefaultPublicNavPage('about')).toBe(false);
     expect(shouldShowDefaultPublicNavPage('standings', { standings: false })).toBe(false);
     expect(shouldShowDefaultPublicNavPage('teams', { teams: true })).toBe(true);
+  });
+
+  it('hides public sponsors only for Hockey Life', () => {
+    expect(shouldShowPublicSponsors('hockey-life')).toBe(false);
+    expect(shouldShowPublicSponsors('control-league')).toBe(true);
   });
 });

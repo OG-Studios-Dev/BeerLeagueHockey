@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "title": "Hockey Life Times",
+  "issueNumber": "VALIDATION-001",
+  "leagueId": "fixture-league-not-production",
+  "leagueName": "Fixture Hockey League With A Deliberately Long Name",
+  "seasonId": "fixture-season",
+  "seasonName": "Renderer Validation Season 2026",
+  "periodStart": "2026-09-20",
+  "periodEnd": "2026-09-27",
+  "issuedAt": "2026-09-27T12:00:00-04:00",
+  "timezone": "America/Toronto",
+  "stage": "playoffs",
+  "status": "draft",
+  "lead": {
+    "headline": "Championship Thunder Shakes the Old Barn",
+    "dek": "A test-only issue stretches every column without pretending to report a real game.",
+    "body": [
+      "This clearly labeled validation copy is deliberately long. It exists to make the renderer prove that dense editorial prose remains readable, balanced, and safely contained inside the newspaper grid.",
+      "Names, figures, scores, and circumstances in this fixture are fictional. The production edition must be supplied from the reconciled fact pack and will use the same renderer without a parallel layout.",
+      "The visual system borrows the authority of a local sports broadsheet: thick rules, narrow copy, emphatic headlines, restrained red accents, and a recurring folio that makes every page feel like one edition."
+    ],
+    "caption": "Validation artwork placeholder - no player likeness supplied."
+  },
+  "games": [
+    {
+      "gameId": "fixture-game-one",
+      "homeTeam": { "id": "home-one", "name": "The Extremely Long Home Team Name" },
+      "awayTeam": { "id": "away-one", "name": "Visitors With A Remarkably Long Name" },
+      "homeScore": 12,
+      "awayScore": 3,
+      "headline": "A Twelve Goal Avalanche Buries the Visitors",
+      "body": [
+        "The first test report uses enough prose to exercise the two-column game grid. It reports only fixture facts and makes no claim about a real league or a real player.",
+        "Long team names should wrap instead of colliding with the score, while the contributor list stays compact and legible beneath the report."
+      ],
+      "contributors": [
+        { "playerId": "p-one", "name": "Alexandria Montgomery-Smythe", "teamName": "The Extremely Long Home Team Name", "goals": 4, "assists": 3, "points": 7 },
+        { "playerId": "p-two", "name": "Jean-Luc O'Rourke-Test", "teamName": "Visitors With A Remarkably Long Name", "goals": 2, "assists": 0, "points": 2 },
+        { "playerId": "p-three", "name": "Casey Renderer", "teamName": "The Extremely Long Home Team Name", "goals": 1, "assists": 4, "points": 5 }
+      ]
+    },
+    {
+      "gameId": "fixture-game-two",
+      "homeTeam": { "id": "home-two", "name": "Ampersands & Angle Brackets" },
+      "awayTeam": { "id": "away-two", "name": "Quotation Mark Athletic Club" },
+      "homeScore": 1,
+      "awayScore": 2,
+      "headline": "One Goal Separates Patience From Panic",
+      "body": [
+        "The second fixture creates a tighter scoreline and tests punctuation. Text such as <script>alert('never')</script> must appear as harmless text rather than executable markup.",
+        "This report also confirms that a game can have a short contributor list without leaving the rest of the page looking unfinished."
+      ],
+      "contributors": [
+        { "playerId": "p-four", "name": "Taylor Safe-String", "teamName": "Quotation Mark Athletic Club", "goals": 1, "assists": 1, "points": 2 }
+      ]
+    }
+  ],
+  "stars": [
+    { "playerId": "star-one", "name": "Alexandria Montgomery-Smythe", "teamName": "The Extremely Long Home Team Name", "goals": 4, "assists": 3, "points": 7, "reason": "A fixture-only scoring line that tests the largest possible name in the first star panel." },
+    { "playerId": "star-two", "name": "Taylor Safe-String", "teamName": "Quotation Mark Athletic Club", "goals": 1, "assists": 1, "points": 2, "reason": "The validation reason is long enough to wrap naturally and remain within the editorial card." },
+    { "playerId": "star-three", "name": "Jordan Longname-Longername", "teamName": "Visitors With A Remarkably Long Name", "goals": 2, "assists": 0, "points": 2, "reason": "A third distinct portrait placeholder keeps the podium complete without using generated typography." }
+  ],
+  "numbers": [
+    { "label": "Goals scored", "value": "18", "detail": "Across two fixture games" },
+    { "label": "Largest margin", "value": "9", "detail": "Validation data only" },
+    { "label": "One goal games", "value": "1" },
+    { "label": "Long names protected", "value": "100%" },
+    { "label": "Invented fixtures", "value": "0" },
+    { "label": "Pages", "value": "5" },
+    { "label": "Completed games", "value": "2" },
+    { "label": "Stars selected", "value": "3" },
+    { "label": "Source warnings", "value": "1" },
+    { "label": "Script injections", "value": "0" }
+  ],
+  "standings": [
+    { "teamId": "t1", "name": "The Extremely Long Home Team Name", "gp": 20, "w": 15, "l": 3, "otl": 1, "t": 1, "pts": 32, "gf": 104, "ga": 61 },
+    { "teamId": "t2", "name": "Quotation Mark Athletic Club", "gp": 20, "w": 13, "l": 5, "otl": 2, "t": 0, "pts": 28, "gf": 91, "ga": 73 },
+    { "teamId": "t3", "name": "Visitors With A Remarkably Long Name", "gp": 20, "w": 10, "l": 8, "otl": 1, "t": 1, "pts": 22, "gf": 79, "ga": 80 },
+    { "teamId": "t4", "name": "Ampersands & Angle Brackets", "gp": 20, "w": 8, "l": 10, "otl": 1, "t": 1, "pts": 18, "gf": 70, "ga": 88 },
+    { "teamId": "t5", "name": "Cold Storage Hockey Collective", "gp": 20, "w": 5, "l": 14, "otl": 1, "t": 0, "pts": 11, "gf": 54, "ga": 102 },
+    { "teamId": "t6", "name": "The Perpetual Rebuilding Project", "gp": 20, "w": 3, "l": 16, "otl": 0, "t": 1, "pts": 7, "gf": 48, "ga": 117 }
+  ],
+  "standingsNote": "Fixture ordering is deterministic and supplied by the caller; the renderer does not recalculate league rules.",
+  "hot": [
+    { "headline": "The test harness", "body": "Five pages, one shared rendering path, and nowhere for an overflow bug to hide." },
+    { "headline": "Long-name protection", "body": "Team and player names wrap instead of punching through the newspaper rules." }
+  ],
+  "cold": [
+    { "headline": "Unescaped markup", "body": "It belongs in the cold tub. Every editorial string is machine escaped." },
+    { "headline": "Imaginary schedules", "body": "No fixture on the books means no fixture in the paper." }
+  ],
+  "upcoming": [],
+  "upcomingNote": "The validation edition intentionally contains no scheduled fixtures after the latest completed week.",
+  "aroundRink": [
+    { "headline": "Production art arrives separately", "body": "Player-photo-based illustrations can be supplied as image URLs without changing machine-set facts." },
+    { "headline": "The same HTML ships everywhere", "body": "Admin preview, public display, PDF, and PNG capture use one renderer." }
+  ],
+  "source": {
+    "gameIds": ["fixture-game-one", "fixture-game-two"],
+    "verifiedAt": "2026-09-27T12:00:00-04:00",
+    "factPackDigest": "fixture-not-a-production-digest",
+    "warnings": ["TEST FIXTURE ONLY - every name and figure on these pages is synthetic validation data."]
+  }
+}

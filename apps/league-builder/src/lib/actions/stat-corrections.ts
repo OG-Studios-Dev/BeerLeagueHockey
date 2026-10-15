@@ -30,6 +30,7 @@ export interface GameEventForCorrection {
   assist1_name: string | null;
   assist2_player_id: string | null;
   assist2_name: string | null;
+  goalie_in_net_id: string | null;
   penalty_type: string | null;
   penalty_minutes: number | null;
   is_power_play: boolean;
@@ -158,6 +159,7 @@ export async function getGameEventsForCorrection(gameId: string): Promise<Action
         player_id,
         assist1_player_id,
         assist2_player_id,
+        goalie_in_net_id,
         penalty_type,
         penalty_minutes,
         is_power_play,
@@ -245,6 +247,7 @@ export async function getGameEventsForCorrection(gameId: string): Promise<Action
       assist1_name: (e.assist1 as { full_name: string } | null)?.full_name || null,
       assist2_player_id: e.assist2_player_id,
       assist2_name: (e.assist2 as { full_name: string } | null)?.full_name || null,
+      goalie_in_net_id: e.goalie_in_net_id,
       penalty_type: e.penalty_type,
       penalty_minutes: e.penalty_minutes,
       is_power_play: e.is_power_play || false,
@@ -321,36 +324,76 @@ export async function deleteGameEvent(
       return { success: false, error: 'Unauthorized' };
     }
 
-    // Soft delete the event
-    const { error: updateError } = await serviceClient
-      .from('game_events')
-      .update({
-        deleted_at: new Date().toISOString(),
-        deleted_by: auth.userId,
-      })
-      .eq('id', eventId);
+    const { error: correctionError } = await (serviceClient as any).rpc(
+      'correct_game_event_atomic',
+      {
+        p_operation: 'delete',
+        p_event_id: eventId,
+        p_game_id: event.game_id,
+        p_changed_by: auth.userId,
+        p_event: null,
+        p_reason: reason || 'Admin stat correction',
+      },
+    );
 
-    if (updateError) {
+    if (correctionError) {
+      console.error('Atomic delete event error:', correctionError);
       return { success: false, error: 'Failed to delete event' };
     }
-
-    // Audit log
-    await serviceClient.from('game_audit_log').insert({
-      game_id: event.game_id,
-      league_id: game.league_id,
-      action: 'stat_correction_delete',
-      changed_by: auth.userId,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      previous_data: { event_id: eventId, event_type: event.event_type, player_id: event.player_id, period: event.period } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      new_data: { deleted: true } as any,
-      reason: reason || 'Admin stat correction',
-    });
 
     return { success: true, data: undefined };
   } catch (error) {
     console.error('deleteGameEvent error:', error);
     return { success: false, error: 'Failed to delete event' };
+  }
+}
+
+export async function updateGameEvent(
+  eventId: string,
+  updates: {
+    teamId?: string;
+    teamType?: 'home' | 'away';
+    playerId?: string | null;
+    assist1PlayerId?: string | null;
+    assist2PlayerId?: string | null;
+    goalieInNetId?: string | null;
+    period?: number | null;
+    penaltyMinutes?: number | null;
+    reason?: string;
+  },
+): Promise<ActionResult<void>> {
+  try {
+    if (!isValidUUID(eventId) || [updates.teamId, updates.playerId, updates.assist1PlayerId,
+      updates.assist2PlayerId, updates.goalieInNetId].some((id) => id != null && !isValidUUID(id))) {
+      return { success: false, error: 'Invalid ID format' };
+    }
+    const serviceClient = createServiceRoleClient();
+    const { data: event } = await serviceClient.from('game_events').select('id, game_id').eq('id', eventId).single();
+    if (!event) return { success: false, error: 'Event not found' };
+    const { data: game } = await serviceClient.from('games').select('league_id').eq('id', event.game_id).single();
+    if (!game) return { success: false, error: 'Game not found' };
+    const auth = await verifyLeagueAdmin(game.league_id);
+    if (!auth) return { success: false, error: 'Unauthorized' };
+    const payload: Record<string, unknown> = {};
+    if (updates.teamId !== undefined) payload.team_id = updates.teamId;
+    if (updates.teamType !== undefined) payload.team_type = updates.teamType;
+    if (updates.playerId !== undefined) payload.player_id = updates.playerId;
+    if (updates.assist1PlayerId !== undefined) payload.assist1_player_id = updates.assist1PlayerId;
+    if (updates.assist2PlayerId !== undefined) payload.assist2_player_id = updates.assist2PlayerId;
+    if (updates.goalieInNetId !== undefined) payload.goalie_in_net_id = updates.goalieInNetId;
+    if (updates.period !== undefined) payload.period = updates.period;
+    if (updates.penaltyMinutes !== undefined) payload.penalty_minutes = updates.penaltyMinutes;
+    const { error } = await (serviceClient as any).rpc('correct_game_event_atomic', {
+      p_operation: 'edit', p_event_id: eventId, p_game_id: event.game_id,
+      p_changed_by: auth.userId, p_event: payload,
+      p_reason: updates.reason || 'Admin stat correction',
+    });
+    if (error) return { success: false, error: 'Failed to update event' };
+    revalidatePath('/');
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error('updateGameEvent error:', error);
+    return { success: false, error: 'Failed to update event' };
   }
 }
 
@@ -368,6 +411,8 @@ export async function addGameEvent(data: {
   playerId: string | null;
   assist1PlayerId?: string;
   assist2PlayerId?: string;
+  goalieInNetId?: string;
+  shotByPlayerId?: string;
   penaltyType?: string;
   penaltyMinutes?: number;
   isPowerPlay?: boolean;
@@ -382,7 +427,13 @@ export async function addGameEvent(data: {
           assist1Id: data.assist1PlayerId,
           assist2Id: data.assist2PlayerId,
         })
-      : {
+      : data.eventType === 'save'
+        ? {
+            playerId: data.playerId,
+            assist1PlayerId: data.shotByPlayerId,
+            assist2PlayerId: undefined,
+          }
+        : {
           playerId: data.playerId,
           assist1PlayerId: undefined,
           assist2PlayerId: undefined,
@@ -393,6 +444,7 @@ export async function addGameEvent(data: {
     const hasValidAssistIds = [
       normalizedParticipants.assist1PlayerId,
       normalizedParticipants.assist2PlayerId,
+      data.goalieInNetId,
     ].every((playerId) => !playerId || isValidUUID(playerId));
 
     if (!isValidUUID(data.gameId) || !isValidUUID(data.teamId) || !hasValidPlayerId || !hasValidAssistIds) {
@@ -423,10 +475,7 @@ export async function addGameEvent(data: {
 
     const clientEventId = `admin-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 10)}`;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const gameEventsTable = serviceClient.from('game_events') as any;
-    const { data: newEvent, error: insertError } = await gameEventsTable
-      .insert({
+    const eventPayload = {
         client_event_id: clientEventId,
         event_version: 1,
         sync_status: 'synced',
@@ -441,6 +490,7 @@ export async function addGameEvent(data: {
         game_time_seconds: data.gameTimeSeconds ?? null,
         assist1_player_id: normalizedParticipants.assist1PlayerId || null,
         assist2_player_id: normalizedParticipants.assist2PlayerId || null,
+        goalie_in_net_id: data.eventType === 'goal' ? data.goalieInNetId || null : null,
         penalty_type: data.penaltyType || null,
         penalty_minutes: data.penaltyMinutes ?? null,
         is_power_play: data.isPowerPlay || false,
@@ -448,35 +498,26 @@ export async function addGameEvent(data: {
         is_empty_net: data.isEmptyNet || false,
         entered_by: auth.userId,
         entered_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
+      };
+    const { data: correction, error: insertError } = await (serviceClient as any).rpc(
+      'correct_game_event_atomic',
+      {
+        p_operation: 'add',
+        p_event_id: null,
+        p_game_id: data.gameId,
+        p_changed_by: auth.userId,
+        p_event: eventPayload,
+        p_reason: data.reason || 'Admin stat correction',
+      },
+    );
 
-    if (insertError || !newEvent) {
+    if (insertError || !correction?.event_id) {
       console.error('Insert event error:', insertError);
       return { success: false, error: 'Failed to add event' };
     }
 
-    // Audit log
-    await serviceClient.from('game_audit_log').insert({
-      game_id: data.gameId,
-      league_id: game.league_id,
-      action: 'stat_correction_add',
-      changed_by: auth.userId,
-      previous_data: null,
-      new_data: {
-        event_id: newEvent.id,
-        event_type: data.eventType,
-        player_id: normalizedParticipants.playerId,
-        assist1_player_id: normalizedParticipants.assist1PlayerId ?? null,
-        assist2_player_id: normalizedParticipants.assist2PlayerId ?? null,
-        period: data.period,
-        team_type: data.teamType,
-      } as any,
-      reason: data.reason || 'Admin stat correction',
-    });
-
-    return { success: true, data: { eventId: newEvent.id } };
+    revalidatePath('/');
+    return { success: true, data: { eventId: correction.event_id } };
   } catch (error) {
     console.error('addGameEvent error:', error);
     return { success: false, error: 'Failed to add event' };
@@ -514,105 +555,50 @@ export async function recalculateGameStats(gameId: string): Promise<ActionResult
       return { success: false, error: 'Unauthorized' };
     }
 
-    // Preferred RPC recalculation path
-    let usedFallback = false;
-    let fallbackAggregateRefreshFailed = false;
+    // The database function owns score/stat/standings/audit changes in one
+    // transaction. There is deliberately no partial-write fallback.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: rpcError } = await (serviceClient as any).rpc('recalculate_game_stats_from_events', {
-      p_game_id: gameId,
-    });
+    const { data: recalculated, error: rpcError } = await (serviceClient as any).rpc(
+      'recalculate_game_stats_atomic',
+      { p_game_id: gameId, p_changed_by: auth.userId },
+    );
 
     if (rpcError) {
-      console.error('Recalculate game stats RPC error:', rpcError);
-      usedFallback = true;
+      const primaryError = {
+        code: typeof rpcError.code === 'string' ? rpcError.code : 'database_error',
+        message: typeof rpcError.message === 'string' ? rpcError.message : 'Atomic recalculation failed',
+      };
+      console.error('Atomic game stats recalculation failed:', primaryError);
 
-      // Fallback: recompute only the game score directly from active goal events.
-      // This prevents hard-failure when RPCs drift across environments.
-      const [{ count: homeGoals }, { count: awayGoals }] = await Promise.all([
-        serviceClient
-          .from('game_events')
-          .select('*', { count: 'exact', head: true })
-          .eq('game_id', gameId)
-          .eq('event_type', 'goal')
-          .eq('team_type', 'home')
-          .is('deleted_at', null),
-        serviceClient
-          .from('game_events')
-          .select('*', { count: 'exact', head: true })
-          .eq('game_id', gameId)
-          .eq('event_type', 'goal')
-          .eq('team_type', 'away')
-          .is('deleted_at', null),
-      ]);
-
-      const homeScore = homeGoals ?? 0;
-      const awayScore = awayGoals ?? 0;
-
-      const { error: scoreUpdateError } = await serviceClient
-        .from('games')
-        .update({
-          home_score: homeScore,
-          away_score: awayScore,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', gameId);
-
-      if (scoreUpdateError) {
-        return { success: false, error: 'Failed to recalculate stats (fallback update failed)' };
-      }
-
-      // Refresh season-wide aggregates after the fallback score update.
-      if (game.season_id) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: seasonRecalcError } = await (serviceClient as any).rpc('recalculate_all_season_stats', {
-            p_season_id: game.season_id,
-          });
-
-          if (seasonRecalcError) {
-            console.error('Season stats recalc RPC failed:', seasonRecalcError);
-            fallbackAggregateRefreshFailed = true;
-          }
-        } catch (seasonRecalcError) {
-          console.error('Season stats recalc RPC unavailable or failed:', seasonRecalcError);
-          fallbackAggregateRefreshFailed = true;
+      // Failure auditing is best-effort and intentionally excludes RPC details,
+      // hints, request payloads, and credentials. It cannot turn a failed
+      // recalculation into success or replace the primary failure.
+      try {
+        const { error: auditError } = await serviceClient.from('game_audit_log').insert({
+          game_id: gameId,
+          league_id: game.league_id,
+          action: 'stat_correction_recalculate_failed',
+          changed_by: auth.userId,
+          previous_data: null,
+          new_data: { primary_error: primaryError } as any,
+          reason: 'Atomic stats recalculation failed',
+        });
+        if (auditError) {
+          console.error('Failed to persist recalculation failure audit:', auditError);
         }
+      } catch (auditError) {
+        console.error('Failed to persist recalculation failure audit:', auditError);
       }
+      return { success: false, error: 'Failed to recalculate stats' };
     }
-
-    // Get updated scores
-    const { data: updatedGame } = await serviceClient
-      .from('games')
-      .select('home_score, away_score')
-      .eq('id', gameId)
-      .single();
-
-    // Audit log
-    await serviceClient.from('game_audit_log').insert({
-      game_id: gameId,
-      league_id: game.league_id,
-      action: 'stat_correction_recalculate',
-      changed_by: auth.userId,
-      previous_data: null,
-      new_data: {
-        home_score: updatedGame?.home_score,
-        away_score: updatedGame?.away_score,
-        used_fallback: usedFallback,
-      } as any,
-      reason: 'Stats recalculated after correction',
-    });
 
     revalidatePath('/');
-
-    if (fallbackAggregateRefreshFailed) {
-      return { success: false, error: 'Game score updated, but failed to refresh season stats' };
-    }
 
     return {
       success: true,
       data: {
-        homeScore: updatedGame?.home_score ?? 0,
-        awayScore: updatedGame?.away_score ?? 0,
+        homeScore: Number(recalculated?.home_score ?? 0),
+        awayScore: Number(recalculated?.away_score ?? 0),
       },
     };
   } catch (error) {

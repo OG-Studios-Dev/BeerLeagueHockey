@@ -1,6 +1,7 @@
 import type { TeamType } from './types';
 
 const HIDDEN_DEFAULT_NAV_PAGE_KEYS = new Set(['venues', 'about', 'contact']);
+const LEAGUES_WITHOUT_PUBLIC_SPONSORS = new Set(['hockey-life']);
 const HIDDEN_PUBLIC_TEAM_NAMES = new Set([
   'free agent',
   'free agents',
@@ -10,6 +11,10 @@ const HIDDEN_PUBLIC_TEAM_NAMES = new Set([
 
 function normalizeLabel(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+}
+
+export function shouldShowPublicSponsors(leagueSlug: string) {
+  return !LEAGUES_WITHOUT_PUBLIC_SPONSORS.has(leagueSlug);
 }
 
 export function shouldShowDefaultPublicNavPage(

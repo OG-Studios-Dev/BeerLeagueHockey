@@ -21,9 +21,10 @@ import { GoalEntry } from './GoalEntry';
 import { PenaltyEntry } from './PenaltyEntry';
 import { ShotEntry } from './ShotEntry';
 import { ScoreSheetUpload } from './ScoreSheetUpload';
-import { GameSummaryModal } from './GameSummaryModal';
-import { SyncStatusBanner } from './SyncStatusBanner';
+import { GameSummaryModal, getAttendanceReviewWarnings } from './GameSummaryModal';
+import { SyncStatusBanner, useOnlineStatus } from './SyncStatusBanner';
 import { EventEditModal } from './EventEditModal';
+import { OFFLINE_ACTION_ERROR } from './ui-reliability';
 
 function isGoaliePosition(position: string | null | undefined): boolean {
   if (!position) return false;
@@ -89,13 +90,25 @@ export function ScoringInterface({
   const [shotMode, setShotMode] = useState<'simple' | 'advanced'>('simple');
   const [eventsCollapsed, setEventsCollapsed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const isOnline = useOnlineStatus();
+  const attendanceWarnings = useMemo(
+    () => getAttendanceReviewWarnings(checkins, events),
+    [checkins, events],
+  );
+
+  const requireOnline = useCallback(() => {
+    if (isOnline) return true;
+    setActionError(OFFLINE_ACTION_ERROR);
+    return false;
+  }, [isOnline]);
 
   // Lift game timer into ScoringInterface for live time values
   const handleTimerSync = useCallback(
     (state: TimerSyncState) => {
+      if (!isOnline) return;
       syncTimerState(game.id, state).catch(console.error);
     },
-    [game.id]
+    [game.id, isOnline]
   );
 
   const tracksTimePeriods = game.scorekeeperTracksTimePeriods;
@@ -157,39 +170,55 @@ export function ScoringInterface({
   }, [refreshData]);
 
   async function handleUndo(eventId: string) {
-    const result = await undoEvent(eventId);
-    if (result.success) {
-      // Optimistic update for immediate feedback
-      setEvents(prev => prev.map(e =>
-        e.id === eventId ? { ...e, deletedAt: new Date().toISOString() } : e
-      ));
-      // Refetch to get accurate scores
-      refreshData();
+    if (!requireOnline()) return;
+    try {
+      const result = await undoEvent(eventId);
+      if (result.success) {
+        setActionError(null);
+        setEvents(prev => prev.map(e =>
+          e.id === eventId ? { ...e, deletedAt: new Date().toISOString() } : e
+        ));
+        refreshData();
+      } else {
+        setActionError(result.error || 'Failed to undo event');
+      }
+    } catch {
+      setActionError('Failed to undo event. Your event list was not changed.');
     }
   }
 
   async function handleGoaliePull(teamType: 'home' | 'away') {
-    const result = await toggleGoaliePull(game.id, teamType);
-    if (result.success) {
-      setActionError(null);
-      setGame(prev => ({
-        ...prev,
-        homeGoaliePulled: teamType === 'home' ? (result.pulled ?? false) : prev.homeGoaliePulled,
-        awayGoaliePulled: teamType === 'away' ? (result.pulled ?? false) : prev.awayGoaliePulled,
-      }));
-      return;
+    if (!requireOnline()) return;
+    try {
+      const result = await toggleGoaliePull(game.id, teamType);
+      if (result.success) {
+        setActionError(null);
+        setGame(prev => ({
+          ...prev,
+          homeGoaliePulled: teamType === 'home' ? (result.pulled ?? false) : prev.homeGoaliePulled,
+          awayGoaliePulled: teamType === 'away' ? (result.pulled ?? false) : prev.awayGoaliePulled,
+        }));
+        return;
+      }
+      setActionError(result.error || 'Failed to update goalie state');
+    } catch {
+      setActionError('Failed to update goalie state');
     }
-    setActionError(result.error || 'Failed to update goalie state');
   }
 
   async function handleStartGame() {
-    const result = await updateGameStatus(game.id, 'in_progress');
-    if (result.success) {
-      setActionError(null);
-      setGame(prev => ({ ...prev, status: 'in_progress' }));
-      return;
+    if (!requireOnline()) return;
+    try {
+      const result = await updateGameStatus(game.id, 'in_progress');
+      if (result.success) {
+        setActionError(null);
+        setGame(prev => ({ ...prev, status: 'in_progress' }));
+        return;
+      }
+      setActionError(result.error || 'Failed to start game');
+    } catch {
+      setActionError('Failed to start game');
     }
-    setActionError(result.error || 'Failed to start game');
   }
 
   // Determine auto-flags for current goal entry (live timer values)
@@ -209,6 +238,7 @@ export function ScoringInterface({
     defendingTeamType: 'home' | 'away',
     goalieId: string
   ) => {
+    if (!requireOnline()) return;
     try {
       const { addShotEvent } = await import('@/lib/actions/scorekeeper');
       const result = await addShotEvent({
@@ -229,7 +259,7 @@ export function ScoringInterface({
       console.error('Quick save failed:', err);
       setActionError('Failed to record save');
     }
-  }, [game.id, timer.currentPeriod, timer.timeRemaining, refreshData]);
+  }, [game.id, tracksTimePeriods, timer.currentPeriod, timer.timeRemaining, refreshData, requireOnline]);
 
   const homeTeam = game.homeTeam;
   const awayTeam = game.awayTeam;
@@ -251,7 +281,7 @@ export function ScoringInterface({
     <div className="flex flex-col min-h-screen">
       {/* Sync Status */}
       <div className="px-4 pt-2">
-        <SyncStatusBanner />
+        <SyncStatusBanner syncState={{ isOnline, isSyncing: false, pendingCount: 0, lastError: null, lastSyncAt: null }} />
         {actionError && (
           <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
             {actionError}
@@ -328,10 +358,10 @@ export function ScoringInterface({
             goaliePulled={game.homeGoaliePulled}
             shotMode={shotMode}
             saves={events.filter(e => e.eventType === 'save' && e.teamType === 'home' && !e.deletedAt).length}
-            disabled={game.status !== 'in_progress'}
+            disabled={game.status !== 'in_progress' || !isOnline}
             onGoal={() => { setSelectedTeam('home'); setActiveEntry({ type: 'goal', teamType: 'home' }); }}
             onPenalty={() => { setSelectedTeam('home'); setActiveEntry({ type: 'penalty', teamType: 'home' }); }}
-            onShot={shotMode === 'advanced' ? () => { setSelectedTeam('home'); setActiveEntry({ type: 'shot', teamType: 'home' }); } : undefined}
+            onShot={() => { setSelectedTeam('home'); setActiveEntry({ type: 'shot', teamType: 'home' }); }}
             onQuickSave={(goalieId) => handleQuickSave(homeTeam.id, 'home', goalieId)}
             onGoaliePull={() => handleGoaliePull('home')}
           />
@@ -342,6 +372,7 @@ export function ScoringInterface({
             {/* Shot Mode Toggle */}
             <button
               onClick={() => setShotMode(prev => prev === 'simple' ? 'advanced' : 'simple')}
+              disabled={!isOnline}
               className="text-[9px] font-medium px-1.5 py-0.5 rounded transition-colors text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] border border-[var(--color-border)]"
               title={shotMode === 'simple' ? 'Simple: Tap goalie for saves' : 'Advanced: Select shooter for shots'}
             >
@@ -357,10 +388,10 @@ export function ScoringInterface({
             goaliePulled={game.awayGoaliePulled}
             shotMode={shotMode}
             saves={events.filter(e => e.eventType === 'save' && e.teamType === 'away' && !e.deletedAt).length}
-            disabled={game.status !== 'in_progress'}
+            disabled={game.status !== 'in_progress' || !isOnline}
             onGoal={() => { setSelectedTeam('away'); setActiveEntry({ type: 'goal', teamType: 'away' }); }}
             onPenalty={() => { setSelectedTeam('away'); setActiveEntry({ type: 'penalty', teamType: 'away' }); }}
-            onShot={shotMode === 'advanced' ? () => { setSelectedTeam('away'); setActiveEntry({ type: 'shot', teamType: 'away' }); } : undefined}
+            onShot={() => { setSelectedTeam('away'); setActiveEntry({ type: 'shot', teamType: 'away' }); }}
             onQuickSave={(goalieId) => handleQuickSave(awayTeam.id, 'away', goalieId)}
             onGoaliePull={() => handleGoaliePull('away')}
           />
@@ -405,6 +436,7 @@ export function ScoringInterface({
           <div className="text-center">
             <button
               onClick={handleStartGame}
+              disabled={!isOnline}
               className="px-6 py-2.5 rounded-xl bg-[var(--league-primary,#d4af37)] text-[var(--color-accent-text,#000)] font-semibold transition-all hover:opacity-90 active:scale-95"
             >
               Start Game
@@ -414,6 +446,7 @@ export function ScoringInterface({
           <GameTimer
             timer={timer}
             periodCount={game.periodCount}
+            disabled={!isOnline}
           />
         )}
       </div>
@@ -496,7 +529,8 @@ export function ScoringInterface({
                     homeTeamColor={homeTeam.primaryColor}
                     awayTeamColor={awayTeam.primaryColor}
                     onUndo={() => handleUndo(event.id)}
-                    onEdit={() => setEditingEvent(event)}
+                    onEdit={isOnline ? () => setEditingEvent(event) : undefined}
+                    actionsDisabled={!isOnline}
                     showTimePeriods={tracksTimePeriods}
                   />
                 ))}
@@ -520,6 +554,9 @@ export function ScoringInterface({
           isPowerPlay={isPP}
           isShortHanded={isSH}
           isEmptyNet={isEN}
+          opposingTeamName={opposingTeam.name}
+          opposingRoster={opposingTeam.roster}
+          isOnline={isOnline}
           onComplete={handleEntryComplete}
           onCancel={() => setActiveEntry(null)}
         />
@@ -536,6 +573,7 @@ export function ScoringInterface({
           period={tracksTimePeriods ? timer.currentPeriod : null}
           gameTimeSeconds={tracksTimePeriods ? timer.timeRemaining : null}
           penaltyRules={game.penaltyRules}
+          isOnline={isOnline}
           onComplete={handleEntryComplete}
           onCancel={() => setActiveEntry(null)}
         />
@@ -552,6 +590,7 @@ export function ScoringInterface({
           shootingTeamColor={activeTeam!.primaryColor}
           period={tracksTimePeriods ? timer.currentPeriod : null}
           gameTimeSeconds={tracksTimePeriods ? timer.timeRemaining : null}
+          isOnline={isOnline}
           onComplete={handleEntryComplete}
           onCancel={() => setActiveEntry(null)}
         />
@@ -566,6 +605,7 @@ export function ScoringInterface({
           periodCount={game.periodCount}
           showTimePeriods={tracksTimePeriods}
           penaltyRules={game.penaltyRules}
+          isOnline={isOnline}
           onSaved={() => {
             setEditingEvent(null);
             refreshData();
@@ -579,6 +619,7 @@ export function ScoringInterface({
         <ScoreSheetUpload
           gameId={game.id}
           game={game}
+          isOnline={isOnline}
           onComplete={() => {
             setShowScoreSheetUpload(false);
             refreshData();
@@ -594,6 +635,8 @@ export function ScoringInterface({
           game={game}
           leagueSlug={leagueSlug}
           session={session}
+          isOnline={isOnline}
+          attendanceWarnings={attendanceWarnings}
           onClose={() => setShowGameSummary(false)}
         />
       )}
@@ -624,12 +667,23 @@ export function ScoringInterface({
               </button>
               <button
                 onClick={async () => {
+                  if (!requireOnline()) return;
                   setNoteSaving(true);
-                  await saveScorekeeperNotes(game.id, notes);
-                  setNoteSaving(false);
-                  setShowNotes(false);
+                  try {
+                    const result = await saveScorekeeperNotes(game.id, notes);
+                    if (!result.success) {
+                      setActionError(result.error || 'Failed to save notes');
+                      return;
+                    }
+                    setActionError(null);
+                    setShowNotes(false);
+                  } catch {
+                    setActionError('Failed to save notes. Your text is still here.');
+                  } finally {
+                    setNoteSaving(false);
+                  }
                 }}
-                disabled={noteSaving}
+                disabled={noteSaving || !isOnline}
                 className="flex-1 py-2.5 rounded-xl bg-[var(--league-primary,#d4af37)] text-[var(--color-accent-text,#000)] text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {noteSaving ? 'Saving...' : 'Save Notes'}
@@ -654,6 +708,7 @@ function EventRow({
   awayTeamColor,
   onUndo,
   onEdit,
+  actionsDisabled = false,
   showTimePeriods = true,
 }: {
   event: GameEventData;
@@ -663,6 +718,7 @@ function EventRow({
   awayTeamColor?: string | null;
   onUndo: () => void;
   onEdit?: () => void;
+  actionsDisabled?: boolean;
   showTimePeriods?: boolean;
 }) {
   const canEdit = onEdit && (event.eventType === 'goal' || event.eventType === 'penalty');
@@ -793,6 +849,7 @@ function EventRow({
       {/* Undo */}
       <button
         onClick={onUndo}
+        disabled={actionsDisabled}
         className="flex-shrink-0 p-2 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[var(--color-text-secondary)] hover:text-red-400 transition-all"
         aria-label="Undo event"
       >
@@ -839,6 +896,19 @@ function SaveButton({
         className="w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-30 bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20"
       >
         + Shot ({saves})
+      </button>
+    );
+  }
+
+  // With multiple rostered goalies, require an explicit goalie pick for this save.
+  if (goalies.length > 1 && onAdvancedShot) {
+    return (
+      <button
+        onClick={onAdvancedShot}
+        disabled={disabled || pulled}
+        className="w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-30 bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20"
+      >
+        + Save · Select Goalie ({saves})
       </button>
     );
   }
@@ -1024,6 +1094,7 @@ function TeamPanel({
       {/* Goalie Pull */}
       <button
         onClick={onGoaliePull}
+        disabled={disabled}
         className={`text-[10px] font-medium px-2 py-1 rounded transition-colors ${
           goaliePulled
             ? 'bg-purple-500/20 text-purple-400'

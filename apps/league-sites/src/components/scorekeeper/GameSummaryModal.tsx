@@ -1,20 +1,261 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   getGameSummary,
   submitGameForVerification,
   saveScorekeeperNotes,
   type GameData,
   type CaptainVerificationMode,
+  type ScorekeeperCaptureStatus,
+  type ScorekeeperGoalieAppearance,
   type ScorekeeperSession,
 } from '@/lib/actions/scorekeeper';
+import { OFFLINE_ACTION_ERROR } from './ui-reliability';
+
+export type PenaltyCaptureChoice =
+  | 'none_confirmed'
+  | 'all_recorded'
+  | 'not_fully_recorded';
+export type GoalieCaptureChoice = 'all_recorded' | 'not_tracked_or_partial';
+
+const CAPTURE_REVIEW_REQUIRED_ERROR =
+  'Choose a penalty review and a goalie review before submitting.';
+const GOALIE_APPEARANCE_REQUIRED_ERROR =
+  'Select every goalie who appeared for both teams before marking goalie capture complete.';
+
+interface CaptureStatusReviewProps {
+  penaltyChoice: PenaltyCaptureChoice | null;
+  goalieChoice: GoalieCaptureChoice | null;
+  onPenaltyChoiceChange: (choice: PenaltyCaptureChoice) => void;
+  onGoalieChoiceChange: (choice: GoalieCaptureChoice) => void;
+  goalieOptions?: Array<{ playerId: string; label: string; teamType: 'home' | 'away'; checked: boolean }>;
+  onGoalieAppearanceChange?: (playerId: string, checked: boolean) => void;
+}
+
+export function CaptureStatusReview({
+  penaltyChoice,
+  goalieChoice,
+  onPenaltyChoiceChange,
+  onGoalieChoiceChange,
+  goalieOptions = [],
+  onGoalieAppearanceChange,
+}: CaptureStatusReviewProps) {
+  const optionClass = 'flex min-h-11 items-start gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200';
+
+  return (
+    <section className="rounded-xl border border-cyan-500/20 bg-neutral-800 p-4" aria-labelledby="capture-review-heading">
+      <h3 id="capture-review-heading" className="text-sm font-semibold text-white">
+        Required stat capture review
+      </h3>
+      <p className="mt-1 text-xs text-neutral-400">
+        Choose what was actually tracked. Zero recorded events does not mean tracking was complete.
+      </p>
+
+      <fieldset className="mt-4 space-y-2">
+        <legend className="text-sm font-medium text-neutral-300">Penalty review</legend>
+        <label className={optionClass}>
+          <input
+            type="radio"
+            name="penalty-capture-review"
+            value="none_confirmed"
+            required
+            checked={penaltyChoice === 'none_confirmed'}
+            onChange={() => onPenaltyChoiceChange('none_confirmed')}
+            className="mt-0.5 h-4 w-4 accent-cyan-500"
+          />
+          <span>No penalties confirmed</span>
+        </label>
+        <label className={optionClass}>
+          <input
+            type="radio"
+            name="penalty-capture-review"
+            value="all_recorded"
+            required
+            checked={penaltyChoice === 'all_recorded'}
+            onChange={() => onPenaltyChoiceChange('all_recorded')}
+            className="mt-0.5 h-4 w-4 accent-cyan-500"
+          />
+          <span>All penalties recorded</span>
+        </label>
+        <label className={optionClass}>
+          <input
+            type="radio"
+            name="penalty-capture-review"
+            value="not_fully_recorded"
+            required
+            checked={penaltyChoice === 'not_fully_recorded'}
+            onChange={() => onPenaltyChoiceChange('not_fully_recorded')}
+            className="mt-0.5 h-4 w-4 accent-cyan-500"
+          />
+          <span>Not fully recorded</span>
+        </label>
+      </fieldset>
+
+      <fieldset className="mt-4 space-y-2">
+        <legend className="text-sm font-medium text-neutral-300">Goalie review</legend>
+        <label className={optionClass}>
+          <input
+            type="radio"
+            name="goalie-capture-review"
+            value="all_recorded"
+            required
+            checked={goalieChoice === 'all_recorded'}
+            onChange={() => onGoalieChoiceChange('all_recorded')}
+            className="mt-0.5 h-4 w-4 accent-cyan-500"
+          />
+          <span>All saves/shots and goalie assignments recorded</span>
+        </label>
+        <label className={optionClass}>
+          <input
+            type="radio"
+            name="goalie-capture-review"
+            value="not_tracked_or_partial"
+            required
+            checked={goalieChoice === 'not_tracked_or_partial'}
+            onChange={() => onGoalieChoiceChange('not_tracked_or_partial')}
+            className="mt-0.5 h-4 w-4 accent-cyan-500"
+          />
+          <span>Not tracked/partial</span>
+        </label>
+      </fieldset>
+      {goalieChoice === 'all_recorded' && goalieOptions.length > 0 && (
+        <fieldset className="mt-3 space-y-2">
+          <legend className="text-sm font-medium text-neutral-300">Goalies who appeared</legend>
+          {goalieOptions.map((goalie) => (
+            <label key={`${goalie.teamType}-${goalie.playerId}`} className={optionClass}>
+              <input
+                type="checkbox"
+                checked={goalie.checked}
+                onChange={(event) => onGoalieAppearanceChange?.(goalie.playerId, event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-cyan-500"
+              />
+              <span>{goalie.label} ({goalie.teamType})</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+    </section>
+  );
+}
+
+function toCaptureStatus(
+  penaltyChoice: PenaltyCaptureChoice,
+  goalieChoice: GoalieCaptureChoice,
+): { penalties: ScorekeeperCaptureStatus; goalies: ScorekeeperCaptureStatus } {
+  return {
+    penalties: penaltyChoice === 'not_fully_recorded' ? 'not_recorded' : 'complete',
+    goalies: goalieChoice === 'not_tracked_or_partial' ? 'not_recorded' : 'complete',
+  };
+}
+
+interface GameSummaryReviewInput {
+  gameId: string;
+  notes: string;
+  originalNotes: string;
+  penaltyChoice: PenaltyCaptureChoice | null;
+  goalieChoice: GoalieCaptureChoice | null;
+  goalieAppearances?: ScorekeeperGoalieAppearance[];
+}
+
+export async function submitGameSummaryReview(
+  input: GameSummaryReviewInput,
+  dependencies: {
+    saveNotes: typeof saveScorekeeperNotes;
+    submit: typeof submitGameForVerification;
+  } = {
+    saveNotes: saveScorekeeperNotes,
+    submit: submitGameForVerification,
+  },
+) {
+  if (!input.penaltyChoice || !input.goalieChoice) {
+    return { success: false, error: CAPTURE_REVIEW_REQUIRED_ERROR };
+  }
+  if (input.goalieChoice === 'all_recorded') {
+    const appearances = input.goalieAppearances ?? [];
+    if (!appearances.some((appearance) => appearance.teamType === 'home')
+      || !appearances.some((appearance) => appearance.teamType === 'away')) {
+      return { success: false, error: GOALIE_APPEARANCE_REQUIRED_ERROR };
+    }
+  }
+
+  const trimmedNotes = input.notes.trim();
+  if (trimmedNotes !== input.originalNotes.trim()) {
+    const notesResult = await dependencies.saveNotes(input.gameId, trimmedNotes);
+    if (!notesResult.success) {
+      return {
+        success: false,
+        error: notesResult.error || 'Failed to save notes. Submission was not started.',
+      };
+    }
+  }
+
+  return dependencies.submit(
+    input.gameId,
+    {
+      ...toCaptureStatus(input.penaltyChoice, input.goalieChoice),
+      goalieAppearances: input.goalieChoice === 'all_recorded'
+        ? input.goalieAppearances ?? []
+        : [],
+    },
+  );
+}
+
+interface AttendanceReviewPlayer {
+  id: string;
+  fullName: string;
+  checkinStatus: 'confirmed' | 'tentative' | 'out' | null;
+}
+
+interface AttendanceReviewEvent {
+  playerId: string | null;
+  assist1PlayerId: string | null;
+  assist2PlayerId: string | null;
+  deletedAt: string | null;
+}
+
+export function getAttendanceReviewWarnings(
+  checkins: { homeTeam: AttendanceReviewPlayer[]; awayTeam: AttendanceReviewPlayer[] } | undefined,
+  events: AttendanceReviewEvent[],
+): string[] {
+  if (!checkins) return [];
+
+  const players = [...checkins.homeTeam, ...checkins.awayTeam];
+  const incompleteCount = players.filter(
+    (player) => player.checkinStatus === null || player.checkinStatus === 'tentative',
+  ).length;
+  const activeParticipantIds = new Set(
+    events
+      .filter((event) => !event.deletedAt)
+      .flatMap((event) => [event.playerId, event.assist1PlayerId, event.assist2PlayerId])
+      .filter((playerId): playerId is string => Boolean(playerId)),
+  );
+  const conflictingNames = players
+    .filter((player) => player.checkinStatus === 'out' && activeParticipantIds.has(player.id))
+    .map((player) => player.fullName);
+  const warnings: string[] = [];
+
+  if (incompleteCount > 0) {
+    warnings.push(
+      `Attendance review incomplete: ${incompleteCount} ${incompleteCount === 1 ? 'player is' : 'players are'} still tentative or not marked.`,
+    );
+  }
+  if (conflictingNames.length > 0) {
+    warnings.push(
+      `Attendance conflict: ${conflictingNames.join(', ')} ${conflictingNames.length === 1 ? 'is' : 'are'} marked OUT but appears in recorded events.`,
+    );
+  }
+
+  return warnings;
+}
 
 interface GameSummaryModalProps {
   gameId: string;
   game: GameData;
   leagueSlug: string;
   session: ScorekeeperSession;
+  isOnline: boolean;
+  attendanceWarnings?: string[];
   onClose: () => void;
 }
 
@@ -27,6 +268,8 @@ export function GameSummaryModal({
   game,
   leagueSlug,
   session,
+  isOnline,
+  attendanceWarnings = [],
   onClose,
 }: GameSummaryModalProps) {
   const isCaptainSelfScoring = session.sessionOrigin === 'captain_self_score';
@@ -43,6 +286,19 @@ export function GameSummaryModal({
   const [awayVerifiedAt, setAwayVerifiedAt] = useState<string | null>(game.awayVerifiedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [notes, setNotes] = useState(game.scorekeeperNotes ?? '');
+  const [penaltyChoice, setPenaltyChoice] = useState<PenaltyCaptureChoice | null>(null);
+  const [goalieChoice, setGoalieChoice] = useState<GoalieCaptureChoice | null>(null);
+  const [goalieAppearanceIds, setGoalieAppearanceIds] = useState<Set<string>>(() => new Set());
+  const goalieOptions = [
+    ...game.homeTeam.roster.filter((player) => player.position === 'Goalie').map((player) => ({
+      playerId: player.id, label: player.fullName, teamType: 'home' as const,
+      teamId: game.homeTeam.id, checked: goalieAppearanceIds.has(player.id),
+    })),
+    ...game.awayTeam.roster.filter((player) => player.position === 'Goalie').map((player) => ({
+      playerId: player.id, label: player.fullName, teamType: 'away' as const,
+      teamId: game.awayTeam.id, checked: goalieAppearanceIds.has(player.id),
+    })),
+  ];
   const [summary, setSummary] = useState<{
     homeGoals: number;
     awayGoals: number;
@@ -95,45 +351,59 @@ export function GameSummaryModal({
 
   // TODO(Pixel): derive homeVerifiedAt/awayVerifiedAt from props instead of syncing via effect
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHomeVerifiedAt(game.homeVerifiedAt);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAwayVerifiedAt(game.awayVerifiedAt);
   }, [game.awayVerifiedAt, game.homeVerifiedAt]);
 
   const handleSubmitForVerification = async () => {
+    if (!isOnline) {
+      setSubmitError(OFFLINE_ACTION_ERROR);
+      return;
+    }
+    if (!penaltyChoice || !goalieChoice) {
+      setSubmitError(CAPTURE_REVIEW_REQUIRED_ERROR);
+      return;
+    }
     setIsSubmitting(true);
     setSubmitError(null);
 
-    // Persist notes first so they're on the game record when the recap generates.
-    if (notes.trim() !== (game.scorekeeperNotes ?? '').trim()) {
-      await saveScorekeeperNotes(gameId, notes.trim());
-    }
-
-    const result = await submitGameForVerification(gameId);
-
-    if (result.success && result.verificationMode) {
-      setVerificationLinks({
-        verificationMode: result.verificationMode,
-        autoVerifiedTeamType: result.autoVerifiedTeamType,
-        homeToken: result.homeToken,
-        awayToken: result.awayToken,
+    try {
+      const result = await submitGameSummaryReview({
+        gameId,
+        notes,
+        originalNotes: game.scorekeeperNotes ?? '',
+        penaltyChoice,
+        goalieChoice,
+        goalieAppearances: goalieOptions
+          .filter((goalie) => goalie.checked)
+          .map(({ playerId, teamId, teamType }) => ({ playerId, teamId, teamType })),
       });
 
-      if (result.autoVerifiedTeamType === 'home') {
-        setHomeVerifiedAt(new Date().toISOString());
-      }
+      if (result.success && result.verificationMode) {
+        setVerificationLinks({
+          verificationMode: result.verificationMode,
+          autoVerifiedTeamType: result.autoVerifiedTeamType,
+          homeToken: result.homeToken,
+          awayToken: result.awayToken,
+        });
 
-      if (result.autoVerifiedTeamType === 'away') {
-        setAwayVerifiedAt(new Date().toISOString());
-      }
+        if (result.autoVerifiedTeamType === 'home') {
+          setHomeVerifiedAt(new Date().toISOString());
+        }
 
-      setSubmitted(true);
-    } else {
-      setSubmitError(result.error || 'Failed to submit for verification');
+        if (result.autoVerifiedTeamType === 'away') {
+          setAwayVerifiedAt(new Date().toISOString());
+        }
+
+        setSubmitted(true);
+      } else {
+        setSubmitError(result.error || 'Failed to submit for verification');
+      }
+    } catch {
+      setSubmitError('Failed to submit. Your notes and review state are still here.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   };
 
   const getBaseUrl = () => {
@@ -209,8 +479,15 @@ export function GameSummaryModal({
         {/* Content */}
         <div className="flex-1 overflow-auto p-4 space-y-6">
           {submitError && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {submitError}
+            </div>
+          )}
+
+          {attendanceWarnings.length > 0 && (
+            <div role="status" className="space-y-1 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              {attendanceWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+              <p className="text-xs text-amber-100/70">Submission does not change attendance.</p>
             </div>
           )}
 
@@ -545,6 +822,30 @@ export function GameSummaryModal({
               </div>
             </div>
           </div>
+
+          {!submitted && !game.statsLockedAt && (
+            <CaptureStatusReview
+              penaltyChoice={penaltyChoice}
+              goalieChoice={goalieChoice}
+              onPenaltyChoiceChange={(choice) => {
+                setPenaltyChoice(choice);
+                setSubmitError((error) => error === CAPTURE_REVIEW_REQUIRED_ERROR ? null : error);
+              }}
+              onGoalieChoiceChange={(choice) => {
+                setGoalieChoice(choice);
+                setSubmitError((error) => error === CAPTURE_REVIEW_REQUIRED_ERROR ? null : error);
+              }}
+              goalieOptions={goalieOptions}
+              onGoalieAppearanceChange={(playerId, checked) => {
+                setGoalieAppearanceIds((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(playerId); else next.delete(playerId);
+                  return next;
+                });
+                setSubmitError((error) => error === GOALIE_APPEARANCE_REQUIRED_ERROR ? null : error);
+              }}
+            />
+          )}
         </div>
 
         {/* Game notes — provide context for a later admin-generated recap */}
@@ -582,7 +883,7 @@ export function GameSummaryModal({
           {!submitted && !game.statsLockedAt && (
             <button
               onClick={handleSubmitForVerification}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isOnline}
               className="flex-1 py-4 px-6 bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-semibold rounded-xl
                 hover:shadow-lg hover:shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed
                 transition-all touch-manipulation min-h-[56px]"
