@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { estimateLeagueLeaderLineWidth } from '../../src/lib/leaderPresentation';
 import { buildLeaderRows, type StatsLeaderMetric, type StatsLeaderRow, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
 import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
@@ -17,6 +18,9 @@ const players: StatsScopePlayer[] = [
 players.push(
   { ...players[0], playerId: 'g1', playerName: 'Goalie One', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(3), goalsAgainstAverage: metric(1.5), championships: metric(0) } },
   { ...players[0], playerId: 'g2', playerName: 'Goalie Two', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(4), goalsAgainstAverage: metric(2), championships: metric(0) } },
+  { ...players[0], playerId: 'g3', playerName: 'Goalie Three', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(5), goalsAgainstAverage: metric(2.5), championships: metric(0) } },
+  { ...players[0], playerId: 'g4', playerName: 'Goalie Four', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(6), goalsAgainstAverage: metric(3), championships: metric(0) } },
+  { ...players[0], playerId: 'g5', playerName: 'Goalie Five', skater: null, goalie: { gamesPlayed: metric(2), goalsAgainst: metric(7), goalsAgainstAverage: metric(3.5), championships: metric(0) } },
 );
 
 function allNodes(root: any, predicate: (node: any) => boolean): any[] {
@@ -30,6 +34,8 @@ function runtime(
   initialStatus: 'ready' | 'error' = 'ready',
   resolveArtwork?: (_league: string, leader: any) => any,
   leaderRows: (rows: readonly StatsScopePlayer[], metric: StatsLeaderMetric) => StatsLeaderRow[] = buildLeaderRows,
+  width = 320,
+  fontScale = 1,
 ) {
   const h = createHookHarness();
   const opened: string[] = [];
@@ -37,6 +43,7 @@ function runtime(
   let currentPlayers = initialPlayers;
   const native = {
     ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', Text: 'Text', View: 'View',
+    PixelRatio: { getFontScale: () => fontScale },
     StyleSheet: { create: (styles: any) => styles, hairlineWidth: 1 },
   };
   const Card = compileCommonJs<{ default: (props: any) => unknown }>(new URL('../../src/components/StatsLeadersCard.tsx', import.meta.url), {
@@ -51,7 +58,7 @@ function runtime(
   }).default;
   function Root() {
     const [selected, setSelected] = h.react.useState<StatsLeaderMetric>('points');
-    return Card({ leagueId: 'league-a', width: 320, metric: selected, leaders: leaderRows(currentPlayers, selected), status: initialStatus, onMetricChange: setSelected, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
+    return Card({ leagueId: 'league-a', width, metric: selected, leaders: leaderRows(currentPlayers, selected), status: initialStatus, onMetricChange: setSelected, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
   }
   h.mount(Root);
   return { h, opened, get retryCount() { return retryCount; }, replacePlayers(next: StatsScopePlayer[]) { currentPlayers = next; h.render(); } };
@@ -59,6 +66,12 @@ function runtime(
 
 function rows(root: any) {
   return allNodes(root, (node) => typeof node.props.testID === 'string' && node.props.testID.startsWith('stats-leader-row-'));
+}
+
+function percentWidth(value: unknown, parentWidth: number): number {
+  assert.equal(typeof value, 'string');
+  assert.match(value as string, /^\d+(?:\.\d+)?%$/);
+  return parentWidth * Number.parseFloat(value as string) / 100;
 }
 
 describe('Stats top-five leaders card', () => {
@@ -83,36 +96,118 @@ describe('Stats top-five leaders card', () => {
     assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art'));
     const first = rows(result.h.output)[0];
     const children = first.props.children;
+    assert.equal(children.length, 3, 'rank, crest, and facts remain the row structure');
     assert.equal(children[0].type, 'Text');
     assert.equal(children[1].type, 'TeamLogo');
     assert.equal(children[2].type, 'View');
-    assert.equal(children[3].type, 'View');
-    assert.equal(children[2].props.children.length, 2, 'given name and surname stay stacked');
-    assert.equal(nodeText(children[2]), 'EliEdge');
+    assert.equal(children[2].props.children.length, 3, 'given name, surname, and metric stay stacked together');
+    assert.equal(nodeText(children[2].props.children.slice(0, 2)), 'EliEdge');
+    assert.equal(nodeText(children[2].props.children[2]), '61PTS');
   });
 
-  it('fits the required multi-token name into exactly two lossless lines without narrowing the rows for artwork', () => {
-    const longName = {
-      ...players[0],
-      playerId: 'long-name',
+  it('keeps five-row Points and GAA facts out of the artwork lane at every supported phone width', () => {
+    for (const width of [320, 390, 430]) {
+      for (const selected of ['points', 'gaa'] as const) {
+        const result = runtime(players, 'ready', undefined, buildLeaderRows, width);
+        if (selected === 'gaa') {
+          findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa')!.props.onPress();
+          result.h.render();
+        }
+
+        const renderedRows = rows(result.h.output);
+        assert.equal(renderedRows.length, 5, `${width}px ${selected} renders the full top five`);
+        const contentWidth = width - 32;
+        const rowsNode = findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-rows')!;
+        const artStage = findNode(result.h.output, (node) => node.props.accessibilityLabel?.startsWith('Open ') && node.props.accessibilityLabel?.endsWith(' player card'))!;
+        const rowsWidth = percentWidth(flattenStyle(rowsNode.props.style).width, contentWidth);
+        const artWidth = percentWidth(flattenStyle(artStage.props.style).width, contentWidth);
+        const artLeft = contentWidth - artWidth;
+        assert.ok(
+          rowsWidth <= artLeft,
+          `${width}px ${selected} fact rail ends at ${rowsWidth.toFixed(2)}px but artwork starts at ${artLeft.toFixed(2)}px (${(rowsWidth - artLeft).toFixed(2)}px overlap)`,
+        );
+
+        for (const row of renderedRows) {
+          const rowStyle = flattenStyle(row.props.style({ pressed: false }));
+          const [rank, crest, facts] = row.props.children;
+          const factWidth = rowsWidth
+            - Number(flattenStyle(rank.props.style).width)
+            - Number(crest.props.size)
+            - Number(rowStyle.gap) * 2;
+          assert.ok(factWidth >= 96, `${width}px ${selected} keeps at least 96px for the complete split name and metric`);
+          assert.ok(
+            findNode(facts, (node) => node.props.testID === row.props.testID.replace('stats-leader-row-', 'stats-leader-score-')),
+            `${width}px ${selected} stacks the value and unit under the two-line name inside the separated fact rail`,
+          );
+          const factRight = Number(flattenStyle(rank.props.style).width) + Number(rowStyle.gap)
+            + Number(crest.props.size) + Number(rowStyle.gap) + factWidth;
+          assert.ok(factRight <= artLeft, `${width}px ${selected} row facts stay left of the artwork lane`);
+        }
+
+        const composition = findNode(result.h.output, (node) => flattenStyle(node.props.style).height === 330)!;
+        const sample = renderedRows[0];
+        const sampleRowStyle = flattenStyle(sample.props.style({ pressed: false }));
+        const [, , sampleFacts] = sample.props.children;
+        const [given, surname, sampleScore] = sampleFacts.props.children;
+        const [value, unit] = sampleScore.props.children;
+        const enlargedFactHeight = Number(flattenStyle(given.props.style).lineHeight) * Number(given.props.maxFontSizeMultiplier)
+          + Number(flattenStyle(surname.props.style).lineHeight) * Number(surname.props.maxFontSizeMultiplier)
+          + Math.max(
+            Number(flattenStyle(value.props.style).lineHeight) * Number(value.props.maxFontSizeMultiplier),
+            Number(flattenStyle(unit.props.style).lineHeight) * Number(unit.props.maxFontSizeMultiplier),
+          )
+          + Number(sampleRowStyle.paddingVertical) * 2;
+        assert.ok(enlargedFactHeight <= Number(flattenStyle(composition.props.style).height) / renderedRows.length,
+          `${width}px ${selected} keeps the stacked facts inside each row at the allowed text scale`);
+      }
+    }
+  });
+
+  it('fits the required multi-token name and score inside a five-row 320px fact cell at normal and 1.35 text scale', () => {
+    const longNamePlayers = players.map((player) => player.playerId === 'e' ? {
+      ...player,
       playerName: 'Maximilian de la Cruz-Santamaría',
-    };
-    const result = runtime([longName]);
-    const row = rows(result.h.output)[0];
-    const first = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'Maximilian')!;
-    const second = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'de la Cruz-Santamaría')!;
-    assert.equal(first.props.numberOfLines, 1);
-    assert.equal(second.props.numberOfLines, 1);
-    assert.equal(first.props.adjustsFontSizeToFit, true);
-    assert.equal(second.props.adjustsFontSizeToFit, true);
-    assert.ok(Number(flattenStyle(second.props.style).fontSize) >= 10);
-    assert.equal(flattenStyle(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-rows')?.props.style).width, '78%');
-    assert.match(row.props.accessibilityLabel, /Maximilian de la Cruz-Santamaría/);
+    } : player);
+
+    for (const fontScale of [1, 1.35]) {
+      const result = runtime(longNamePlayers, 'ready', undefined, buildLeaderRows, 320, fontScale);
+      const renderedRows = rows(result.h.output);
+      assert.equal(renderedRows.length, 5, `${fontScale} text scale retains all five rows`);
+      const row = renderedRows[0];
+      const [rank, crest, facts] = row.props.children;
+      const [first, second, score] = facts.props.children;
+      assert.equal(nodeText(first), 'Maximilian');
+      assert.equal(nodeText(second), 'de la Cruz-Santamaría');
+      assert.equal(nodeText(score), '61PTS');
+      assert.equal(first.props.numberOfLines, 1);
+      assert.equal(second.props.numberOfLines, 1);
+      assert.equal(first.props.adjustsFontSizeToFit, true);
+      assert.equal(second.props.adjustsFontSizeToFit, true);
+      assert.match(row.props.accessibilityLabel, /Maximilian de la Cruz-Santamaría/);
+
+      const rowsNode = findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-rows')!;
+      const rowsWidth = percentWidth(flattenStyle(rowsNode.props.style).width, 320 - 32);
+      const rowStyle = flattenStyle(row.props.style({ pressed: false }));
+      const fixedWidth = Number(flattenStyle(rank.props.style).width) + Number(crest.props.size);
+      const actualFactsWidth = rowsWidth - fixedWidth - Number(rowStyle.gap) * 2;
+      const surnameStyle = flattenStyle(second.props.style);
+      const reachableMinimumFontSize = Number(surnameStyle.fontSize) * fontScale * Number(second.props.minimumFontScale);
+      const requiredSurnameWidth = estimateLeagueLeaderLineWidth(nodeText(second), { fontSize: reachableMinimumFontSize });
+      const blockedCandidateFactsWidth = rowsWidth - fixedWidth - 5 * 2;
+      assert.ok(
+        requiredSurnameWidth > blockedCandidateFactsWidth,
+        `${fontScale} text scale counterfactual stays sensitive to the blocked 5pt-gap facts width`,
+      );
+      assert.ok(
+        actualFactsWidth >= requiredSurnameWidth,
+        `${fontScale} text scale surname requires ${requiredSurnameWidth.toFixed(4)}px at its reachable minimum but the 320px facts cell provides ${actualFactsWidth.toFixed(4)}px`,
+      );
+    }
   });
 
   it('updates actual rankings, supports GAA, and opens native player cards', () => {
     const result = runtime();
-    for (const [selected, expected] of [['assists', ['e', 'a', 'c', 'd', 'b']], ['goals', ['f', 'a', 'b', 'c', 'd']], ['gaa', ['g1', 'g2']]] as const) {
+    for (const [selected, expected] of [['assists', ['e', 'a', 'c', 'd', 'b']], ['goals', ['f', 'a', 'b', 'c', 'd']], ['gaa', ['g1', 'g2', 'g3', 'g4', 'g5']]] as const) {
       findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${selected}`)!.props.onPress();
       result.h.render();
       assert.deepEqual(rows(result.h.output).map((node) => node.props.testID), expected.map((id) => `stats-leader-row-${id}`));

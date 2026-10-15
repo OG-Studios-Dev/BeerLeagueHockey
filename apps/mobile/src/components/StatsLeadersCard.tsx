@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Image, type ImageSourcePropType, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, type ImageSourcePropType, PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import jackFooteArt from '../../assets/league-leaders/jack-foote.png';
 import neutralGoalieArt from '../../assets/league-leaders/neutral-goalie.png';
@@ -102,7 +102,8 @@ export default function StatsLeadersCard({ leagueId, width = 390, headerControl,
   }, [leagueId]);
   const featured = leaders[0] ?? null;
   const artwork = featured ? resolveLeaderArtwork(leagueId, homeLeader(featured, metric), manifest) : null;
-  const availableNameWidth = Math.max(96, Math.floor((width - 32) * 0.78 - 91));
+  const availableNameWidth = Math.max(96, Math.floor((width - 32) * 0.56 - 50));
+  const surnameMinimumFontScale = 0.9 / Math.max(1, Math.min(PixelRatio.getFontScale(), 1.35));
   return (
     <FocusCard focusId={`stats:leaders:${leagueId}`} testID="stats-leaders-card" style={styles.card}>
       <View style={styles.heading}><Text accessibilityRole="header" style={styles.title}>League Leaders</Text>{headerControl}</View>
@@ -121,8 +122,11 @@ export default function StatsLeadersCard({ leagueId, width = 390, headerControl,
                 return <Pressable key={row.playerId} testID={`stats-leader-row-${row.playerId}`} accessibilityRole="button" accessibilityLabel={`${row.rank}. ${name.fullName}, ${row.displayTeam?.name ?? 'unknown team'}, ${rowDisplay} ${metric}. Open player card.`} onPress={() => onOpenPlayer(row.playerId)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
                 <Text maxFontSizeMultiplier={1.35} style={[styles.rank, row.rank === 1 && styles.rankFirst]}>{String(row.rank).padStart(2, '0')}</Text>
                 <TeamLogo teamId={row.displayTeam?.id} logoUrl={row.displayTeam?.logoUrl ?? null} teamName={row.displayTeam?.name ?? 'Unknown team'} size={24} transparentBacking decorative />
-                <View style={styles.name}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88} maxFontSizeMultiplier={1.35} style={[styles.givenName, givenNameFit]}>{name.firstLine}</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.9} maxFontSizeMultiplier={1.35} style={[styles.surname, surnameFit]}>{name.secondLine || '\u00A0'}</Text></View>
-                <View style={styles.score}><Text maxFontSizeMultiplier={1.3} style={styles.value}>{rowDisplay}</Text><Text maxFontSizeMultiplier={1.35} style={styles.unit}>{metric === 'gaa' ? 'GAA' : metric === 'points' ? 'PTS' : metric === 'goals' ? 'G' : 'A'}</Text></View>
+                <View style={styles.facts}>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.88} maxFontSizeMultiplier={1.35} style={[styles.givenName, givenNameFit]}>{name.firstLine}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={surnameMinimumFontScale} maxFontSizeMultiplier={1.35} style={[styles.surname, surnameFit]}>{name.secondLine || '\u00A0'}</Text>
+                  <View testID={`stats-leader-score-${row.playerId}`} style={styles.score}><Text maxFontSizeMultiplier={1.3} style={styles.value}>{rowDisplay}</Text><Text maxFontSizeMultiplier={1.35} style={styles.unit}>{metric === 'gaa' ? 'GAA' : metric === 'points' ? 'PTS' : metric === 'goals' ? 'G' : 'A'}</Text></View>
+                </View>
               </Pressable>;
               })}</View>
               {featured && artwork ? <Pressable accessibilityRole="button" accessibilityLabel={`Open ${featured.playerName} player card`} onPress={() => onOpenPlayer(featured.playerId)} style={styles.artStage}><LeaderArt artwork={artwork} goalie={metric === 'gaa'} /></Pressable> : null}
@@ -136,10 +140,10 @@ const styles = StyleSheet.create({
   heading: { minHeight: 62, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, title: { ...SECTION_HEADING_TEXT_STYLE, flex: 1, minWidth: 0, color: '#F7FBFF' },
   toggle: { flexDirection: 'row', padding: 3, gap: 2, marginBottom: 7, borderWidth: 1, borderColor: 'rgba(126,184,215,0.2)', borderRadius: 14, backgroundColor: 'rgba(4,14,25,0.72)' },
   toggleButton: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 999, paddingHorizontal: 2 },
-  composition: { height: 330, flexDirection: 'row', alignItems: 'stretch', overflow: 'hidden', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(125,190,255,0.18)' }, rows: { width: '78%', zIndex: 2, backgroundColor: 'rgba(4,15,27,0.34)' },
-  row: { minHeight: 64, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(125,190,255,0.18)' },
+  composition: { height: 330, flexDirection: 'row', alignItems: 'stretch', overflow: 'hidden', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(125,190,255,0.18)' }, rows: { width: '56%', zIndex: 2, backgroundColor: 'rgba(4,15,27,0.34)' },
+  row: { minHeight: 64, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 0, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(125,190,255,0.18)' },
   rank: { width: 18, color: '#7E94A6', fontSize: 9, fontWeight: '900', fontVariant: ['tabular-nums'] }, rankFirst: { color: '#61E2E8' },
-  name: { flex: 1, minWidth: 0 }, givenName: { color: '#AFC0CD', fontSize: 9, lineHeight: 12, fontWeight: '800' }, surname: { color: '#F2F7FB', fontSize: 11, lineHeight: 14, fontWeight: '900' }, score: { width: 34, alignItems: 'center' },
+  facts: { flex: 1, minWidth: 0 }, givenName: { color: '#AFC0CD', fontSize: 9, lineHeight: 12, fontWeight: '800' }, surname: { color: '#F2F7FB', fontSize: 11, lineHeight: 14, fontWeight: '900' }, score: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
   value: { color: '#61E2E8', fontSize: 20, lineHeight: 22, fontWeight: '900', fontVariant: ['tabular-nums'] }, unit: { color: '#8299AA', fontSize: 6, lineHeight: 8, fontWeight: '900' },
   artStage: { position: 'absolute', zIndex: 1, right: 0, top: 0, bottom: 0, width: '44%', minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' }, art: { position: 'absolute', right: -18, bottom: -5, width: '128%', height: '108%', backgroundColor: 'transparent', transform: [{ scale: 0.8 }] },
   state: { minHeight: 210, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 18 }, stateText: { color: '#A8B4C8', fontSize: 12, lineHeight: 18, textAlign: 'center' },
