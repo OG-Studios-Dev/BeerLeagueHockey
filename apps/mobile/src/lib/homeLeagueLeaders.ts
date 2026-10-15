@@ -29,10 +29,15 @@ function compareText(left: string, right: string) {
 }
 
 /**
- * Produces a new top-three array. Competition ranks and tie labels are derived
- * from the complete eligible population before the visible limit is applied.
+ * Produces a new ranked array with three visible leaders by default. Competition
+ * ranks and tie labels are derived from the complete eligible population before
+ * the requested visible limit is applied.
  */
-export function rankHomeLeaders(leaders: readonly HomeLeader[], metric: HomeLeaderMetric): RankedHomeLeader[] {
+export function rankHomeLeaders(
+  leaders: readonly HomeLeader[],
+  metric: HomeLeaderMetric,
+  { visibleLimit = 3 }: { visibleLimit?: number } = {},
+): RankedHomeLeader[] {
   const isGaa = metric === 'gaa';
   const eligible = leaders
     .filter((leader) => {
@@ -54,7 +59,7 @@ export function rankHomeLeaders(leaders: readonly HomeLeader[], metric: HomeLead
     populationByValue.set(value, (populationByValue.get(value) ?? 0) + 1);
   });
 
-  return eligible.slice(0, 3).map((leader) => {
+  return eligible.slice(0, visibleLimit).map((leader) => {
     const metricValue = leader[metric] as number;
     const firstEqualIndex = eligible.findIndex((candidate) => candidate[metric] === metricValue);
     const competitionRank = firstEqualIndex + 1;

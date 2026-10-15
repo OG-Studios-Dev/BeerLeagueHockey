@@ -54,6 +54,8 @@ export type LeagueLeadersPresentationProps = {
   testIDPrefix?: string;
   focusPrefix?: string;
   showAllStats?: boolean;
+  visibleLeaderLimit?: number;
+  rowVariant?: 'standard' | 'home-inline';
 };
 
 type ArtworkStage = 'remote' | 'generated' | 'photo' | 'neutral';
@@ -150,7 +152,7 @@ function MetricTabs({ value, onChange, testIDPrefix }: { value: HomeLeaderMetric
   );
 }
 
-function LeaderRow({ leader, compact, estimatedNameWidth, onOpen, testIDPrefix, focusPrefix }: { leader: RankedHomeLeader; compact: boolean; estimatedNameWidth: number; onOpen: () => void; testIDPrefix: string; focusPrefix: string }) {
+function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, onOpen, testIDPrefix, focusPrefix, variant }: { leader: RankedHomeLeader; compact: boolean; stacked: boolean; fontScale: number; estimatedNameWidth: number; onOpen: () => void; testIDPrefix: string; focusPrefix: string; variant: 'standard' | 'home-inline' }) {
   const teamName = leader.display_team_name || leader.team_name || 'Free agent';
   const name = splitLeagueLeaderName(leader.player_name);
   const [measuredNameWidth, setMeasuredNameWidth] = React.useState(0);
@@ -164,6 +166,72 @@ function LeaderRow({ leader, compact, estimatedNameWidth, onOpen, testIDPrefix, 
   const accessibleMetric = leader.metric === 'gaa'
     ? `${leader.estimated ? 'estimated ' : ''}goals against average ${formatLeagueLeaderGaa(leader.metricValue)}`
     : `${leader.metricValue} ${leader.metric}`;
+  const wrapsSecondNameLine = variant === 'home-inline' && (compact || stacked);
+  const wrappedNameBlockMinHeight = stacked ? Math.ceil(62 * fontScale) : compact ? 54 : undefined;
+  const stackedRowMinHeight = Math.ceil(62 * fontScale) + 16;
+  const nameBlock = (
+    <View
+      testID={variant === 'home-inline' ? `${testIDPrefix}-leader-name-block-${leader.player_id}` : undefined}
+      style={[
+        styles.nameLines,
+        variant === 'home-inline' && styles.homeInlineNameBlock,
+        wrapsSecondNameLine && { minHeight: wrappedNameBlockMinHeight },
+      ]}
+      onLayout={(event) => {
+        const nextWidth = Math.floor(event.nativeEvent.layout.width);
+        if (nextWidth > 0 && Math.abs(nextWidth - measuredNameWidth) >= 1) setMeasuredNameWidth(nextWidth);
+      }}
+    >
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.nameFirstLine, firstLineFit]}>{name.firstLine}</Text>
+      <Text numberOfLines={variant === 'home-inline' ? 2 : 1} adjustsFontSizeToFit minimumFontScale={compact ? 0.68 : 0.56} style={[styles.name, variant === 'home-inline' && compact && styles.nameCompact, secondLineFit]}>{name.secondLine || '\u00A0'}</Text>
+    </View>
+  );
+
+  if (variant === 'home-inline') {
+    return (
+      <FocusCard focusId={`${focusPrefix}:leader:${leader.metric}:${leader.player_id}`}>
+        <Pressable
+          testID={`${testIDPrefix}-leader-row-${leader.player_id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${leader.rankLabel}. ${name.fullName}, ${teamName}, ${accessibleMetric}. Open player card.`}
+          onPress={onOpen}
+          style={({ pressed }) => [
+            styles.row,
+            styles.homeInlineRow,
+            !stacked && styles.homeInlineRowFixed,
+            stacked && styles.homeInlineRowStacked,
+            stacked && { minHeight: stackedRowMinHeight },
+            pressed && styles.pressed,
+          ]}
+        >
+          <View testID={`${testIDPrefix}-leader-crest-cluster-${leader.player_id}`} style={styles.homeInlineCrestCluster}>
+            <View testID={`${testIDPrefix}-leader-crest-${leader.player_id}`} style={styles.homeInlineCrest}>
+              <TeamLogo
+                key={`${leader.team_id ?? 'free'}:${leader.display_team_logo_url ?? 'none'}`}
+                teamId={leader.team_id}
+                logoUrl={leader.display_team_logo_url}
+                teamName={teamName}
+                size={30}
+                transparentBacking
+              />
+            </View>
+            <View testID={`${testIDPrefix}-leader-rank-badge-${leader.player_id}`} style={styles.homeInlineRankBadge}>
+              <Text allowFontScaling={false} style={styles.homeInlineRankText}>{leader.rankLabel}</Text>
+            </View>
+          </View>
+          {nameBlock}
+          <Text
+            testID={`${testIDPrefix}-leader-value-${leader.player_id}`}
+            allowFontScaling={false}
+            style={[styles.homeInlineValue, stacked && styles.homeInlineValueStacked]}
+          >
+            {metricValue}
+          </Text>
+        </Pressable>
+      </FocusCard>
+    );
+  }
+
   return (
     <FocusCard focusId={`${focusPrefix}:leader:${leader.metric}:${leader.player_id}`}>
       <Pressable
@@ -175,16 +243,7 @@ function LeaderRow({ leader, compact, estimatedNameWidth, onOpen, testIDPrefix, 
       >
         <Text allowFontScaling={false} style={[styles.rank, compact && styles.rankCompact, leader.tied && styles.tiedRank]}>{leader.rankLabel}</Text>
         <View style={styles.rowCopy}>
-          <View
-            style={styles.nameLines}
-            onLayout={(event) => {
-              const nextWidth = Math.floor(event.nativeEvent.layout.width);
-              if (nextWidth > 0 && Math.abs(nextWidth - measuredNameWidth) >= 1) setMeasuredNameWidth(nextWidth);
-            }}
-          >
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.nameFirstLine, firstLineFit]}>{name.firstLine}</Text>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={compact ? 0.68 : 0.56} style={[styles.name, secondLineFit]}>{name.secondLine || '\u00A0'}</Text>
-          </View>
+          {nameBlock}
           <View style={[styles.valueLine, compact && styles.valueLineCompact]}>
             <TeamLogo
               key={`${leader.team_id ?? 'free'}:${leader.display_team_logo_url ?? 'none'}`}
@@ -206,7 +265,7 @@ function LeaderRow({ leader, compact, estimatedNameWidth, onOpen, testIDPrefix, 
 export default function LeagueLeadersPresentation({
   leagueId, seasonName: _seasonName, metric, leaders, status, errorMessage, width, fontScale,
   onMetricChange, onRetry, onOpenPlayer, onOpenAllStats, manifestLoader = loadPlayerArtworkManifest, manifestRefreshKey,
-  testIDPrefix = 'home', focusPrefix = testIDPrefix, showAllStats = true,
+  testIDPrefix = 'home', focusPrefix = testIDPrefix, showAllStats = true, visibleLeaderLimit = 3, rowVariant = 'standard',
 }: LeagueLeadersPresentationProps) {
   const [manifest, setManifest] = React.useState<PlayerArtworkManifest | null>(null);
   React.useEffect(() => {
@@ -215,7 +274,7 @@ export default function LeagueLeadersPresentation({
     void manifestLoader({ signal: controller.signal }).then((loaded) => { if (current) setManifest(loaded?.leagueId === leagueId ? loaded : null); });
     return () => { current = false; controller.abort(); };
   }, [leagueId, manifestLoader, manifestRefreshKey]);
-  const ranked = rankHomeLeaders(leaders, metric);
+  const ranked = rankHomeLeaders(leaders, metric, { visibleLimit: visibleLeaderLimit });
   const featured = ranked[0] ?? null;
   const artwork = featured ? resolveLeaderArtwork(leagueId, featured, manifest) : null;
   const remoteArtworkUri = artwork?.kind === 'remote' ? artwork.uri : null;
@@ -224,8 +283,11 @@ export default function LeagueLeadersPresentation({
   }, [remoteArtworkUri]);
   const stacked = fontScale >= 1.3;
   const compact = width <= 340 && !stacked;
+  const homeInline = rowVariant === 'home-inline';
   const artStageHeight = stacked ? Math.min(340, Math.max(280, Math.round(width * 0.82))) : 326;
-  const estimatedNameWidth = Math.max(96, Math.floor((width - 32) * (compact ? 0.6 : 0.54) - (compact ? 30 : 41)));
+  const estimatedNameWidth = homeInline
+    ? Math.max(96, Math.floor((width - 32) * (compact ? 0.6 : 0.54) - (compact ? 88 : 98)))
+    : Math.max(96, Math.floor((width - 32) * (compact ? 0.6 : 0.54) - (compact ? 30 : 41)));
 
   return (
     <View testID={`${testIDPrefix}-league-leaders`} style={styles.module}>
@@ -259,8 +321,25 @@ export default function LeagueLeadersPresentation({
       ) : (
         <>
           <View testID={`${testIDPrefix}-leaders-layout`} style={[styles.layout, compact && styles.layoutCompact, stacked && styles.layoutStacked]}>
-            <View style={[styles.ranking, compact && styles.rankingCompact, stacked && styles.rankingStacked]}>
-              {ranked.map((leader) => <LeaderRow key={leader.player_id} leader={leader} compact={compact} estimatedNameWidth={estimatedNameWidth} onOpen={() => onOpenPlayer(leader.player_id)} testIDPrefix={testIDPrefix} focusPrefix={focusPrefix} />)}
+            <View testID={`${testIDPrefix}-leaders-ranking`} style={[
+              styles.ranking,
+              compact && styles.rankingCompact,
+              stacked && styles.rankingStacked,
+            ]}>
+              {ranked.map((leader) => (
+                <LeaderRow
+                  key={leader.player_id}
+                  leader={leader}
+                  compact={compact}
+                  stacked={stacked}
+                  fontScale={fontScale}
+                  estimatedNameWidth={estimatedNameWidth}
+                  onOpen={() => onOpenPlayer(leader.player_id)}
+                  testIDPrefix={testIDPrefix}
+                  focusPrefix={focusPrefix}
+                  variant={rowVariant}
+                />
+              ))}
             </View>
             {featured && artwork ? (
               <Pressable
@@ -268,7 +347,12 @@ export default function LeagueLeadersPresentation({
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${featured.player_name} player card`}
                 onPress={() => onOpenPlayer(featured.player_id)}
-                style={({ pressed }) => [styles.artStage, { height: artStageHeight }, stacked && styles.artStageStacked, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.artStage,
+                  { height: artStageHeight, minHeight: stacked ? artStageHeight : undefined },
+                  stacked && styles.artStageStacked,
+                  pressed && styles.pressed,
+                ]}
               >
                 <LeaderArtworkImage key={artwork.identityKey} artwork={artwork} leader={featured} testIDPrefix={testIDPrefix} />
               </Pressable>
@@ -300,22 +384,32 @@ const styles = StyleSheet.create({
   rankingStacked: { width: '100%' },
   row: { minHeight: 92, flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, paddingRight: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: homeTokens.stroke },
   rowCompact: { paddingRight: 2 },
+  homeInlineRow: { minHeight: 64, alignItems: 'center', paddingVertical: 5, paddingRight: 0 },
+  homeInlineRowFixed: { height: 65 },
+  homeInlineRowStacked: { minHeight: 72, paddingVertical: 8 },
+  homeInlineCrestCluster: { width: 44, height: 36, marginRight: 6, flexShrink: 0, position: 'relative' },
+  homeInlineCrest: { position: 'absolute', left: 14, top: 3, width: 30, height: 30, zIndex: 1 },
+  homeInlineRankBadge: { position: 'absolute', left: 0, top: 6, width: 24, height: 24, borderRadius: 12, zIndex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#7C3AED' },
+  homeInlineRankText: { color: '#FFFFFF', fontSize: 10, lineHeight: 12, fontWeight: '900', fontVariant: ['tabular-nums'] },
   rank: { width: 36, paddingTop: 3, color: homeTokens.textSecondary, fontSize: 14, lineHeight: 20, fontWeight: '900', fontVariant: ['tabular-nums'] },
   rankCompact: { width: 28, fontSize: 13 },
   tiedRank: { color: '#B47CFF' },
   rowCopy: { flex: 1, minWidth: 0 },
   nameLines: { minHeight: 44, justifyContent: 'center' },
+  homeInlineNameBlock: { flex: 1, minWidth: 0 },
   nameFirstLine: { color: homeTokens.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: '800', flexShrink: 1 },
   name: { color: homeTokens.text, fontSize: 17, lineHeight: 22, fontWeight: '900', flexShrink: 1 },
   nameCompact: { fontSize: 14, lineHeight: 18 },
+  homeInlineValue: { minWidth: 24, marginLeft: 4, flexShrink: 0, color: '#B47CFF', fontSize: 20, lineHeight: 25, fontWeight: '900', fontVariant: ['tabular-nums'], textAlign: 'right' },
+  homeInlineValueStacked: { minWidth: 34, marginLeft: 8, fontSize: 24, lineHeight: 30 },
   valueLine: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
   valueLineCompact: { gap: 4 },
   value: { color: '#B47CFF', fontSize: 29, lineHeight: 34, fontWeight: '900', fontVariant: ['tabular-nums'] },
   valueCompact: { fontSize: 24, lineHeight: 30 },
   metricLabel: { flexShrink: 1, color: homeTokens.textSecondary, fontSize: 9, lineHeight: 13, fontWeight: '900', letterSpacing: 0.8 },
   metricLabelCompact: { fontSize: 8, letterSpacing: 0.3 },
-  artStage: { flex: 1, minWidth: 0, justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden' },
-  artStageStacked: { width: '100%', flex: 0 },
+  artStage: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden' },
+  artStageStacked: { width: '100%', flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
   artImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%', backgroundColor: 'transparent' },
   photoImage: { borderRadius: 24, borderWidth: 1, borderColor: 'rgba(176, 103, 255, 0.54)' },
   state: { minHeight: 184, alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 18 },

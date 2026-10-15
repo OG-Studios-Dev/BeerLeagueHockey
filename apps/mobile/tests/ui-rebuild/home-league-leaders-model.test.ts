@@ -50,10 +50,26 @@ describe('Home League Leaders ranking model', () => {
     assert.deepEqual(input, original);
   });
 
-  it('supports empty and fewer-than-three results without fake padding', () => {
-    assert.deepEqual(rankHomeLeaders([], 'goals'), []);
+  it('supports an explicit top-five limit while deriving a boundary tie from the full eligible population', () => {
+    const input = [
+      leader({ player_id: 'one', player_name: 'One', points: 9 }),
+      leader({ player_id: 'two', player_name: 'Two', points: 8 }),
+      leader({ player_id: 'three', player_name: 'Three', points: 7 }),
+      leader({ player_id: 'four', player_name: 'Four', points: 6 }),
+      leader({ player_id: 'five-b', player_name: 'Five B', points: 5 }),
+      leader({ player_id: 'five-a', player_name: 'Five A', points: 5 }),
+    ];
+
+    assert.deepEqual(rankHomeLeaders(input, 'points', { visibleLimit: 5 }).map((row) => [row.player_id, row.rankLabel]), [
+      ['one', '1'], ['two', '2'], ['three', '3'], ['four', '4'], ['five-a', 'T5'],
+    ]);
+    assert.equal(rankHomeLeaders(input, 'points').length, 3, 'shared callers keep the existing top-three default');
+  });
+
+  it('supports empty and fewer-than-five results without fake padding', () => {
+    assert.deepEqual(rankHomeLeaders([], 'goals', { visibleLimit: 5 }), []);
     assert.deepEqual(
-      rankHomeLeaders([leader({ player_id: 'one', player_name: 'One', goals: 1 })], 'goals')
+      rankHomeLeaders([leader({ player_id: 'one', player_name: 'One', goals: 1 })], 'goals', { visibleLimit: 5 })
         .map((row) => [row.player_id, row.rankLabel]),
       [['one', '1']],
     );

@@ -4,7 +4,7 @@ import LeagueLeadersPresentation, { type LeagueLeadersPresentationProps } from '
 
 export type HomeLeagueLeadersProps = Omit<
   LeagueLeadersPresentationProps,
-  'testIDPrefix' | 'focusPrefix' | 'showAllStats'
+  'testIDPrefix' | 'focusPrefix' | 'showAllStats' | 'visibleLeaderLimit' | 'rowVariant'
 >;
 
 export default function HomeLeagueLeaders(props: HomeLeagueLeadersProps) {
@@ -14,6 +14,8 @@ export default function HomeLeagueLeaders(props: HomeLeagueLeadersProps) {
       testIDPrefix="home"
       focusPrefix="home"
       showAllStats
+      visibleLeaderLimit={5}
+      rowVariant="home-inline"
     />
   );
 }
