@@ -60,7 +60,6 @@ describe('mobile shell chrome contract', () => {
       'src/screens/discover/LeagueDetailScreen.tsx',
       'src/screens/games/GameRecapScreen.tsx',
       'src/screens/stats/CareerStatsScreen.tsx',
-      'src/screens/stats/LeaderboardsScreen.tsx',
       'src/screens/team/TeamChatScreen.tsx',
     ];
     for (const path of titledBarFiles) {
@@ -101,7 +100,7 @@ describe('mobile shell chrome contract', () => {
 
     const stats = source('src/screens/StatsScreen.tsx');
     assert.doesNotMatch(stats, /SectionHeader title="(?:Stats|League Leaders)"/);
-    assert.match(stats, /testID="stats-leaderboards-action"/);
+    assert.match(stats, /testID="stats-metric-selector"/);
 
     const team = source('src/screens/TeamScreen.tsx');
     assert.doesNotMatch(team, /<SectionHeader title=\{?(?:"My Team"|"My Teams"|teamName)\}?/);

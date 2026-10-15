@@ -35,7 +35,6 @@ import { createNewsArticleOptions } from './newsArticleHeader';
 
 // New screens
 import CareerStatsScreen from '../screens/stats/CareerStatsScreen';
-import LeaderboardsScreen from '../screens/stats/LeaderboardsScreen';
 import CaptainDashboardScreen from '../screens/captain/CaptainDashboardScreen';
 import GameAvailabilityScreen from '../screens/captain/GameAvailabilityScreen';
 import TeamsDirectoryScreen from '../screens/league-pages/TeamsDirectoryScreen';
@@ -137,7 +136,6 @@ function StatsNavigator() {
   return (
     <StatsStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <StatsStack.Screen name="StatsMain" component={StatsScreen} options={cutIceOptions('Stats')} />
-      <StatsStack.Screen name="Leaderboards" component={LeaderboardsScreen} options={cutIceOptions('Leaderboards')} />
       <StatsStack.Screen name="CareerStats" component={CareerStatsScreen} options={cutIceOptions('Career Stats')} />
     </StatsStack.Navigator>
   );

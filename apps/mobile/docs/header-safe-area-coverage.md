@@ -10,7 +10,7 @@ The app has one root `SafeAreaProvider` in `App.tsx`. Standard stack routes rend
 | Root tabs | Home | Custom in-screen `HomeLeagueHero`; screen retains its own top safe area |
 | Standings | ScheduleList, GamePreview, GameRecap | Shared `CutIceTitle` (`Standings`, `Game Preview`, `Game Recap`) |
 | Schedule | ScheduleList, GamePreview, GameRecap | Shared `CutIceTitle` (`Schedule`, `Game Preview`, `Game Recap`) |
-| Stats | StatsMain, Leaderboards, CareerStats | Shared `CutIceTitle` |
+| Stats | StatsMain, CareerStats | Shared `CutIceTitle` |
 | Team | TeamList, PlayerCard | Shared `CutIceTitle` |
 | Team | TeamDetail | Header hidden; custom team hero retains its own top safe area |
 | Captain | CaptainDashboard, GameAvailability | Shared `CutIceTitle` |
@@ -18,7 +18,7 @@ The app has one root `SafeAreaProvider` in `App.tsx`. Standard stack routes rend
 | League pages | TeamsDirectory, PlayersDirectory, PlayoffsDirectory, NewsFeed, NewsArticle, LeagueHistory, GalleryAlbums, GalleryAlbum, Events, Contact, LeaguePlayerCard, LeagueGamePreview | Shared `CutIceTitle` |
 | League pages | LeagueTeamDetail | Header hidden; reuses the custom TeamDetail hero and its top safe area |
 
-This covers all 38 native stack/tab registrations in `App.tsx` and `src/navigation/index.tsx`: 35 shared mastheads and 3 intentional custom/headerless surfaces.
+This covers all 37 native stack/tab registrations in `App.tsx` and `src/navigation/index.tsx`: 34 shared mastheads and 3 intentional custom/headerless surfaces.
 
 ## Non-route overlays and dormant screens
 

@@ -302,6 +302,8 @@ describe('Stats timeline modal behavior', () => {
       react: h.react,
       'react-native': native(320),
       '@expo/vector-icons': { Ionicons: 'Icon' },
+      '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
+      '../theme/ui': { getSurfacePalette: () => ({ surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }) },
     }).default;
     h.mount(() => Timeline({
       label: 'Current season', currentSeasonId: 'season-a',
@@ -326,6 +328,8 @@ describe('Stats timeline modal behavior', () => {
       react: h.react,
       'react-native': native(390),
       '@expo/vector-icons': { Ionicons: 'Icon' },
+      '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
+      '../theme/ui': { getSurfacePalette: () => ({ surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }) },
     }).default;
     h.mount(() => Timeline({
       label: 'Current season', currentSeasonId: 'season-a',

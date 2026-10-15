@@ -277,7 +277,7 @@ function currentGoalieMetric(
   };
 }
 
-export function buildLeaderRows(
+export function buildRankedRows(
   players: readonly StatsScopePlayer[],
   metric: StatsLeaderMetric,
   currentGoalies: readonly PublicGoalie[] = [],
@@ -294,5 +294,18 @@ export function buildLeaderRows(
       : right.value.value! - left.value.value!;
     return valueOrder || deterministicName(left, right);
   });
-  return candidates.slice(0, 5).map((player, index) => ({ ...player, rank: index + 1 }));
+  let competitionRank = 0;
+  return candidates.map((player, index) => {
+    if (index === 0 || player.value.value !== candidates[index - 1].value.value) competitionRank = index + 1;
+    return { ...player, rank: competitionRank };
+  });
+}
+
+export function buildLeaderRows(
+  players: readonly StatsScopePlayer[],
+  metric: StatsLeaderMetric,
+  currentGoalies: readonly PublicGoalie[] = [],
+  limit = 5,
+): StatsLeaderRow[] {
+  return buildRankedRows(players, metric, currentGoalies).slice(0, limit);
 }

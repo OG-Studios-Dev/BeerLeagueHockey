@@ -21,7 +21,7 @@ describe('Home League Leaders integration', () => {
 
   it('keeps player and all-stats navigation wired while preserving latest-four articles', () => {
     assert.match(homeSource, /navigateToPlayerCard\(navigation, \{ playerId, leagueId: activeLeague\.id \}\)/);
-    assert.match(homeSource, /navigation\?\.navigate\?\.\(['"]Stats['"], \{ screen: ['"]Leaderboards['"] \}\)/);
+    assert.match(homeSource, /navigation\?\.navigate\?\.\(['"]Stats['"], \{ screen: ['"]StatsMain['"] \}\)/);
     assert.match(homeSource, /articles\.data \?\? \[\]\)\.slice\(0, 4\)/);
   });
 });

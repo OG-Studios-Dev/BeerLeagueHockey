@@ -243,7 +243,6 @@ describe('canonical selectable-control foundation', () => {
       'components/PillToggle.tsx',
       'components/DivisionFilter.tsx',
       'components/LeagueLeadersPresentation.tsx',
-      'components/StatsLeadersCard.tsx',
       'components/StatsTimelineFilter.tsx',
       'components/PlayerProfile/CareerTrendChart.tsx',
       'components/StandingsPlayoffsPanel.tsx',
@@ -268,8 +267,7 @@ describe('canonical selectable-control foundation', () => {
     assert.doesNotMatch(src('components/StatsLeadersCard.tsx'), /toggleSelected:\s*\{\s*backgroundColor:\s*'#61DDE2'/);
     assert.match(src('screens/TeamScreen/TeamPublicPage.tsx'), /<SelectableControl[^>]+testID="team-roster-jersey-toggle"/);
     assert.match(src('screens/TeamScreen/TeamPublicPage.tsx'), /<SelectableControl[^>]+testID="team-roster-list-toggle"/);
-    assert.match(src('screens/StatsScreen.tsx'), /<PillToggle[^>]*role="tab"[^>]*accessibilityLabel="Player type"/);
-    assert.match(src('screens/stats/LeaderboardsScreen.tsx'), /<PillToggle[^>]*role="radio"[^>]*accessibilityLabel="Leaderboard category"/);
+    assert.match(src('screens/StatsScreen.tsx'), /<SelectableControlGroup[^>]*testID="stats-metric-selector"[^>]*role="tablist"/);
     assert.match(src('screens/EditProfileScreen.tsx'), /<SelectableControlGroup[^>]*role="radiogroup"[^>]*accessibilityLabel="Position options"/);
     assert.match(src('screens/EditProfileScreen.tsx'), /<SelectableControlGroup[^>]*role="radiogroup"[^>]*accessibilityLabel="League Match Level options"/);
   });
@@ -306,10 +304,10 @@ describe('League Leaders presentation consistency', () => {
     for (const file of [
       'components/LeagueLeadersPresentation.tsx',
       'components/StatsLeadersCard.tsx',
+      'components/StatsRankedRow.tsx',
       'lib/statsPresentationModel.ts',
-      'screens/stats/LeaderboardsScreen.tsx',
     ]) assert.match(src(file), /splitLeagueLeaderName/, file);
-    for (const file of ['components/LeagueLeadersPresentation.tsx', 'components/StatsLeadersCard.tsx', 'screens/stats/LeaderboardsScreen.tsx']) {
+    for (const file of ['components/LeagueLeadersPresentation.tsx', 'components/StatsLeadersCard.tsx', 'components/StatsRankedRow.tsx']) {
       const contents = src(file);
       assert.match(contents, /firstLine/);
       assert.match(contents, /secondLine/);

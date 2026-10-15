@@ -28,6 +28,9 @@ type ControlProps = {
   compact?: boolean;
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  selectedStyle?: StyleProp<ViewStyle>;
+  inactiveStyle?: StyleProp<ViewStyle>;
+  pressedStyle?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   testID?: string;
 };
@@ -92,6 +95,9 @@ export function SelectableControl({
   compact = false,
   children,
   style,
+  selectedStyle,
+  inactiveStyle,
+  pressedStyle,
   textStyle,
   testID,
 }: ControlProps) {
@@ -118,8 +124,10 @@ export function SelectableControl({
         style,
         isSelected ? styles.selected : styles.inactive,
         isSelected && tone !== 'default' && toneStyles[tone],
+        isSelected ? selectedStyle : inactiveStyle,
         focused && styles.focused,
         pressed && !disabled && styles.pressed,
+        pressed && !disabled && pressedStyle,
         disabled && styles.disabled,
       ]}
     >

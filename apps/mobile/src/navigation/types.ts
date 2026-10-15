@@ -26,7 +26,6 @@ export type ProfileStackParamList = {
 
 export type StatsStackParamList = {
   StatsMain: undefined;
-  Leaderboards: undefined;
   CareerStats: undefined;
 };
 

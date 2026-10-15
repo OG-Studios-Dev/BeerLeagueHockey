@@ -28,7 +28,6 @@ const virtualizedRoutes = [
   'screens/ScheduleScreen.tsx',
   'screens/TeamScreen.tsx',
   'screens/StatsScreen.tsx',
-  'screens/stats/LeaderboardsScreen.tsx',
   'screens/team/TeamChatScreen.tsx',
   'screens/discover/LeagueDiscoveryScreen.tsx',
   'screens/auth/LeagueSelectScreen.tsx',

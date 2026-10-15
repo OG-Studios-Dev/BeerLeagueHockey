@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildGoalieRows, buildLeaderRows, buildSkaterRows, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
 function native() {
@@ -50,19 +50,21 @@ function compileStats(
   return compileCommonJs<any>(new URL('../../src/screens/StatsScreen.tsx', import.meta.url), {
     react: h.react, 'react-native': native(), '@react-navigation/native': { useNavigation: () => ({}) }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     '../components/DivisionFilter': (props: any) => createElement('DivisionFilter', props),
-    '../components/PillToggle': (props: any) => createElement('PillToggle', props),
-    '../components/StatsLeadersCard': { __esModule: true, default: (props: any) => createElement('StatsLeadersCard', props, props.headerControl) },
-    '../components/StatsTimelineFilter': (props: any) => createElement('StatsTimelineFilter', props, props.label),
-    '../components/StatsTable': {
-      STATS_TABLE_ROW_HEIGHT: 60,
-      StatsTableHeader: (props: any) => createElement('StatsTableHeader', props),
-      StatsTableRowView: (props: any) => createElement('StatsTableRowView', { ...props, testID: `stats-row-${props.row.playerId}`, onPress: () => props.onOpenPlayer(props.row.playerId) }, props.row.playerName, ...props.row.columns.map((column: any) => `${column.label}:${column.display}`)),
+    '../components/SelectableControl': {
+      SelectableControl: (props: any) => createElement('SelectableControl', props, props.children),
+      SelectableControlGroup: (props: any) => createElement('SelectableControlGroup', props, props.children),
     },
+    '../components/StatsLeadersCard': { __esModule: true, default: (props: any) => createElement('StatsLeadersCard', props) },
+    '../components/StatsRankedRow': { __esModule: true, default: (props: any) => createElement('StatsRankedRow', { ...props, testID: `stats-row-${props.row.playerId}`, onPress: () => props.onOpenPlayer(props.row.playerId) }, props.row.playerName, `${props.row.display} ${props.metric}`) },
+    '../components/StatsRoleToggle': { __esModule: true, default: (props: any) => createElement('StatsRoleToggle', props) },
+    '../components/StatsTimelineFilter': (props: any) => createElement('StatsTimelineFilter', props, props.label),
     '../context/LeagueContext': { useLeague: () => league },
+    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(args) },
-    '../lib/statsPresentationModel': { buildSkaterRows, buildGoalieRows, buildLeaderRows },
+    '../lib/statsPresentationModel': { buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows },
     '../lib/supabase/publicStats': { getPublicStatsScope: load, getPublicGoalies: loadGoalies, formatPublicMetric },
     '../theme/colors': colors,
+    '../theme/ui': { getSurfacePalette: () => ({ surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }) },
   }).default;
 }
 
@@ -83,9 +85,9 @@ describe('career and scoped Stats screen behavior', () => {
     h.mount(() => Stats()); await settle(h);
     assert.match(nodeText(h.output), /Complete authoritative stats are unavailable/);
     fail = false; findNode(h.output, (node) => node.props.testID === 'stats-scope-retry')!.props.onPress(); await settle(h);
-    findNode(h.output, (node) => node.type === 'PillToggle')!.props.onChange('Goalies'); h.render();
-    assert.match(nodeText(h.output), /Server Summer/); assert.match(nodeText(h.output), /GAA:~2\.33/); assert.match(nodeText(h.output), /CH:—/);
-    assert.equal(findNode(h.output, (node) => node.type === 'StatsTableHeader')?.props.expandedMetrics, true, 'enlarged system text opts goalies into the accessible scrolling layout');
+    findNode(h.output, (node) => node.type === 'StatsRoleToggle')!.props.onSelectRole('goalie'); h.render();
+    assert.match(nodeText(h.output), /Server Summer/); assert.match(nodeText(h.output), /2\.3 gaa/);
+    assert.match(nodeText(h.output), /Goalie Stats/);
     findNode(h.output, (node) => node.props.testID === 'stats-row-22222222-2222-4222-8222-222222222222')!.props.onPress();
     assert.equal(navigationCalls[0][1].playerId, '22222222-2222-4222-8222-222222222222');
     const lastCall = calls.at(-1);
@@ -110,7 +112,7 @@ describe('career and scoped Stats screen behavior', () => {
     });
 
     h.mount(() => Stats()); await settle(h);
-    findNode(h.output, (node) => node.type === 'StatsLeadersCard')!.props.onMetricChange('gaa'); h.render();
+    findNode(h.output, (node) => node.type === 'StatsRoleToggle')!.props.onSelectRole('goalie'); h.render();
     const card = findNode(h.output, (node) => node.type === 'StatsLeadersCard')!;
     assert.deepEqual(card.props.leaders.map((leader: any) => [leader.playerId, leader.display, leader.value.state]), [
       [scope.players[0].playerId, '2.5', 'estimated'],
@@ -123,7 +125,7 @@ describe('career and scoped Stats screen behavior', () => {
     const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
     const Stats = compileStats(h, league, async () => { calls += 1; if (calls === 1) throw new Error('incomplete'); return scopePayload('Recovered Goalie'); });
     h.mount(() => Stats()); await settle(h);
-    findNode(h.output, (node) => node.type === 'PillToggle')!.props.onChange('Goalies'); h.render();
+    findNode(h.output, (node) => node.type === 'StatsRoleToggle')!.props.onSelectRole('goalie'); h.render();
     assert.match(nodeText(h.output), /Complete authoritative stats are unavailable/);
     findNode(h.output, (node) => node.props.testID === 'stats-scope-retry')!.props.onPress(); await settle(h);
     assert.ok(calls >= 2); assert.match(nodeText(h.output), /Recovered Goalie/);
@@ -172,7 +174,7 @@ describe('career and scoped Stats screen behavior', () => {
       return scopePayload(id.startsWith('1111') ? 'A GOALIE' : 'B GOALIE', id);
     });
     h.mount(() => Stats()); await settle(h); assert.match(nodeText(h.output), /A GOALIE/);
-    findNode(h.output, (node) => node.type === 'PillToggle')!.props.onChange('Goalies'); h.render(); assert.match(nodeText(h.output), /A GOALIE/);
+    findNode(h.output, (node) => node.type === 'StatsRoleToggle')!.props.onSelectRole('goalie'); h.render(); assert.match(nodeText(h.output), /A GOALIE/);
     holdA = true; league.activeDivision = { id: '77777777-7777-4777-8777-777777777777', name: 'A' }; h.render(); await settle(h);
     league.activeLeague = { id: '55555555-5555-4555-8555-555555555555', slug: 'bay', name: 'Bay' }; league.activeDivision = null; h.render(); await settle(h);
     releaseA?.(scopePayload('STALE GOALIE')); await settle(h);

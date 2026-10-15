@@ -13,7 +13,6 @@ const transparentFoundationScreens = [
   'screens/StandingsScreen.tsx',
   'screens/ScheduleScreen.tsx',
   'screens/StatsScreen.tsx',
-  'screens/stats/LeaderboardsScreen.tsx',
   'screens/stats/CareerStatsScreen.tsx',
   'screens/TeamScreen.tsx',
   'screens/TeamScreen/TeamDetailScreen.tsx',

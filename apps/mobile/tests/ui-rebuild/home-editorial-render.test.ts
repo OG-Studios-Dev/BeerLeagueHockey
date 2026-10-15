@@ -239,4 +239,11 @@ describe('Home editorial native render', () => {
     assert.match(nodeText(output), /Hockey Life access required/);
     assert.equal(marketplaceCalls.length, 0);
   });
+
+  it('opens the unified Stats main page from the mounted Home All stats action', () => {
+    const { output, navigationCalls } = makeScreen();
+    const leaders = findNode(output, (node) => node.type === 'HomeLeagueLeaders');
+    leaders?.props.onOpenAllStats();
+    assert.deepEqual(navigationCalls, [['Stats', { screen: 'StatsMain' }]]);
+  });
 });

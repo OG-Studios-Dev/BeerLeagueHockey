@@ -31,16 +31,18 @@ function allNodes(root: any, predicate: (node: any) => boolean): any[] {
 
 function runtime(
   initialPlayers: StatsScopePlayer[] = players,
-  initialStatus: 'ready' | 'error' = 'ready',
+  initialStatus: 'loading' | 'ready' | 'error' = 'ready',
   resolveArtwork?: (_league: string, leader: any) => any,
   leaderRows: (rows: readonly StatsScopePlayer[], metric: StatsLeaderMetric) => StatsLeaderRow[] = buildLeaderRows,
   width = 320,
   fontScale = 1,
+  reduceTransparency = false,
 ) {
   const h = createHookHarness();
   const opened: string[] = [];
   let retryCount = 0;
   let currentPlayers = initialPlayers;
+  let setMetric: ((metric: StatsLeaderMetric) => void) | null = null;
   const native = {
     ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', Text: 'Text', View: 'View',
     PixelRatio: { getFontScale: () => fontScale },
@@ -54,14 +56,25 @@ function runtime(
     '../../assets/league-leaders/neutral-helmet-player.png': { art: 'skater' },
     '../lib/homeLeagueLeaders': { resolveLeaderArtwork: resolveArtwork ?? ((_league: string, leader: any) => ({ kind: 'neutral', identityKey: leader.player_id, artworkId: leader.is_goalie ? 'neutral-goalie-v1' : 'neutral-helmet-v1', accessibilityLabel: 'fallback' })) },
     '../lib/playerArtworkManifest': { loadPlayerArtworkManifest: async () => null },
+    '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency }) },
+    '../theme/ui': { getSurfacePalette: (reduced: boolean) => reduced
+      ? { surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }
+      : { surface: 'rgba(16,32,48,0.3)', elevated: 'rgba(24,40,56,0.4)', interactive: 'rgba(32,48,64,0.7)', stroke: 'rgba(64,96,128,0.4)' } },
     './TeamLogo': (props: any) => createElement('TeamLogo', props),
   }).default;
   function Root() {
     const [selected, setSelected] = h.react.useState<StatsLeaderMetric>('points');
-    return Card({ leagueId: 'league-a', width, metric: selected, leaders: leaderRows(currentPlayers, selected), status: initialStatus, onMetricChange: setSelected, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
+    setMetric = setSelected;
+    return Card({ leagueId: 'league-a', width, metric: selected, leaders: leaderRows(currentPlayers, selected), status: initialStatus, onRetry: () => { retryCount += 1; }, onOpenPlayer: (id: string) => opened.push(id) });
   }
   h.mount(Root);
-  return { h, opened, get retryCount() { return retryCount; }, replacePlayers(next: StatsScopePlayer[]) { currentPlayers = next; h.render(); } };
+  return {
+    h,
+    opened,
+    get retryCount() { return retryCount; },
+    selectMetric(metric: StatsLeaderMetric) { setMetric!(metric); h.render(); },
+    replacePlayers(next: StatsScopePlayer[]) { currentPlayers = next; h.render(); },
+  };
 }
 
 function rows(root: any) {
@@ -74,25 +87,27 @@ function percentWidth(value: unknown, parentWidth: number): number {
   return parentWidth * Number.parseFloat(value as string) / 100;
 }
 
+function backgroundAlpha(style: unknown): number {
+  const color = flattenStyle(style).backgroundColor;
+  if (typeof color !== 'string') return 0;
+  const rgba = color.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/);
+  return rgba ? Number(rgba[1]) : 1;
+}
+
 describe('Stats top-five leaders card', () => {
-  it('exposes all four approved metric tabs with selected state', () => {
+  it('renders no local metric selector and follows the authoritative page metric', () => {
     const result = runtime();
+    assert.equal(findNode(result.h.output, (node) => String(node.props.testID ?? '').startsWith('stats-leaders-tab-')), undefined);
     for (const selected of ['points', 'goals', 'assists', 'gaa'] as const) {
-      findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${selected}`)!.props.onPress();
-      result.h.render();
-      for (const key of ['points', 'goals', 'assists', 'gaa'] as const) {
-        const tab = findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${key}`)!;
-        assert.equal(tab.props.accessibilityRole, 'tab');
-        assert.equal(tab.props['aria-selected'], key === selected);
-        assert.equal(tab.props.accessibilityState.selected, key === selected);
-      }
+      result.selectMetric(selected);
+      assert.ok(rows(result.h.output).length > 0, `${selected} leaders render from the page-owned metric`);
+      assert.ok(rows(result.h.output).every((row) => row.props.accessibilityLabel.includes(selected)));
     }
   });
 
   it('renders a compact deterministic top five for the default Points metric', () => {
     const result = runtime();
     assert.deepEqual(rows(result.h.output).map((node) => node.props.testID), ['e', 'a', 'c', 'd', 'f'].map((id) => `stats-leader-row-${id}`));
-    assert.equal(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-points')?.props.accessibilityState.selected, true);
     assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leader-feature-art'));
     const first = rows(result.h.output)[0];
     const children = first.props.children;
@@ -105,14 +120,40 @@ describe('Stats top-five leaders card', () => {
     assert.equal(nodeText(children[2].props.children[2]), '61PTS');
   });
 
+  it('makes the fact rail plus loading, error, and empty surfaces opaque only under Reduced Transparency', () => {
+    const normal = runtime(players, 'ready', undefined, buildLeaderRows, 320, 1.8, false);
+    assert.ok(backgroundAlpha(findNode(normal.h.output, (node) => node.props.testID === 'stats-leaders-rows')?.props.style) < 1);
+    assert.equal(flattenStyle(rows(normal.h.output)[0].props.style({ pressed: true })).opacity, 0.72,
+      'ordinary leader rows retain their existing translucent pressed feedback');
+
+    const reduced = runtime(players, 'ready', undefined, buildLeaderRows, 320, 1.8, true);
+    assert.equal(backgroundAlpha(findNode(reduced.h.output, (node) => node.props.testID === 'stats-leaders-rows')?.props.style), 1);
+    for (const row of rows(reduced.h.output)) {
+      const resting = flattenStyle(row.props.style({ pressed: false }));
+      const pressed = flattenStyle(row.props.style({ pressed: true }));
+      assert.equal(pressed.opacity ?? 1, 1, `${row.props.testID} keeps computed opacity 1 while pressed`);
+      assert.equal(backgroundAlpha(pressed), 1, `${row.props.testID} keeps an opaque pressed background`);
+      assert.ok(
+        pressed.backgroundColor !== resting.backgroundColor || pressed.borderColor !== resting.borderColor,
+        `${row.props.testID} preserves press feedback with an opaque color or border change`,
+      );
+    }
+
+    for (const [status, testID] of [
+      ['loading', 'stats-leaders-loading'],
+      ['error', 'stats-leaders-error'],
+      ['ready', 'stats-leaders-empty'],
+    ] as const) {
+      const state = runtime([], status, undefined, buildLeaderRows, 320, 1.8, true);
+      assert.equal(backgroundAlpha(findNode(state.h.output, (node) => node.props.testID === testID)?.props.style), 1, `${status} state is opaque`);
+    }
+  });
+
   it('keeps five-row Points and GAA facts out of the artwork lane at every supported phone width', () => {
     for (const width of [320, 390, 430]) {
       for (const selected of ['points', 'gaa'] as const) {
         const result = runtime(players, 'ready', undefined, buildLeaderRows, width);
-        if (selected === 'gaa') {
-          findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa')!.props.onPress();
-          result.h.render();
-        }
+        if (selected === 'gaa') result.selectMetric('gaa');
 
         const renderedRows = rows(result.h.output);
         assert.equal(renderedRows.length, 5, `${width}px ${selected} renders the full top five`);
@@ -148,10 +189,11 @@ describe('Stats top-five leaders card', () => {
         const sample = renderedRows[0];
         const sampleRowStyle = flattenStyle(sample.props.style({ pressed: false }));
         const [, , sampleFacts] = sample.props.children;
-        const [given, surname, sampleScore] = sampleFacts.props.children;
+        const [given, surnameGroup, sampleScore] = sampleFacts.props.children;
+        const surnameLines = allNodes(surnameGroup, (node) => node.type === 'Text');
         const [value, unit] = sampleScore.props.children;
         const enlargedFactHeight = Number(flattenStyle(given.props.style).lineHeight) * Number(given.props.maxFontSizeMultiplier)
-          + Number(flattenStyle(surname.props.style).lineHeight) * Number(surname.props.maxFontSizeMultiplier)
+          + surnameLines.reduce((total, line) => total + Number(flattenStyle(line.props.style).lineHeight) * Number(line.props.maxFontSizeMultiplier), 0)
           + Math.max(
             Number(flattenStyle(value.props.style).lineHeight) * Number(value.props.maxFontSizeMultiplier),
             Number(flattenStyle(unit.props.style).lineHeight) * Number(unit.props.maxFontSizeMultiplier),
@@ -159,6 +201,50 @@ describe('Stats top-five leaders card', () => {
           + Number(sampleRowStyle.paddingVertical) * 2;
         assert.ok(enlargedFactHeight <= Number(flattenStyle(composition.props.style).height) / renderedRows.length,
           `${width}px ${selected} keeps the stacked facts inside each row at the allowed text scale`);
+      }
+    }
+  });
+
+  it('losslessly splits required long surnames into at most two estimator-safe lines at 320px normal and enlarged text', () => {
+    const longNamePlayers = players.map((player) => player.playerId === 'e' ? {
+      ...player,
+      playerName: 'Maximilian Montgomery-Smythe',
+    } : player.playerId === 'a' ? {
+      ...player,
+      playerName: 'Anastasia de la Cruz-Santamaría',
+    } : player);
+    const expectedSurnames = new Map([['e', 'Montgomery-Smythe'], ['a', 'de la Cruz-Santamaría']]);
+
+    for (const fontScale of [1, 1.8]) {
+      const result = runtime(longNamePlayers, 'ready', undefined, buildLeaderRows, 320, fontScale);
+      const renderedRows = rows(result.h.output);
+      assert.equal(renderedRows.length, 5, `${fontScale} text scale retains all five rows`);
+      const rowsNode = findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-rows')!;
+      const rowsWidth = percentWidth(flattenStyle(rowsNode.props.style).width, 320 - 32);
+
+      for (const [playerId, expectedSurname] of expectedSurnames) {
+        const row = findNode(result.h.output, (node) => node.props.testID === `stats-leader-row-${playerId}`)!;
+        const [rank, crest, facts] = row.props.children;
+        const rowStyle = flattenStyle(row.props.style({ pressed: false }));
+        const actualFactsWidth = rowsWidth
+          - Number(flattenStyle(rank.props.style).width)
+          - Number(crest.props.size)
+          - Number(rowStyle.gap) * 2;
+        const surnameBlock = findNode(facts, (node) => node.props.testID === `stats-leader-surname-${playerId}`)!;
+        assert.ok(surnameBlock, `${expectedSurname} exposes its deterministic line group`);
+        const surnameLines = allNodes(surnameBlock, (node) => node.type === 'Text');
+        assert.ok(surnameLines.length >= 1 && surnameLines.length <= 2);
+        assert.equal(surnameLines.map(nodeText).join(''), expectedSurname, 'line splitting preserves every surname character');
+        for (const line of surnameLines) {
+          assert.equal(line.props.numberOfLines, undefined, 'lossless lines never opt into ellipsis');
+          assert.equal(line.props.ellipsizeMode, undefined, 'lossless lines never opt into ellipsis');
+          const lineStyle = flattenStyle(line.props.style);
+          const effectiveScale = Math.min(fontScale, Number(line.props.maxFontSizeMultiplier));
+          const requiredWidth = estimateLeagueLeaderLineWidth(nodeText(line), { fontSize: Number(lineStyle.fontSize) * effectiveScale });
+          assert.ok(requiredWidth <= actualFactsWidth,
+            `${fontScale} text scale ${nodeText(line)} requires ${requiredWidth.toFixed(4)}px but has ${actualFactsWidth.toFixed(4)}px`);
+        }
+        assert.match(row.props.accessibilityLabel, new RegExp(expectedSurname));
       }
     }
   });
@@ -175,14 +261,14 @@ describe('Stats top-five leaders card', () => {
       assert.equal(renderedRows.length, 5, `${fontScale} text scale retains all five rows`);
       const row = renderedRows[0];
       const [rank, crest, facts] = row.props.children;
-      const [first, second, score] = facts.props.children;
+      const [first, surnameGroup, score] = facts.props.children;
+      const surnameLines = allNodes(surnameGroup, (node) => node.type === 'Text');
       assert.equal(nodeText(first), 'Maximilian');
-      assert.equal(nodeText(second), 'de la Cruz-Santamaría');
+      assert.equal(surnameLines.map(nodeText).join(''), 'de la Cruz-Santamaría');
+      assert.ok(surnameLines.length <= 2);
       assert.equal(nodeText(score), '61PTS');
-      assert.equal(first.props.numberOfLines, 1);
-      assert.equal(second.props.numberOfLines, 1);
-      assert.equal(first.props.adjustsFontSizeToFit, true);
-      assert.equal(second.props.adjustsFontSizeToFit, true);
+      assert.equal(first.props.numberOfLines, undefined);
+      assert.ok(surnameLines.every((line) => line.props.numberOfLines === undefined));
       assert.match(row.props.accessibilityLabel, /Maximilian de la Cruz-Santamaría/);
 
       const rowsNode = findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-rows')!;
@@ -190,26 +276,25 @@ describe('Stats top-five leaders card', () => {
       const rowStyle = flattenStyle(row.props.style({ pressed: false }));
       const fixedWidth = Number(flattenStyle(rank.props.style).width) + Number(crest.props.size);
       const actualFactsWidth = rowsWidth - fixedWidth - Number(rowStyle.gap) * 2;
-      const surnameStyle = flattenStyle(second.props.style);
-      const reachableMinimumFontSize = Number(surnameStyle.fontSize) * fontScale * Number(second.props.minimumFontScale);
-      const requiredSurnameWidth = estimateLeagueLeaderLineWidth(nodeText(second), { fontSize: reachableMinimumFontSize });
+      const requiredWholeSurnameWidth = estimateLeagueLeaderLineWidth('de la Cruz-Santamaría', { fontSize: 9 * Math.min(fontScale, 1.35) });
       const blockedCandidateFactsWidth = rowsWidth - fixedWidth - 5 * 2;
       assert.ok(
-        requiredSurnameWidth > blockedCandidateFactsWidth,
+        requiredWholeSurnameWidth > blockedCandidateFactsWidth,
         `${fontScale} text scale counterfactual stays sensitive to the blocked 5pt-gap facts width`,
       );
-      assert.ok(
-        actualFactsWidth >= requiredSurnameWidth,
-        `${fontScale} text scale surname requires ${requiredSurnameWidth.toFixed(4)}px at its reachable minimum but the 320px facts cell provides ${actualFactsWidth.toFixed(4)}px`,
-      );
+      for (const line of surnameLines) {
+        const lineStyle = flattenStyle(line.props.style);
+        const requiredLineWidth = estimateLeagueLeaderLineWidth(nodeText(line), { fontSize: Number(lineStyle.fontSize) * Math.min(fontScale, Number(line.props.maxFontSizeMultiplier)) });
+        assert.ok(actualFactsWidth >= requiredLineWidth,
+          `${fontScale} text scale surname line requires ${requiredLineWidth.toFixed(4)}px but the 320px facts cell provides ${actualFactsWidth.toFixed(4)}px`);
+      }
     }
   });
 
   it('updates actual rankings, supports GAA, and opens native player cards', () => {
     const result = runtime();
     for (const [selected, expected] of [['assists', ['e', 'a', 'c', 'd', 'b']], ['goals', ['f', 'a', 'b', 'c', 'd']], ['gaa', ['g1', 'g2', 'g3', 'g4', 'g5']]] as const) {
-      findNode(result.h.output, (node) => node.props.testID === `stats-leaders-tab-${selected}`)!.props.onPress();
-      result.h.render();
+      result.selectMetric(selected);
       assert.deepEqual(rows(result.h.output).map((node) => node.props.testID), expected.map((id) => `stats-leader-row-${id}`));
     }
     rows(result.h.output)[0].props.onPress();
@@ -220,8 +305,7 @@ describe('Stats top-five leaders card', () => {
     const result = runtime(players, 'ready', undefined, (scopePlayers, selected) => buildLeaderRows(scopePlayers, selected).map((row) => (
       selected === 'gaa' ? { ...row, display: `${row.value.value?.toFixed(2)}` } : row
     )));
-    findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa')!.props.onPress();
-    result.h.render();
+    result.selectMetric('gaa');
 
     const goalie = rows(result.h.output)[0];
     assert.match(nodeText(goalie), /1\.5GAA/);
@@ -234,7 +318,7 @@ describe('Stats top-five leaders card', () => {
     const result = runtime([]);
     assert.equal(rows(result.h.output).length, 0);
     assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-empty'));
-    assert.ok(findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa'));
+    assert.equal(findNode(result.h.output, (node) => String(node.props.testID ?? '').startsWith('stats-leaders-tab-')), undefined);
   });
 
   it('keeps retry behavior for an unavailable complete scope', () => {
@@ -272,8 +356,7 @@ describe('Stats top-five leaders card', () => {
     assert.deepEqual(art().props.style.transform, [{ scale: 0.8 }]);
     assert.equal(stage().props.style.minHeight, 44);
 
-    findNode(result.h.output, (node) => node.props.testID === 'stats-leaders-tab-gaa')!.props.onPress();
-    result.h.render();
+    result.selectMetric('gaa');
     assert.deepEqual(art().props.style.transform, [{ scale: 0.8 }]);
     assert.equal(stage().props.style.minHeight, 44);
   });

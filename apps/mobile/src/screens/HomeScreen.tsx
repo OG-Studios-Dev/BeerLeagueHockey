@@ -382,7 +382,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             onMetricChange={setLeaderMetric}
             onRetry={retry}
             onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id })}
-            onOpenAllStats={() => navigation?.navigate?.('Stats', { screen: 'Leaderboards' })}
+            onOpenAllStats={() => navigation?.navigate?.('Stats', { screen: 'StatsMain' })}
           />
         </View>
 

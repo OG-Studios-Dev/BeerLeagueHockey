@@ -5,6 +5,7 @@ import type { PublicGoalie, PublicStatMetric } from '../../src/lib/supabase/publ
 import {
   buildGoalieRows,
   buildLeaderRows,
+  buildRankedRows,
   buildSkaterRows,
   normalizeStatsScope,
   splitPlayerName,
@@ -169,5 +170,69 @@ describe('stats presentation model', () => {
     assert.equal(leaders.length, 5);
     assert.deepEqual(leaders.slice(0, 2).map((row) => row.playerId), ['a', 'b']);
     assert.ok(leaders.every((row) => row.playerId !== 'unknown'));
+  });
+
+  it('assigns full-population competition ranks for descending skater and ascending GAA ties across the card cutoff', () => {
+    const points = [10, 9, 8, 7, 6, 6, 5];
+    const gaa = [1, 2, 3, 4, 5, 5, 6];
+    const rows = points.map((value, index) => player({
+      playerId: index === 4 ? 'tie-z' : index === 5 ? 'tie-a' : `rank-${index}`,
+      playerName: index === 4 ? 'Zulu Tie' : index === 5 ? 'Alpha Tie' : `Rank ${index}`,
+      skater: {
+        gamesPlayed: metric(10), goals: metric(value), assists: metric(0), points: metric(value), championships: metric(0),
+      },
+      goalie: {
+        gamesPlayed: metric(2), goalsAgainst: metric(gaa[index] * 2), goalsAgainstAverage: metric(gaa[index]), championships: metric(0),
+      },
+    }));
+
+    for (const metricName of ['points', 'gaa'] as const) {
+      const ranked = buildRankedRows([rows[5], rows[2], rows[6], rows[0], rows[4], rows[1], rows[3]], metricName);
+      assert.deepEqual(ranked.map((row) => [row.playerId, row.rank]), [
+        ['rank-0', 1], ['rank-1', 2], ['rank-2', 3], ['rank-3', 4], ['tie-a', 5], ['tie-z', 5], ['rank-6', 7],
+      ]);
+      assert.deepEqual(
+        buildRankedRows([...rows].reverse(), metricName).map((row) => [row.playerId, row.rank]),
+        ranked.map((row) => [row.playerId, row.rank]),
+        `${metricName} ordering and ranks do not depend on input order`,
+      );
+      assert.deepEqual(
+        buildLeaderRows(rows, metricName).map((row) => [row.playerId, row.rank]),
+        ranked.slice(0, 5).map((row) => [row.playerId, row.rank]),
+        `${metricName} card slice preserves the same full-population ranks as the complete table`,
+      );
+    }
+  });
+
+  it('returns the complete eligible ranked population for each authoritative metric', () => {
+    const rows = Array.from({ length: 7 }, (_, index) => player({
+      playerId: `player-${index}`,
+      playerName: index === 0 ? 'Same Name' : index === 1 ? 'Same Name' : `Player ${index}`,
+      skater: {
+        gamesPlayed: metric(10),
+        goals: metric(index === 6 ? null : index === 0 || index === 1 ? 4 : index),
+        assists: metric(10 - index),
+        points: metric(index + 20),
+        championships: metric(0),
+      },
+      goalie: {
+        gamesPlayed: metric(2), goalsAgainst: metric(index + 2), goalsAgainstAverage: metric(index + 1), championships: metric(0),
+      },
+    }));
+    rows[5].skater!.goals = metric(null, 'conflicted', ['skater_stats']);
+
+    const all = Number.POSITIVE_INFINITY;
+    const goals = (buildLeaderRows as any)(rows, 'goals', [], all);
+    const assists = (buildLeaderRows as any)(rows, 'assists', [], all);
+    const points = (buildLeaderRows as any)(rows, 'points', [], all);
+    const goalies = (buildLeaderRows as any)(rows, 'gaa', [], all);
+
+    assert.deepEqual(goals.map((row: StatsScopePlayer) => row.playerId), ['player-4', 'player-0', 'player-1', 'player-3', 'player-2']);
+    assert.deepEqual(assists.map((row: StatsScopePlayer) => row.playerId), rows.map((row) => row.playerId));
+    assert.deepEqual(points.map((row: StatsScopePlayer) => row.playerId), [...rows].reverse().map((row) => row.playerId));
+    assert.deepEqual(goalies.map((row: StatsScopePlayer) => row.playerId), rows.map((row) => row.playerId));
+    assert.equal(goals.length, 5, 'unknown and conflicted selected values are excluded without placeholders');
+    assert.equal(assists.length, 7, 'every eligible player is retained beyond the League Leaders top five');
+    assert.equal(goalies.length, 7, 'every eligible goalie is retained and sorted by GAA ascending');
   });
 });

@@ -31,8 +31,7 @@ Acceptance rule: Source implementation, browser review, and physical iOS-device 
 | [ ] | 2-core | `src/screens/ProfileScreen.tsx` | ProfileStack/ProfileMain | Profile/ProfileMain | source:no, browser:no, iOS:no | pending | Account deletion remains a separate release requirement. |
 | [ ] | 2-core | `src/screens/ScheduleScreen.tsx` | ScheduleStack/ScheduleList | Schedule/ScheduleList | source:no, browser:no, iOS:no | pending | Route name ScheduleList is contractual. |
 | [ ] | 2-core | `src/screens/stats/CareerStatsScreen.tsx` | ProfileStack/CareerStats<br>StatsStack/CareerStats | Stats/CareerStats and Profile/CareerStats | source:no, browser:no, iOS:no | pending | Same component intentionally registered twice. |
-| [ ] | 2-core | `src/screens/stats/LeaderboardsScreen.tsx` | StatsStack/Leaderboards | Stats/Leaderboards | source:no, browser:no, iOS:no | pending | Preserve stat category semantics. |
-| [ ] | 2-core | `src/screens/StatsScreen.tsx` | StatsStack/StatsMain | Stats/StatsMain | source:no, browser:no, iOS:no | pending | Do not change stats contracts. |
+| [ ] | 2-core | `src/screens/StatsScreen.tsx` | StatsStack/StatsMain | Stats/StatsMain; Home all-stats CTA opens StatsMain | source:yes, browser:no, iOS:no | pending | Unified page owns page-wide timeline/role/metric/division controls; player Goals/Assists/Points and goalie GAA drive top-five League Leaders plus complete Player/Goalie Stats tables; standalone Leaderboards route/file/callers removed; Home All Stats opens StatsMain; requires 44pt truthful controls, opaque Reduced Transparency states, and lossless adaptive-height Dynamic Type at 320/390/430. |
 | [ ] | 3-operations | `src/screens/team/TeamChatScreen.tsx` | TeamStack/TeamChat<br>CaptainStack/TeamChat | Team/TeamChat and Captain/TeamChat; composer captain-only | source:no, browser:no, iOS:no | pending | UGC moderation/report/block gaps remain release backlog. |
 | [ ] | 2-core | `src/screens/TeamScreen.tsx` | TeamStack/TeamList | Team/TeamList | source:no, browser:no, iOS:no | pending | Preserve membership gating. |
 | [ ] | 2-core | `src/screens/TeamScreen/TeamDetailScreen.tsx` | TeamStack/TeamDetail | Team/TeamDetail; member; captain controls permission-gated | source:no, browser:no, iOS:no | pending | High-risk operational surface; no contract changes in UI rebuild. |
@@ -69,7 +68,6 @@ Acceptance rule: Source implementation, browser review, and physical iOS-device 
 | ScheduleStack | GameRecap | GameRecapScreen | session or guest |
 | ScheduleStack | ScheduleList | ScheduleScreen | session or guest |
 | StatsStack | CareerStats | CareerStatsScreen | authenticated member |
-| StatsStack | Leaderboards | LeaderboardsScreen | session or guest |
 | StatsStack | StatsMain | StatsScreen | session or guest |
 | Tab | Captain | CaptainNavigator | captain or alternate only |
 | Tab | Discover | DiscoverNavigator | session or guest |
