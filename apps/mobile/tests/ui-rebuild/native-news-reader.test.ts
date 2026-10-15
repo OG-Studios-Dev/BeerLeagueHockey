@@ -11,6 +11,7 @@ const leagueId = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 const articleId = '11111111-1111-4111-8111-111111111111';
 const expected = { articleId, articleSlug: 'hockey-life-times-2026-09-21-1df8f917', leagueId, leagueSlug: 'hockey-life' };
 const publicRow = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/newspaper-public-edition-row.json', import.meta.url).href), 'utf8'));
+const screenManifest = JSON.parse(readFileSync(fileURLToPath(new URL('../../src/rebuild/screen-manifest.json', import.meta.url).href), 'utf8'));
 
 function mountedReactRuntime() {
   const require = createRequire(import.meta.url);
@@ -130,6 +131,22 @@ describe('published newspaper structured read contract', () => {
   });
 });
 
+describe('news article evidence contract', () => {
+  it('names every independently confirmed visual blocker in the manifest gate', () => {
+    const newsArticle = screenManifest.screens.find((screen: any) => screen.id === 'news-article');
+    assert.ok(newsArticle);
+    assert.equal(newsArticle.status, 'review');
+    assert.deepEqual(newsArticle.evidence, { sourceImplemented: true, browserReviewed: true, iosDeviceAccepted: false });
+    for (const assertion of [
+      'page-five direct-section flow has no sibling or descendant overlap at 320, 390, and 430 points plus enlarged long content',
+      'reader-safe Source Notes omit raw IDs, hashes, timestamps, schema fields, and warning payloads',
+      'article title keeps whole words and a 44-point Share action at normal and narrow enlarged text',
+      'drop-cap exposes one complete paragraph label without duplicate fragment announcements',
+      'browser evidence binds all changed source hashes and the complete candidate diff including untracked source',
+    ]) assert.ok(newsArticle.acceptanceTests.includes(assertion), `manifest must require: ${assertion}`);
+  });
+});
+
 describe('native newspaper edition composition', () => {
   it('renders the full ordered edition with responsive media and no browser/PDF controls', () => {
     const harness = createHookHarness();
@@ -140,14 +157,118 @@ describe('native newspaper edition composition', () => {
     }).default;
     const tree = harness.mount(() => NativeEdition({ edition: edition(), accentColor: '#1F6A44' }));
     const text = nodeText(tree);
-    const ordered = ['ISSUE 42', 'Hockey Life Times', 'A long factual lead headline that reflows', 'Lead paragraph one.', 'This Week on the Ice', 'Recorded final', 'Three Stars of the Week', 'Star 3', 'This Week by the Numbers', 'Standings', 'Official supplied table.', 'The Heater', 'Hot body.', 'The Cold Tub', 'Cold body.', 'Next Week', 'Upcoming body.', 'Around the Rink', 'Around body.', 'Source Notes', 'One disclosed warning.'];
+    const ordered = ['ISSUE 42', 'Hockey Life Times', 'A LONG FACTUAL LEAD HEADLINE THAT REFLOWS', 'Lead paragraph one.', 'RECORDED FINAL', 'THIS WEEK ON THE ICE', 'Names on the scoresheet', 'THREE STARS OF THE WEEK', 'STAR 3', 'THIS WEEK BY THE NUMBERS', 'STANDINGS', 'Official supplied table.', 'THE HEATER', 'Hot body.', 'THE COLD TUB', 'Cold body.', 'NEXT WEEK', 'Upcoming body.', 'Around body.', 'SOURCE NOTES', '1 source-review note was reviewed.'];
     let cursor = -1;
     for (const value of ordered) { const next = text.indexOf(value); assert.ok(next > cursor, `${value} stays in source order`); cursor = next; }
-    assert.equal(allNodes(tree).filter((node) => node.type === 'Image').length, 6);
+    assert.equal(allNodes(tree).filter((node) => node.type === 'Image').length, 7);
     const wideMedia = allNodes(tree).filter((node) => node.type === 'Image' && node.props.source?.uri !== 'https://images.test/home.png');
     assert.equal(wideMedia.length, 4);
     for (const image of wideMedia) assert.equal(flattenStyle(image.props.style).aspectRatio > 0, true);
-    assert.doesNotMatch(text, /Zoom|Download|Print|Page \d+ of|Open.*browser/i);
+    assert.doesNotMatch(text, /Zoom|Download|Print|Open.*browser/i);
+  });
+
+  it('composes the validated facts as five sharp newspaper sheets with a complete front page', () => {
+    const harness = createHookHarness();
+    const NativeEdition = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
+      react: harness.react,
+      'react-native': { Image: 'Image', Platform: { select: (value: Record<string, unknown>) => value.ios ?? value.default }, StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
+      '../theme/colors': { __esModule: true, default: { bgMedia: '#111' } },
+    }).default;
+    const tree = harness.mount(() => NativeEdition({ edition: edition(), accentColor: '#1F6A44' }));
+    const pages = allNodes(tree).filter((node) => /^newspaper-page-[1-5]$/.test(node.props.testID ?? ''));
+    assert.equal(pages.length, 5);
+    pages.forEach((page, index) => {
+      assert.equal(page.props.accessibilityLabel, `Newspaper page ${index + 1} of 5`);
+      assert.equal(flattenStyle(page.props.style).backgroundColor, '#252522');
+      const paper = findNode(page, (node) => node.props.testID === `newspaper-page-paper-${index + 1}`)!;
+      assert.equal(flattenStyle(paper.props.style).backgroundColor, '#F2EAD8');
+      assert.equal(flattenStyle(paper.props.style).borderRadius ?? 0, 0);
+      assert.match(nodeText(page), new RegExp(`PAGE ${index + 1} OF 5`));
+    });
+
+    const front = pages[0]!;
+    const frontText = nodeText(front);
+    for (const fact of [
+      'ISSUE 42', 'THE LEAGUE’S INDEPENDENT RECORD', '2026-09-14 — 2026-09-21', 'Hockey Life Times',
+      'BEER LEAGUE NEWS · FROZEN FACTS · HOT TAKES', 'HOCKEY LIFE', 'FALL 2026', 'THE WEEK ON ICE',
+      'STARS & SCARS', 'NUMBERS THAT HURT', 'AROUND THE RINK', 'EXTRA',
+      'A LONG FACTUAL LEAD HEADLINE THAT REFLOWS', 'Every supplied fact remains readable.', 'THE BIG STORY',
+      'Lead paragraph one.', 'RECORDED FINAL', 'IN THIS ISSUE', 'HOCKEY LIFE · FALL 2026',
+    ]) assert.match(frontText, new RegExp(fact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(allNodes(front).filter((node) => node.props.testID === 'front-score-teaser').length, 1);
+    assert.ok(findNode(front, (node) => node.props.testID === 'page-1-lead-paragraph-0'));
+
+    const remaining = pages.slice(1).map(nodeText);
+    assert.match(remaining[0]!, /THIS WEEK ON THE ICE.*RECORDED FINAL.*Names on the scoresheet.*Player One/s);
+    assert.match(remaining[1]!, /THREE STARS OF THE WEEK.*STAR 3.*THIS WEEK BY THE NUMBERS.*GOALS SCORED/s);
+    assert.match(remaining[2]!, /STANDINGS.*Home Club.*THE HEATER.*Hot body.*THE COLD TUB.*Cold body/s);
+    assert.match(remaining[3]!, /NEXT WEEK.*Upcoming body.*AROUND THE RINK.*Around body.*SOURCE NOTES.*Verified against 1 finalized game record\..*1 source-review note was reviewed\./s);
+    assert.doesNotMatch(JSON.stringify(allNodes(tree).map((node) => flattenStyle(node.props.style))), /#1F6A44/i);
+    for (const node of allNodes(tree).filter((candidate) => candidate.type === 'Text')) {
+      assert.equal(node.props.numberOfLines, undefined);
+      assert.equal(node.props.ellipsizeMode, undefined);
+    }
+  });
+
+  it('lets page-five Around the Rink grow in natural flow before Source Notes', () => {
+    const harness = createHookHarness();
+    const NativeEdition = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
+      react: harness.react,
+      'react-native': { Image: 'Image', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
+      '../theme/colors': { __esModule: true, default: { bgMedia: '#111' } },
+    }).default;
+    const longBody = 'Every Around the Rink detail remains readable and takes the natural height it needs. '.repeat(12);
+    const value = edition({
+      aroundRink: [
+        { headline: 'A long first rink brief', body: longBody },
+        { headline: 'A long second rink brief', body: longBody },
+      ],
+    });
+    const tree = harness.mount(() => NativeEdition({ edition: value }));
+    const pageBody = findNode(tree, (node) => node.props.testID === 'newspaper-page-body-5');
+    const around = findNode(tree, (node) => node.props.testID === 'page-5-around-rink');
+    const sourceNotes = findNode(tree, (node) => node.props.testID === 'page-5-source-notes');
+    assert.ok(pageBody, 'page 5 exposes its direct-section flow boundary for geometry acceptance');
+    assert.ok(around, 'Around the Rink has a page-specific natural-flow container');
+    assert.ok(sourceNotes, 'Source Notes is the following page-5 section');
+    const aroundStyle = flattenStyle(around.props.style);
+    assert.equal(aroundStyle.flexBasis, undefined);
+    assert.equal(aroundStyle.flexGrow ?? 0, 0);
+    assert.equal(aroundStyle.flexShrink ?? 0, 0);
+    assert.equal(aroundStyle.width, '100%');
+    assert.match(nodeText(around), /A LONG FIRST RINK BRIEF.*A LONG SECOND RINK BRIEF/s);
+    const directChildren = Array.isArray(pageBody.props.children) ? pageBody.props.children : [pageBody.props.children];
+    assert.ok(directChildren.indexOf(around) < directChildren.indexOf(sourceNotes));
+  });
+
+  it('renders only a reader-safe data-driven source summary', () => {
+    const harness = createHookHarness();
+    const NativeEdition = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
+      react: harness.react,
+      'react-native': { Image: 'Image', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
+      '../theme/colors': { __esModule: true, default: { bgMedia: '#111' } },
+    }).default;
+    const fixtureEdition: any = structuredClone(publicRow.edition_json);
+    let tree = harness.mount(() => NativeEdition({ edition: fixtureEdition }));
+    let text = nodeText(tree);
+    assert.match(text, /Verified against 2 finalized game records\./);
+    assert.match(text, /9 source-review notes were reviewed\./);
+    for (const rawValue of [
+      ...fixtureEdition.source.gameIds,
+      fixtureEdition.source.factPackDigest,
+      fixtureEdition.source.verifiedAt,
+      ...fixtureEdition.source.warnings,
+      'scorekeeper_verified=false',
+      'champion_team_id',
+      'goalie_stats',
+      'lock timestamps null',
+    ]) assert.doesNotMatch(text, new RegExp(String(rawValue).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+
+    fixtureEdition.source.standingsAsOf = '2026-09-27';
+    tree = harness.mount(() => NativeEdition({ edition: fixtureEdition }));
+    text = nodeText(tree);
+    assert.match(text, /Standings current to 2026-09-27\./);
+    assert.doesNotMatch(text, /2026-09-27T14:40:16\.653538\+00:00/);
   });
 
   it('owns every dimension and native-error callback for exactly one mounted URI lifetime', async () => {
@@ -252,6 +373,33 @@ describe('native newspaper edition composition', () => {
     assert.equal(component.formatEditionScheduled('2026-03-08T07:30:00Z', 'America/Toronto'), 'Mar 8, 2026 · 03:30');
   });
 
+  it('exposes each drop-cap paragraph as one complete accessible sentence', () => {
+    const harness = createHookHarness();
+    const NativeEdition = compileCommonJs<any>(new URL('../../src/components/NativeNewspaperEdition.tsx', import.meta.url), {
+      react: harness.react,
+      'react-native': { Image: 'Image', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
+      '../theme/colors': { __esModule: true, default: { bgMedia: '#111' } },
+    }).default;
+    const fixtureEdition: any = structuredClone(publicRow.edition_json);
+    const completeParagraph = fixtureEdition.lead.body[0];
+    const tree = harness.mount(() => NativeEdition({ edition: fixtureEdition }));
+    const paragraph = findNode(tree, (node) => node.props.testID === 'page-1-lead-paragraph-0')!;
+    assert.ok(paragraph);
+    assert.equal(paragraph.props.accessible, true);
+    assert.equal(paragraph.props.accessibilityLabel, completeParagraph);
+    assert.equal(nodeText(paragraph), completeParagraph);
+    const letter = findNode(paragraph, (node) => node.props.testID === 'page-1-lead-drop-cap-0')!;
+    const remainder = findNode(paragraph, (node) => node.props.testID === 'page-1-lead-remainder-0')!;
+    for (const fragment of [letter, remainder]) {
+      assert.ok(fragment);
+      assert.equal(fragment.props.accessible, false);
+      assert.equal(fragment.props.accessibilityElementsHidden, true);
+      assert.equal(fragment.props['aria-hidden'], true);
+      assert.equal(fragment.props.importantForAccessibility, 'no-hide-descendants');
+      assert.equal(fragment.props.accessibilityLabel, undefined);
+    }
+  });
+
   it('keeps the complete article copy mounted when editorial image loading fails', () => {
     const harness = createHookHarness();
     const Image = Object.assign((props: any) => createElement('Image', props), { getSize() {} });
@@ -261,8 +409,53 @@ describe('native newspaper edition composition', () => {
     let output = harness.mount(() => NativeEdition({ edition: edition(), accentColor: '#1F6A44' }));
     findNode(output, node => node.type === 'Image' && node.props.accessibilityLabel === 'A long factual lead headline that reflows')!.props.onError();
     output = harness.render();
-    assert.match(nodeText(output), /Lead paragraph one.*Lead paragraph two.*One disclosed warning/s);
+    assert.match(nodeText(output), /Lead paragraph one.*Lead paragraph two.*1 source-review note was reviewed\./s);
     assert.ok(findNode(output, node => node.props.accessibilityLabel === 'A long factual lead headline that reflows; artwork unavailable'));
+  });
+});
+
+describe('responsive article title and Share header', () => {
+  function renderHeader(width: number, fontScale: number) {
+    const harness = createHookHarness();
+    const Header = compileCommonJs<any>(new URL('../../src/components/NewsArticleHeader.tsx', import.meta.url), {
+      react: harness.react,
+      '@expo/vector-icons': { Ionicons: (props: any) => createElement('Ionicons', props) },
+      'react-native': {
+        Pressable: 'Pressable', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View',
+        useWindowDimensions: () => ({ width, height: 844, fontScale, scale: 1 }),
+      },
+      '../theme/colors': { __esModule: true, default: { buttonDefault: '#22D3EE', textOnPrimary: '#02111B', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8' } },
+    }).default;
+    return harness.mount(() => Header({
+      title: 'HLT: Week 2 - Fall 2026 — Complete Long-Headline Accessibility Edition',
+      publishedAt: '2026-10-05T12:00:00-04:00',
+      authorName: 'Hockey Life',
+      shareUrl: 'https://hockey-life.example/article',
+      onShare() {},
+    }));
+  }
+
+  it('stacks Share for narrow enlarged text while preserving the normal same-row header', () => {
+    const normal = renderHeader(320, 1);
+    const normalHeader = findNode(normal, (node) => node.props.testID === 'article-newspaper-header')!;
+    const normalShare = findNode(normal, (node) => node.props.accessibilityLabel === 'Share article')!;
+    assert.equal(flattenStyle(normalHeader.props.style).flexDirection, 'row');
+    assert.equal(flattenStyle(normalShare.props.style).alignSelf, undefined);
+
+    for (const width of [320, 390]) {
+      const enlarged = renderHeader(width, 1.3);
+      const header = findNode(enlarged, (node) => node.props.testID === 'article-newspaper-header')!;
+      const title = findNode(enlarged, (node) => node.props.testID === 'article-title')!;
+      const share = findNode(enlarged, (node) => node.props.accessibilityLabel === 'Share article')!;
+      assert.equal(flattenStyle(header.props.style).flexDirection, 'column');
+      assert.equal(flattenStyle(share.props.style).alignSelf, 'flex-end');
+      assert.equal(title.props.numberOfLines, undefined);
+      assert.equal(title.props.ellipsizeMode, undefined);
+      assert.ok(flattenStyle(share.props.style).minWidth >= 44);
+      assert.ok(flattenStyle(share.props.style).minHeight >= 44);
+      assert.match(nodeText(share), /Share/);
+      assert.ok(findNode(share, (node) => node.type === 'Ionicons' && node.props.name === 'share-outline'));
+    }
   });
 });
 
@@ -279,13 +472,14 @@ describe('mounted native article reader state', () => {
     let current: { id: string; slug: string; title: string } | null = null;
     const Screen = compileCommonJs<any>(new URL('../../src/screens/league-pages/NewsArticleScreen.tsx', import.meta.url), {
       react: harness.react,
+      '@expo/vector-icons': { Ionicons: (props: any) => createElement('Ionicons', props) },
       'react-native': { ActivityIndicator: 'ActivityIndicator', Image: 'Image', Linking: { openURL: async () => undefined }, Platform: platform, Share: { share }, Pressable: 'Pressable', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' },
       '../../components/NativeNewspaperEdition': { __esModule: true, default: (props: any) => createElement('NativeEdition', props) },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [], parseInlineMarkdown: () => [], classifyArticleHref: () => null, publicArticleUrl: (leagueSlug: string, articleSlug: string) => `https://${leagueSlug}.beerleaguehockey.ca/${leagueSlug}/news/${articleSlug}` },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: async () => ({ status: 'ready', edition: edition() }) },
-      '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: {} },
+      '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: { buttonDefault: '#22D3EE', textOnPrimary: '#02111B', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8' } },
       './LeaguePageCommon': { useLeaguePageScope: (value: unknown) => value, LeaguePageFrame: (props: any) => createElement('Frame', props, props.children), PageLoadState: 'Loading', commonStyles: { section: {}, sectionTitle: {}, card: {}, secondaryButton: {}, secondaryButtonText: {} } },
       './ContentPageCommon': { useLeagueContent: () => current
         ? ({ loading: false, error: null, retry() {}, data: { article: { ...current, publishedAt: '2026-09-28T12:00:00Z', content: '', mentions: [], taggedPlayers: [], relatedGame: null } } })
@@ -299,9 +493,25 @@ describe('mounted native article reader state', () => {
     harness.render();
     await new Promise<void>((resolve) => setImmediate(resolve));
     let output = harness.render();
+    const header = findNode(output, (node) => node.props.testID === 'article-newspaper-header');
+    const title = findNode(output, (node) => node.props.testID === 'article-title');
+    const titleBlock = findNode(output, (node) => node.props.testID === 'article-title-block');
     const button = findNode(output, (node) => node.props.accessibilityLabel === 'Share article');
+    assert.ok(header);
+    assert.ok(title);
+    assert.equal(nodeText(title!), 'Hockey Life Times');
+    assert.equal(title!.props.numberOfLines, undefined);
+    assert.equal(flattenStyle(header!.props.style).flexDirection, 'row');
+    assert.equal(flattenStyle(titleBlock!.props.style).flex, 1);
+    assert.equal(flattenStyle(titleBlock!.props.style).minWidth, 0);
     assert.ok(button);
     assert.ok((flattenStyle(button.props.style).minHeight ?? flattenStyle(button.props.style).height) >= 44);
+    assert.ok((flattenStyle(button.props.style).minWidth ?? flattenStyle(button.props.style).width) >= 44);
+    assert.equal(flattenStyle(button.props.style).backgroundColor, '#22D3EE');
+    assert.equal(flattenStyle(button.props.style).flexShrink, 0);
+    assert.ok(findNode(button, (node) => node.type === 'Ionicons' && node.props.name === 'share-outline'));
+    assert.match(nodeText(button), /Share/);
+    assert.doesNotMatch(nodeText(header!), /\bBack\b/);
     assert.ok(allNodes(output).findIndex((node) => node === button) < allNodes(output).findIndex((node) => node.type === 'NativeEdition'));
     button.props.onPress();
     button.props.onPress();

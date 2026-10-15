@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, Linking, Platform, Pressable, Share, StyleShe
 
 import { FocusCard } from '../../components/CardFocus';
 import NativeNewspaperEdition from '../../components/NativeNewspaperEdition';
+import NewsArticleHeader from '../../components/NewsArticleHeader';
 import TeamLogo from '../../components/TeamLogo';
 import { classifyArticleHref, parseArticleBlocks, parseInlineMarkdown, publicArticleUrl } from '../../lib/leagueContentModel';
 import { loadPublishedNewspaperEdition, type PublishedEditionResult } from '../../lib/newspaperReader';
@@ -99,14 +100,28 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
   };
   return <LeaguePageFrame onAccessibilityEscape={returnToArticleOrigin}>
     {article.imageUrl && currentReader?.status !== 'ready' ? <Image source={{ uri: article.imageUrl }} resizeMode="cover" style={styles.hero} accessibilityLabel={article.title} alt={article.title} /> : null}
-    {currentReader?.status !== 'ready' ? <><Text accessibilityRole="header" style={styles.title}>{article.title}</Text><Text style={styles.meta}>{new Date(article.publishedAt).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}{article.authorName ? ` · ${article.authorName}` : ''}</Text></> : null}
-    {shareUrl ? <View style={styles.shareToolbar}><Pressable accessibilityRole="button" accessibilityLabel="Share article" onPress={shareArticle} style={[commonStyles.secondaryButton, styles.shareButton]}><Text style={commonStyles.secondaryButtonText}>Share</Text></Pressable></View> : null}
+    <NewsArticleHeader title={article.title} publishedAt={article.publishedAt} authorName={article.authorName} shareUrl={shareUrl} onShare={shareArticle} />
     {currentReader?.status === 'loading' || !currentReader ? <View testID="newspaper-loading" style={styles.readerState}><ActivityIndicator color={focusAccent} /><Text style={styles.readerCopy}>Checking for the published Hockey Life Times edition…</Text></View> : null}
     {currentReader?.status === 'error' ? <View testID="newspaper-error" accessibilityRole="alert" style={styles.readerState}><Text style={styles.readerTitle}>Couldn’t load the published edition</Text><Text style={styles.readerCopy}>{currentReader.message}</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry newspaper edition" onPress={() => setRetryKey((value) => value + 1)} style={[commonStyles.secondaryButton, { borderColor: focusAccent }]}><Text style={commonStyles.secondaryButtonText}>Retry edition</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Read article text instead" onPress={() => setShowTextFallback(true)} style={commonStyles.secondaryButton}><Text style={commonStyles.secondaryButtonText}>Read article text instead</Text></Pressable></View> : null}
-    {currentReader?.status === 'ready' ? <NativeNewspaperEdition edition={currentReader.edition} accentColor={focusAccent} /> : null}
+    {currentReader?.status === 'ready' ? <NativeNewspaperEdition edition={currentReader.edition} /> : null}
     {showArticleBody ? <><Text style={styles.fallbackLabel}>{currentReader?.status === 'error' ? 'ARTICLE TEXT FALLBACK' : 'ARTICLE'}</Text><FocusCard focusId={`news-article:${route.params.articleSlug}:body`} accentColor={focusAccent} style={styles.body}>{parseArticleBlocks(article.content).map((block, index) => <Text key={`${index}:${block.text.slice(0, 12)}`} style={block.kind === 'heading' ? styles.bodyHeading : block.kind === 'bullet' ? styles.bullet : styles.paragraph}>{block.kind === 'bullet' ? '• ' : ''}{parseInlineMarkdown(block.text).map((token, tokenIndex) => token.href ? <Text key={tokenIndex} accessibilityRole="link" onPress={() => open(token.href!)} style={styles.link}>{token.text}</Text> : <Text key={tokenIndex} style={token.strong ? styles.strong : undefined}>{token.text}</Text>)}</Text>)}</FocusCard></> : null}
     {article.relatedGame ? <FocusCard focusId={`news-article:game:${article.relatedGame.id ?? article.relatedGame.homeTeamName}`} accentColor={focusAccent} style={[commonStyles.section, commonStyles.card]}><Text style={commonStyles.sectionTitle}>Related Game</Text><View style={styles.game}><TeamLogo teamId={article.relatedGame.homeTeamId ?? ''} logoUrl={article.relatedGame.homeTeamLogoUrl} teamName={article.relatedGame.homeTeamName} size={40} /><Text style={styles.gameName}>{article.relatedGame.homeTeamName}{article.relatedGame.homeScore === null ? '' : ` ${article.relatedGame.homeScore}`}</Text><Text style={styles.meta}>vs</Text><Text style={styles.gameName}>{article.relatedGame.awayScore === null ? '' : `${article.relatedGame.awayScore} `}{article.relatedGame.awayTeamName}</Text></View>{article.relatedGame.id ? <Pressable accessibilityRole="button" onPress={() => navigation.navigate('LeagueGamePreview', { gameId: article.relatedGame!.id! })} style={commonStyles.secondaryButton}><Text style={commonStyles.secondaryButtonText}>View Game</Text></Pressable> : null}</FocusCard> : null}
   </LeaguePageFrame>;
 }
 
-const styles = StyleSheet.create({ hero: { width: '100%', aspectRatio: 16 / 9, borderRadius: 22, backgroundColor: colors.bgMedia }, title: { color: colors.textPrimary, fontSize: 30, lineHeight: 37, fontWeight: '900', marginTop: 18 }, meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6 }, shareToolbar: { minHeight: 44, marginTop: 12, alignItems: 'flex-end', justifyContent: 'center' }, shareButton: { minWidth: 92, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, readerState: { gap: 10, marginTop: 18, padding: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgModal }, readerTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '900' }, readerCopy: { color: colors.textSecondary, fontSize: 14, lineHeight: 21 }, fallbackLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginTop: 20 }, body: { marginTop: 8 }, bodyHeading: { color: colors.textPrimary, fontSize: 21, lineHeight: 27, fontWeight: '900', marginTop: 9, marginBottom: 10 }, paragraph: { color: colors.textPrimary, fontSize: 17, lineHeight: 27, marginBottom: 17 }, bullet: { color: colors.textPrimary, fontSize: 16, lineHeight: 25, marginBottom: 7, paddingLeft: 8 }, strong: { fontWeight: '900' }, link: { color: colors.textInteractive, fontWeight: '800' }, game: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }, gameName: { flex: 1, color: colors.textPrimary, fontWeight: '800' } });
+const styles = StyleSheet.create({
+  hero: { width: '100%', aspectRatio: 16 / 9, borderRadius: 22, backgroundColor: colors.bgMedia },
+  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6 },
+  readerState: { gap: 10, marginTop: 18, padding: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgModal },
+  readerTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '900' },
+  readerCopy: { color: colors.textSecondary, fontSize: 14, lineHeight: 21 },
+  fallbackLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginTop: 20 },
+  body: { marginTop: 8 },
+  bodyHeading: { color: colors.textPrimary, fontSize: 21, lineHeight: 27, fontWeight: '900', marginTop: 9, marginBottom: 10 },
+  paragraph: { color: colors.textPrimary, fontSize: 17, lineHeight: 27, marginBottom: 17 },
+  bullet: { color: colors.textPrimary, fontSize: 16, lineHeight: 25, marginBottom: 7, paddingLeft: 8 },
+  strong: { fontWeight: '900' },
+  link: { color: colors.textInteractive, fontWeight: '800' },
+  game: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  gameName: { flex: 1, color: colors.textPrimary, fontWeight: '800' },
+});

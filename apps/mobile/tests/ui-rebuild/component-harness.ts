@@ -33,7 +33,15 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
   const exports = {} as T;
 
   new Function('require', 'exports', compiled)((id: string) => {
-    if (id in mocks) return mocks[id];
+    if (id in mocks) {
+      if (id === 'react-native') {
+        return {
+          useWindowDimensions: () => ({ width: 390, height: 844, scale: 1, fontScale: 1 }),
+          ...(mocks[id] as TestProps),
+        };
+      }
+      return mocks[id];
+    }
     if (id.endsWith('/SectionHeader') || id === './SectionHeader') {
       const native = (mocks['react-native'] ?? {}) as TestProps;
       const titleStyle = { fontSize: 22, lineHeight: 28, fontWeight: '800', fontStyle: 'normal' };
@@ -49,6 +57,12 @@ export function compileCommonJs<T>(sourceUrl: { toString(): string }, mocks: Rec
     }
     if (id === '@react-navigation/bottom-tabs') {
       return { BottomTabBarHeightContext: { current: undefined } };
+    }
+    if (id === '@expo/vector-icons') {
+      const native = (mocks['react-native'] ?? {}) as TestProps;
+      const react = mocks.react as { createElement(type: unknown, props: TestProps, ...children: unknown[]): unknown };
+      const Icon = (props: TestProps) => react.createElement(native.Text ?? 'Text', props, props.name ?? 'icon');
+      return { Ionicons: Icon };
     }
     if (id.endsWith('/CardFocus') || id === './CardFocus') {
       const native = (mocks['react-native'] ?? {}) as TestProps;

@@ -11,30 +11,40 @@ Acceptance rule: Source implementation, browser review, and physical iOS-device 
 | Done | Phase | Screen file | Routes | Reachability | Implementation evidence | Review status | Owner note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [ ] | 1-foundation | `src/screens/auth/ForgotPasswordScreen.tsx` | AuthStack/ForgotPassword | AuthStack/ForgotPassword from Login | source:yes, browser:no, iOS:no | pending | Runtime owner's auth first pass; deep-link/device proof still required. |
-| [ ] | 1-foundation | `src/screens/auth/LeagueSelectScreen.tsx` | AppStack/LeagueSelect | AppStack/LeagueSelect modal from authenticated/guest app | source:no, browser:no, iOS:no | pending | Existing league selector is retained and inherits shared colors; a dedicated screen redesign remains pending. |
-| [ ] | 1-foundation | `src/screens/auth/LoginScreen.tsx` | AuthStack/Login | AuthStack/Login from Splash | source:yes, browser:no, iOS:no | pending | Prior Apple-login/guest rejection is release backlog; signing intentionally deferred. |
-| [ ] | 1-foundation | `src/screens/auth/SignUpScreen.tsx` | AuthStack/SignUp | AuthStack/SignUp from Login | source:yes, browser:no, iOS:no | pending | No auth contract change. |
+| [ ] | 1-foundation | `src/screens/auth/LeagueSelectScreen.tsx` | ORPHAN / UNREACHABLE | Unregistered legacy source; no user-visible route | source:no, browser:no, iOS:no | pending | Retained source is not registered; Hockey Life is selected deterministically by LeagueProvider. |
+| [ ] | 1-foundation | `src/screens/auth/LoginScreen.tsx` | AuthStack/Login | AuthStack/Login from Splash | source:yes, browser:no, iOS:no | pending | Release signing and physical-device OAuth acceptance remain parent-owned. |
+| [ ] | 1-foundation | `src/screens/auth/SignUpScreen.tsx` | AuthStack/SignUp | AuthStack/SignUp from Login | source:yes, browser:no, iOS:no | pending | Minimum v1 signup does not collect a public player name. |
 | [ ] | 1-foundation | `src/screens/auth/SplashScreen.tsx` | AuthStack/Splash | AuthStack initial route; unauthenticated only | source:yes, browser:no, iOS:no | pending | Runtime owner's auth first pass; pending review. |
-| [ ] | 3-operations | `src/screens/captain/CaptainDashboardScreen.tsx` | CaptainStack/CaptainDashboard | Captain/CaptainDashboard; tab exists only for captain or alternate | source:no, browser:no, iOS:no | pending | Captain permission regression is release-blocking. |
+| [ ] | 3-operations | `src/screens/captain/CaptainDashboardScreen.tsx` | CaptainStack/CaptainDashboard | Captain/CaptainDashboard; hidden root surfaced in More only for current-team captain or alternate | source:no, browser:no, iOS:no | pending | Captain permission regression is release-blocking. |
 | [ ] | 3-operations | `src/screens/captain/GameAvailabilityScreen.tsx` | CaptainStack/GameAvailability | Captain/GameAvailability | source:no, browser:no, iOS:no | pending | Read-only operational view. |
-| [ ] | 3-operations | `src/screens/captain/InvitePlayersScreen.tsx` | CaptainStack/InvitePlayers | Captain/InvitePlayers | source:no, browser:no, iOS:no | pending | Invitation abuse/recovery is release backlog. |
-| [ ] | 3-operations | `src/screens/captain/LineupNotesScreen.tsx` | CaptainStack/LineupNotes | Captain/LineupNotes | source:no, browser:no, iOS:no | pending | Privileged mutation model requires separate review. |
-| [ ] | 2-core | `src/screens/discover/LeagueDetailScreen.tsx` | DiscoverStack/LeagueDetail | Discover/LeagueDetail | source:no, browser:no, iOS:no | pending | Current join request is informational; no new API write. |
-| [ ] | 2-core | `src/screens/discover/LeagueDiscoveryScreen.tsx` | DiscoverStack/DiscoverMain | Discover/DiscoverMain | source:no, browser:no, iOS:no | pending | Public discovery remains readable without authentication. |
-| [ ] | 3-operations | `src/screens/EditProfileScreen.tsx` | ProfileStack/EditProfile | Profile/EditProfile; authenticated member | source:no, browser:no, iOS:no | pending | Preserve profile/storage contracts; privileged mutation review remains backlog. |
-| [ ] | 2-core | `src/screens/GamePreviewScreen.tsx` | ScheduleStack/GamePreview | Schedule/GamePreview and cross-stack deep navigation | source:no, browser:no, iOS:no | pending | Keep check-in semantics and GameRecap reachability. |
-| [ ] | 2-core | `src/screens/games/GameRecapScreen.tsx` | ScheduleStack/GameRecap | Schedule/GameRecap | source:no, browser:no, iOS:no | pending | Preserve completed-game mapping. |
-| [ ] | 1-foundation | `src/screens/HomeScreen.tsx` | Tab/Home | Home tab; guest and signed-in member | source:yes, browser:no, iOS:no | pending | Runtime owner's first-pass target; still pending parent review. |
-| [ ] | 3-operations | `src/screens/NotificationSettingsScreen.tsx` | ProfileStack/NotificationSettings | Profile/NotificationSettings | source:no, browser:no, iOS:no | pending | Push-token lifecycle/revocation is a separate release backlog item. |
+| [ ] | 3-operations | `src/screens/captain/LineupNotesScreen.tsx` | ORPHAN / UNREACHABLE | Unregistered retained source; no user-visible route | source:no, browser:no, iOS:no | pending | Removed from minimum v1 to avoid arbitrary free-text content. |
+| [ ] | 2-core | `src/screens/discover/LeagueDetailScreen.tsx` | ORPHAN / UNREACHABLE | Unregistered legacy source; no user-visible route | source:no, browser:no, iOS:no | pending | Retained source is not reachable from the Hockey Life binary. |
+| [ ] | 2-core | `src/screens/discover/LeagueDiscoveryScreen.tsx` | ORPHAN / UNREACHABLE | Unregistered legacy source; no user-visible route | source:no, browser:no, iOS:no | pending | Retained source is not reachable from the Hockey Life binary. |
+| [ ] | 3-operations | `src/screens/EditProfileScreen.tsx` | ProfileStack/EditProfile | Profile/EditProfile; authenticated member | source:yes, browser:no, iOS:no | pending | Minimum v1 removes mobile name/photo writes; inherited web/admin identity controls remain a separate review lane. |
+| [ ] | 2-core | `src/screens/GamePreviewScreen.tsx` | ScheduleStack/GamePreview<br>StandingsStack/GamePreview<br>LeaguePagesStack/LeagueGamePreview | Schedule/GamePreview and cross-stack deep navigation | source:no, browser:no, iOS:no | pending | Keep check-in semantics and GameRecap reachability. |
+| [ ] | 2-core | `src/screens/games/GameRecapScreen.tsx` | ScheduleStack/GameRecap<br>StandingsStack/GameRecap | Schedule/GameRecap | source:no, browser:no, iOS:no | pending | Preserve completed-game mapping. |
+| [ ] | 1-foundation | `src/screens/HomeScreen.tsx` | Tab/Home | Home tab; guest and signed-in member | source:yes, browser:no, iOS:no | pending | Native v2 source implemented; exact unified leaders remain unavailable unless the separately owned public Home endpoint is deployed. Parent browser review and iOS device acceptance remain pending. |
+| [ ] | 2-core | `src/screens/league-pages/ContactScreen.tsx` | LeaguePagesStack/Contact | LeaguePages/Contact | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/EventsScreen.tsx` | LeaguePagesStack/Events | LeaguePages/Events | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/GalleryAlbumScreen.tsx` | LeaguePagesStack/GalleryAlbum | LeaguePages/GalleryAlbum | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/GalleryAlbumsScreen.tsx` | LeaguePagesStack/GalleryAlbums | LeaguePages/GalleryAlbums | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/LeagueHistoryScreen.tsx` | LeaguePagesStack/LeagueHistory | LeaguePages/LeagueHistory | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/NewsArticleScreen.tsx` | LeaguePagesStack/NewsArticle | LeaguePages/NewsArticle | source:yes, browser:yes, iOS:no | review | Native five-sheet newspaper and responsive browser evidence are complete; iOS device acceptance remains. |
+| [ ] | 2-core | `src/screens/league-pages/NewsFeedScreen.tsx` | LeaguePagesStack/NewsFeed | LeaguePages/NewsFeed | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/PlayersDirectoryScreen.tsx` | LeaguePagesStack/PlayersDirectory | LeaguePages/PlayersDirectory | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/PlayoffsDirectoryScreen.tsx` | LeaguePagesStack/PlayoffsDirectory | LeaguePages/PlayoffsDirectory | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 2-core | `src/screens/league-pages/TeamsDirectoryScreen.tsx` | LeaguePagesStack/TeamsDirectory | LeaguePages/TeamsDirectory | source:no, browser:no, iOS:no | pending | Registered Hockey Life league page. |
+| [ ] | 3-operations | `src/screens/NotificationSettingsScreen.tsx` | ProfileStack/NotificationSettings | Profile/NotificationSettings | source:yes, browser:no, iOS:no | pending | Check-in, score, and announcement placeholders are excluded from minimum v1; release-device push delivery remains a separate acceptance gate. |
 | [ ] | 3-operations | `src/screens/NotificationsFeedScreen.tsx` | ProfileStack/NotificationsFeed | Profile/NotificationsFeed | source:no, browser:no, iOS:no | pending | Preserve active/all scope behavior. |
-| [ ] | 2-core | `src/screens/PlayerCardScreen.tsx` | TeamStack/PlayerCard<br>ProfileStack/PlayerCard | Team/PlayerCard, Profile/PlayerCard, and cross-stack helpers | source:no, browser:no, iOS:no | pending | Same component intentionally registered in Team and Profile stacks. |
-| [ ] | 2-core | `src/screens/ProfileScreen.tsx` | ProfileStack/ProfileMain | Profile/ProfileMain | source:no, browser:no, iOS:no | pending | Account deletion remains a separate release requirement. |
+| [ ] | 2-core | `src/screens/PlayerCardScreen.tsx` | TeamStack/PlayerCard<br>ProfileStack/PlayerCard<br>LeaguePagesStack/LeaguePlayerCard | Team/PlayerCard, Profile/PlayerCard, and cross-stack helpers | source:no, browser:no, iOS:no | pending | Same component intentionally registered in Team and Profile stacks. |
+| [ ] | 2-core | `src/screens/ProfileScreen.tsx` | ProfileStack/ProfileMain | Profile/ProfileMain | source:yes, browser:no, iOS:no | pending | Account deletion function deployment and authenticated-device acceptance remain parent-owned release gates. |
 | [ ] | 2-core | `src/screens/ScheduleScreen.tsx` | ScheduleStack/ScheduleList | Schedule/ScheduleList | source:no, browser:no, iOS:no | pending | Route name ScheduleList is contractual. |
+| [ ] | 2-core | `src/screens/StandingsScreen.tsx` | StandingsStack/ScheduleList | Standings/ScheduleList from the visible dock | source:yes, browser:no, iOS:no | pending | Narrow wrapper reuses the established native standings implementation; parent review remains pending. |
 | [ ] | 2-core | `src/screens/stats/CareerStatsScreen.tsx` | ProfileStack/CareerStats<br>StatsStack/CareerStats | Stats/CareerStats and Profile/CareerStats | source:no, browser:no, iOS:no | pending | Same component intentionally registered twice. |
 | [ ] | 2-core | `src/screens/StatsScreen.tsx` | StatsStack/StatsMain | Stats/StatsMain; Home all-stats CTA opens StatsMain | source:yes, browser:no, iOS:no | pending | Unified page owns page-wide timeline/role/metric/division controls; player Goals/Assists/Points and goalie GAA drive top-five League Leaders plus complete Player/Goalie Stats tables; standalone Leaderboards route/file/callers removed; Home All Stats opens StatsMain; requires 44pt truthful controls, opaque Reduced Transparency states, and lossless adaptive-height Dynamic Type at 320/390/430. |
-| [ ] | 3-operations | `src/screens/team/TeamChatScreen.tsx` | TeamStack/TeamChat<br>CaptainStack/TeamChat | Team/TeamChat and Captain/TeamChat; composer captain-only | source:no, browser:no, iOS:no | pending | UGC moderation/report/block gaps remain release backlog. |
-| [ ] | 2-core | `src/screens/TeamScreen.tsx` | TeamStack/TeamList | Team/TeamList | source:no, browser:no, iOS:no | pending | Preserve membership gating. |
-| [ ] | 2-core | `src/screens/TeamScreen/TeamDetailScreen.tsx` | TeamStack/TeamDetail | Team/TeamDetail; member; captain controls permission-gated | source:no, browser:no, iOS:no | pending | High-risk operational surface; no contract changes in UI rebuild. |
+| [ ] | 3-operations | `src/screens/team/TeamChatScreen.tsx` | ORPHAN / UNREACHABLE | Unregistered retained source; no user-visible route | source:no, browser:no, iOS:no | pending | Source retained to avoid unrelated data/schema removal; all mobile route registrations and entry actions are removed. |
+| [ ] | 2-core | `src/screens/TeamScreen.tsx` | TeamStack/TeamList | Team/TeamList | source:yes, browser:no, iOS:no | pending | Membership gating is Hockey-Life-specific. |
+| [ ] | 2-core | `src/screens/TeamScreen/TeamDetailScreen.tsx` | TeamStack/TeamDetail<br>LeaguePagesStack/LeagueTeamDetail | Team/TeamDetail; member; captain controls permission-gated | source:yes, browser:no, iOS:no | pending | Minimum v1 excludes arbitrary team content; retained captain mutations use fixed choices. |
 
 ## Explicit orphan / unreachable inventory
 
@@ -44,7 +54,6 @@ Acceptance rule: Source implementation, browser review, and physical iOS-device 
 
 | Navigator | Route | Component | Gate |
 | --- | --- | --- | --- |
-| AppStack | LeagueSelect | LeagueSelectScreen | session or guest modal |
 | AppStack | Main | RootNavigation | session or guest |
 | AuthStack | ForgotPassword | ForgotPasswordScreen | unauthenticated |
 | AuthStack | Login | LoginScreen | unauthenticated |
@@ -52,14 +61,21 @@ Acceptance rule: Source implementation, browser review, and physical iOS-device 
 | AuthStack | Splash | SplashScreen | unauthenticated initial |
 | CaptainStack | CaptainDashboard | CaptainDashboardScreen | captain or alternate |
 | CaptainStack | GameAvailability | GameAvailabilityScreen | captain or alternate |
-| CaptainStack | InvitePlayers | InvitePlayersScreen | captain or alternate |
-| CaptainStack | LineupNotes | LineupNotesScreen | captain or alternate |
-| CaptainStack | TeamChat | TeamChatScreen | captain or alternate |
-| DiscoverStack | DiscoverMain | LeagueDiscoveryScreen | session or guest |
-| DiscoverStack | LeagueDetail | LeagueDetailScreen | session or guest |
+| LeaguePagesStack | Contact | ContactScreen | session or guest |
+| LeaguePagesStack | Events | EventsScreen | session or guest |
+| LeaguePagesStack | GalleryAlbum | GalleryAlbumScreen | session or guest |
+| LeaguePagesStack | GalleryAlbums | GalleryAlbumsScreen | session or guest |
+| LeaguePagesStack | LeagueGamePreview | LeagueGamePreviewComponent | session or guest |
+| LeaguePagesStack | LeagueHistory | LeagueHistoryScreen | session or guest |
+| LeaguePagesStack | LeaguePlayerCard | LeaguePlayerCardComponent | session or guest |
+| LeaguePagesStack | LeagueTeamDetail | LeagueTeamDetailComponent | member |
+| LeaguePagesStack | NewsArticle | NewsArticleScreen | session or guest |
+| LeaguePagesStack | NewsFeed | NewsFeedScreen | session or guest |
+| LeaguePagesStack | PlayersDirectory | PlayersDirectoryScreen | session or guest |
+| LeaguePagesStack | PlayoffsDirectory | PlayoffsDirectoryScreen | session or guest |
+| LeaguePagesStack | TeamsDirectory | TeamsDirectoryScreen | session or guest |
 | ProfileStack | CareerStats | CareerStatsScreen | authenticated member |
 | ProfileStack | EditProfile | EditProfileScreen | authenticated member |
-| ProfileStack | LeagueMarketplace | LeagueMarketplace | session or guest; routed component outside screens directory |
 | ProfileStack | NotificationSettings | NotificationSettingsScreen | authenticated member |
 | ProfileStack | NotificationsFeed | NotificationsFeedScreen | authenticated member |
 | ProfileStack | PlayerCard | PlayerCardScreen | session or guest |
@@ -67,27 +83,26 @@ Acceptance rule: Source implementation, browser review, and physical iOS-device 
 | ScheduleStack | GamePreview | GamePreviewScreen | session or guest; writes member-only |
 | ScheduleStack | GameRecap | GameRecapScreen | session or guest |
 | ScheduleStack | ScheduleList | ScheduleScreen | session or guest |
+| StandingsStack | GamePreview | GamePreviewScreen | session or guest; writes member-only |
+| StandingsStack | GameRecap | GameRecapScreen | session or guest |
+| StandingsStack | ScheduleList | StandingsScreen | session or guest |
 | StatsStack | CareerStats | CareerStatsScreen | authenticated member |
 | StatsStack | StatsMain | StatsScreen | session or guest |
-| Tab | Captain | CaptainNavigator | captain or alternate only |
-| Tab | Discover | DiscoverNavigator | session or guest |
+| Tab | Captain | CaptainNavigator | hidden root; More entry current-team captain or alternate only |
 | Tab | Home | HomeScreen | session or guest |
+| Tab | LeaguePages | LeaguePagesNavigator | session or guest; Hockey Life destinations |
 | Tab | Profile | ProfileNavigator | session or guest |
 | Tab | Schedule | ScheduleNavigator | session or guest |
+| Tab | Standings | StandingsNavigator | session or guest; visible dock |
 | Tab | Stats | StatsNavigator | session or guest |
 | Tab | Team | TeamNavigator | session or guest; private detail gated |
 | TeamStack | PlayerCard | PlayerCardScreen | session or guest |
-| TeamStack | TeamChat | TeamChatScreen | member; composer captain-only |
 | TeamStack | TeamDetail | TeamDetailScreen | member; captain controls role-gated |
 | TeamStack | TeamList | TeamScreen | session or guest |
 
 ## Release backlog outside this UI scope
 
-- [ ] Live Expo browser QA: Discover GET /rest/v1/leagues returns HTTP 400 / PostgreSQL 42703 because leagues.province does not exist. LeagueDiscoveryScreen source is identical to baseline; fix its schema/query mismatch separately.
-- [ ] Guest league Home skips game loading without a signed-in user; verify and repair the complete guest experience before Apple review, not only the entry button.
-- [ ] Resolve and device-test the preexisting Apple login and guest-mode rejection before release.
-- [ ] Provide in-app account deletion plus documented recovery/retention behavior.
+- [ ] Deploy the authenticated delete-account Edge Function and complete authenticated-device deletion acceptance without using a production owner account.
 - [ ] Validate push permission, token refresh, logout revocation, and delivery behavior.
 - [ ] Threat-model and test privileged captain mutations, authorization failures, retry, and recovery.
 - [ ] Add recovery/undo semantics for destructive or irreversible user actions.
-- [ ] Define UGC moderation, report, block, abuse response, and retention behavior for team chat/announcements.
