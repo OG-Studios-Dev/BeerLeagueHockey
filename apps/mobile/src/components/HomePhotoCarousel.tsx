@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -104,10 +103,6 @@ export default function HomePhotoCarousel({ photos, albums, scopeKey, reduceMoti
             <Text style={styles.mediaUnavailableText}>Photo unavailable</Text>
           </View>
         )}
-        {!reduceTransparency ? <LinearGradient colors={['transparent', 'rgba(3, 8, 16, 0.96)']} style={StyleSheet.absoluteFillObject} /> : null}
-        {caption || album ? <View style={[styles.copy, reduceTransparency && styles.copyOpaque]}>
-          <Text style={styles.label}>{caption ?? album!.title}</Text>
-        </View> : null}
       </Pressable>
       <CarouselPager
         currentIndex={selection.index}
@@ -133,13 +128,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(125, 190, 255, 0.16)',
     backgroundColor: colors.bgMedia,
     overflow: 'hidden',
-    justifyContent: 'flex-end',
   },
   cardOpaque: { backgroundColor: '#0C1B31', borderColor: '#41607F' },
   image: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
   mediaUnavailable: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 8 },
   mediaUnavailableText: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, fontWeight: '700' },
-  copy: { padding: 16, paddingTop: 72 },
-  copyOpaque: { paddingTop: 16, backgroundColor: '#06101D' },
-  label: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '800' },
 });

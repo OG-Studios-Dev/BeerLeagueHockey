@@ -274,15 +274,32 @@ describe('Home League Photos carousel', () => {
     assert.match(homeSource, /onOpenGallery=\{\(galleryId\)\s*=>\s*openExternal\(`\$\{origin\}\/gallery\/\$\{encodeURIComponent\(galleryId\)\}`\)\}/);
   });
 
-  it('keeps only clean readable captions and exposes failed or missing media honestly', () => {
+  it('hides readable photo and album names while preserving their accessibility semantics', () => {
     const dirty = mountCarousel({ photos: [{ ...photos(1)[0], caption: '<b>Not safe</b>' }] });
     assert.equal(findNode(dirty.harness.output, (node) => node.type === 'Text' && String(node.props.children).includes('Not safe')), undefined);
     assert.equal(findNode(dirty.harness.output, (node) => node.props.testID === 'home-photo-card')?.props.accessibilityLabel, 'Open league photo 1 of 1 gallery');
 
     const readable = mountCarousel({ photos: [{ ...photos(1)[0], caption: '  Championship   night  ' }] });
-    assert.ok(findNode(readable.harness.output, (node) => node.type === 'Text' && node.props.children === 'Championship night'));
+    const readableCard = findNode(readable.harness.output, (node) => node.props.testID === 'home-photo-card');
+    assert.equal(findNode(readableCard, (node) => node.type === 'Text' && node.props.children === 'Championship night'), undefined);
+    assert.equal(readableCard?.props.accessibilityLabel, 'Open league photo 1 of 1 gallery: Championship night');
     const image = findNode(readable.harness.output, (node) => node.type === 'Image');
     assert.equal(image?.props.alt, 'Championship night');
+    assert.equal(findNode(readableCard, (node) => node.type === 'LinearGradient'), undefined);
+
+    const coveredFallback = mountCarousel({ photos: [], albums: [
+      { id: 'album-covered', title: 'Championship album', cover_photo_url: 'https://images.test/album-cover.jpg' },
+    ], reduceTransparency: true });
+    const coveredCard = findNode(coveredFallback.harness.output, (node) => node.props.testID === 'home-photo-card');
+    assert.equal(findNode(coveredCard, (node) => node.type === 'Text' && node.props.children === 'Championship album'), undefined);
+    assert.equal(coveredCard?.props.accessibilityLabel, 'Open Championship album gallery');
+    assert.equal(findNode(coveredCard, (node) => node.type === 'Image')?.props.alt, 'Championship album');
+    assert.equal(findNode(coveredCard, (node) => node.type === 'View' && flattenStyle(node.props.style).backgroundColor === '#06101D'), undefined);
+  });
+
+  it('exposes failed or missing media honestly', () => {
+    const readable = mountCarousel({ photos: [{ ...photos(1)[0], caption: '  Championship   night  ' }] });
+    const image = findNode(readable.harness.output, (node) => node.type === 'Image');
     image?.props.onError();
     readable.harness.render();
     assert.equal(findNode(readable.harness.output, (node) => node.type === 'Image'), undefined);
@@ -343,7 +360,7 @@ describe('Home League Photos carousel', () => {
     }
   });
 
-  it('uses responsive large-card geometry, opaque reduced-transparency copy, and 44-point controls', () => {
+  it('uses responsive large-card geometry without a copy overlay and preserves 44-point controls', () => {
     for (const width of [320, 390, 430]) {
       const fixture = mountCarousel({ photos: photos(3), reduceTransparency: true });
       const card = findNode(fixture.harness.output, (node) => node.props.testID === 'home-photo-card')!;
@@ -352,10 +369,8 @@ describe('Home League Photos carousel', () => {
       assert.equal(cardStyle.aspectRatio, 4 / 3);
       assert.equal(cardStyle.backgroundColor, '#0C1B31');
       assert.equal(findNode(card, (node) => node.type === 'LinearGradient'), undefined);
-      const copy = findNode(card, (node) => node.type === 'View' && flattenStyle(node.props.style).padding === 16)!;
-      assert.equal(flattenStyle(copy.props.style).backgroundColor, '#06101D');
-      const caption = findNode(copy, (node) => node.type === 'Text');
-      assert.equal(caption?.props.numberOfLines, undefined);
+      assert.equal(findNode(card, (node) => node.type === 'View' && flattenStyle(node.props.style).backgroundColor === '#06101D'), undefined);
+      assert.equal(findNode(card, (node) => node.type === 'Text' && String(node.props.children).startsWith('Photo ')), undefined);
 
       for (const label of ['Previous league photo', 'Next league photo']) {
         const control = findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === label)!;
