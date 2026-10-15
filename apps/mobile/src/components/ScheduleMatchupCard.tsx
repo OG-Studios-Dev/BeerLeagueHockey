@@ -6,6 +6,8 @@ import type { GameRow } from '../lib/supabase/data';
 import { getHomeVisualPreferences, HOME_VISUAL_TOKENS as homeTokens } from '../theme/home';
 import TeamLogo from './TeamLogo';
 
+const COMPACT_MAX_FONT_SIZE_MULTIPLIER = 1.2;
+
 type Props = {
   game: GameRow;
   timezone: string | null;
@@ -13,6 +15,7 @@ type Props = {
   reduceTransparency: boolean;
   onOpenGame: (gameId: string) => void;
   onAddToCalendar?: (game: GameRow) => void;
+  compact?: boolean;
 };
 
 function teamName(game: GameRow, side: 'away' | 'home') {
@@ -36,6 +39,7 @@ export default function ScheduleMatchupCard({
   reduceTransparency,
   onOpenGame,
   onAddToCalendar,
+  compact = false,
 }: Props) {
   const facts = buildGamePresentation(game, timezone);
   const preferences = getHomeVisualPreferences(reduceTransparency, false);
@@ -78,32 +82,71 @@ export default function ScheduleMatchupCard({
         accessibilityLabel={accessibilityLabel(game, timezone)}
         accessibilityHint="Opens game details"
         onPress={() => onOpenGame(game.id)}
-        style={({ pressed }) => [styles.body, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.body, compact && styles.compactBody, pressed && styles.pressed]}
       >
-        <View testID="schedule-matchup-facts" style={styles.facts}>
-          <Text style={styles.fact}>{facts.dateLabel ?? 'Date unavailable'}</Text>
-          <Text style={[styles.fact, facts.statusLabel === 'Live' && styles.live]}>{facts.statusLabel}</Text>
-          <Text style={styles.fact}>{facts.timeLabel ?? 'Time unavailable'}</Text>
-          <Text testID="schedule-matchup-venue" style={styles.venue}>{facts.locationLabel ?? 'Venue unavailable'}</Text>
-        </View>
-        <View style={styles.teams}>
-          {teams.map(({ side, id, team, name, score, accent }) => (
-            <View key={side} testID={`schedule-team-row-${side}`} style={styles.teamRow}>
-              <View accessible={false} style={[styles.rail, { backgroundColor: accent }]} />
+        {compact ? (
+          <>
+            <View testID="schedule-matchup-facts" style={styles.compactFacts}>
+              <Text maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} style={styles.compactFact}>{facts.dateLabel ?? 'Date unavailable'}</Text>
+              <Text maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} style={[styles.compactFact, facts.statusLabel === 'Live' && styles.live]}>{facts.statusLabel}</Text>
+              <Text maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} style={styles.compactFact}>{facts.timeLabel ?? 'Time unavailable'}</Text>
+            </View>
+            <View testID="schedule-compact-matchup-row" style={styles.compactMatchup}>
               <TeamLogo
                 decorative
                 transparentBacking
-                teamId={id}
-                logoUrl={team?.logo_url ?? null}
-                teamName={name}
-                primaryColor={accent}
-                size={44}
+                teamId={teams[0].id}
+                logoUrl={teams[0].team?.logo_url ?? null}
+                teamName={teams[0].name}
+                primaryColor={teams[0].accent}
+                size={36}
               />
-              <Text testID={`schedule-team-name-${side}`} style={styles.teamName}>{name}</Text>
-              {facts.showScore ? <Text testID={`schedule-team-score-${side}`} style={styles.score}>{score ?? '—'}</Text> : null}
+              {facts.showScore ? (
+                <View style={styles.compactScoreGroup}>
+                  <Text maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} testID="schedule-team-score-away" style={styles.compactScore}>{teams[0].score ?? '—'}</Text>
+                  <Text accessible={false} maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} style={styles.compactScoreSeparator}>–</Text>
+                  <Text maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} testID="schedule-team-score-home" style={styles.compactScore}>{teams[1].score ?? '—'}</Text>
+                </View>
+              ) : <Text maxFontSizeMultiplier={COMPACT_MAX_FONT_SIZE_MULTIPLIER} testID="schedule-matchup-versus" style={styles.compactVersus}>VS</Text>}
+              <TeamLogo
+                decorative
+                transparentBacking
+                teamId={teams[1].id}
+                logoUrl={teams[1].team?.logo_url ?? null}
+                teamName={teams[1].name}
+                primaryColor={teams[1].accent}
+                size={36}
+              />
             </View>
-          ))}
-        </View>
+          </>
+        ) : (
+          <>
+            <View testID="schedule-matchup-facts" style={styles.facts}>
+              <Text style={styles.fact}>{facts.dateLabel ?? 'Date unavailable'}</Text>
+              <Text style={[styles.fact, facts.statusLabel === 'Live' && styles.live]}>{facts.statusLabel}</Text>
+              <Text style={styles.fact}>{facts.timeLabel ?? 'Time unavailable'}</Text>
+              <Text testID="schedule-matchup-venue" style={styles.venue}>{facts.locationLabel ?? 'Venue unavailable'}</Text>
+            </View>
+            <View style={styles.teams}>
+              {teams.map(({ side, id, team, name, score, accent }) => (
+                <View key={side} testID={`schedule-team-row-${side}`} style={styles.teamRow}>
+                  <View accessible={false} style={[styles.rail, { backgroundColor: accent }]} />
+                  <TeamLogo
+                    decorative
+                    transparentBacking
+                    teamId={id}
+                    logoUrl={team?.logo_url ?? null}
+                    teamName={name}
+                    primaryColor={accent}
+                    size={44}
+                  />
+                  <Text testID={`schedule-team-name-${side}`} style={styles.teamName}>{name}</Text>
+                  {facts.showScore ? <Text testID={`schedule-team-score-${side}`} style={styles.score}>{score ?? '—'}</Text> : null}
+                </View>
+              ))}
+            </View>
+          </>
+        )}
       </Pressable>
       {facts.canUseCalendar && onAddToCalendar ? (
         <View style={styles.actionRow}>
@@ -133,7 +176,15 @@ const styles = StyleSheet.create({
   accentRow: { height: 3, flexDirection: 'row' },
   accentHalf: { flex: 1, opacity: 0.82 },
   body: { minHeight: homeTokens.minTouchTarget },
+  compactBody: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10 },
   pressed: { opacity: 0.82 },
+  compactFacts: { width: 120, flexShrink: 0, justifyContent: 'center' },
+  compactFact: { color: homeTokens.textSecondary, fontSize: 10, lineHeight: 14, fontWeight: '900' },
+  compactMatchup: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  compactScoreGroup: { minWidth: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  compactScore: { minWidth: 14, color: homeTokens.text, fontSize: 17, lineHeight: 22, fontWeight: '900', textAlign: 'center' },
+  compactScoreSeparator: { color: homeTokens.textSecondary, fontSize: 12, lineHeight: 18, fontWeight: '800' },
+  compactVersus: { minWidth: 34, color: homeTokens.textSecondary, fontSize: 11, lineHeight: 16, fontWeight: '900', textAlign: 'center' },
   facts: {
     minHeight: 44,
     flexDirection: 'row',

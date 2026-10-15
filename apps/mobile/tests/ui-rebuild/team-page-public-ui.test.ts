@@ -125,15 +125,25 @@ function LeagueLeadersPresentationMock(props: any) {
 
 function ScheduleMatchupCardMock(props: any) {
   const game = props.game;
+  const date = new Date(game.scheduled_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: props.timezone });
   const time = new Date(game.scheduled_at).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', timeZone: props.timezone });
-  const showScore = ['completed', 'pending_verification', 'in_progress'].includes(game.status);
-  const score = showScore ? ` ${game.home_score}–${game.away_score}` : '';
+  const showScore = ['completed', 'in_progress', 'live'].includes(game.status);
+  const score = showScore ? ` ${game.away_score}–${game.home_score}` : '';
+  const status = game.status === 'completed' ? 'Final' : game.status === 'in_progress' || game.status === 'live' ? 'Live' : 'Scheduled';
   return createElement('Pressable', {
     testID: `schedule-matchup-card-${game.id}`,
-    accessibilityLabel: `${game.away_team.name} at ${game.home_team.name}, ${time}, ${game.away_team.name} ${game.away_score}, ${game.home_team.name} ${game.home_score}`,
+    compact: props.compact,
+    accessibilityLabel: `${game.away_team.name} at ${game.home_team.name}, ${date}, ${time}, ${game.location}, ${game.away_team.name} ${game.away_score}, ${game.home_team.name} ${game.home_score}`,
     onPress: () => props.onOpenGame(game.id),
-  }, [
-    createElement('Text', {}, `${game.away_team.name} vs ${game.home_team.name} ${time}${score}`),
+  }, props.compact ? [
+    createElement('Text', { testID: 'schedule-matchup-facts' }, `${date} ${time} ${status}`),
+    createElement('View', { testID: 'schedule-compact-matchup-row', style: { flexDirection: 'row' } }, [
+      createElement('TeamLogo', { transparentBacking: true, teamId: game.away_team_id, teamName: game.away_team.name, logoUrl: game.away_team.logo_url }),
+      createElement('Text', { testID: showScore ? 'schedule-compact-score' : 'schedule-matchup-versus' }, showScore ? score.trim() : 'VS'),
+      createElement('TeamLogo', { transparentBacking: true, teamId: game.home_team_id, teamName: game.home_team.name, logoUrl: game.home_team.logo_url }),
+    ]),
+  ] : [
+    createElement('Text', {}, `${game.away_team.name} vs ${game.home_team.name} ${game.location} ${time}${score}`),
     createElement('TeamLogo', { transparentBacking: true, teamId: game.away_team_id }),
     createElement('TeamLogo', { transparentBacking: true, teamId: game.home_team_id }),
   ]);
@@ -278,8 +288,8 @@ describe('native Team public composition', () => {
     assert.equal(flattenStyle(reviewCell?.props.style).flexBasis, '100%', 'full conflict status needs a readable row');
   });
 
-  it('exposes fact-bearing game/player labels and known live/pending scores without inventing jersey zero', () => {
-    const statuses = ['in_progress', 'pending_verification', 'completed'];
+  it('exposes fact-bearing game/player labels and authoritative live/final scores without inventing jersey zero', () => {
+    const statuses = ['in_progress', 'completed'];
     for (const status of statuses) {
       const game = { ...games[3], status, homeScore: 4, awayScore: 2 };
       const run = runtime(320, { ...snapshot, nextGame: game, games: [game], collapsedSchedule: [game], roster: [{ ...roster[0], jerseyNumber: null }] });
@@ -288,7 +298,7 @@ describe('native Team public composition', () => {
       assert.match(next?.props.accessibilityLabel, /First General London.*London Eco Metal.*Mar.*4.*3:00.*Next One/i);
       const row = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-g3');
       assert.match(row?.props.accessibilityLabel, /First General London.*London Eco Metal.*First General London 2, London Eco Metal 4/i);
-      assert.match(nodeText(row), /4–2/);
+      assert.equal(nodeText(findNode(row, (node) => node.props.testID === 'schedule-compact-score')), '2–4');
       const player = findNode(output, (node) => node.props.testID === 'team-leader-row-p1');
       assert.match(player?.props.accessibilityLabel, /Matt Grossi.*25 points/i);
       const jersey = findNode(output, (node) => node.props.testID === 'team-roster-player-p1');
@@ -652,13 +662,18 @@ describe('native Team public composition', () => {
     }
   });
 
-  it('renders compact two-team schedule cards with both transparent crests and omits an empty Schedule section', () => {
+  it('passes the Team-only compact card presentation, removes date headers and visible names/venues, and omits an empty Schedule section', () => {
     const output = runtime(390).harness.output;
-    const row = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-g3');
-    assert.match(nodeText(row), /First General London.*vs.*London Eco Metal/i);
+    const schedule = findNode(output, (node) => node.props.testID === 'team-schedule-section');
+    const row = findNode(schedule, (node) => node.props.testID === 'schedule-matchup-card-g3');
+    assert.equal(row?.props.compact, true);
+    assert.equal(findNodes(schedule, (node) => node.props.accessibilityRole === 'header').length, 0);
+    assert.doesNotMatch(nodeText(row), /First General London|London Eco Metal|Next One/i);
+    assert.match(row?.props.accessibilityLabel, /First General London.*London Eco Metal.*Next One/i);
     const rowLogos = findNodes(row, (node) => node.type === 'TeamLogo');
     assert.deepEqual(rowLogos.map((node) => node.props.teamId), ['team-b', 'team-a']);
     assert.ok(rowLogos.every((node) => node.props.transparentBacking === true));
+    assert.equal(findNodes(findNode(row, (node) => node.props.testID === 'schedule-compact-matchup-row'), (node) => node.type === 'TeamLogo').length, 2);
     const empty = runtime(390, { ...snapshot, games: [], collapsedSchedule: [], nextGame: null }).harness.output;
     assert.equal(findNode(empty, (node) => node.props.testID === 'team-schedule-section'), undefined);
   });
@@ -697,7 +712,7 @@ describe('native Team public composition', () => {
     assert.match(nodeText(hero), /x0/);
   });
 
-  it('uses tab semantics for the mutually exclusive roster views and keeps the canonical matchup visible', () => {
+  it('uses tab semantics for the mutually exclusive roster views and keeps the compact canonical matchup visible', () => {
     const run = runtime(320);
     const jerseyToggle = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-jersey-toggle');
     const statsToggle = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle');
@@ -710,7 +725,8 @@ describe('native Team public composition', () => {
     assert.deepEqual(findNode(changed, (node) => node.props.testID === 'team-roster-jersey-toggle')?.props.accessibilityState, { selected: false, disabled: false });
     assert.deepEqual(findNode(changed, (node) => node.props.testID === 'team-roster-list-toggle')?.props.accessibilityState, { selected: true, disabled: false });
     const schedule = findNode(changed, (node) => node.props.testID === 'schedule-matchup-card-g3');
-    assert.match(nodeText(schedule), /First General London.*London Eco Metal/);
+    assert.equal(schedule?.props.compact, true);
+    assert.equal(findNodes(schedule, (node) => node.type === 'TeamLogo').length, 2);
   });
 
   it('emits explicit true and false selection state for roster tabs', () => {

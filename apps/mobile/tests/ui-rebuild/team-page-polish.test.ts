@@ -198,14 +198,15 @@ describe('Team page polish contract', () => {
     assert.deepEqual(schedulePresentation.selectTeamScheduleGames([]), []);
   });
 
-  it('renders the canonical Schedule matchup/date-card treatment without expansion or placeholder rows', () => {
+  it('renders the canonical compact Schedule cards without redundant date groups, expansion, or placeholder rows', () => {
     const team = readFileSync(teamPageUrl.pathname, 'utf8');
     assert.match(team, /import ScheduleMatchupCard from ['"]\.\.\/\.\.\/components\/ScheduleMatchupCard['"]/);
-    assert.match(team, /buildScheduleRows/);
+    assert.doesNotMatch(team, /buildScheduleRows/);
     assert.match(team, /selectTeamScheduleGames/);
     assert.match(team, /<FocusCard focusId=\{`team-public:\$\{snapshot\.team\.id\}:schedule:/);
     assert.match(team, /<ScheduleMatchupCard/);
-    assert.doesNotMatch(team, /function ScheduleRow/);
+    assert.match(team, /onOpenGame=\{onOpenGame\}\s+compact/);
+    assert.doesNotMatch(team, /function ScheduleRow|styles\.dateHeader/);
     assert.doesNotMatch(team, /View full schedule|placeholder/i);
   });
 });

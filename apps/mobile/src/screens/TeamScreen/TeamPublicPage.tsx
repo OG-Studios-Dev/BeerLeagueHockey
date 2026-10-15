@@ -12,7 +12,7 @@ import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
 import { SelectableControl, SelectableControlGroup } from '../../components/SelectableControl';
 import TeamLogo from '../../components/TeamLogo';
 import type { HomeLeaderMetric } from '../../lib/homeLeagueLeaders';
-import { buildScheduleRows, selectTeamScheduleGames, type SchedulePresentationRow } from '../../lib/schedulePresentation';
+import { selectTeamScheduleGames } from '../../lib/schedulePresentation';
 import type { GameRow } from '../../lib/supabase/data';
 import type { TeamPageGame, TeamPageRival, TeamPageRosterPlayer, TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { formatPublicMetric } from '../../lib/supabase/publicStats';
@@ -273,22 +273,20 @@ function toScheduleGame(game: TeamPageGame, seasonId: string): GameRow {
 
 function Schedule({ snapshot, accent, reduceTransparency, onOpenGame }: { snapshot: TeamPageSnapshot; accent: string; reduceTransparency: boolean; onOpenGame: (id: string) => void }) {
   const games = selectTeamScheduleGames(snapshot.games.map((game) => toScheduleGame(game, snapshot.season.id)));
-  const rows = buildScheduleRows(games, snapshot.league.timezone);
-  if (rows.length === 0) return null;
+  if (games.length === 0) return null;
   return (
     <View testID="team-schedule-section">
       <SectionHeading icon="calendar-clear-outline" title="Schedule" accent={accent} />
       <View style={styles.teamScheduleList}>
-        {rows.map((row: SchedulePresentationRow) => row.type === 'date' ? (
-          <View key={row.id} style={styles.dateHeader}><Text accessibilityRole="header" style={styles.dateHeaderText}>{row.title}</Text></View>
-        ) : (
-          <FocusCard focusId={`team-public:${snapshot.team.id}:schedule:${row.game.id}`} key={row.id}>
+        {games.map((game) => (
+          <FocusCard focusId={`team-public:${snapshot.team.id}:schedule:${game.id}`} key={game.id}>
             <ScheduleMatchupCard
-              game={row.game}
+              game={game}
               timezone={snapshot.league.timezone}
               leagueColor={snapshot.league.primaryColor}
               reduceTransparency={reduceTransparency}
               onOpenGame={onOpenGame}
+              compact
             />
           </FocusCard>
         ))}
@@ -464,8 +462,6 @@ const styles = StyleSheet.create({
   estimateNote: { color: '#8D9AAF', fontSize: 9, lineHeight: 13, textAlign: 'center', marginBottom: 8 },
 
   teamScheduleList: { minWidth: 0 },
-  dateHeader: { paddingTop: 4, paddingBottom: 8 },
-  dateHeaderText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, fontWeight: '900' },
   rosterHeadingCopy: { flex: 1, minWidth: 0 }, rosterHeadingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, iconToggle: { width: 96, minWidth: 96, flexShrink: 0, marginBottom: 12, flexDirection: 'row', gap: 8 }, iconToggleButton: { width: ui.minTouchTarget, minWidth: ui.minTouchTarget, height: ui.minTouchTarget, paddingHorizontal: 0, gap: 2, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }, rosterTruth: { marginTop: 0, marginBottom: 14, color: '#738095', fontSize: 10, fontWeight: '700' },
   substitutionNotes: { gap: 7, marginTop: 10, marginBottom: 14 }, substitutionNote: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 }, substitutionNoteText: { flex: 1, color: '#A8B4C8', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   lineup: { gap: 15, paddingHorizontal: 10, paddingVertical: 16 }, groupLabel: { marginBottom: 4, color: '#758196', fontSize: 9, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center' }, forwardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 3, rowGap: 7 }, lowerLineup: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 5 }, defenceGroup: { flex: 2 }, goalieGroup: { flex: 1, alignItems: 'center' }, defenceGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 3 }, lineupSlot: { width: '32%', minWidth: 92, minHeight: 91, alignItems: 'center', justifyContent: 'center' }, defenceSlot: { width: '48%', minWidth: 82 }, goalieSlot: { width: '100%', minWidth: 82 }, emptyJersey: { width: 92, height: 78, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(124,58,237,.65)', borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(124,58,237,.04)' }, emptyJerseyCompact: { width: 82, height: 70 },
