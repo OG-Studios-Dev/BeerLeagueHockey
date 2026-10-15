@@ -81,7 +81,9 @@ function createRuntime({
   const HomeScreen = compileCommonJs<{ default: (props: Record<string, unknown>) => unknown }>(new URL('../../src/screens/HomeScreen.tsx', import.meta.url), {
     react: harness.react,
     'react-native': {
-      ActivityIndicator: 'ActivityIndicator', Image: 'Image', Pressable: 'Pressable', RefreshControl: 'RefreshControl',
+      ActivityIndicator: 'ActivityIndicator', Image: 'Image',
+      Modal: ({ visible, children, ...props }: Record<string, any>) => createElement('Modal', { ...props, visible }, visible ? children : null),
+      Pressable: 'Pressable', RefreshControl: 'RefreshControl',
       ScrollView: ({ ref, children, ...props }: Record<string, any>) => {
         if (ref && typeof ref === 'object') ref.current = { scrollTo: (value: { x: number; animated: boolean }) => scrollCalls.push(value) };
         return createElement('ScrollView', props, children);
@@ -91,7 +93,10 @@ function createRuntime({
       LayoutAnimation: { Presets: { easeInEaseOut: 'ease' }, configureNext: (preset: unknown) => animationCalls.push(preset) },
       useWindowDimensions: () => ({ width: viewportWidth, height: 700, fontScale: viewportFontScale }),
     },
-    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    'react-native-safe-area-context': {
+      SafeAreaView: 'SafeAreaView',
+      useSafeAreaInsets: () => ({ top: 47, right: 0, bottom: 34, left: 0 }),
+    },
     '@expo/vector-icons': { Ionicons: 'Ionicon' },
     'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
     'expo-haptics': { ImpactFeedbackStyle: { Medium: 'medium' }, impactAsync: () => undefined },
@@ -874,7 +879,14 @@ describe('Home web-structure runtime', () => {
     assert.equal(allNodes(findNode(albumOutput, (node) => node.props.testID === 'home-photos-section')).filter((node) => node.props.testID === 'home-photo-card').length, 1);
     assert.equal(findNode(albumOutput, (node) => node.props.testID === 'home-photo-position'), undefined);
     card.props.onPress();
-    assert.deepEqual(albumRuntime.linkCalls, ['https://harbour-hockey.beerleaguehockey.ca/gallery/album-covered']);
+    const viewerOutput = albumRuntime.harness.render();
+    const modal = findNode(viewerOutput, (node) => node.type === 'Modal');
+    assert.equal(modal?.props.visible, true);
+    assert.equal(
+      findNode(modal, (node) => node.type === 'Image' && node.props.resizeMode === 'contain')?.props.source.uri,
+      'https://images.test/championship-cover.jpg',
+    );
+    assert.deepEqual(albumRuntime.linkCalls, []);
   });
 
   it('retains the validated division scope with stale standings after a same-period endpoint failure', async () => {
