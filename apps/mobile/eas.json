@@ -42,6 +42,21 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production-cloud-build44": {
+      "node": "22.11.0",
+      "pnpm": "10.17.1",
+      "channel": "production",
+      "developmentClient": false,
+      "distribution": "store",
+      "environment": "production",
+      "autoIncrement": false,
+      "credentialsSource": "remote",
+      "resourceClass": "medium",
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "simulator": false
+      }
     }
   },
   "submit": {
