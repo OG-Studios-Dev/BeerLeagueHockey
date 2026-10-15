@@ -30,9 +30,11 @@ export type StatsStackParamList = {
   CareerStats: undefined;
 };
 
+export type GameAvailabilityIntent = 'invite-sub';
+
 export type CaptainStackParamList = {
   CaptainDashboard: undefined;
-  GameAvailability: { gameId: string; teamId: string; leagueId: string };
+  GameAvailability: { gameId: string; teamId: string; leagueId: string; intent?: GameAvailabilityIntent };
 };
 
 export type LeaguePageScopeParams = { leagueId: string; leagueSlug: string };

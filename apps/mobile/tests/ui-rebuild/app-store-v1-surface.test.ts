@@ -37,9 +37,13 @@ describe('minimum-v1 social surface', () => {
 });
 
 describe('minimum-v1 reviewer controls', () => {
-  it('removes the unproven captain invitation action and route from minimum v1', () => {
+  it('keeps removed InvitePlayers unavailable while allowing the validated Invite sub intent', () => {
     const dashboard = source('src/screens/captain/CaptainDashboardScreen.tsx');
-    assert.doesNotMatch(dashboard, /InvitePlayers|person-add-outline|>Invite</);
+    const navigationTypes = source('src/navigation/types.ts');
+    assert.doesNotMatch(dashboard, /InvitePlayers/);
+    assert.match(dashboard, /label="Invite sub"/);
+    assert.match(dashboard, /intent:\s*'invite-sub'/);
+    assert.match(navigationTypes, /GameAvailabilityIntent\s*=\s*'invite-sub'/);
 
     for (const relativePath of [
       'src/navigation/index.tsx',

@@ -10,7 +10,7 @@ import { SelectableControl, SelectableControlGroup } from '../../components/Sele
 import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import { useAuth } from '../../context/AuthContext';
 import {
-  clearPlayerCheckinAsCaptain, createGoalieRequest, getCaptainRole, getGameCheckinStatusMap,
+  clearPlayerCheckinAsCaptain, createGoalieRequest, getCaptainRoleForSeason, getGameCheckinStatusMap,
   getLeagueSubPlayers, getOpenGoalieRequest, getTeamSubInvitations, inviteSub,
   updatePlayerCheckinAsCaptain, type CaptainRole, type GoalieRequestRow, type SubCandidate,
   type TeamSubInvitation,
@@ -18,6 +18,7 @@ import {
 import { type CheckinStatus } from '../../lib/supabase/checkins';
 import { supabase } from '../../lib/supabase/client';
 import { getTeamRoster, type RosterMemberRow } from '../../lib/supabase/data';
+import { getTeamActiveSeason } from '../../lib/supabase/team';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 import colors from '../../theme/colors';
 
@@ -33,6 +34,7 @@ const GOALIE_COMPENSATION_OPTIONS = [{ value: 'Free', label: 'Free' }, { value: 
 
 type GameRow = {
   league_id: string;
+  season_id: string;
   home_team_id: string;
   away_team_id: string;
   scheduled_at: string;
@@ -42,7 +44,7 @@ type GameRow = {
 };
 
 type ScreenProps = {
-  route: { params: { gameId: string; teamId: string; leagueId: string } };
+  route: { params: { gameId: string; teamId: string; leagueId: string; intent?: 'invite-sub' } };
   navigation: { goBack(): void };
 };
 
@@ -53,6 +55,7 @@ type ScopedStatusFact = {
 
 export default function GameAvailabilityScreen({ route, navigation }: ScreenProps) {
   const { gameId, teamId, leagueId } = route.params;
+  const routeIntent = route.params.intent === 'invite-sub' ? 'invite-sub' : null;
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const routeKey = `${leagueId}:${teamId}:${gameId}`;
@@ -82,6 +85,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
   const validatedRouteRef = React.useRef<string | null>(null);
   const activeScopeRef = React.useRef<string | null>(null);
   const subLoadTokenRef = React.useRef(0);
+  const consumedInviteIntentKeysRef = React.useRef<Set<string>>(new Set());
   const confirmedStatusRef = React.useRef<Map<string, ScopedStatusFact>>(new Map());
   const confirmedStatusRevisionRef = React.useRef(0);
   const authoritativeStatusRef = React.useRef<Map<string, ScopedStatusFact>>(new Map());
@@ -116,7 +120,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       setAccessMessage('This game is not available in Hockey Life.'); setLoading(false); return;
       }
       const { data: game, error: gameError } = await supabase.from('games').select(`
-      id, league_id, scheduled_at, location, home_team_id, away_team_id,
+      id, league_id, season_id, scheduled_at, location, home_team_id, away_team_id,
       home_team:teams!games_home_team_id_fkey(name), away_team:teams!games_away_team_id_fkey(name)
     `).eq('id', gameId).eq('league_id', leagueId).maybeSingle();
       if (generation !== loadGenerationRef.current) return;
@@ -125,10 +129,16 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       setRoster([]); setCheckinMap({}); setGameInfo(null);
       setAccessMessage('This game does not belong to the requested team.'); setLoading(false); return;
       }
+      const { season, error: seasonError } = await getTeamActiveSeason(HOCKEY_LIFE_ID);
+      if (generation !== loadGenerationRef.current) return;
+      if (seasonError || !season || !['active', 'playoffs'].includes(season.status) || g.season_id !== season.id) {
+      setRoster([]); setCheckinMap({}); setGameInfo(null);
+      setAccessMessage('This game is not in the current Hockey Life season.'); setLoading(false); return;
+      }
+      const role = await getCaptainRoleForSeason(teamId, HOCKEY_LIFE_ID, season.id);
+      if (generation !== loadGenerationRef.current) return;
       validatedRouteRef.current = controlKey;
       setValidatedRouteKey(controlKey);
-      const role = await getCaptainRole(teamId);
-      if (generation !== loadGenerationRef.current) return;
       const rosterData = await getTeamRoster(teamId, leagueId);
       if (generation !== loadGenerationRef.current) return;
       setRoster(rosterData); setCaptainRole(role);
@@ -261,7 +271,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     }
   }
 
-  async function openSubModal() {
+  const openSubModal = React.useCallback(async () => {
     if (!canMutate) return;
     setSubModalVisible(true); setSubSearch(''); setActionError(null);
     if (subCandidates.length || loadingSubs) return;
@@ -280,7 +290,15 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     } finally {
       if (loadToken === subLoadTokenRef.current && validatedRouteRef.current === operationControlKey) setLoadingSubs(false);
     }
-  }
+  }, [canMutate, controlKey, leagueId, loadingSubs, subCandidates.length, teamId]);
+
+  React.useEffect(() => {
+    if (routeIntent !== 'invite-sub' || !canMutate || validatedRouteRef.current !== controlKey) return;
+    const intentKey = `invite-sub:${controlKey}`;
+    if (consumedInviteIntentKeysRef.current.has(intentKey)) return;
+    consumedInviteIntentKeysRef.current.add(intentKey);
+    void openSubModal();
+  }, [canMutate, controlKey, openSubModal, routeIntent]);
 
   async function handleInviteSub(playerId: string) {
     const operationKey = `invite:${controlKey}:${playerId}`;

@@ -1,16 +1,15 @@
-export const PRIVACY_URL = 'https://beerleaguehockey.ca/privacy';
-export const TERMS_URL = 'https://beerleaguehockey.ca/terms';
-export const HOCKEY_LIFE_SUPPORT_URL = 'https://hockey-life.beerleaguehockey.ca/contact';
+import { isApprovedPublicLink } from '../config/publicLinks';
 
-const APPROVED_PUBLIC_URLS = new Set([
+export {
+  HOCKEY_LIFE_CAPTAIN_FEES_URL,
+  HOCKEY_LIFE_CAPTAIN_URL,
+  HOCKEY_LIFE_SUPPORT_URL,
   PRIVACY_URL,
   TERMS_URL,
-  HOCKEY_LIFE_SUPPORT_URL,
-]);
-
-export function isApprovedPublicLink(url: string) {
-  return APPROVED_PUBLIC_URLS.has(url);
-}
+  buildHockeyLifeCaptainLineupUrl,
+  isApprovedPublicLink,
+  isSafeCaptainGameId,
+} from '../config/publicLinks';
 
 export type PublicLinkResult =
   | { success: true }

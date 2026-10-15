@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useMobileShellData } from '../navigation/MobileShellDataContext';
@@ -9,9 +9,11 @@ import { resolveCutIcePalette, splitCutIceTitle } from './cutIceTitleModel';
 
 export default function CutIceTitle({ title, onBack }: { title: string; onBack?: () => void }) {
   const { top } = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { titleAccent } = useMobileShellData();
   const palette = resolveCutIcePalette(titleAccent);
   const parts = splitCutIceTitle(title);
+  const isNarrow = width < 360;
 
   return (
     <View
@@ -33,7 +35,13 @@ export default function CutIceTitle({ title, onBack }: { title: string; onBack?:
           <Ionicons name="chevron-back" size={22} color="#F6FBFF" />
         </Pressable>
       ) : null}
-      <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.title}>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.65}
+        numberOfLines={1}
+        maxFontSizeMultiplier={1.2}
+        style={[styles.title, isNarrow && styles.narrowTitle, isNarrow && onBack && styles.narrowTitleWithBack]}
+      >
         {parts.base ? `${parts.base.toUpperCase()} ` : ''}
         <Text style={{ color: palette.readable }}>{parts.accent.toUpperCase()}</Text>
       </Text>
@@ -63,5 +71,7 @@ const styles = StyleSheet.create({
     flex: 1, color: '#F6FBFF', fontSize: 29, lineHeight: 34, fontWeight: '900', fontStyle: 'italic',
     letterSpacing: -0.7, textTransform: 'uppercase', textShadowColor: '#000000', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 0,
   },
+  narrowTitle: { fontSize: 25, lineHeight: 30 },
+  narrowTitleWithBack: { fontSize: 20, lineHeight: 24 },
   backButton: { width: 44, height: 44, marginLeft: -10, marginRight: 2, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
 });

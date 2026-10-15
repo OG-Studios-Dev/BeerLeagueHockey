@@ -1,8 +1,12 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  ImageBackground,
+  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -10,50 +14,154 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
-import SectionHeader from '../../components/SectionHeader';
-import TeamLogo from '../../components/TeamLogo';
-import { useAuth } from '../../context/AuthContext';
 import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
+import {
+  HOCKEY_LIFE_CAPTAIN_FEES_URL,
+  HOCKEY_LIFE_CAPTAIN_URL,
+  buildHockeyLifeCaptainLineupUrl,
+} from '../../config/publicLinks';
+import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
+import { useAuth } from '../../context/AuthContext';
+import { openPublicLink } from '../../lib/publicLinks';
 import { supabase } from '../../lib/supabase/client';
-import { type CaptainRole } from '../../lib/supabase/captain';
 import { getTeamActiveSeason } from '../../lib/supabase/team';
+import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
+import type { CaptainStackParamList } from '../../navigation/types';
 import colors from '../../theme/colors';
+
+/* eslint-disable @typescript-eslint/no-require-imports -- Metro requires static image requires. */
+const weeklyGamesBackground = require('../../assets/team-page/weekly-games-bg.jpg');
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+type CaptainGame = {
+  id: string;
+  scheduledAt: string;
+  opponent: string;
+  location: string | null;
+};
 
 type CaptainTeam = {
   teamId: string;
   teamName: string;
-  teamLogoUrl: string | null;
   teamPrimaryColor: string | null;
   leagueId: string;
-  leagueName: string;
-  role: CaptainRole;
-  rosterCount: number;
-  nextGame: {
-    id: string;
-    scheduled_at: string;
-    opponent: string;
-    location: string | null;
-  } | null;
+  timezone: string;
+  nextGame: CaptainGame | null;
 };
 
 type CaptainDashboardState = {
   ownerId: string | null;
-  captainTeams: CaptainTeam[];
+  selectedTeam: CaptainTeam | null;
   loadError: string | null;
   loading: boolean;
 };
 
+type CaptainRosterRow = {
+  team_id: string;
+  league_id: string;
+  team: { id: string; name: string | null; primary_color: string | null } | Array<{ id: string; name: string | null; primary_color: string | null }> | null;
+  league: { id: string; name: string | null; timezone: string | null } | Array<{ id: string; name: string | null; timezone: string | null }> | null;
+};
+
+type CaptainGameRow = {
+  id: string;
+  scheduled_at: string;
+  location: string | null;
+  home_team_id: string;
+  away_team_id: string;
+  home_team: { name: string | null } | Array<{ name: string | null }> | null;
+  away_team: { name: string | null } | Array<{ name: string | null }> | null;
+};
+
+type ScreenProps = NativeStackScreenProps<CaptainStackParamList, 'CaptainDashboard'>;
+
 const CAPTAIN_DASHBOARD_ERROR = 'Captain duties are temporarily unavailable.';
 
 function loadingDashboardState(ownerId: string | null): CaptainDashboardState {
-  return { ownerId, captainTeams: [], loadError: null, loading: true };
+  return { ownerId, selectedTeam: null, loadError: null, loading: true };
 }
 
-export default function CaptainDashboardScreen({ navigation }: { navigation: any }) {
+function relation<T>(value: T | T[] | null | undefined): T | null {
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+function formatGameDate(iso: string, timezone: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: timezone,
+  });
+}
+
+function formatGameTime(iso: string, timezone: string): string {
+  return new Date(iso).toLocaleTimeString('en-CA', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: timezone,
+  });
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function selectCaptainTeam(teams: CaptainTeam[]): CaptainTeam | null {
+  const gameTeams = teams.filter((team) => team.nextGame).sort((left, right) => {
+    const leftTime = Date.parse(left.nextGame!.scheduledAt);
+    const rightTime = Date.parse(right.nextGame!.scheduledAt);
+    if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) throw new TypeError('Invalid scheduled game time');
+    return leftTime - rightTime
+      || compareText(left.teamName, right.teamName)
+      || compareText(left.teamId, right.teamId)
+      || compareText(left.nextGame!.id, right.nextGame!.id);
+  });
+  if (gameTeams.length > 0) return gameTeams[0];
+  return [...teams].sort((left, right) =>
+    compareText(left.teamName, right.teamName) || compareText(left.teamId, right.teamId))[0] ?? null;
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return <Text accessibilityRole="header" style={styles.sectionTitle}>{children}</Text>;
+}
+
+function ActionTile({
+  testID,
+  icon,
+  label,
+  accessibilityHint,
+  opaque,
+  onPress,
+}: {
+  testID: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  accessibilityHint?: string;
+  opaque: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
+      onPress={onPress}
+      style={({ pressed }) => [styles.actionTile, opaque && styles.actionTileOpaque, pressed && styles.actionTilePressed]}
+    >
+      <View pointerEvents="none" style={styles.actionIconTile}>
+        <Ionicons name={icon} size={21} color={colors.primary} />
+      </View>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export default function CaptainDashboardScreen({ navigation }: ScreenProps) {
   const { user } = useAuth();
+  const { reduceTransparency } = useAccessibilityPreferences();
   const userId = user?.id ?? null;
   const [dashboardState, setDashboardState] = React.useState<CaptainDashboardState>(() => loadingDashboardState(userId));
   const [refreshing, setRefreshing] = React.useState(false);
@@ -79,38 +187,39 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
     const requestId = ++loadRequestRef.current;
     const lifecycleGeneration = lifecycleGenerationRef.current;
     const isCurrentRequest = () =>
-      mountedRef.current &&
-      lifecycleGenerationRef.current === lifecycleGeneration &&
-      loadRequestRef.current === requestId &&
-      currentUserIdRef.current === userId;
+      mountedRef.current
+      && lifecycleGenerationRef.current === lifecycleGeneration
+      && loadRequestRef.current === requestId
+      && currentUserIdRef.current === userId;
+
     if (!userId) {
       if (isCurrentRequest()) {
-        setDashboardState({ ownerId: userId, captainTeams: [], loadError: null, loading: false });
+        setDashboardState({ ownerId: userId, selectedTeam: null, loadError: null, loading: false });
       }
       return;
     }
 
     try {
       if (isCurrentRequest()) {
-        setDashboardState(current => current.ownerId === userId
+        setDashboardState((current) => current.ownerId === userId
           ? { ...current, loadError: null }
           : loadingDashboardState(userId));
       }
+
       const { season, error: seasonError } = await getTeamActiveSeason(HOCKEY_LIFE_ID);
       if (!isCurrentRequest()) return;
       if (seasonError) throw new Error(seasonError);
       if (!season || !['active', 'playoffs'].includes(season.status)) {
-        setDashboardState({ ownerId: userId, captainTeams: [], loadError: null, loading: false });
+        setDashboardState({ ownerId: userId, selectedTeam: null, loadError: null, loading: false });
         return;
       }
 
-      // Get current-season teams the user is on with leadership roles
       const { data: rosterRows, error: rosterError } = await supabase
         .from('team_rosters')
         .select(`
           team_id, league_id, leadership_role,
-          team:teams!team_rosters_team_id_fkey(id, name, logo_url, primary_color),
-          league:leagues!team_rosters_league_id_fkey(id, name)
+          team:teams!team_rosters_team_id_fkey(id, name, primary_color),
+          league:leagues!team_rosters_league_id_fkey(id, name, timezone)
         `)
         .eq('player_id', userId)
         .eq('league_id', HOCKEY_LIFE_ID)
@@ -121,32 +230,19 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
       if (!isCurrentRequest()) return;
       if (rosterError) throw rosterError;
 
-      const rows = (rosterRows as any[]) ?? [];
+      const rows = (rosterRows ?? []) as unknown as CaptainRosterRow[];
       if (rows.length === 0) {
-        setDashboardState({ ownerId: userId, captainTeams: [], loadError: null, loading: false });
+        setDashboardState({ ownerId: userId, selectedTeam: null, loadError: null, loading: false });
         return;
       }
 
+      const loadTime = new Date().toISOString();
       const teams: CaptainTeam[] = [];
-
       for (const row of rows) {
-        const team = Array.isArray(row.team) ? row.team[0] : row.team;
-        const league = Array.isArray(row.league) ? row.league[0] : row.league;
-        if (!team || !league) continue;
+        const team = relation(row.team);
+        const league = relation(row.league);
+        if (!team || !league || typeof row.team_id !== 'string' || typeof row.league_id !== 'string') continue;
 
-        // Get roster count
-        const { count: rosterCount, error: rosterCountError } = await supabase
-          .from('team_rosters')
-          .select('id', { count: 'exact', head: true })
-          .eq('team_id', row.team_id)
-          .eq('league_id', row.league_id)
-          .eq('season_id', season.id)
-          .eq('status', 'active')
-          .is('end_date', null);
-        if (!isCurrentRequest()) return;
-        if (rosterCountError) throw rosterCountError;
-
-        // Get next game
         const { data: nextGameData, error: nextGameError } = await supabase
           .from('games')
           .select(`
@@ -158,56 +254,47 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
           .eq('season_id', season.id)
           .or(`home_team_id.eq.${row.team_id},away_team_id.eq.${row.team_id}`)
           .eq('status', 'scheduled')
-          .gte('scheduled_at', new Date().toISOString())
+          .gte('scheduled_at', loadTime)
           .order('scheduled_at', { ascending: true })
+          .order('id', { ascending: true })
           .limit(1)
           .maybeSingle();
         if (!isCurrentRequest()) return;
         if (nextGameError) throw nextGameError;
 
-        let nextGame: CaptainTeam['nextGame'] = null;
+        let nextGame: CaptainGame | null = null;
         if (nextGameData) {
-          const g = nextGameData as any;
-          const homeTeam = Array.isArray(g.home_team) ? g.home_team[0] : g.home_team;
-          const awayTeam = Array.isArray(g.away_team) ? g.away_team[0] : g.away_team;
-          const isHome = g.home_team_id === row.team_id;
-          const opponent = isHome ? (awayTeam?.name ?? 'TBD') : (homeTeam?.name ?? 'TBD');
+          const game = nextGameData as unknown as CaptainGameRow;
+          const homeTeam = relation(game.home_team);
+          const awayTeam = relation(game.away_team);
           nextGame = {
-            id: g.id,
-            scheduled_at: g.scheduled_at,
-            opponent,
-            location: g.location ?? null,
+            id: game.id,
+            scheduledAt: game.scheduled_at,
+            opponent: game.home_team_id === row.team_id ? (awayTeam?.name ?? 'TBD') : (homeTeam?.name ?? 'TBD'),
+            location: game.location ?? null,
           };
         }
 
         teams.push({
           teamId: row.team_id,
-          teamName: team.name,
-          teamLogoUrl: team.logo_url ?? null,
+          teamName: team.name ?? 'Team',
           teamPrimaryColor: team.primary_color ?? null,
           leagueId: row.league_id,
-          leagueName: league.name,
-          role: row.leadership_role as CaptainRole,
-          rosterCount: rosterCount ?? 0,
+          timezone: league.timezone ?? 'America/Toronto',
           nextGame,
         });
       }
 
       if (isCurrentRequest()) {
-        setDashboardState({ ownerId: userId, captainTeams: teams, loadError: null, loading: false });
+        setDashboardState({ ownerId: userId, selectedTeam: selectCaptainTeam(teams), loadError: null, loading: false });
       }
     } catch {
       if (isCurrentRequest()) {
-        setDashboardState({
-          ownerId: userId,
-          captainTeams: [],
-          loadError: CAPTAIN_DASHBOARD_ERROR,
-          loading: false,
-        });
+        setDashboardState({ ownerId: userId, selectedTeam: null, loadError: CAPTAIN_DASHBOARD_ERROR, loading: false });
       }
     } finally {
       if (isCurrentRequest()) {
-        setDashboardState(current => current.ownerId === userId && current.loading
+        setDashboardState((current) => current.ownerId === userId && current.loading
           ? { ...current, loading: false }
           : current);
       }
@@ -226,10 +313,10 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
     const lifecycleGeneration = lifecycleGenerationRef.current;
     const refreshOwnerId = userId;
     const isCurrentRefresh = () =>
-      mountedRef.current &&
-      lifecycleGenerationRef.current === lifecycleGeneration &&
-      refreshRequestRef.current === refreshRequest &&
-      currentUserIdRef.current === refreshOwnerId;
+      mountedRef.current
+      && lifecycleGenerationRef.current === lifecycleGeneration
+      && refreshRequestRef.current === refreshRequest
+      && currentUserIdRef.current === refreshOwnerId;
     if (!isCurrentRefresh()) return;
 
     setRefreshing(true);
@@ -240,124 +327,95 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
     }
   }, [loadData, userId]);
 
-  function formatGameDate(iso: string) {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) +
-      ' at ' +
-      d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  }
-
-  const visibleState = dashboardState.ownerId === userId
-    ? dashboardState
-    : loadingDashboardState(userId);
-  const { captainTeams, loadError, loading } = visibleState;
+  const visibleState = dashboardState.ownerId === userId ? dashboardState : loadingDashboardState(userId);
+  const { selectedTeam, loadError, loading } = visibleState;
+  const shellProps = {
+    style: styles.safeArea,
+    edges: cutIceContentEdges(['top']),
+    onAccessibilityEscape: () => navigation.goBack(),
+  };
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
+    return <SafeAreaView {...shellProps}><View style={styles.centered}><ActivityIndicator color={colors.primary} /></View></SafeAreaView>;
   }
 
-  if (captainTeams.length === 0) {
+  if (!selectedTeam) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
+      <SafeAreaView {...shellProps}>
         <View style={styles.centered}>
           <MaterialCommunityIcons name="shield-crown-outline" size={40} color={colors.textSecondary} />
           <Text style={styles.emptyTitle}>{loadError ? 'Unable to load captain duties' : 'No captain duties'}</Text>
-          <Text style={styles.emptySub}>
-            {loadError ?? 'You are not a captain or assistant captain on any teams.'}
-          </Text>
+          <Text style={styles.emptyBody}>{loadError ?? 'You are not a captain or alternate captain on a current Hockey Life team.'}</Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  const game = selectedTeam.nextGame;
+  const openCaptainLink = async (url: string | null) => {
+    if (!url) {
+      Alert.alert('Unable to open link', 'This link is not available in Hockey Life.');
+      return;
+    }
+    const result = await openPublicLink(url, (approvedUrl) => Linking.openURL(approvedUrl));
+    if (!result.success) Alert.alert('Unable to open link', result.error);
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
+    <SafeAreaView {...shellProps}>
       <FocusScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        <SectionHeader title="Your Teams" />
-
-        {captainTeams.map((team) => (
-          <FocusCard key={`${team.teamId}-${team.leagueId}`} focusId={`captain-team:${team.leagueId}:${team.teamId}`} style={styles.teamCard}>
-            <LinearGradient
-              colors={[`${team.teamPrimaryColor ?? colors.primary}12`, 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-
-            {/* Team Identity */}
-            <View style={styles.teamIdentity}>
-              <TeamLogo
-                teamId={team.teamId}
-                logoUrl={team.teamLogoUrl}
-                teamName={team.teamName}
-                primaryColor={team.teamPrimaryColor}
-                size={48}
-              />
-              <View style={styles.teamInfo}>
-                <Text style={styles.teamName}>{team.teamName}</Text>
-                <Text style={styles.leagueName}>{team.leagueName}</Text>
+        <FocusCard focusId="captain-game-day" testID="captain-game-day-section" style={styles.section}>
+          <SectionTitle>Game Day</SectionTitle>
+          {game ? (
+            <ImageBackground
+              testID="captain-game-card"
+              accessible
+              accessibilityLabel={`${game.opponent}, ${formatGameDate(game.scheduledAt, selectedTeam.timezone)}, ${formatGameTime(game.scheduledAt, selectedTeam.timezone)}, ${game.location ?? 'Rink TBD'}`}
+              source={weeklyGamesBackground}
+              resizeMode="cover"
+              imageStyle={styles.matchupImage}
+              style={styles.matchupCard}
+            >
+              <LinearGradient colors={['rgba(3,7,13,.08)', 'rgba(3,7,13,.48)', '#03070D']} locations={[0, .48, 1]} style={StyleSheet.absoluteFillObject} />
+              <View style={styles.matchupCopy}>
+                <Text style={styles.opponentEyebrow}>UP NEXT</Text>
+                <Text style={styles.opponent}>vs {game.opponent}</Text>
+                <View testID="captain-game-metadata" style={[styles.metadataPanel, reduceTransparency && styles.metadataPanelOpaque]}>
+                  <Text style={styles.metadataText}>{formatGameDate(game.scheduledAt, selectedTeam.timezone)}</Text>
+                  <View style={styles.metadataDivider} />
+                  <Text style={styles.metadataText}>{formatGameTime(game.scheduledAt, selectedTeam.timezone)}</Text>
+                  <View style={styles.metadataDivider} />
+                  <Text style={[styles.metadataText, styles.metadataLocation]}>{game.location ?? 'Rink TBD'}</Text>
+                </View>
               </View>
-              <View style={[styles.roleBadge, team.role === 'captain' ? styles.captainBadge : styles.altCaptainBadge]}>
-                <Text style={styles.roleBadgeText}>
-                  {team.role === 'captain' ? 'C' : 'A'}
-                </Text>
-              </View>
+            </ImageBackground>
+          ) : (
+            <View style={[styles.noGamePanel, reduceTransparency && styles.noGamePanelOpaque]}>
+              <MaterialCommunityIcons name="calendar-blank-outline" size={28} color={colors.textSecondary} />
+              <Text style={styles.noGameTitle}>No upcoming game</Text>
+              <Text style={styles.emptyBody}>There is no scheduled upcoming game for your current captain team.</Text>
             </View>
-
-            {/* Quick Stats */}
-            <View style={styles.quickStatsRow}>
-              <View style={styles.quickStat}>
-                <Text style={styles.quickStatValue}>{team.rosterCount}</Text>
-                <Text style={styles.quickStatLabel}>Roster</Text>
-              </View>
-              <View style={styles.quickStat}>
-                <Text style={styles.quickStatValue}>
-                  {team.nextGame ? 'Yes' : 'No'}
-                </Text>
-                <Text style={styles.quickStatLabel}>Next Game</Text>
-              </View>
+          )}
+          {game ? (
+            <View testID="captain-game-actions" style={styles.actionGrid}>
+              <ActionTile testID="captain-edit-attendance" icon="clipboard-outline" label="Edit attendance" opaque={reduceTransparency} onPress={() => navigation.navigate('GameAvailability', { gameId: game.id, teamId: selectedTeam.teamId, leagueId: selectedTeam.leagueId })} />
+              <ActionTile testID="captain-invite-sub" icon="person-add-outline" label="Invite sub" opaque={reduceTransparency} onPress={() => navigation.navigate('GameAvailability', { gameId: game.id, teamId: selectedTeam.teamId, leagueId: selectedTeam.leagueId, intent: 'invite-sub' })} />
+              <ActionTile testID="captain-set-lineup" icon="shirt-outline" label="Set lineup" opaque={reduceTransparency} onPress={() => void openCaptainLink(buildHockeyLifeCaptainLineupUrl(game.id))} />
+              <ActionTile testID="captain-score-game" icon="trophy-outline" label="Score game" opaque={reduceTransparency} onPress={() => void openCaptainLink(HOCKEY_LIFE_CAPTAIN_URL)} />
             </View>
+          ) : null}
+        </FocusCard>
 
-            {/* Next Game */}
-            {team.nextGame && (
-              <View style={styles.nextGameSection}>
-                <Text style={styles.nextGameLabel}>NEXT GAME</Text>
-                <Text style={styles.nextGameOpponent}>vs {team.nextGame.opponent}</Text>
-                <Text style={styles.nextGameDate}>{formatGameDate(team.nextGame.scheduled_at)}</Text>
-                {team.nextGame.location && (
-                  <Text style={styles.nextGameLocation}>{team.nextGame.location}</Text>
-                )}
-              </View>
-            )}
-
-            {/* Action Buttons */}
-            <View style={styles.actionRow}>
-              {team.nextGame && (
-                <Pressable
-                  style={styles.actionButton}
-                  onPress={() => navigation.navigate('GameAvailability', {
-                    gameId: team.nextGame!.id,
-                    teamId: team.teamId,
-                    leagueId: team.leagueId,
-                  })}
-                >
-                  <Ionicons name="clipboard-outline" size={16} color={colors.textPrimary} />
-                  <Text style={styles.actionButtonText}>Availability</Text>
-                </Pressable>
-              )}
-            </View>
-          </FocusCard>
-        ))}
+        <FocusCard focusId="captain-season-tools" testID="captain-season-tools-section" style={styles.section}>
+          <SectionTitle>Season Tools</SectionTitle>
+          <View style={styles.actionGrid}>
+            <ActionTile testID="captain-team-fees" icon="card-outline" label="Team fees" accessibilityHint={`Open season fees for ${selectedTeam.teamName}`} opaque={reduceTransparency} onPress={() => void openCaptainLink(HOCKEY_LIFE_CAPTAIN_FEES_URL)} />
+          </View>
+        </FocusCard>
       </FocusScrollView>
     </SafeAreaView>
   );
@@ -366,78 +424,28 @@ export default function CaptainDashboardScreen({ navigation }: { navigation: any
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
-  emptySub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  content: { padding: 16, paddingBottom: 40, gap: 12 },
-
-  teamCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: 16,
-    gap: 14,
-    overflow: 'hidden',
-  },
-  teamIdentity: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  teamInfo: { flex: 1 },
-  teamName: { fontSize: 18, fontWeight: '900', color: colors.textPrimary },
-  leagueName: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
-  roleBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captainBadge: { backgroundColor: colors.brandGold },
-  altCaptainBadge: { backgroundColor: colors.accentViolet },
-  roleBadgeText: { fontSize: 14, fontWeight: '900', color: '#000' },
-
-  quickStatsRow: { flexDirection: 'row', gap: 10 },
-  quickStat: {
-    flex: 1,
-    backgroundColor: colors.glassHighlight,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: 12,
-    alignItems: 'center',
-  },
-  quickStatValue: { fontSize: 18, fontWeight: '900', color: colors.textPrimary },
-  quickStatLabel: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginTop: 2 },
-
-  nextGameSection: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    padding: 12,
-    gap: 4,
-  },
-  nextGameLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1, color: colors.primary },
-  nextGameOpponent: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  nextGameDate: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  nextGameLocation: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-
-  actionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  actionButton: {
-    flex: 1,
-    minWidth: 90,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.bgInteractive,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-  },
-  actionButtonText: { fontSize: 12, fontWeight: '800', color: colors.textPrimary },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40, gap: 28 },
+  section: { gap: 12 },
+  sectionTitle: { color: '#F7FBFF', fontSize: 21, lineHeight: 27, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' },
+  matchupCard: { minHeight: 232, overflow: 'hidden', justifyContent: 'flex-end', borderRadius: 26, borderWidth: 1, borderColor: 'rgba(255,255,255,.14)', backgroundColor: '#03070D' },
+  matchupImage: { borderRadius: 26 },
+  matchupCopy: { minHeight: 232, justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 16 },
+  opponentEyebrow: { color: colors.primary, fontSize: 9, lineHeight: 13, fontWeight: '900', letterSpacing: 2.2 },
+  opponent: { marginTop: 5, color: '#FFFFFF', fontSize: 30, lineHeight: 35, fontWeight: '900', letterSpacing: -.6, textAlign: 'center' },
+  metadataPanel: { minHeight: 44, maxWidth: '100%', marginTop: 16, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,.16)', backgroundColor: 'rgba(3,7,13,.78)', paddingHorizontal: 12, paddingVertical: 9 },
+  metadataPanelOpaque: { borderColor: '#32425A', backgroundColor: '#0B1728' },
+  metadataText: { flexShrink: 1, color: '#D4DCE8', fontSize: 10, lineHeight: 14, fontWeight: '800' },
+  metadataLocation: { flexBasis: '100%', marginTop: 4, textAlign: 'center' },
+  metadataDivider: { width: 3, height: 3, marginHorizontal: 7, borderRadius: 2, backgroundColor: '#65748A' },
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  actionTile: { minHeight: 96, flexBasis: '47%', flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', backgroundColor: 'rgba(14,27,47,.78)', paddingHorizontal: 10, paddingVertical: 12 },
+  actionTileOpaque: { borderColor: '#344760', backgroundColor: '#10223B' },
+  actionTilePressed: { backgroundColor: 'rgba(27,46,73,.92)', transform: [{ scale: .985 }] },
+  actionIconTile: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', backgroundColor: 'rgba(3,7,13,.44)' },
+  actionLabel: { color: '#F7FBFF', fontSize: 12, lineHeight: 17, fontWeight: '900', letterSpacing: .6, textAlign: 'center' },
+  noGamePanel: { minHeight: 176, alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 24, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.16)', backgroundColor: 'rgba(10,22,40,.82)', padding: 22 },
+  noGamePanelOpaque: { borderColor: '#32425A', backgroundColor: '#0B1728' },
+  noGameTitle: { color: '#F7FBFF', fontSize: 17, lineHeight: 22, fontWeight: '900' },
+  emptyTitle: { color: colors.textPrimary, fontSize: 18, lineHeight: 24, fontWeight: '900', textAlign: 'center' },
+  emptyBody: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, fontWeight: '600', textAlign: 'center' },
 });

@@ -74,6 +74,33 @@ export async function getCaptainRole(teamId: string): Promise<CaptainRole | null
   return role === 'captain' || role === 'alternate_captain' ? role : null;
 }
 
+export async function getCaptainRoleForSeason(
+  teamId: string,
+  leagueId: string,
+  seasonId: string,
+): Promise<CaptainRole | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('team_rosters')
+    .select('leadership_role')
+    .eq('team_id', teamId)
+    .eq('player_id', userId)
+    .eq('league_id', leagueId)
+    .eq('season_id', seasonId)
+    .eq('status', 'active')
+    .is('end_date', null)
+    .in('leadership_role', ['captain', 'alternate_captain'])
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return null;
+
+  const role = data?.leadership_role;
+  return role === 'captain' || role === 'alternate_captain' ? role : null;
+}
+
 async function verifyCaptainAccess(teamId: string) {
   const userId = await getCurrentUserId();
   if (!userId) {
