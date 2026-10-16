@@ -88,7 +88,11 @@ function surname(name: string): string {
 }
 
 type LineupSlot = 'forward' | 'defence' | 'goalie';
-type DisplayRosterPlayer = Pick<TeamPageRosterPlayer, 'playerId' | 'name' | 'jerseyNumber' | 'position' | 'isGoalie'> & { slotIndex?: number; slot?: LineupSlot };
+type DisplayRosterPlayer = Pick<TeamPageRosterPlayer, 'playerId' | 'name' | 'jerseyNumber' | 'position' | 'isGoalie' | 'leadershipRole' | 'playerType'> & {
+  isSubstitute: boolean;
+  slotIndex?: number;
+  slot?: LineupSlot;
+};
 
 const LINEUP_COORDS: Record<LineupSlot, Array<{ x: number; y: number }>> = {
   forward: [{ x: 28, y: 22 }, { x: 50, y: 22 }, { x: 72, y: 22 }, { x: 28, y: 38 }, { x: 50, y: 38 }, { x: 72, y: 38 }, { x: 28, y: 48 }, { x: 50, y: 48 }, { x: 72, y: 48 }],
@@ -113,7 +117,7 @@ function getPublishedRoster(snapshot: TeamPageSnapshot): { players: DisplayRoste
   const fallbackCounters: Record<LineupSlot, number> = { forward: 0, defence: 0, goalie: 0 };
   const fallback = snapshot.roster.filter((player) => player.playerType?.toLowerCase() === 'regular').map((player) => {
     const slot = positionBucket(player);
-    return { ...player, slot, slotIndex: fallbackCounters[slot]++ };
+    return { ...player, isSubstitute: false, slot, slotIndex: fallbackCounters[slot]++ };
   });
   const row = snapshot.publishedLineup as { status?: unknown; layout_json?: { roster?: Array<Record<string, unknown>>; placedPlayers?: Array<Record<string, unknown>> } } | null;
   const layout = row?.layout_json;
@@ -145,6 +149,9 @@ function getPublishedRoster(snapshot: TeamPageSnapshot): { players: DisplayRoste
       jerseyNumber: current?.jerseyNumber ?? layoutNumber,
       position: slot === 'goalie' ? 'G' : slot === 'defence' ? 'D' : 'C',
       isGoalie: slot === 'goalie',
+      leadershipRole: current?.leadershipRole ?? null,
+      playerType: current?.playerType ?? (accepted ? 'sub' : null),
+      isSubstitute: Boolean(accepted) || ['sub', 'part_time'].includes(current?.playerType?.toLowerCase() ?? ''),
       slot,
       slotIndex,
       y: y ?? 0,
@@ -294,29 +301,39 @@ function Schedule({ snapshot, accent, reduceTransparency, onOpenGame }: { snapsh
   );
 }
 
-function Jersey({ player, variant, compact, onOpenPlayer }: { player: DisplayRosterPlayer; variant: TeamRosterJerseyVariant; compact: boolean; onOpenPlayer: (id: string) => void }) {
+function Jersey({ player, variant, compact, isBeerGuy, onOpenPlayer }: { player: DisplayRosterPlayer; variant: TeamRosterJerseyVariant; compact: boolean; isBeerGuy: boolean; onOpenPlayer: (id: string) => void }) {
   const playerSurname = surname(player.name);
   const number = player.jerseyNumber == null ? '00' : String(player.jerseyNumber).padStart(2, '0');
   const lettering = JERSEY_LETTERING[variant];
+  const role = player.leadershipRole === 'captain'
+    ? 'captain'
+    : player.leadershipRole === 'alternate_captain' ? 'alternate captain' : null;
+  const identityFacts = [
+    player.jerseyNumber == null ? 'jersey number unknown' : `jersey number ${player.jerseyNumber}`,
+    player.isGoalie ? 'goalie' : null,
+    role,
+    player.isSubstitute ? 'substitute' : null,
+  ].filter((value): value is string => value !== null);
   const fittedNameStyle = playerSurname.length >= 10
     ? (compact ? styles.jerseyNameLongCompact : styles.jerseyNameLong)
     : playerSurname.length >= 7 ? styles.jerseyNameMedium : null;
   return (
-    <Pressable testID={`team-roster-player-${player.playerId}`} accessibilityRole="button" accessibilityLabel={`${player.name}, ${player.jerseyNumber == null ? 'jersey number unknown' : `jersey number ${player.jerseyNumber}`}. Open player card.`} onPress={() => onOpenPlayer(player.playerId)} style={[styles.jerseySlot, compact && styles.jerseySlotCompact]}>
+    <Pressable testID={`team-roster-player-${player.playerId}`} accessibilityRole="button" accessibilityLabel={`${player.name}, ${identityFacts.join(', ')}.${isBeerGuy ? ' Beer Guy for the next scheduled game.' : ''} Open player card.`} onPress={() => onOpenPlayer(player.playerId)} style={[styles.jerseySlot, compact && styles.jerseySlotCompact]}>
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden pointerEvents="none" style={[styles.jerseyArt, compact && styles.jerseyArtCompact]}>
         <Image testID={`team-roster-art-${player.playerId}`} source={JERSEY_ART[variant]} resizeMode="contain" alt="" accessible={false} style={styles.jerseyLayer} />
         <Text testID={`team-roster-name-${player.playerId}`} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} allowFontScaling={false} style={[styles.jerseyName, fittedNameStyle, { color: lettering.fill }]}>{playerSurname}</Text>
         <Text importantForAccessibility="no-hide-descendants" accessibilityElementsHidden allowFontScaling={false} style={styles.jerseyNumberShadow}>{number}</Text>
         <Text testID={`team-roster-number-${player.playerId}`} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} allowFontScaling={false} style={[styles.jerseyNumber, { color: lettering.fill, textShadowColor: lettering.outline }]}>{number}</Text>
+        {isBeerGuy ? <View testID={`team-roster-beer-guy-${player.playerId}`} accessible={false} importantForAccessibility="no-hide-descendants" style={[styles.beerGuyBadge, compact && styles.beerGuyBadgeCompact]}><MaterialCommunityIcons name="beer" size={14} color="#241400" accessible={false} /></View> : null}
       </View>
     </Pressable>
   );
 }
 
-function LineupJerseySlot({ slot, index, player, variant, compact, onOpenPlayer }: { slot: LineupSlot; index: number; player: DisplayRosterPlayer | null; variant: TeamRosterJerseyVariant; compact: boolean; onOpenPlayer: (id: string) => void }) {
+function LineupJerseySlot({ slot, index, player, variant, compact, beerGuyPlayerId, onOpenPlayer }: { slot: LineupSlot; index: number; player: DisplayRosterPlayer | null; variant: TeamRosterJerseyVariant; compact: boolean; beerGuyPlayerId: string | null; onOpenPlayer: (id: string) => void }) {
   return (
     <View testID={`team-lineup-${slot}-slot-${index}`} accessible={!player} accessibilityLabel={!player ? `Empty ${slot} slot ${index + 1}` : undefined} style={[styles.lineupSlot, slot === 'defence' && styles.defenceSlot, slot === 'goalie' && styles.goalieSlot, compact && styles.jerseySlotCompact]}>
-      {player ? <Jersey player={player} variant={variant} compact={compact} onOpenPlayer={onOpenPlayer} /> : <View importantForAccessibility="no-hide-descendants" style={[styles.emptyJersey, compact && styles.emptyJerseyCompact]}><Ionicons name="add" size={28} color="#6E7788" /></View>}
+      {player ? <Jersey player={player} variant={variant} compact={compact} isBeerGuy={!player.isSubstitute && player.playerType === 'regular' && player.playerId === beerGuyPlayerId} onOpenPlayer={onOpenPlayer} /> : <View importantForAccessibility="no-hide-descendants" style={[styles.emptyJersey, compact && styles.emptyJerseyCompact]}><Ionicons name="add" size={28} color="#6E7788" /></View>}
     </View>
   );
 }
@@ -374,7 +391,7 @@ function RosterStatRow({ player, onOpenPlayer }: { player: TeamPageRosterPlayer;
   );
 }
 
-function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPageSnapshot; accent: string; compact: boolean; onOpenPlayer: (id: string) => void }) {
+function Roster({ snapshot, accent, compact, beerGuyPlayerId, onOpenPlayer }: { snapshot: TeamPageSnapshot; accent: string; compact: boolean; beerGuyPlayerId: string | null; onOpenPlayer: (id: string) => void }) {
   const [listView, setListView] = React.useState(false);
   const display = getPublishedRoster(snapshot);
   const groups = {
@@ -391,8 +408,8 @@ function Roster({ snapshot, accent, compact, onOpenPlayer }: { snapshot: TeamPag
         <FocusCard focusId={`team-public:${snapshot.team.id}:roster-list`} testID="team-roster-list" accentColor={accent} style={styles.readingPanel}>{snapshot.roster.map((player) => <RosterStatRow key={player.playerId} player={player} onOpenPlayer={onOpenPlayer} />)}</FocusCard>
       ) : (
         <FocusCard focusId={`team-public:${snapshot.team.id}:roster-jerseys`} testID="team-roster-jerseys" accentColor={accent} style={styles.lineup}>
-          <Text style={styles.groupLabel}>FORWARDS</Text><View style={styles.forwardGrid}>{slots.forwards.map((player, index) => <LineupJerseySlot key={`forward-${index}`} slot="forward" index={index} player={player} variant={jerseyVariant} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View>
-          <View style={styles.lowerLineup}><View style={styles.defenceGroup}><Text style={styles.groupLabel}>DEFENCE</Text><View style={styles.defenceGrid}>{slots.defence.map((player, index) => <LineupJerseySlot key={`defence-${index}`} slot="defence" index={index} player={player} variant={jerseyVariant} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View><View style={styles.goalieGroup}><Text style={styles.groupLabel}>GOALIE</Text>{slots.goalies.map((player, index) => <LineupJerseySlot key={`goalie-${index}`} slot="goalie" index={index} player={player} variant={jerseyVariant} compact={compact} onOpenPlayer={onOpenPlayer} />)}</View></View>
+          <Text style={styles.groupLabel}>FORWARDS</Text><View style={styles.forwardGrid}>{slots.forwards.map((player, index) => <LineupJerseySlot key={`forward-${index}`} slot="forward" index={index} player={player} variant={jerseyVariant} compact={compact} beerGuyPlayerId={beerGuyPlayerId} onOpenPlayer={onOpenPlayer} />)}</View>
+          <View style={styles.lowerLineup}><View style={styles.defenceGroup}><Text style={styles.groupLabel}>DEFENCE</Text><View style={styles.defenceGrid}>{slots.defence.map((player, index) => <LineupJerseySlot key={`defence-${index}`} slot="defence" index={index} player={player} variant={jerseyVariant} compact={compact} beerGuyPlayerId={beerGuyPlayerId} onOpenPlayer={onOpenPlayer} />)}</View></View><View style={styles.goalieGroup}><Text style={styles.groupLabel}>GOALIE</Text>{slots.goalies.map((player, index) => <LineupJerseySlot key={`goalie-${index}`} slot="goalie" index={index} player={player} variant={jerseyVariant} compact={compact} beerGuyPlayerId={beerGuyPlayerId} onOpenPlayer={onOpenPlayer} />)}</View></View>
           {!display.published && display.players.length === 0 ? <Text style={styles.emptyBody}>No active players are listed for this season.</Text> : null}
         </FocusCard>
       )}
@@ -439,11 +456,11 @@ function CaptainContact({ snapshot, accent, onOpenPlayer }: { snapshot: TeamPage
   return <View testID="team-captain-contact"><SectionHeading icon="shield-checkmark-outline" title="Captain Contact" accent={accent} /><FocusCard focusId={`team-public:${snapshot.team.id}:captain`} accentColor={accent} style={styles.readingPanel}>{snapshot.captain ? <Pressable accessibilityRole="button" accessibilityLabel={`Open ${snapshot.captain.name}'s player card`} onPress={() => onOpenPlayer(snapshot.captain!.playerId)} style={styles.captainContact}><Avatar uri={snapshot.captain.photoUrl} name={snapshot.captain.name} size={50} /><View><Text style={styles.captainName}>{snapshot.captain.name}</Text><Text style={styles.captainMeta}>Captain{snapshot.captain.jerseyNumber == null ? '' : ` • #${snapshot.captain.jerseyNumber}`}</Text></View></Pressable> : <Text style={styles.emptyBody}>Captain information is not listed yet.</Text>}</FocusCard></View>;
 }
 
-export default function TeamPublicPage({ snapshot, reduceTransparency, onOpenPlayer, onOpenGame }: { snapshot: TeamPageSnapshot; reduceTransparency: boolean; onOpenPlayer: (playerId: string) => void; onOpenGame: (gameId: string) => void }) {
+export default function TeamPublicPage({ snapshot, beerGuyPlayerId = null, reduceTransparency, onOpenPlayer, onOpenGame }: { snapshot: TeamPageSnapshot; beerGuyPlayerId?: string | null; reduceTransparency: boolean; onOpenPlayer: (playerId: string) => void; onOpenGame: (gameId: string) => void }) {
   const { width, fontScale } = useWindowDimensions();
   const compact = width < 360;
   const accent = resolveFocusAccent(snapshot.team.primaryColor, snapshot.league.primaryColor);
-  return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><BroadcastTeamHero snapshot={snapshot} compact={compact} reduceTransparency={reduceTransparency} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} reduceTransparency={reduceTransparency} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} width={width} fontScale={fontScale} reduceTransparency={reduceTransparency} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} reduceTransparency={reduceTransparency} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /></View>;
+  return <View testID="team-public-composition" style={[styles.composition, reduceTransparency && styles.compositionOpaque]}><BroadcastTeamHero snapshot={snapshot} compact={compact} reduceTransparency={reduceTransparency} /><NextGame game={snapshot.nextGame} accent={accent} compact={compact} reduceTransparency={reduceTransparency} timeZone={snapshot.league.timezone} onOpenGame={onOpenGame} /><Leaders snapshot={snapshot} width={width} fontScale={fontScale} reduceTransparency={reduceTransparency} onOpenPlayer={onOpenPlayer} /><Schedule snapshot={snapshot} accent={accent} reduceTransparency={reduceTransparency} onOpenGame={onOpenGame} /><Roster snapshot={snapshot} accent={accent} compact={compact} beerGuyPlayerId={beerGuyPlayerId} onOpenPlayer={onOpenPlayer} /><Rivals snapshot={snapshot} accent={accent} /><CaptainContact snapshot={snapshot} accent={accent} onOpenPlayer={onOpenPlayer} /></View>;
 }
 
 const styles = StyleSheet.create({
@@ -464,7 +481,7 @@ const styles = StyleSheet.create({
   rosterHeadingCopy: { flex: 1, minWidth: 0 }, rosterHeadingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, iconToggle: { width: 96, minWidth: 96, flexShrink: 0, marginBottom: 12, flexDirection: 'row', gap: 8 }, iconToggleButton: { width: ui.minTouchTarget, minWidth: ui.minTouchTarget, height: ui.minTouchTarget, paddingHorizontal: 0, gap: 2, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }, rosterTruth: { marginTop: 0, marginBottom: 14, color: '#738095', fontSize: 10, fontWeight: '700' },
   substitutionNotes: { gap: 7, marginTop: 10, marginBottom: 14 }, substitutionNote: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 }, substitutionNoteText: { flex: 1, color: '#A8B4C8', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   lineup: { gap: 15, paddingHorizontal: 10, paddingVertical: 16 }, groupLabel: { marginBottom: 4, color: '#758196', fontSize: 9, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center' }, forwardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 3, rowGap: 7 }, lowerLineup: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 5 }, defenceGroup: { flex: 2 }, goalieGroup: { flex: 1, alignItems: 'center' }, defenceGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 3 }, lineupSlot: { width: '32%', minWidth: 92, minHeight: 91, alignItems: 'center', justifyContent: 'center' }, defenceSlot: { width: '48%', minWidth: 82 }, goalieSlot: { width: '100%', minWidth: 82 }, emptyJersey: { width: 92, height: 78, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(124,58,237,.65)', borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(124,58,237,.04)' }, emptyJerseyCompact: { width: 82, height: 70 },
-  jerseySlot: { width: '32%', minWidth: 92, minHeight: ui.minTouchTarget, alignItems: 'center' }, jerseySlotCompact: { minWidth: 82 }, jerseyArt: { position: 'relative', width: 106, height: 99 }, jerseyArtCompact: { width: 92, height: 86 }, jerseyLayer: { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }, jerseyName: { position: 'absolute', left: '31%', right: '31%', top: '27%', overflow: 'visible', fontSize: 6.4, lineHeight: 8, fontWeight: '900', letterSpacing: .25, textAlign: 'center', textShadowColor: 'rgba(0,0,0,.72)', textShadowOffset: { width: 0, height: .5 }, textShadowRadius: .8 }, jerseyNameMedium: { fontSize: 5.5, lineHeight: 7, letterSpacing: .05 }, jerseyNameLong: { left: '25%', right: '25%', fontSize: 5.2, lineHeight: 6.5, letterSpacing: 0, transform: [{ scaleX: .8 }] }, jerseyNameLongCompact: { left: '25%', right: '25%', fontSize: 5, lineHeight: 6, letterSpacing: 0, transform: [{ scaleX: .72 }] }, jerseyNumberShadow: { position: 'absolute', left: 0, right: 0, top: '40.5%', color: 'rgba(0,0,0,.55)', fontSize: 30, lineHeight: 36, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1, textAlign: 'center', transform: [{ translateX: .5 }, { translateY: 1.25 }] }, jerseyNumber: { position: 'absolute', left: 0, right: 0, top: '40.5%', fontSize: 30, lineHeight: 36, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1, textAlign: 'center', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 1.6, transform: [{ translateX: -1.5 }] },
+  jerseySlot: { width: '32%', minWidth: 92, minHeight: ui.minTouchTarget, alignItems: 'center' }, jerseySlotCompact: { minWidth: 82 }, jerseyArt: { position: 'relative', width: 106, height: 99 }, jerseyArtCompact: { width: 92, height: 86 }, jerseyLayer: { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }, jerseyName: { position: 'absolute', left: '31%', right: '31%', top: '27%', overflow: 'visible', fontSize: 6.4, lineHeight: 8, fontWeight: '900', letterSpacing: .25, textAlign: 'center', textShadowColor: 'rgba(0,0,0,.72)', textShadowOffset: { width: 0, height: .5 }, textShadowRadius: .8 }, jerseyNameMedium: { fontSize: 5.5, lineHeight: 7, letterSpacing: .05 }, jerseyNameLong: { left: '25%', right: '25%', fontSize: 5.2, lineHeight: 6.5, letterSpacing: 0, transform: [{ scaleX: .8 }] }, jerseyNameLongCompact: { left: '25%', right: '25%', fontSize: 5, lineHeight: 6, letterSpacing: 0, transform: [{ scaleX: .72 }] }, jerseyNumberShadow: { position: 'absolute', left: 0, right: 0, top: '40.5%', color: 'rgba(0,0,0,.55)', fontSize: 30, lineHeight: 36, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1, textAlign: 'center', transform: [{ translateX: .5 }, { translateY: 1.25 }] }, jerseyNumber: { position: 'absolute', left: 0, right: 0, top: '40.5%', fontSize: 30, lineHeight: 36, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1, textAlign: 'center', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 1.6, transform: [{ translateX: -1.5 }] }, beerGuyBadge: { position: 'absolute', right: 8, bottom: 7, zIndex: 2, width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#FFF1C2', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F7B733', shadowColor: '#000000', shadowOpacity: .36, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } }, beerGuyBadgeCompact: { right: 7, bottom: 6, width: 20, height: 20, borderRadius: 10 },
   rosterListRow: { minHeight: 88, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,.13)', paddingVertical: 12 },
   rosterListIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rosterListCopy: { flex: 1, minWidth: 0 }, rosterListName: { color: '#F7FBFF', fontSize: 13, lineHeight: 18, fontWeight: '900' }, rosterListMeta: { marginTop: 3, color: '#A8B4C8', fontSize: 10, lineHeight: 14 },

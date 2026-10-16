@@ -36,6 +36,7 @@ import { createNewsArticleOptions } from './newsArticleHeader';
 // New screens
 import CareerStatsScreen from '../screens/stats/CareerStatsScreen';
 import CaptainDashboardScreen from '../screens/captain/CaptainDashboardScreen';
+import BeerTrackerModal from '../screens/captain/BeerTrackerModal';
 import GameAvailabilityScreen from '../screens/captain/GameAvailabilityScreen';
 import TeamsDirectoryScreen from '../screens/league-pages/TeamsDirectoryScreen';
 import PlayersDirectoryScreen from '../screens/league-pages/PlayersDirectoryScreen';
@@ -146,6 +147,7 @@ function CaptainNavigator() {
     <CaptainStack.Navigator screenOptions={{ contentStyle: styles.transparentScene }} screenLayout={cutIceScreenLayout}>
       <CaptainStack.Screen name="CaptainDashboard" component={CaptainDashboardScreen} options={cutIceOptions('Captain Dashboard')} />
       <CaptainStack.Screen name="GameAvailability" component={GameAvailabilityScreen} options={cutIceOptions('Game Availability')} />
+      <CaptainStack.Screen name="BeerTracker" component={BeerTrackerModal} options={{ presentation: 'modal', headerShown: false }} />
     </CaptainStack.Navigator>
   );
 }

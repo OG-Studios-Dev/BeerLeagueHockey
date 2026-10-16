@@ -54,6 +54,11 @@ function createRenderedScreens(activeLeague: typeof leagueA | null) {
       '../components/ScheduleTeamFilter': (props: Record<string, unknown>) => createElement('ScheduleTeamFilter', props),
       '../context/LeagueContext': { useLeague: leagueContext },
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
+      '../hooks/useBeerGuyAssignments': { useBeerGuyAssignments: () => ({
+        getState: () => ({ status: 'loading', assignment: null, callerEligible: null, busy: false, error: null }),
+        toggleBeerGuy: async () => ({ outcome: 'ignored', attendanceStatus: null, error: null }),
+        refresh: async () => undefined,
+      }) },
       '../lib/calendar': { addGameToCalendar: async () => undefined },
       '../lib/supabase/checkins': {
         getMyCheckins: async () => ({}), getMyCheckinsForTeams: async () => ({}), updateCheckin: async () => ({ success: true }),

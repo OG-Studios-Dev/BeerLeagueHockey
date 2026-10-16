@@ -146,6 +146,60 @@ describe('captain check-in RPC adapter', () => {
     );
   });
 
+  it('accepts canonical PostgreSQL UUIDv7 and imported UUID shapes for set and reset replies', async () => {
+    const setRun = loadCaptainClient({ rpcResults: [
+      {
+        data: {
+          outcome: 'set', operation: 'set', status: 'confirmed', affected_rows: 1,
+          checkin_id: '0199e5f2-7b3c-7000-8000-000000000007',
+        },
+        error: null,
+      },
+      {
+        data: {
+          outcome: 'set', operation: 'set', status: 'out', affected_rows: 1,
+          checkin_id: '60000000-0000-f000-0000-000000000001',
+        },
+        error: null,
+      },
+    ] });
+    assert.deepEqual(
+      await setRun.captainClient.updatePlayerCheckinAsCaptain(
+        'game-1', 'team-1', 'player-1', 'confirmed',
+      ),
+      { success: true },
+    );
+    assert.deepEqual(
+      await setRun.captainClient.updatePlayerCheckinAsCaptain('game-1', 'team-1', 'player-1', 'out'),
+      { success: true },
+    );
+
+    const resetRun = loadCaptainClient({ rpcResults: [
+      {
+        data: {
+          outcome: 'reset', operation: 'reset', status: null, affected_rows: 1,
+          checkin_id: '0199e5f2-7b3c-7000-8000-000000000007',
+        },
+        error: null,
+      },
+      {
+        data: {
+          outcome: 'reset', operation: 'reset', status: null, affected_rows: 1,
+          checkin_id: '60000000-0000-f000-0000-000000000001',
+        },
+        error: null,
+      },
+    ] });
+    assert.deepEqual(
+      await resetRun.captainClient.clearPlayerCheckinAsCaptain('game-1', 'team-1', 'player-1'),
+      { success: true },
+    );
+    assert.deepEqual(
+      await resetRun.captainClient.clearPlayerCheckinAsCaptain('game-1', 'team-1', 'player-1'),
+      { success: true },
+    );
+  });
+
   it('propagates RPC failures and never reports a failed set or reset as success', async () => {
     const run = loadCaptainClient({
       rpcResults: [

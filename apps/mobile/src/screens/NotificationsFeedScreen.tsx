@@ -23,6 +23,7 @@ import { SelectableControl, SelectableControlGroup } from '../components/Selecta
 import SectionHeader from '../components/SectionHeader';
 import TeamLogo from '../components/TeamLogo';
 import { useLeague } from '../context/LeagueContext';
+import { useBeerGuyAssignments } from '../hooks/useBeerGuyAssignments';
 import { HOCKEY_LIFE_ID } from '../config/hockeyLife';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { addGameToCalendar } from '../lib/calendar';
@@ -352,6 +353,17 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
     () => filteredUpcomingGames.filter((game) => !checkins[game.id]),
     [checkins, filteredUpcomingGames],
   );
+  const beerGuyScopes = React.useMemo(() => {
+    const now = Date.now();
+    return pendingGames
+      .filter((game) => game.status === 'scheduled' && Number.isFinite(Date.parse(game.scheduled_at)) && Date.parse(game.scheduled_at) > now)
+      .map((game) => ({ gameId: game.id, teamId: game.myTeamId }));
+  }, [pendingGames]);
+  const beerGuy = useBeerGuyAssignments({
+    scopes: beerGuyScopes,
+    currentUserId,
+    enabled: Boolean(currentUserId),
+  });
 
   const soonGames = React.useMemo(() => {
     const twoDaysFromNow = Date.now() + 48 * 60 * 60 * 1000;
@@ -395,7 +407,15 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
         }
         return next;
       });
+    } else {
+      await beerGuy.refresh();
     }
+  };
+
+  const handleBeerGuy = async (game: PlayerGame) => {
+    const result = await beerGuy.toggleBeerGuy(game.id, game.myTeamId);
+    if (result.attendanceStatus !== 'confirmed') return;
+    setCheckins((current) => ({ ...current, [game.id]: 'confirmed' }));
   };
 
   const navigateToGame = (game: PlayerGame) => {
@@ -503,39 +523,52 @@ export default function NotificationsFeedScreen({ navigation }: { navigation: an
 
           {pendingGames.length > 0 ? (
             <View style={styles.cardList}>
-              {pendingGames.slice(0, 4).map((game) => (
-                <FocusCard key={game.id} focusId={`notifications:action:${game.id}`} style={styles.actionCard}>
-                  <View style={[styles.cardHeaderRow, isCompact && styles.cardHeaderRowCompact]}>
-                    <Text style={styles.cardLeagueName}>{game.leagueName}</Text>
-                    <Text style={styles.cardDateText}>{formatRelativeDay(game.scheduled_at)}</Text>
-                  </View>
+              {pendingGames.slice(0, 4).map((game) => {
+                const supportsBeerGuy = beerGuyScopes.some((entry) => entry.gameId === game.id && entry.teamId === game.myTeamId);
+                const beerGuyState = supportsBeerGuy ? beerGuy.getState(game.id, game.myTeamId) : null;
+                return (
+                  <FocusCard key={game.id} focusId={`notifications:action:${game.id}`} style={styles.actionCard}>
+                    <View style={[styles.cardHeaderRow, isCompact && styles.cardHeaderRowCompact]}>
+                      <Text style={styles.cardLeagueName}>{game.leagueName}</Text>
+                      <Text style={styles.cardDateText}>{formatRelativeDay(game.scheduled_at)}</Text>
+                    </View>
 
-                  <Text style={styles.cardTitle}>
-                    Confirm {game.myTeamName} vs {getOpponentName(game)}
-                  </Text>
-                  <Text style={styles.cardMeta}>
-                    {formatGameDate(game.scheduled_at)}
-                    {game.location ? ` · ${game.location}` : ''}
-                  </Text>
+                    <Text style={styles.cardTitle}>
+                      Confirm {game.myTeamName} vs {getOpponentName(game)}
+                    </Text>
+                    <Text style={styles.cardMeta}>
+                      {formatGameDate(game.scheduled_at)}
+                      {game.location ? ` · ${game.location}` : ''}
+                    </Text>
 
-                  <QuickCheckinActions
-                    value={checkins[game.id] ?? null}
-                    onChange={(status) => void handleCheckin(game, status)}
-                    disabled={savingGameId === game.id}
-                  />
+                    <QuickCheckinActions
+                      value={checkins[game.id] ?? null}
+                      onChange={(status) => void handleCheckin(game, status)}
+                      disabled={savingGameId === game.id || beerGuyState?.busy === true}
+                      beerGuy={beerGuyState ? {
+                        assignment: beerGuyState.assignment,
+                        currentUserId,
+                        callerEligible: beerGuyState.callerEligible,
+                        loading: beerGuyState.status === 'loading',
+                        busy: beerGuyState.busy || savingGameId === game.id,
+                        error: beerGuyState.error,
+                        onToggle: () => void handleBeerGuy(game),
+                      } : undefined}
+                    />
 
-                  <View style={styles.cardActionRow}>
-                    <Pressable style={styles.secondaryActionButton} onPress={() => navigateToGame(game)}>
-                      <Ionicons name="open-outline" size={15} color={colors.textPrimary} />
-                      <Text style={styles.secondaryActionText}>Open Game</Text>
-                    </Pressable>
-                    <Pressable style={styles.secondaryActionButton} onPress={() => void addToCalendar(game)}>
-                      <Ionicons name="calendar-outline" size={15} color={colors.textPrimary} />
-                      <Text style={styles.secondaryActionText}>Calendar</Text>
-                    </Pressable>
-                  </View>
-                </FocusCard>
-              ))}
+                    <View style={styles.cardActionRow}>
+                      <Pressable style={styles.secondaryActionButton} onPress={() => navigateToGame(game)}>
+                        <Ionicons name="open-outline" size={15} color={colors.textPrimary} />
+                        <Text style={styles.secondaryActionText}>Open Game</Text>
+                      </Pressable>
+                      <Pressable style={styles.secondaryActionButton} onPress={() => void addToCalendar(game)}>
+                        <Ionicons name="calendar-outline" size={15} color={colors.textPrimary} />
+                        <Text style={styles.secondaryActionText}>Calendar</Text>
+                      </Pressable>
+                    </View>
+                  </FocusCard>
+                );
+              })}
             </View>
           ) : (
             <View style={styles.emptyCard}>

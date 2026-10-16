@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import React from 'react';
@@ -39,6 +40,7 @@ import {
   updatePlayerCheckinAsCaptain,
 } from '../../lib/supabase/captain';
 import { supabase } from '../../lib/supabase/client';
+import { getPublicNextBeerGuyAssignment } from '../../lib/supabase/beerGuy';
 import { getMetricsOperationalSeason, getTeamActiveSeason } from '../../lib/supabase/team';
 import { loadTeamPageSnapshot, type TeamPageSnapshot } from '../../lib/supabase/teamPage';
 import { navigateToPlayerCard } from '../../navigation/playerCard';
@@ -49,6 +51,7 @@ import colors from '../../theme/colors';
 import { resolveFocusAccent } from '../../theme/focusAccent';
 import { getSurfacePalette, ui } from '../../theme/ui';
 import TeamPublicPage from './TeamPublicPage';
+import { resolveTeamRosterBeerGuyScope } from './teamRosterJerseyVariant';
 
 type Props = NativeStackScreenProps<TeamStackParamList, 'TeamDetail'>;
 
@@ -320,6 +323,19 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
   const [publicLoading, setPublicLoading] = React.useState(true);
   const [publicError, setPublicError] = React.useState<string | null>(null);
   const [publicRetryToken, setPublicRetryToken] = React.useState(0);
+  const beerGuyRouteGenerationRef = React.useRef(0);
+  const beerGuyLoadGenerationRef = React.useRef(0);
+  const committedBeerGuyScopeRef = React.useRef<string | null>(null);
+  const [beerGuyOwnerState, setBeerGuyOwnerState] = React.useState<{
+    routeGeneration: number;
+    scopeKey: string | null;
+  }>({ routeGeneration: 0, scopeKey: null });
+  const [beerGuyAssignmentState, setBeerGuyAssignmentState] = React.useState<{
+    routeGeneration: number;
+    loadGeneration: number;
+    requestKey: string;
+    playerId: string | null;
+  } | null>(null);
 
   const nextGame = upcomingGames[0] ?? null;
   const primaryColor = resolveFocusAccent(team?.primary_color, focusAccent);
@@ -329,6 +345,36 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       ? nextGame.away_team?.name ?? 'Opponent'
       : nextGame.home_team?.name ?? 'Opponent'
     : null;
+  const publicRouteScopeKey = `${leagueId}:${presentationSeason?.id ?? 'loading'}:${teamId}`;
+  const matchingPublicSnapshot = publicSnapshot?.team.id === teamId
+    && publicSnapshot.league.id === leagueId
+    && publicSnapshot.season.id === presentationSeason?.id
+    ? publicSnapshot
+    : null;
+  const beerGuyScope = React.useMemo(
+    () => matchingPublicSnapshot ? resolveTeamRosterBeerGuyScope(matchingPublicSnapshot) : null,
+    [matchingPublicSnapshot],
+  );
+  const visibleBeerGuyPlayerId = beerGuyOwnerState.scopeKey === publicRouteScopeKey
+    && beerGuyScope
+    && beerGuyAssignmentState?.routeGeneration === beerGuyOwnerState.routeGeneration
+    && beerGuyAssignmentState.requestKey === beerGuyScope.key
+    ? beerGuyAssignmentState.playerId
+    : null;
+
+  React.useLayoutEffect(() => {
+    const routeGeneration = ++beerGuyRouteGenerationRef.current;
+    beerGuyLoadGenerationRef.current += 1;
+    committedBeerGuyScopeRef.current = publicRouteScopeKey;
+    setBeerGuyOwnerState({ routeGeneration, scopeKey: publicRouteScopeKey });
+    setBeerGuyAssignmentState(null);
+    return () => {
+      if (committedBeerGuyScopeRef.current !== publicRouteScopeKey) return;
+      committedBeerGuyScopeRef.current = null;
+      beerGuyRouteGenerationRef.current += 1;
+      beerGuyLoadGenerationRef.current += 1;
+    };
+  }, [publicRouteScopeKey]);
 
   const refreshCaptainData = React.useCallback(
     async (currentRoster: RosterPlayer[], currentNextGame: UpcomingGame | null, generation: number) => {
@@ -395,6 +441,41 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
       if (publicLoadGenerationRef.current === generation) publicLoadGenerationRef.current += 1;
     };
   }, [leagueId, presentationSeason?.id, publicRetryToken, teamId]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const routeGeneration = beerGuyRouteGenerationRef.current;
+      const loadGeneration = ++beerGuyLoadGenerationRef.current;
+      const requestScope = beerGuyScope;
+      let isCurrent = true;
+      setBeerGuyAssignmentState(null);
+      if (!requestScope || committedBeerGuyScopeRef.current !== publicRouteScopeKey) {
+        return () => { isCurrent = false; };
+      }
+
+      void getPublicNextBeerGuyAssignment(requestScope.gameId, requestScope.teamId)
+        .then((result) => {
+          if (!isCurrent
+            || committedBeerGuyScopeRef.current !== publicRouteScopeKey
+            || routeGeneration !== beerGuyRouteGenerationRef.current
+            || loadGeneration !== beerGuyLoadGenerationRef.current) return;
+          const playerId = result.error ? null : result.data?.player_id ?? null;
+          const isEligibleRosterPlayer = playerId !== null
+            && matchingPublicSnapshot?.roster.some((player) => player.playerId === playerId && player.playerType === 'regular') === true;
+          setBeerGuyAssignmentState({
+            routeGeneration,
+            loadGeneration,
+            requestKey: requestScope.key,
+            playerId: isEligibleRosterPlayer ? playerId : null,
+          });
+        })
+        .catch(() => {
+          // The badge is optional public decoration; transport or decoder failures stay blank.
+        });
+
+      return () => { isCurrent = false; };
+    }, [beerGuyScope, matchingPublicSnapshot, publicRouteScopeKey]),
+  );
 
   React.useEffect(() => {
     let isMounted = true;
@@ -811,10 +892,6 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const matchingPublicSnapshot = publicSnapshot?.team.id === teamId && publicSnapshot.league.id === leagueId && publicSnapshot.season.id === presentationSeason?.id
-    ? publicSnapshot
-    : null;
-
   if (!presentationSeason) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']} onAccessibilityEscape={() => navigation.goBack()}>
@@ -853,6 +930,7 @@ export default function TeamDetailScreen({ route, navigation }: Props) {
           <TeamPublicPage
             key={`${leagueId}:${teamId}:${presentationSeason.id}`}
             snapshot={matchingPublicSnapshot}
+            beerGuyPlayerId={visibleBeerGuyPlayerId}
             reduceTransparency={reduceTransparency}
             onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId })}
             onOpenGame={navigateToGame}

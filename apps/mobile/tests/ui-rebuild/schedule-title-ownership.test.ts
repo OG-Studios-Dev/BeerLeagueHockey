@@ -75,6 +75,11 @@ function createScheduleComposition(loadScheduleSnapshot: () => Promise<unknown>)
           isGuestLeague: true,
         }),
       },
+      '../hooks/useBeerGuyAssignments': { useBeerGuyAssignments: () => ({
+        getState: () => ({ status: 'loading', assignment: null, callerEligible: null, busy: false, error: null }),
+        toggleBeerGuy: async () => ({ outcome: 'ignored', attendanceStatus: null, error: null }),
+        refresh: async () => undefined,
+      }) },
       '../lib/calendar': { addGameToCalendar: async () => undefined },
       '../lib/supabase/checkins': { getMyCheckinsForTeams: async () => ({}), updateCheckin: async () => ({ success: true }) },
       '../lib/supabase/client': { supabase: { auth: { getUser: async () => ({ data: { user: null } }) } } },

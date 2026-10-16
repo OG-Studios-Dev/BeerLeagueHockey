@@ -2241,6 +2241,7 @@ export type Database = {
           is_active: boolean | null
           name: string
           sort_order: number | null
+          system_key: string | null
           team_id: string
         }
         Insert: {
@@ -2251,6 +2252,7 @@ export type Database = {
           is_active?: boolean | null
           name: string
           sort_order?: number | null
+          system_key?: string | null
           team_id: string
         }
         Update: {
@@ -2261,6 +2263,7 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           sort_order?: number | null
+          system_key?: string | null
           team_id?: string
         }
         Relationships: [
@@ -2580,6 +2583,7 @@ export type Database = {
       }
       game_duties: {
         Row: {
+          assignment_version: number
           assigned_player_id: string | null
           created_at: string | null
           duty_type_id: string
@@ -2591,6 +2595,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          assignment_version?: number
           assigned_player_id?: string | null
           created_at?: string | null
           duty_type_id: string
@@ -2602,6 +2607,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          assignment_version?: number
           assigned_player_id?: string | null
           created_at?: string | null
           duty_type_id?: string
@@ -13268,6 +13274,32 @@ export type Database = {
         Args: { p_league_id: string; p_season_id: string }
         Returns: Json
       }
+      beer_guy_captain_manage: {
+        Args: {
+          p_expected_assignment_id: string | null
+          p_expected_version: number | null
+          p_game_id: string
+          p_player_id: string | null
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      beer_guy_claim: {
+        Args: { p_game_id: string; p_team_id: string }
+        Returns: Json
+      }
+      beer_guy_get_game_state: {
+        Args: { p_game_id: string; p_team_id: string }
+        Returns: Json
+      }
+      beer_guy_get_public_next_assignment: {
+        Args: { p_team_id: string }
+        Returns: Json
+      }
+      beer_guy_get_tracker: {
+        Args: { p_team_id: string }
+        Returns: Json
+      }
       calculate_goalie_game_stats: {
         Args: { p_game_id: string; p_goalie_id: string }
         Returns: {
@@ -13340,6 +13372,16 @@ export type Database = {
           win_percentage: number
           wins: number
         }[]
+      }
+      captain_manage_game_checkin: {
+        Args: {
+          p_game_id: string
+          p_operation: string
+          p_player_id: string
+          p_status: string | null
+          p_team_id: string
+        }
+        Returns: Json
       }
       can_manage_team_roster: { Args: { p_team_id: string }; Returns: boolean }
       check_password_reset_rate_limit: {
@@ -14446,6 +14488,15 @@ export type Database = {
           p_dispute_id: string
           p_new_status: string
           p_resolved?: boolean
+        }
+        Returns: Json
+      }
+      update_my_game_checkin: {
+        Args: {
+          p_game_id: string
+          p_note?: string | null
+          p_status: string | null
+          p_team_id: string
         }
         Returns: Json
       }

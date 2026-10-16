@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { createDockModalLifecycle } from '../../src/navigation/dockModalLifecycle.ts';
+import { createDockModalLifecycle, createModalScopeLifecycle } from '../../src/navigation/dockModalLifecycle.ts';
 
 describe('More modal lifecycle', () => {
   it('keeps the modal mounted until close animation completion, then navigates once', () => {
@@ -88,5 +88,22 @@ describe('More modal lifecycle', () => {
     staleClose(true);
     currentClose(true);
     assert.deepEqual(actions, ['current']);
+  });
+});
+
+describe('route-owned modal scope lifecycle', () => {
+  it('uses monotonic owner tokens so stale A and B work cannot revive after A-to-B-to-A', () => {
+    const lifecycle = createModalScopeLifecycle();
+    const firstA = lifecycle.activate('team-a:season-1');
+    const b = lifecycle.activate('team-b:season-1');
+    const secondA = lifecycle.activate('team-a:season-1');
+
+    assert.equal(lifecycle.isCurrent(firstA), false);
+    assert.equal(lifecycle.isCurrent(b), false);
+    assert.equal(lifecycle.isCurrent(secondA), true);
+    lifecycle.reset(b);
+    assert.equal(lifecycle.isCurrent(secondA), true, 'stale cleanup cannot reset the current owner');
+    lifecycle.reset(secondA);
+    assert.equal(lifecycle.isCurrent(secondA), false);
   });
 });

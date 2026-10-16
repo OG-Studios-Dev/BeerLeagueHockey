@@ -11,6 +11,7 @@ import ScheduleMatchupCard from '../components/ScheduleMatchupCard';
 import ScheduleTeamFilter from '../components/ScheduleTeamFilter';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
+import { useBeerGuyAssignments } from '../hooks/useBeerGuyAssignments';
 import { addGameToCalendar } from '../lib/calendar';
 import {
   buildScheduleRows,
@@ -68,6 +69,7 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
   const [state, setState] = React.useState<LoadState>(() => loadingState(ownerKey));
   const [selection, setSelection] = React.useState<ScheduleTeamSelection>({ scopeKey: '', teamId: null });
   const [checkinState, setCheckinState] = React.useState<CheckinState>(emptyCheckins);
+  const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
   const [savingCheckinKey, setSavingCheckinKey] = React.useState<string | null>(null);
   const loadGeneration = React.useRef(0);
   const checkinGeneration = React.useRef(0);
@@ -124,6 +126,7 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
     const request = ++checkinGeneration.current;
     if (!leagueId || isGuestLeague || visibleState.status !== 'ready' || !visibleState.season || !visibleState.scopeKey) {
       setCheckinState(emptyCheckins);
+      setCurrentUserId(null);
       setSavingCheckinKey(null);
       activeCheckinWrite.current = null;
       return;
@@ -133,7 +136,11 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
     setCheckinState({ scopeKey, teamIds: [], values: {} });
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || request !== checkinGeneration.current || activeScheduleScope.current !== scopeKey) return;
+      if (!user || request !== checkinGeneration.current || activeScheduleScope.current !== scopeKey) {
+        if (request === checkinGeneration.current && activeScheduleScope.current === scopeKey) setCurrentUserId(null);
+        return;
+      }
+      setCurrentUserId(user.id);
       const { data, error } = await supabase
         .from('team_rosters')
         .select('team_id')
@@ -170,6 +177,20 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
     () => buildScheduleRows(filteredGames, visibleState.timezone ?? ''),
     [filteredGames, visibleState.timezone],
   );
+  const beerGuyScopes = React.useMemo(() => {
+    if (isGuestLeague || !currentUserId || checkinState.scopeKey !== visibleState.scopeKey) return [];
+    const now = Date.now();
+    return visibleState.games.flatMap((game) => {
+      if (game.status !== 'scheduled' || !Number.isFinite(Date.parse(game.scheduled_at)) || Date.parse(game.scheduled_at) <= now) return [];
+      const teamId = checkinState.teamIds.find((id) => id === game.home_team_id || id === game.away_team_id);
+      return teamId ? [{ gameId: game.id, teamId }] : [];
+    });
+  }, [checkinState.scopeKey, checkinState.teamIds, currentUserId, isGuestLeague, visibleState.games, visibleState.scopeKey]);
+  const beerGuy = useBeerGuyAssignments({
+    scopes: beerGuyScopes,
+    currentUserId,
+    enabled: !isGuestLeague && Boolean(currentUserId),
+  });
 
   const handleCheckin = async (gameId: string, teamId: string, status: CheckinStatus, scopeKey: string) => {
     if (activeScheduleScope.current !== scopeKey || activeCheckinWrite.current) return;
@@ -202,7 +223,19 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
         else delete values[gameId];
         return { ...current, values };
       });
+    } else {
+      await beerGuy.refresh();
     }
+  };
+
+  const handleBeerGuy = async (gameId: string, teamId: string, scopeKey: string) => {
+    if (activeScheduleScope.current !== scopeKey) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const result = await beerGuy.toggleBeerGuy(gameId, teamId);
+    if (result.attendanceStatus !== 'confirmed' || activeScheduleScope.current !== scopeKey) return;
+    setCheckinState((current) => current.scopeKey === scopeKey
+      ? { ...current, values: { ...current.values, [gameId]: 'confirmed' } }
+      : current);
   };
 
   if (!activeLeague) {
@@ -292,6 +325,12 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
             const gameTeamId = checkinState.scopeKey === visibleState.scopeKey
               ? checkinState.teamIds.find((teamId) => teamId === game.home_team_id || teamId === game.away_team_id) ?? null
               : null;
+            const supportsBeerGuy = gameTeamId
+              ? beerGuyScopes.some((scope) => scope.gameId === game.id && scope.teamId === gameTeamId)
+              : false;
+            const beerGuyState = gameTeamId && supportsBeerGuy
+              ? beerGuy.getState(game.id, gameTeamId)
+              : null;
             return (
               <FocusCard focusId={`schedule:game:${game.id}`}>
                 <ScheduleMatchupCard
@@ -312,8 +351,17 @@ export default function ScheduleScreen({ navigation }: { navigation: Navigation 
                     <QuickCheckinActions
                       value={checkinState.values[game.id] ?? null}
                       onChange={(status) => void handleCheckin(game.id, gameTeamId, status, visibleState.scopeKey!)}
-                      disabled={savingCheckinKey !== null}
+                      disabled={savingCheckinKey !== null || beerGuyState?.busy === true}
                       compact
+                      beerGuy={beerGuyState ? {
+                        assignment: beerGuyState.assignment,
+                        currentUserId,
+                        callerEligible: beerGuyState.callerEligible,
+                        loading: beerGuyState.status === 'loading',
+                        busy: beerGuyState.busy || savingCheckinKey !== null,
+                        error: beerGuyState.error,
+                        onToggle: () => void handleBeerGuy(game.id, gameTeamId, visibleState.scopeKey!),
+                      } : undefined}
                     />
                   </View>
                 ) : null}

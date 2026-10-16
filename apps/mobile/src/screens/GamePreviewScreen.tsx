@@ -16,8 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 
 import { FocusCard, FocusScrollView } from '../components/CardFocus';
+import QuickCheckinActions from '../components/QuickCheckinActions';
 import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
-import { SelectableControl, SelectableControlGroup, type SelectableControlTone } from '../components/SelectableControl';
 
 import { addGameToCalendar } from '../lib/calendar';
 import Avatar from '../components/Avatar';
@@ -40,6 +40,7 @@ import {
   type GameCheckinEntry,
 } from '../lib/supabase/checkins';
 import { useLeague } from '../context/LeagueContext';
+import { useBeerGuyAssignments } from '../hooks/useBeerGuyAssignments';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import { ScheduleStackParamList } from '../navigation/types';
 import colors from '../theme/colors';
@@ -96,7 +97,10 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
   const [game, setGame] = React.useState<GameDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [userTeamId, setUserTeamId] = React.useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
   const [checkinStatus, setCheckinStatus] = React.useState<CheckinStatus | null>(null);
+  const [checkinSaving, setCheckinSaving] = React.useState(false);
+  const [eligibilityCutoff] = React.useState(() => Date.now());
   const [checkinSummary, setCheckinSummary] = React.useState<CheckinSummary | null>(null);
   const [teamRoster, setTeamRoster] = React.useState<RosterMemberRow[]>([]);
   const [seasonSeries, setSeasonSeries] = React.useState<any[]>([]);
@@ -168,6 +172,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
           data: { user },
         } = await supabase.auth.getUser();
         if (user) {
+          setCurrentUserId(user.id);
           const { data: rosterData } = await supabase
             .from('team_rosters')
             .select('team_id')
@@ -200,6 +205,7 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
             setTeamRoster([]);
           }
         } else {
+          setCurrentUserId(null);
           setUserTeamId(null);
           setCheckinStatus(null);
           setCheckinSummary(null);
@@ -211,15 +217,50 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
     load();
   }, [gameId]);
 
+  const supportsBeerGuy = React.useMemo(() => Boolean(
+    game
+      && game.status === 'scheduled'
+      && Number.isFinite(Date.parse(game.scheduled_at))
+      && Date.parse(game.scheduled_at) > eligibilityCutoff,
+  ), [eligibilityCutoff, game]);
+  const beerGuyScopes = React.useMemo(() => (
+    game && userTeamId && supportsBeerGuy
+      ? [{ gameId: game.id, teamId: userTeamId }]
+      : []
+  ), [game, supportsBeerGuy, userTeamId]);
+  const beerGuy = useBeerGuyAssignments({
+    scopes: beerGuyScopes,
+    currentUserId,
+    enabled: !isGuestLeague && Boolean(currentUserId && userTeamId && supportsBeerGuy),
+  });
+  const beerGuyState = game && userTeamId && supportsBeerGuy
+    ? beerGuy.getState(game.id, userTeamId)
+    : null;
+
   async function handleCheckin(status: CheckinStatus) {
-    if (!userTeamId) return;
-    // Optimistic update
+    if (!userTeamId || checkinSaving) return;
+    const previous = checkinStatus;
+    setCheckinSaving(true);
     setCheckinStatus(status);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await updateCheckin(gameId, userTeamId, status);
-    // Refresh summary
-    const summary = await getGameCheckinSummary(gameId, userTeamId);
-    setCheckinSummary(summary);
+    const result = await updateCheckin(gameId, userTeamId, status);
+    if (!result.success) {
+      setCheckinStatus(previous);
+      setCheckinSaving(false);
+      return;
+    }
+    await beerGuy.refresh();
+    setCheckinSummary(await getGameCheckinSummary(gameId, userTeamId));
+    setCheckinSaving(false);
+  }
+
+  async function handleBeerGuy() {
+    if (!userTeamId || !supportsBeerGuy) return;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const result = await beerGuy.toggleBeerGuy(gameId, userTeamId);
+    if (result.attendanceStatus !== 'confirmed') return;
+    setCheckinStatus('confirmed');
+    setCheckinSummary(await getGameCheckinSummary(gameId, userTeamId));
   }
 
   if (loading) {
@@ -257,12 +298,6 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
   function openPlayerCard(playerId: string) {
     navigateToPlayerCard(navigation, { playerId, leagueId: game?.league_id ?? null });
   }
-
-  const checkinOptions: { key: CheckinStatus; label: string; icon: string; activeColor: string }[] = [
-    { key: 'confirmed', label: 'IN', icon: 'checkmark-circle', activeColor: colors.accentGreen },
-    { key: 'tentative', label: 'MAYBE', icon: 'help-circle', activeColor: '#EAB308' },
-    { key: 'out', label: 'OUT', icon: 'close-circle', activeColor: colors.accentRed },
-  ];
 
   return (
     <SafeAreaView style={styles.safeArea} edges={cutIceContentEdges(['top'])} onAccessibilityEscape={() => navigation.goBack()}>
@@ -358,33 +393,20 @@ export default function GamePreviewScreen({ route, navigation }: Props) {
         {status === 'Upcoming' && userTeamId && !isGuestLeague && (
           <FocusCard focusId={`preview:${gameId}:checkin`} style={styles.checkinCard}>
             <Text style={styles.checkinTitle}>Are you in?</Text>
-            <SelectableControlGroup role="radiogroup" accessibilityLabel="Game check-in status" contentContainerStyle={styles.checkinRow}>
-              {checkinOptions.map((opt) => {
-                const isSelected = checkinStatus === opt.key;
-                const tone: SelectableControlTone = opt.key === 'confirmed' ? 'success' : opt.key === 'out' ? 'danger' : 'warning';
-                return (
-                  <SelectableControl
-                    key={opt.key}
-                    role="radio"
-                    label={opt.label}
-                    selected={isSelected}
-                    tone={tone}
-                    accessibilityLabel={`${opt.label} game check-in status`}
-                    style={styles.checkinBtn}
-                    onPress={() => handleCheckin(opt.key)}
-                  >
-                    <Ionicons
-                      name={opt.icon as any}
-                      size={20}
-                      color={isSelected ? '#fff' : colors.textSecondary}
-                    />
-                    <Text style={[styles.checkinBtnText, isSelected && { color: '#fff' }]}>
-                      {opt.label}
-                    </Text>
-                  </SelectableControl>
-                );
-              })}
-            </SelectableControlGroup>
+            <QuickCheckinActions
+              value={checkinStatus}
+              onChange={(nextStatus) => void handleCheckin(nextStatus)}
+              disabled={checkinSaving || beerGuyState?.busy === true}
+              beerGuy={beerGuyState ? {
+                assignment: beerGuyState.assignment,
+                currentUserId,
+                callerEligible: beerGuyState.callerEligible,
+                loading: beerGuyState.status === 'loading',
+                busy: beerGuyState.busy || checkinSaving,
+                error: beerGuyState.error,
+                onToggle: () => void handleBeerGuy(),
+              } : undefined}
+            />
             {checkinSummary && (
               <Text style={styles.checkinSummary}>
                 ✓ {checkinSummary.confirmed.length} In · {checkinSummary.tentative.length} Maybe · {checkinSummary.out.length} Out
@@ -726,19 +748,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   checkinTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  checkinRow: { flexDirection: 'row', gap: 10 },
-  checkinBtn: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.borderCard,
-    backgroundColor: colors.bgInteractive,
-  },
-  checkinBtnText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
   checkinSummary: {
     fontSize: 13,
     color: colors.textSecondary,

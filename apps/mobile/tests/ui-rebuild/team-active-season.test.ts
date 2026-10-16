@@ -174,6 +174,7 @@ function createRuntime({
   reduceMotion = false,
   userId = 'viewer-1' as string | null,
   publicPageApi,
+  beerGuyApi,
 }: {
   dataset?: Record<string, Row[]>;
   errors?: Record<string, { message: string }>;
@@ -184,8 +185,12 @@ function createRuntime({
   reduceMotion?: boolean;
   userId?: string | null;
   publicPageApi?: { loadTeamPageSnapshot: (teamId: string, leagueId: string) => Promise<Row> };
+  beerGuyApi?: { getPublicNextBeerGuyAssignment: (gameId: string, teamId: string) => Promise<Row> };
 } = {}) {
   const harness = createHookHarness();
+  let focused = true;
+  let focusEffect: (() => void | (() => void)) | null = null;
+  let focusCleanup: (() => void) | undefined;
   const navigationCalls: unknown[][] = [];
   const alerts: unknown[][] = [];
   const supabase = createSupabase(dataset, errors, userId);
@@ -245,6 +250,20 @@ function createRuntime({
     new URL('../../src/screens/TeamScreen/TeamDetailScreen.tsx', import.meta.url),
     {
       react: harness.react,
+      '@react-navigation/native': {
+        useFocusEffect: (effect: () => void | (() => void)) => harness.react.useEffect(() => {
+          focusEffect = effect;
+          if (focused) {
+            const cleanup = effect();
+            focusCleanup = typeof cleanup === 'function' ? cleanup : undefined;
+          }
+          return () => {
+            focusCleanup?.();
+            focusCleanup = undefined;
+            if (focusEffect === effect) focusEffect = null;
+          };
+        }, [effect]),
+      },
       'react-native': {
         ActivityIndicator: 'ActivityIndicator', Alert: { alert: (...args: unknown[]) => alerts.push(args) }, Modal: 'Modal',
         Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', TextInput: 'TextInput', View: 'View',
@@ -281,6 +300,7 @@ function createRuntime({
         getMetricsOperationalSeason: teamData.getMetricsOperationalSeason,
       },
       '../../lib/supabase/teamPage': { loadTeamPageSnapshot: publicPageApi?.loadTeamPageSnapshot ?? publicData.loadTeamPageSnapshot },
+      '../../lib/supabase/beerGuy': { getPublicNextBeerGuyAssignment: beerGuyApi?.getPublicNextBeerGuyAssignment ?? (async () => ({ data: null, error: null })) },
       './TeamPublicPage': (props: Row) => createElement('TeamPublicPage', props, props.snapshot.hero ? PublicPage(props) : null),
       '../../navigation/playerCard': { navigateToPlayerCard: (...args: unknown[]) => navigationCalls.push(args) },
       '../../theme/colors': { __esModule: true, default: colors },
@@ -300,7 +320,26 @@ function createRuntime({
     navigation: { goBack: () => {}, navigate: (...args: unknown[]) => navigationCalls.push(args) },
   }));
 
-  return { alerts, harness, navigationCalls, queryRecords: supabase.queryRecords, routeParams };
+  const setFocused = (nextFocused: boolean) => {
+    if (nextFocused === focused) return;
+    focused = nextFocused;
+    focusCleanup?.();
+    focusCleanup = undefined;
+    if (focused && focusEffect) {
+      const cleanup = focusEffect();
+      focusCleanup = typeof cleanup === 'function' ? cleanup : undefined;
+    }
+  };
+
+  return {
+    alerts,
+    blur: () => setFocused(false),
+    focus: () => setFocused(true),
+    harness,
+    navigationCalls,
+    queryRecords: supabase.queryRecords,
+    routeParams,
+  };
 }
 
 async function settle(runtime: ReturnType<typeof createRuntime>) {
@@ -309,6 +348,12 @@ async function settle(runtime: ReturnType<typeof createRuntime>) {
     runtime.harness.render();
   }
   return runtime.harness.output;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 describe('Team active-season data boundary', () => {
@@ -382,6 +427,224 @@ describe('Team active-season data boundary', () => {
     assert.ok(composition);
     assert.equal(composition.props.snapshot.team.id, 'team-current');
     assert.deepEqual(calls, [['team-current', 'league-a'], ['team-current', 'league-a']]);
+  });
+
+  it('binds the public Beer Guy badge read to team, league, season, game, and request generation across A to B to A', async () => {
+    const dataset = {
+      ...fixtures,
+      teams: [
+        ...fixtures.teams,
+        { id: 'team-b', league_id: 'league-a', name: 'Team B', primary_color: '#F59E0B', secondary_color: '#7C2D12', logo_url: null },
+      ],
+    };
+    const snapshots = (teamId: string) => {
+      const gameId = teamId === 'team-current' ? 'game-a' : 'game-b';
+      const playerId = teamId === 'team-current' ? 'assigned-a' : 'assigned-b';
+      return {
+        data: {
+          season: { id: 'season-current' },
+          team: { id: teamId, name: teamId, slug: teamId },
+          league: { id: 'league-a' },
+          games: [{
+            id: gameId,
+            status: 'scheduled',
+            scheduledAt: '2099-10-17T21:00:00.000Z',
+            homeTeam: { id: teamId },
+            awayTeam: { id: 'opponent' },
+          }],
+          roster: [{ playerId, playerType: 'regular' }],
+          hero: null,
+        },
+        error: null,
+      };
+    };
+    const requests: Array<{ gameId: string; teamId: string; result: ReturnType<typeof deferred<Row>> }> = [];
+    const runtime = createRuntime({
+      dataset,
+      publicPageApi: { loadTeamPageSnapshot: async (teamId: string) => snapshots(teamId) },
+      beerGuyApi: {
+        getPublicNextBeerGuyAssignment: (gameId: string, teamId: string) => {
+          const result = deferred<Row>();
+          requests.push({ gameId, teamId, result });
+          return result.promise;
+        },
+      },
+    });
+
+    let output = await settle(runtime);
+    assert.deepEqual(requests.map(({ gameId, teamId }) => [gameId, teamId]), [['game-a', 'team-current']]);
+    requests[0].result.resolve({ data: { game_id: 'game-a', team_id: 'team-current', player_id: 'assigned-a' }, error: null });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, 'assigned-a');
+
+    runtime.routeParams.teamId = 'team-b';
+    output = runtime.harness.render();
+    assert.notEqual(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, 'assigned-a');
+    await settle(runtime);
+    assert.deepEqual(requests.map(({ gameId, teamId }) => [gameId, teamId]), [
+      ['game-a', 'team-current'],
+      ['game-b', 'team-b'],
+    ]);
+
+    runtime.routeParams.teamId = 'team-current';
+    output = runtime.harness.render();
+    assert.notEqual(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, 'assigned-a');
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null);
+    assert.deepEqual(requests.map(({ gameId, teamId }) => [gameId, teamId]), [
+      ['game-a', 'team-current'],
+      ['game-b', 'team-b'],
+      ['game-a', 'team-current'],
+    ]);
+
+    requests[1].result.resolve({ data: { game_id: 'game-b', team_id: 'team-b', player_id: 'assigned-b' }, error: null });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null);
+    requests[2].result.resolve({ data: { game_id: 'game-a', team_id: 'team-current', player_id: 'assigned-a' }, error: null });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, 'assigned-a');
+  });
+
+  it('refreshes the same-route public Beer Guy badge on focus and ignores a stale prior-focus completion', async () => {
+    const requests: Array<ReturnType<typeof deferred<Row>>> = [];
+    const runtime = createRuntime({
+      publicPageApi: {
+        loadTeamPageSnapshot: async () => ({
+          data: {
+            season: { id: 'season-current' },
+            team: { id: 'team-current', name: 'North Stars', slug: 'north-stars' },
+            league: { id: 'league-a' },
+            games: [{
+              id: 'game-current',
+              status: 'scheduled',
+              scheduledAt: '2099-10-17T21:00:00.000Z',
+              homeTeam: { id: 'team-current' },
+              awayTeam: { id: 'opponent-current' },
+            }],
+            roster: [
+              { playerId: 'player-current', playerType: 'regular' },
+              { playerId: 'player-returning', playerType: 'regular' },
+            ],
+            hero: null,
+          },
+          error: null,
+        }),
+      },
+      beerGuyApi: {
+        getPublicNextBeerGuyAssignment: () => {
+          const result = deferred<Row>();
+          requests.push(result);
+          return result.promise;
+        },
+      },
+    });
+
+    let output = await settle(runtime);
+    assert.equal(requests.length, 1);
+    requests[0].resolve({
+      data: { game_id: 'game-current', team_id: 'team-current', player_id: 'player-current' },
+      error: null,
+    });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, 'player-current');
+
+    runtime.blur();
+    await settle(runtime);
+    assert.equal(requests.length, 1, 'blur does not issue a duplicate public read');
+
+    runtime.focus();
+    output = runtime.harness.render();
+    assert.equal(requests.length, 2, 'same-route refocus re-reads the public assignment');
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null);
+
+    runtime.blur();
+    runtime.focus();
+    output = runtime.harness.render();
+    assert.equal(requests.length, 3, 'rapid blur/refocus starts one newer read');
+
+    requests[1].resolve({
+      data: { game_id: 'game-current', team_id: 'team-current', player_id: 'player-current' },
+      error: null,
+    });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null, 'stale prior-focus completion stays blank');
+
+    requests[2].resolve({
+      data: { game_id: 'game-current', team_id: 'team-current', player_id: 'player-returning' },
+      error: null,
+    });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, 'player-returning');
+
+    runtime.blur();
+    runtime.focus();
+    output = runtime.harness.render();
+    assert.equal(requests.length, 4);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null);
+    requests[3].resolve({ data: null, error: null });
+    output = await settle(runtime);
+    assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null, 'cleared public assignment remains absent');
+  });
+
+  it('keeps the badge blank when the actual public decoder receives no assignment, wrong scope/status, or an error', async () => {
+    const teamId = '30000000-0000-4000-8000-000000000001';
+    const otherTeamId = '30000000-0000-4000-8000-000000000002';
+    const gameId = '50000000-0000-4000-8000-000000000001';
+    const playerId = '40000000-0000-4000-8000-000000000001';
+    const absentPlayerId = '40000000-0000-4000-8000-000000000002';
+    const replies = [
+      { reply: { data: null, error: null }, roster: [{ playerId, playerType: 'regular' }] },
+      { reply: { data: { game_id: gameId, team_id: otherTeamId, player_id: playerId }, error: null }, roster: [{ playerId, playerType: 'regular' }] },
+      { reply: { data: { game_id: gameId, team_id: teamId, player_id: playerId, status: 'completed' }, error: null }, roster: [{ playerId, playerType: 'regular' }] },
+      { reply: { data: null, error: { message: 'public Beer Guy read failed' } }, roster: [{ playerId, playerType: 'regular' }] },
+      { reply: { data: { game_id: gameId, team_id: teamId, player_id: absentPlayerId }, error: null }, roster: [{ playerId, playerType: 'regular' }] },
+      { reply: { data: { game_id: gameId, team_id: teamId, player_id: playerId }, error: null }, roster: [{ playerId, playerType: 'sub' }] },
+    ];
+
+    for (const { reply, roster } of replies) {
+      const calls: Array<[string, Row]> = [];
+      const publicClient = {
+        rpc: async (name: string, args: Row) => {
+          calls.push([name, args]);
+          return reply;
+        },
+      };
+      const actualBeerGuyApi = compileCommonJs<{
+        getPublicNextBeerGuyAssignment: (requestedGameId: string, requestedTeamId: string) => Promise<Row>;
+      }>(new URL('../../src/lib/supabase/beerGuy.ts', import.meta.url), {
+        './client': { supabase: publicClient, publicSupabase: publicClient },
+      });
+      const runtime = createRuntime({
+        routeParams: { teamId, leagueId: 'league-a' },
+        dataset: {
+          ...fixtures,
+          teams: [...fixtures.teams, { id: teamId, league_id: 'league-a', name: 'Scoped Team' }],
+        },
+        publicPageApi: {
+          loadTeamPageSnapshot: async () => ({
+            data: {
+              season: { id: 'season-current' },
+              team: { id: teamId },
+              league: { id: 'league-a' },
+              games: [{
+                id: gameId,
+                status: 'scheduled',
+                scheduledAt: '2099-10-17T21:00:00.000Z',
+                homeTeam: { id: teamId },
+                awayTeam: { id: otherTeamId },
+              }],
+              roster,
+              hero: null,
+            },
+            error: null,
+          }),
+        },
+        beerGuyApi: actualBeerGuyApi,
+      });
+      const output = await settle(runtime);
+      assert.equal(findNode(output, (node) => node.type === 'TeamPublicPage')?.props.beerGuyPlayerId, null);
+      assert.deepEqual(calls, [['beer_guy_get_public_next_assignment', { p_team_id: teamId }]]);
+    }
   });
 
   it('fails closed on an adversarial season flip and clears operational controls before retrying both surfaces', async () => {

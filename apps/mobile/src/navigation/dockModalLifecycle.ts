@@ -1,5 +1,27 @@
 export type ModalSnapshot = { mounted: boolean; open: boolean };
 export type ModalAnimator = (open: boolean, complete: (finished: boolean) => void) => void;
+export type ModalScopeToken = Readonly<{ scopeKey: string; generation: number }>;
+
+export function createModalScopeLifecycle() {
+  let generation = 0;
+  let active: ModalScopeToken | null = null;
+
+  return {
+    activate(scopeKey: string): ModalScopeToken {
+      const token = Object.freeze({ scopeKey, generation: ++generation });
+      active = token;
+      return token;
+    },
+    isCurrent(token: ModalScopeToken | null | undefined): token is ModalScopeToken {
+      return token != null && active === token;
+    },
+    reset(token?: ModalScopeToken): void {
+      if (token && active !== token) return;
+      generation += 1;
+      active = null;
+    },
+  };
+}
 
 export function createDockModalLifecycle(
   initialAnimate: ModalAnimator,

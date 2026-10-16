@@ -28,6 +28,11 @@ function mountNotifications(getUser: () => Promise<unknown>) {
       '../components/SectionHeader': () => null,
       '../components/TeamLogo': () => null,
       '../context/LeagueContext': { useLeague: () => ({ activeLeague: null, availableLeagues: [], setActiveLeague: () => undefined }) },
+      '../hooks/useBeerGuyAssignments': { useBeerGuyAssignments: () => ({
+        getState: () => ({ status: 'loading', assignment: null, callerEligible: null, busy: false, error: null }),
+        toggleBeerGuy: async () => ({ outcome: 'ignored', attendanceStatus: null, error: null }),
+        refresh: async () => undefined,
+      }) },
       '../navigation/playerCard': { navigateToPlayerCard: () => undefined },
       '../lib/calendar': { addGameToCalendar: async () => undefined },
       '../lib/scheduleConflicts': { getScheduleConflicts: () => [] },

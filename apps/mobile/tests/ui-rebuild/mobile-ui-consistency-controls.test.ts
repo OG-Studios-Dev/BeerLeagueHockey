@@ -254,7 +254,6 @@ describe('canonical selectable-control foundation', () => {
       'screens/league-pages/LeaguePageCommon.tsx',
       'screens/league-pages/NewsFeedScreen.tsx',
       'screens/captain/GameAvailabilityScreen.tsx',
-      'screens/GamePreviewScreen.tsx',
       'screens/NotificationsFeedScreen.tsx',
       'screens/EditProfileScreen.tsx',
     ];
@@ -262,6 +261,12 @@ describe('canonical selectable-control foundation', () => {
       const contents = src(file);
       assert.match(contents, /SelectableControl/, `${file} must use the shared selectable-control foundation`);
     }
+    assert.match(
+      src('screens/GamePreviewScreen.tsx'),
+      /QuickCheckinActions/,
+      'GamePreviewScreen must delegate its attendance controls to QuickCheckinActions',
+    );
+    assert.match(src('components/QuickCheckinActions.tsx'), /SelectableControl/);
     assert.doesNotMatch(src('components/PillToggle.tsx'), /LinearGradient|brandRink|brandArena/);
     assert.doesNotMatch(src('components/DivisionFilter.tsx'), /backgroundColor:\s*primaryColor/);
     assert.doesNotMatch(src('components/StatsLeadersCard.tsx'), /toggleSelected:\s*\{\s*backgroundColor:\s*'#61DDE2'/);

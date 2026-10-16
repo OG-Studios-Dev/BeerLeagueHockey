@@ -47,6 +47,7 @@ type CaptainTeam = {
   teamName: string;
   teamPrimaryColor: string | null;
   leagueId: string;
+  seasonId: string;
   timezone: string;
   nextGame: CaptainGame | null;
 };
@@ -280,6 +281,7 @@ export default function CaptainDashboardScreen({ navigation }: ScreenProps) {
           teamName: team.name ?? 'Team',
           teamPrimaryColor: team.primary_color ?? null,
           leagueId: row.league_id,
+          seasonId: season.id,
           timezone: league.timezone ?? 'America/Toronto',
           nextGame,
         });
@@ -413,6 +415,7 @@ export default function CaptainDashboardScreen({ navigation }: ScreenProps) {
         <FocusCard focusId="captain-season-tools" testID="captain-season-tools-section" style={styles.section}>
           <SectionTitle>Season Tools</SectionTitle>
           <View style={styles.actionGrid}>
+            <ActionTile testID="captain-beer-tracker" icon="beer-outline" label="Beer Tracker" accessibilityHint={`Open Beer Tracker for ${selectedTeam.teamName}`} opaque={reduceTransparency} onPress={() => navigation.navigate('BeerTracker', { teamId: selectedTeam.teamId, seasonId: selectedTeam.seasonId })} />
             <ActionTile testID="captain-team-fees" icon="card-outline" label="Team fees" accessibilityHint={`Open season fees for ${selectedTeam.teamName}`} opaque={reduceTransparency} onPress={() => void openCaptainLink(HOCKEY_LIFE_CAPTAIN_FEES_URL)} />
           </View>
         </FocusCard>

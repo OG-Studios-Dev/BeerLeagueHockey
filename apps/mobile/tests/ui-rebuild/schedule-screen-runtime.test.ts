@@ -40,6 +40,22 @@ type RuntimeOptions = {
   isGuestLeague?: boolean;
   rosterTeamIds?: string[];
   updateCheckin?: (gameId: string, teamId: string, status: string) => Promise<{ success: boolean }>;
+  beerGuyHook?: {
+    getState: (gameId: string, teamId: string) => unknown;
+    toggleBeerGuy: (gameId: string, teamId: string) => Promise<unknown>;
+    refresh: () => Promise<void>;
+  };
+};
+
+type BeerGuyHookInput = {
+  scopes: Array<{ gameId: string; teamId: string }>;
+  currentUserId: string | null;
+  enabled: boolean;
+};
+type BeerGuyToggleResult = {
+  outcome: 'claimed' | 'cleared' | 'taken' | 'error' | 'ignored';
+  attendanceStatus: 'confirmed' | null;
+  error: string | null;
 };
 
 function createRuntime(
@@ -49,6 +65,7 @@ function createRuntime(
   const harness = createHookHarness();
   const navigationCalls: Array<[string, unknown]> = [];
   let standingsReads = 0;
+  const beerGuyInputs: BeerGuyHookInput[] = [];
   let currentLeague = league;
   let currentDivision: { id: string; name: string } | null = null;
   const rosterQuery = {
@@ -79,6 +96,16 @@ function createRuntime(
       '../components/TeamLogo': (props: Record<string, unknown>) => createElement('TeamLogo', props),
       '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false, reduceMotion: false }) },
       '../context/LeagueContext': { useLeague: () => ({ activeLeague: currentLeague, activeTheme: currentLeague.theme, activeDivision: currentDivision, setActiveDivision: (division: typeof currentDivision) => { currentDivision = division; }, divisions: [], isGuestLeague: options.isGuestLeague ?? true }) },
+      '../hooks/useBeerGuyAssignments': {
+        useBeerGuyAssignments: (input: BeerGuyHookInput) => {
+          beerGuyInputs.push(input);
+          return options.beerGuyHook ?? {
+            getState: () => ({ status: 'loading', assignment: null, callerEligible: null, busy: false, error: null }),
+            toggleBeerGuy: async () => ({ outcome: 'ignored', attendanceStatus: null, error: null }),
+            refresh: async () => undefined,
+          };
+        },
+      },
       '../lib/calendar': { addGameToCalendar: async () => undefined },
       '../lib/supabase/checkins': {
         getMyCheckins: async () => ({}),
@@ -106,6 +133,7 @@ function createRuntime(
   return {
     harness,
     navigationCalls,
+    beerGuyInputs,
     standingsReads: () => standingsReads,
     switchLeague: (next: typeof league) => { currentLeague = next; harness.render(); },
     switchDivision: (next: typeof currentDivision) => { currentDivision = next; harness.render(); },
@@ -203,6 +231,62 @@ describe('Schedule screen runtime', () => {
     actions = allNodes(runtime.harness.output).filter((node) => node.type === 'QuickCheckinActions');
     assert.deepEqual(actions.map((action) => action.props.disabled), [false, false]);
     assert.equal(actions[0].props.value, null);
+  });
+
+  it('scopes Beer Guy to future scheduled team games, adopts server-confirmed claims, and refreshes after attendance writes', async () => {
+    const claim = deferred<BeerGuyToggleResult>();
+    let beerRefreshes = 0;
+    const writes: Array<[string, string, string]> = [];
+    const future = {
+      ...games[0],
+      id: 'future-beer-game',
+      scheduled_at: '2099-10-20T22:00:00.000Z',
+      home_team_id: 'team-filter',
+      home_team: { ...games[0].home_team!, id: 'team-filter' },
+    };
+    const past = {
+      ...future,
+      id: 'past-beer-game',
+      scheduled_at: '2000-10-20T22:00:00.000Z',
+    };
+    const runtime = createRuntime(
+      async () => ({ kind: 'ready', scopeKey: 'league-a:season-a:all', season, timezone: 'America/Toronto', games: [future, past] }),
+      {
+        isGuestLeague: false,
+        rosterTeamIds: ['team-filter'],
+        updateCheckin: async (gameId, teamId, status) => {
+          writes.push([gameId, teamId, status]);
+          return { success: true };
+        },
+        beerGuyHook: {
+          getState: () => ({ status: 'ready', assignment: null, callerEligible: true, busy: false, error: null }),
+          toggleBeerGuy: async () => claim.promise,
+          refresh: async () => { beerRefreshes += 1; },
+        },
+      },
+    );
+    await settle(runtime.harness);
+
+    const latestHookInput = runtime.beerGuyInputs.at(-1)!;
+    assert.deepEqual(latestHookInput.scopes, [{ gameId: future.id, teamId: 'team-filter' }]);
+    let actions = allNodes(runtime.harness.output).filter((node) => node.type === 'QuickCheckinActions');
+    const futureAction = actions.find((action) => action.props.beerGuy)!;
+    const pastAction = actions.find((action) => !action.props.beerGuy)!;
+    assert.equal(futureAction.props.value, null);
+    assert.equal(pastAction.props.value, null);
+
+    futureAction.props.beerGuy.onToggle();
+    runtime.harness.render();
+    assert.equal(allNodes(runtime.harness.output).find((node) => node.type === 'QuickCheckinActions' && node.props.beerGuy)?.props.value, null);
+    claim.resolve({ outcome: 'claimed', attendanceStatus: 'confirmed', error: null });
+    await settle(runtime.harness);
+    actions = allNodes(runtime.harness.output).filter((node) => node.type === 'QuickCheckinActions');
+    assert.equal(actions.find((action) => action.props.beerGuy)?.props.value, 'confirmed');
+
+    actions.find((action) => action.props.beerGuy)!.props.onChange('out');
+    await settle(runtime.harness);
+    assert.deepEqual(writes, [[future.id, 'team-filter', 'out']]);
+    assert.equal(beerRefreshes, 1);
   });
 
   it('generation-guards league responses and clears prior-scope facts immediately', async () => {

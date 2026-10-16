@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import type { CheckinStatus } from '../lib/supabase/checkins';
 import colors from '../theme/colors';
+import BeerGuyToggle, { type BeerGuyToggleProps } from './BeerGuyToggle';
 import { SelectableControl, SelectableControlGroup, type SelectableControlTone } from './SelectableControl';
 
 type QuickCheckinActionsProps = {
@@ -11,6 +12,7 @@ type QuickCheckinActionsProps = {
   onChange: (status: CheckinStatus) => void;
   disabled?: boolean;
   compact?: boolean;
+  beerGuy?: Omit<BeerGuyToggleProps, 'compact'>;
 };
 
 const OPTIONS: Array<{
@@ -30,6 +32,7 @@ export default function QuickCheckinActions({
   onChange,
   disabled = false,
   compact = false,
+  beerGuy,
 }: QuickCheckinActionsProps) {
   return (
     <View style={styles.clip}>
@@ -55,6 +58,11 @@ export default function QuickCheckinActions({
           );
         })}
       </SelectableControlGroup>
+      {beerGuy ? (
+        <View style={styles.beerGuyWrap}>
+          <BeerGuyToggle {...beerGuy} compact={compact} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -63,6 +71,7 @@ const styles = StyleSheet.create({
   clip: { width: '100%', overflow: 'hidden' },
   row: { flexWrap: 'wrap' },
   rowCompact: { gap: 6 },
+  beerGuyWrap: { marginTop: 8 },
   button: { flexGrow: 1, flexBasis: 0, minWidth: 84 },
   buttonText: { color: colors.textSecondary, fontSize: 13, fontWeight: '800' },
   buttonTextCompact: { fontSize: 12 },

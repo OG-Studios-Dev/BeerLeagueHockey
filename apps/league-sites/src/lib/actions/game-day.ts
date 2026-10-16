@@ -88,7 +88,45 @@ async function verifyCaptainAccess(teamId: string) {
     return { authorized: false as const, error: 'Not authorized' };
   }
 
-  return { authorized: true as const, userId: user.id, supabase };
+  return { authorized: true as const, auth, supabase };
+}
+
+type CaptainCheckinRpcReply = {
+  outcome: 'set' | 'reset' | 'already_waiting';
+  operation: 'set' | 'reset';
+  status: CheckinStatus | null;
+  affected_rows: number;
+  checkin_id: string | null;
+};
+
+const POSTGRES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isCaptainCheckinRpcReply(
+  value: unknown,
+  requestedStatus: CaptainAttendanceStatus,
+): value is CaptainCheckinRpcReply {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const reply = value as Record<string, unknown>;
+  if (Object.keys(reply).sort().join(',') !== 'affected_rows,checkin_id,operation,outcome,status') return false;
+
+  if (requestedStatus === 'no_response') {
+    return reply.operation === 'reset'
+      && reply.status === null
+      && ((reply.outcome === 'reset'
+          && reply.affected_rows === 1
+          && typeof reply.checkin_id === 'string'
+          && POSTGRES_UUID.test(reply.checkin_id))
+        || (reply.outcome === 'already_waiting'
+          && reply.affected_rows === 0
+          && reply.checkin_id === null));
+  }
+
+  return reply.outcome === 'set'
+    && reply.operation === 'set'
+    && reply.status === requestedStatus
+    && reply.affected_rows === 1
+    && typeof reply.checkin_id === 'string'
+    && POSTGRES_UUID.test(reply.checkin_id);
 }
 
 function normalizeGameTeam(rawTeam: any) {
@@ -501,7 +539,7 @@ export async function updateCaptainGameAttendanceStatus(input: {
 
   const { supabase } = access;
   const { data: game } = await (supabase.from('games') as any)
-    .select('id, status, home_team_id, away_team_id')
+    .select('id, league_id, season_id, scheduled_at, status, home_team_id, away_team_id')
     .eq('id', input.gameId)
     .maybeSingle();
 
@@ -513,36 +551,36 @@ export async function updateCaptainGameAttendanceStatus(input: {
     return { success: false, error: 'That team is not assigned to this game' };
   }
 
-  if (game.status === 'completed' || game.status === 'cancelled') {
-    return { success: false, error: 'Completed or cancelled games can no longer be edited.' };
+  const isFutureScheduled = game.status === 'scheduled'
+    && new Date(game.scheduled_at).getTime() > Date.now();
+  const isActiveDirectPath = game.status === 'in_progress'
+    || game.status === 'pending_verification';
+
+  if (!isFutureScheduled && !isActiveDirectPath) {
+    return {
+      success: false,
+      error: 'Attendance can only be edited for a future scheduled or active game.',
+    };
   }
 
-  if (input.status === 'no_response') {
-    const { error } = await (supabase.from('game_checkins') as any)
-      .delete()
-      .eq('game_id', input.gameId)
-      .eq('team_id', input.teamId)
-      .eq('player_id', input.playerId);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-  } else {
-    const { error } = await (supabase.from('game_checkins') as any)
-      .upsert(
-        {
-          game_id: input.gameId,
-          team_id: input.teamId,
-          player_id: input.playerId,
-          status: input.status,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'game_id,player_id' },
-      );
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
+  const authRpc = access.auth as unknown as {
+    rpc(
+      name: string,
+      args: Record<string, unknown>,
+    ): PromiseLike<{ data: unknown; error: { message: string } | null }>;
+  };
+  const { data, error } = await authRpc.rpc('captain_manage_game_checkin', {
+    p_game_id: input.gameId,
+    p_team_id: input.teamId,
+    p_player_id: input.playerId,
+    p_operation: input.status === 'no_response' ? 'reset' : 'set',
+    p_status: input.status === 'no_response' ? null : input.status,
+  });
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  if (!isCaptainCheckinRpcReply(data, input.status)) {
+    return { success: false, error: 'Invalid captain check-in RPC response' };
   }
 
   const lockField = game.home_team_id === input.teamId

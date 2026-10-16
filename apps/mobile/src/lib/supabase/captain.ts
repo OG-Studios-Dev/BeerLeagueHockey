@@ -450,7 +450,8 @@ export async function clearPlayerCheckinAsCaptain(gameId: string, teamId: string
 }
 
 const captainResultKeys = ['affected_rows', 'checkin_id', 'operation', 'outcome', 'status'];
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Match PostgreSQL's canonical uuid input shape without restricting version bits.
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function hasExactCaptainResultKeys(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)

@@ -1,4 +1,12 @@
-import type { TeamPageIdentity } from '../../lib/supabase/teamPage';
+import type { TeamPageIdentity, TeamPageSnapshot } from '../../lib/supabase/teamPage';
+
+export type TeamRosterBeerGuyScope = {
+  key: string;
+  leagueId: string;
+  seasonId: string;
+  teamId: string;
+  gameId: string;
+};
 
 export type TeamRosterJerseyVariant =
   | 'bad-bunny'
@@ -33,6 +41,32 @@ function normalizeTeamIdentity(value: string | null | undefined): string {
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+export function resolveTeamRosterBeerGuyScope(
+  snapshot: Pick<TeamPageSnapshot, 'games' | 'league' | 'season' | 'team'>,
+  now: Date = new Date(),
+): TeamRosterBeerGuyScope | null {
+  const nowMs = now.getTime();
+  if (!Number.isFinite(nowMs) || !Array.isArray(snapshot.games)) return null;
+  const nextGame = snapshot.games
+    .filter((game) => {
+      const scheduledAt = new Date(game.scheduledAt).getTime();
+      return game.status === 'scheduled'
+        && Number.isFinite(scheduledAt)
+        && scheduledAt > nowMs
+        && (game.homeTeam.id === snapshot.team.id || game.awayTeam.id === snapshot.team.id);
+    })
+    .sort((left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
+      || left.id.localeCompare(right.id))[0];
+  if (!nextGame) return null;
+  return {
+    key: `${snapshot.league.id}:${snapshot.season.id}:${snapshot.team.id}:${nextGame.id}`,
+    leagueId: snapshot.league.id,
+    seasonId: snapshot.season.id,
+    teamId: snapshot.team.id,
+    gameId: nextGame.id,
+  };
 }
 
 export function resolveTeamRosterJerseyVariant(
