@@ -345,7 +345,7 @@ describe('MobileWebDock component integration', () => {
     assert.ok(findNode(sheet, (node) => node.props.testID?.startsWith('more-item-custom-') && node.props.testID.endsWith('-external')));
   });
 
-  it('routes each approved public link through the allowlist and alerts when opening is rejected', async () => {
+  it('navigates Support, Privacy, and Terms natively without invoking external link handling', () => {
     const fixture = createDockFixture({}, { failLinks: true });
     fixture.mount();
 
@@ -354,19 +354,35 @@ describe('MobileWebDock component integration', () => {
       const item = findNode(fixture.harness.output, (node) => node.props.testID === `more-item-${itemKey}`);
       assert.ok(item);
       item.props.onPress();
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      fixture.harness.render();
     }
 
-    assert.deepEqual(fixture.publicLinkCalls, [
-      'https://hockey-life.beerleaguehockey.ca/contact',
-      'https://beerleaguehockey.ca/privacy',
-      'https://beerleaguehockey.ca/terms',
+    assert.deepEqual(fixture.navigationCalls, [
+      ['Profile', { screen: 'Support', params: undefined, initial: false }],
+      ['Profile', { screen: 'Privacy', params: undefined, initial: false }],
+      ['Profile', { screen: 'Terms', params: undefined, initial: false }],
     ]);
-    assert.deepEqual(fixture.alerts, Array.from({ length: 3 }, () => ({
+    assert.deepEqual(fixture.publicLinkCalls, []);
+    assert.deepEqual(fixture.openedUrls, []);
+    assert.deepEqual(fixture.alerts, []);
+  });
+
+  it('still routes approved configured web links through the allowlist and reports open failure', async () => {
+    const fixture = createDockFixture({
+      customNavItems: [{ label: 'Website privacy', href: 'https://beerleaguehockey.ca/privacy', isExternal: true }],
+    }, { failLinks: true });
+    fixture.mount();
+    fixture.openMore();
+    const item = findNode(fixture.harness.output, (node) => node.props.accessibilityLabel === 'Website privacy');
+    assert.ok(item);
+    item.props.onPress();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    fixture.harness.render();
+
+    assert.deepEqual(fixture.publicLinkCalls, ['https://beerleaguehockey.ca/privacy']);
+    assert.deepEqual(fixture.alerts, [{
       title: 'Unable to Open Link',
       message: 'This link could not be opened. Please try again.',
-    })));
+    }]);
   });
 
   it('renders the enlarged crest in a dedicated center column without visible Team text', () => {

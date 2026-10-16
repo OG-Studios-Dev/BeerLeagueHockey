@@ -22,6 +22,9 @@ export type ProfileStackParamList = {
   NotificationSettings: undefined;
   PlayerCard: PlayerCardParams;
   CareerStats: undefined;
+  Support: undefined;
+  Privacy: undefined;
+  Terms: undefined;
 };
 
 export type StatsStackParamList = {

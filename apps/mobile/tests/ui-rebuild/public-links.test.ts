@@ -41,7 +41,7 @@ describe('public policy and support links', () => {
     assert.equal(result.success, false);
   });
 
-  it('keeps privacy, terms, and support reachable in both guest and member menus', () => {
+  it('keeps auth-screen web links intact while More uses native Profile-stack pages', () => {
     for (const member of [false, true]) {
       const items = buildMoreMenu({
         leagueId: 'league-id',
@@ -54,9 +54,9 @@ describe('public policy and support links', () => {
       });
       const links = new Map(items.map((item) => [item.label, item.destination]));
 
-      assert.deepEqual(links.get('Privacy'), { kind: 'external', url: PRIVACY_URL });
-      assert.deepEqual(links.get('Terms'), { kind: 'external', url: TERMS_URL });
-      assert.deepEqual(links.get('Support'), { kind: 'external', url: HOCKEY_LIFE_SUPPORT_URL });
+      assert.deepEqual(links.get('Privacy'), { kind: 'native', tab: 'Profile', screen: 'Privacy', initial: false });
+      assert.deepEqual(links.get('Terms'), { kind: 'native', tab: 'Profile', screen: 'Terms', initial: false });
+      assert.deepEqual(links.get('Support'), { kind: 'native', tab: 'Profile', screen: 'Support', initial: false });
     }
   });
 });

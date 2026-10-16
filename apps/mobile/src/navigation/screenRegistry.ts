@@ -1,7 +1,7 @@
 export const REGISTERED_USER_SCREENS = [
   'Splash', 'Login', 'ForgotPassword', 'SignUp',
   'Home', 'Standings', 'Schedule', 'TeamList', 'TeamDetail', 'PlayerCard',
-  'ProfileMain', 'EditProfile', 'NotificationsFeed', 'NotificationSettings', 'CareerStats',
+  'ProfileMain', 'EditProfile', 'NotificationsFeed', 'NotificationSettings', 'CareerStats', 'Support', 'Privacy', 'Terms',
   'StatsMain', 'CaptainDashboard', 'GameAvailability',
   'TeamsDirectory', 'PlayersDirectory', 'PlayoffsDirectory', 'NewsFeed', 'NewsArticle',
   'LeagueHistory', 'GalleryAlbums', 'GalleryAlbum', 'Events', 'Contact', 'GamePreview', 'GameRecap',

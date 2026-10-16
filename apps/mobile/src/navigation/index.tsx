@@ -22,6 +22,9 @@ import ProfileScreen from '../screens/ProfileScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import SupportScreen from '../screens/SupportScreen';
+import PrivacyScreen from '../screens/PrivacyScreen';
+import TermsScreen from '../screens/TermsScreen';
 import ScheduleScreen from '../screens/ScheduleScreen';
 import StandingsScreen from '../screens/StandingsScreen';
 import StatsScreen from '../screens/StatsScreen';
@@ -129,6 +132,9 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={cutIceOptions('Notification Settings')} />
       <ProfileStack.Screen name="PlayerCard" component={PlayerCardScreen} options={cutIceOptions('Player Profile')} />
       <ProfileStack.Screen name="CareerStats" component={CareerStatsScreen} options={cutIceOptions('Career Stats')} />
+      <ProfileStack.Screen name="Support" component={SupportScreen} options={cutIceOptions('Support')} />
+      <ProfileStack.Screen name="Privacy" component={PrivacyScreen} options={cutIceOptions('Privacy')} />
+      <ProfileStack.Screen name="Terms" component={TermsScreen} options={cutIceOptions('Terms')} />
     </ProfileStack.Navigator>
   );
 }

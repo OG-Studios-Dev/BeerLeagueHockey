@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { CommonActions, StackRouter } from '@react-navigation/routers';
+
 import { buildMoreMenu } from '../../src/navigation/dockMenu.ts';
 
 const base = {
@@ -164,7 +166,49 @@ describe('mobile More catalog', () => {
   it('offers only safe native app entry points when no league is selected', () => {
     const items = buildMoreMenu({ ...base, leagueSlug: '' });
     assert.deepEqual(items.map((item) => item.label), ['Home', 'Support', 'Privacy', 'Terms', 'Account']);
-    assert.ok(items.filter((item) => ['Home', 'Account'].includes(item.label)).every((item) => item.destination.kind === 'native'));
-    assert.ok(items.filter((item) => ['Support', 'Privacy', 'Terms'].includes(item.label)).every((item) => item.destination.kind === 'external'));
+    assert.ok(items.every((item) => item.destination.kind === 'native'));
+  });
+
+  it('routes Support, Privacy, and Terms through the Profile stack for guests and members with or without a league', () => {
+    for (const membership of [
+      { userId: null, isMember: false },
+      { userId: 'player-1', isMember: true },
+    ]) {
+      for (const league of [
+        { leagueId: base.leagueId, leagueSlug: base.leagueSlug },
+        { leagueId: undefined, leagueSlug: '' },
+      ]) {
+        const destinations = new Map(buildMoreMenu({ ...base, ...membership, ...league })
+          .map((item) => [item.label, item.destination]));
+        assert.deepEqual(destinations.get('Support'), { kind: 'native', tab: 'Profile', screen: 'Support', initial: false });
+        assert.deepEqual(destinations.get('Privacy'), { kind: 'native', tab: 'Profile', screen: 'Privacy', initial: false });
+        assert.deepEqual(destinations.get('Terms'), { kind: 'native', tab: 'Profile', screen: 'Terms', initial: false });
+      }
+    }
+  });
+
+  it('gives fresh policy entries a real ProfileMain Back route under the installed stack router', () => {
+    const router = StackRouter({ initialRouteName: 'ProfileMain' });
+    const options = {
+      routeNames: ['ProfileMain', 'Support', 'Privacy', 'Terms'],
+      routeParamList: {},
+      routeGetIdList: {},
+    };
+
+    for (const target of ['Support', 'Privacy', 'Terms']) {
+      const routeOnly = router.getRehydratedState({ stale: true, routes: [{ name: target }] }, options);
+      assert.equal(router.getStateForAction(routeOnly, CommonActions.goBack(), options), null);
+
+      const profileFirst = router.getInitialState(options);
+      const nestedTarget = router.getStateForAction(profileFirst, CommonActions.navigate(target), options);
+      assert.ok(nestedTarget);
+      const targetState = nestedTarget as typeof profileFirst;
+      assert.deepEqual(targetState.routes.map((route) => route.name), ['ProfileMain', target]);
+
+      const afterBack = router.getStateForAction(targetState, CommonActions.goBack(), options);
+      assert.ok(afterBack);
+      const backState = afterBack as typeof profileFirst;
+      assert.equal(backState.routes[backState.index].name, 'ProfileMain');
+    }
   });
 });

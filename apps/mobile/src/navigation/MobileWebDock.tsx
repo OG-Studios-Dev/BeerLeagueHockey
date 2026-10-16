@@ -180,7 +180,11 @@ export default function MobileWebDock({ state, navigation }: BottomTabBarProps) 
       return;
     }
     if (destination.screen) {
-      navigation.navigate(destination.tab, { screen: destination.screen, params: destination.params });
+      navigation.navigate(destination.tab, {
+        screen: destination.screen,
+        params: destination.params,
+        ...(destination.initial === undefined ? {} : { initial: destination.initial }),
+      });
     } else {
       navigation.navigate(destination.tab);
     }

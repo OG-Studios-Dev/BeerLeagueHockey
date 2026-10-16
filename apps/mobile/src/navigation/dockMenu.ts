@@ -1,5 +1,3 @@
-import { HOCKEY_LIFE_SUPPORT_URL, PRIVACY_URL, TERMS_URL } from '../lib/publicLinks';
-
 export const PUBLIC_MORE_ITEMS = [
   ['teams', 'Teams', '/teams'],
   ['players', 'Players', '/players'],
@@ -32,7 +30,7 @@ export type MoreMenuInput = {
 };
 
 export type DockDestination =
-  | { kind: 'native'; tab: string; screen?: string; params?: Record<string, unknown> }
+  | { kind: 'native'; tab: string; screen?: string; params?: Record<string, unknown>; initial?: boolean }
   | { kind: 'external'; url: string };
 
 export type MoreMenuItem = {
@@ -141,9 +139,9 @@ export function buildMoreMenu(input: MoreMenuInput): MoreMenuItem[] {
 
   const appItems: MoreMenuItem[] = [
     { key: 'app-home', label: 'Home', category: 'App', icon: 'home-outline', destination: { kind: 'native', tab: 'Home' } },
-    { key: 'app-support', label: 'Support', category: 'App', icon: 'help-circle-outline', destination: { kind: 'external', url: HOCKEY_LIFE_SUPPORT_URL } },
-    { key: 'app-privacy', label: 'Privacy', category: 'App', icon: 'shield-checkmark-outline', destination: { kind: 'external', url: PRIVACY_URL } },
-    { key: 'app-terms', label: 'Terms', category: 'App', icon: 'document-text-outline', destination: { kind: 'external', url: TERMS_URL } },
+    { key: 'app-support', label: 'Support', category: 'App', icon: 'help-circle-outline', destination: { kind: 'native', tab: 'Profile', screen: 'Support', initial: false } },
+    { key: 'app-privacy', label: 'Privacy', category: 'App', icon: 'shield-checkmark-outline', destination: { kind: 'native', tab: 'Profile', screen: 'Privacy', initial: false } },
+    { key: 'app-terms', label: 'Terms', category: 'App', icon: 'document-text-outline', destination: { kind: 'native', tab: 'Profile', screen: 'Terms', initial: false } },
   ];
   const accountItems: MoreMenuItem[] = [
     { key: 'account-profile', label: 'Account', category: 'Account', icon: 'person-outline', destination: { kind: 'native', tab: 'Profile', screen: 'ProfileMain' } },
