@@ -160,6 +160,12 @@ function booleanValue(value: unknown): boolean {
   return value === true;
 }
 
+function publicMetricValue(metric: PublicStatMetric | undefined): number | null {
+  return metric?.value != null && metric.state !== 'estimated' && metric.state !== 'unknown' && metric.state !== 'conflicted'
+    ? metric.value
+    : null;
+}
+
 function identity(row: Record<string, unknown> | null | undefined): TeamPageIdentity {
   return {
     id: stringValue(row?.id) ?? '',
@@ -247,51 +253,6 @@ function buildStatsByPlayer(input: TeamPageSnapshotInput) {
   return { candidates, rawByPlayer };
 }
 
-function buildEstimatedAppearanceGameIds(input: TeamPageSnapshotInput): Map<string, Set<string>> {
-  const result = new Map<string, Set<string>>();
-  const add = (playerId: string, gameId: string) => {
-    const ids = result.get(playerId) ?? new Set<string>();
-    ids.add(gameId);
-    result.set(playerId, ids);
-  };
-  const completedGames = input.games.filter((game) =>
-    game.league_id === input.leagueId &&
-    game.season_id === input.season.id &&
-    game.status === 'completed' &&
-    typeof game.id === 'string',
-  );
-
-  for (const roster of input.rosters) {
-    if (roster.team_id !== input.teamId || roster.league_id !== input.leagueId || roster.season_id !== input.season.id || roster.status !== 'active' || typeof roster.player_id !== 'string') continue;
-    const joinedAt = stringValue(roster.joined_at);
-    const endDate = stringValue(roster.end_date);
-    for (const game of completedGames) {
-      const gameId = String(game.id);
-      if (game.home_team_id !== input.teamId && game.away_team_id !== input.teamId) continue;
-      const scheduledAt = stringValue(game.scheduled_at);
-      if (joinedAt && scheduledAt && new Date(scheduledAt).getTime() < new Date(joinedAt).getTime()) continue;
-      if (endDate && scheduledAt && new Date(scheduledAt).getTime() > new Date(endDate).getTime()) continue;
-      add(roster.player_id, gameId);
-    }
-  }
-  return result;
-}
-
-function buildGoalieStats(input: TeamPageSnapshotInput) {
-  const byPlayer = new Map<string, { gameIds: Set<string>; goalsAgainst: number; explicitGaa: number | null }>();
-  for (const row of input.goalieStats) {
-    if (row.team_id !== input.teamId || row.season_id !== input.season.id || typeof row.player_id !== 'string') continue;
-    const entry = byPlayer.get(row.player_id) ?? { gameIds: new Set<string>(), goalsAgainst: 0, explicitGaa: null };
-    const gameId = stringValue(row.game_id);
-    if (gameId) entry.gameIds.add(gameId);
-    entry.goalsAgainst += numberValue(row.goals_against) ?? 0;
-    const explicit = numberValue(row.goals_against_average);
-    if (explicit != null) entry.explicitGaa = explicit;
-    byPlayer.set(row.player_id, entry);
-  }
-  return byPlayer;
-}
-
 function standingsFrom(input: TeamPageSnapshotInput): TeamPageStanding[] {
   const teamMap = new Map(input.teams.filter((row) => isPublicTeam(row)).map((row) => [String(row.id), row]));
   return input.standings
@@ -357,13 +318,13 @@ function buildLeaders(roster: TeamPageRosterPlayer[], publicPlayers?: PublicSeas
         name: player.playerName,
         photoUrl: player.avatarUrl ?? current?.photoUrl ?? null,
         jerseyNumber: current?.jerseyNumber ?? null,
-        gamesPlayed: player.metrics.gamesPlayed.value,
-        gamesPlayedProvenance: player.metrics.gamesPlayed.state === 'estimated' ? 'estimated' as const : player.metrics.gamesPlayed.value !== null ? 'authoritative' as const : null,
+        gamesPlayed: publicMetricValue(player.metrics.gamesPlayed),
+        gamesPlayedProvenance: publicMetricValue(player.metrics.gamesPlayed) !== null ? 'authoritative' as const : null,
         gamesPlayedMetric: player.metrics.gamesPlayed,
-        goals: player.metrics.goals.value,
-        assists: player.metrics.assists.value,
-        points: player.metrics.points.value,
-        penaltyMinutes: player.metrics.penaltyMinutes.value,
+        goals: publicMetricValue(player.metrics.goals),
+        assists: publicMetricValue(player.metrics.assists),
+        points: publicMetricValue(player.metrics.points),
+        penaltyMinutes: publicMetricValue(player.metrics.penaltyMinutes),
       };
     })
     : roster.filter((player) => !player.isGoalie);
@@ -402,7 +363,7 @@ export function buildTeamLeagueLeaderPopulation(
       && player.teams[0].id === team.id
       && (!player.displayTeam || player.displayTeam.id === team.id);
     if (!isTeamScoped) return [];
-    const gaa = player.goalie?.goalsAgainstAverage ?? null;
+    const gaa = player.goalie?.goalsAgainstAverage;
     return [{
       player_id: player.playerId,
       player_name: player.playerName,
@@ -412,12 +373,12 @@ export function buildTeamLeagueLeaderPopulation(
       display_team_name: team.name,
       display_team_logo_url: team.logoUrl,
       position: null,
-      goals: player.roles.includes('skater') ? player.metrics.goals.value : null,
-      assists: player.roles.includes('skater') ? player.metrics.assists.value : null,
-      points: player.roles.includes('skater') ? player.metrics.points.value : null,
-      gaa: gaa?.value ?? null,
+      goals: player.roles.includes('skater') ? publicMetricValue(player.metrics.goals) : null,
+      assists: player.roles.includes('skater') ? publicMetricValue(player.metrics.assists) : null,
+      points: player.roles.includes('skater') ? publicMetricValue(player.metrics.points) : null,
+      gaa: publicMetricValue(gaa),
       is_goalie: player.roles.includes('goalie'),
-      estimated: gaa?.state === 'estimated',
+      estimated: false,
     }];
   });
 }
@@ -471,19 +432,23 @@ function buildRivals(
   const standingMap = new Map(standings.map((row) => [row.teamId, row]));
   const canonicalPlayers = input.publicLeagueSeasonStats?.players ?? [];
   const teamFor = (player: PublicSeasonPlayer) => player.displayTeam?.id && teamMap.has(player.displayTeam.id) ? player.displayTeam.id : null;
-  const metricProvenance = (metric: PublicStatMetric | undefined): TeamStatProvenance => metric?.value == null ? null : metric.state === 'estimated' ? 'estimated' : 'authoritative';
+  const metricProvenance = (metric: PublicStatMetric | undefined): TeamStatProvenance => publicMetricValue(metric) == null ? null : 'authoritative';
   const compareSkaters = (metric: 'goals' | 'assists') => (a: PublicSeasonPlayer, b: PublicSeasonPlayer) =>
-    (b.metrics[metric].value ?? -1) - (a.metrics[metric].value ?? -1) ||
-    (b.metrics.points.value ?? -1) - (a.metrics.points.value ?? -1) || a.playerName.localeCompare(b.playerName);
+    (publicMetricValue(b.metrics[metric]) ?? -1) - (publicMetricValue(a.metrics[metric]) ?? -1) ||
+    (publicMetricValue(b.metrics.points) ?? -1) - (publicMetricValue(a.metrics.points) ?? -1) || a.playerName.localeCompare(b.playerName);
   const side = (teamId: string): TeamPageRivalSide | null => {
     const standing = standingMap.get(teamId);
     const team = teamMap.get(teamId);
     if (!standing || !team) return null;
     const skaters = canonicalPlayers.filter((player) => teamFor(player) === teamId && player.roles.includes('skater'));
-    const sniper = [...skaters].sort(compareSkaters('goals'))[0];
-    const playmaker = [...skaters].sort(compareSkaters('assists'))[0];
-    const goalie = canonicalPlayers.filter((player) => teamFor(player) === teamId && player.goalie)
-      .sort((a, b) => (b.goalie?.gamesPlayed.value ?? -1) - (a.goalie?.gamesPlayed.value ?? -1) || (a.goalie?.goalsAgainstAverage.value ?? Infinity) - (b.goalie?.goalsAgainstAverage.value ?? Infinity) || a.playerName.localeCompare(b.playerName))[0];
+    const sniper = skaters.filter((player) => publicMetricValue(player.metrics.goals) !== null).sort(compareSkaters('goals'))[0];
+    const playmaker = skaters.filter((player) => publicMetricValue(player.metrics.assists) !== null).sort(compareSkaters('assists'))[0];
+    const goalie = canonicalPlayers.filter((player) => teamFor(player) === teamId && player.goalie
+      && publicMetricValue(player.goalie.gamesPlayed) !== null
+      && publicMetricValue(player.goalie.goalsAgainstAverage) !== null)
+      .sort((a, b) => (publicMetricValue(b.goalie?.gamesPlayed) ?? -1) - (publicMetricValue(a.goalie?.gamesPlayed) ?? -1)
+        || (publicMetricValue(a.goalie?.goalsAgainstAverage) ?? Infinity) - (publicMetricValue(b.goalie?.goalsAgainstAverage) ?? Infinity)
+        || a.playerName.localeCompare(b.playerName))[0];
     const sw = strengthWeakness(standings, teamId);
     return {
       ...team,
@@ -493,13 +458,13 @@ function buildRivals(
       goalDifferential: standing.goalDifferential,
       strength: sw.strength,
       weakness: sw.weakness,
-      sniper: { name: sniper?.playerName ?? 'No data', goals: sniper?.metrics.goals.value ?? null },
-      playmaker: { name: playmaker?.playerName ?? 'No data', assists: playmaker?.metrics.assists.value ?? null },
+      sniper: { name: sniper?.playerName ?? 'No data', goals: publicMetricValue(sniper?.metrics.goals) },
+      playmaker: { name: playmaker?.playerName ?? 'No data', assists: publicMetricValue(playmaker?.metrics.assists) },
       tendy: {
         name: goalie?.playerName ?? 'No data',
-        gamesPlayed: goalie?.goalie?.gamesPlayed.value ?? null,
+        gamesPlayed: publicMetricValue(goalie?.goalie?.gamesPlayed),
         gamesPlayedProvenance: metricProvenance(goalie?.goalie?.gamesPlayed),
-        goalsAgainstAverage: goalie?.goalie?.goalsAgainstAverage.value ?? null,
+        goalsAgainstAverage: publicMetricValue(goalie?.goalie?.goalsAgainstAverage),
         goalsAgainstAverageProvenance: metricProvenance(goalie?.goalie?.goalsAgainstAverage),
       },
     };
@@ -588,8 +553,7 @@ function computeStreak(games: TeamPageGame[], teamId: string): string | null {
 export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Date()): TeamPageSnapshot {
   const profileMap = new Map(input.profiles.map((row) => [String(row.id), row]));
   const { candidates, rawByPlayer } = buildStatsByPlayer(input);
-  const goalieByPlayer = buildGoalieStats(input);
-  const appearancesByPlayer = buildEstimatedAppearanceGameIds(input);
+
   const publicByPlayer = new Map((input.publicSeasonStats?.players ?? []).map((player) => [player.playerId, player]));
   const rosterRows = input.rosters
     .filter((row) => row.team_id === input.teamId && row.league_id === input.leagueId && row.season_id === input.season.id && row.status === 'active' && row.end_date === null)
@@ -604,10 +568,7 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
     const raw = rawByPlayer.get(playerId);
     const goals = raw ? raw.goals : statsAvailable ? numberValue(stat?.goals) : null;
     const assists = raw ? raw.assists : statsAvailable ? numberValue(stat?.assists) : null;
-    const goalieTotals = goalieByPlayer.get(playerId);
-    const goalieGames = goalieTotals?.gameIds.size ?? null;
     const overrideGamesPlayed = numberValue(row.games_played_override);
-    const estimatedGamesPlayed = appearancesByPlayer.get(playerId)?.size;
     const canonical = publicByPlayer.get(playerId);
     const canonicalMetrics = canonical?.metrics ?? (input.publicSeasonStats ? {
       gamesPlayed: { value: null, state: 'unknown' as const, sources: [] }, goals: { value: null, state: 'unknown' as const, sources: [] },
@@ -622,16 +583,16 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
       jerseyNumber: numberValue(row.jersey_number), position: stringValue(row.position),
       isGoalie: isGoalie(stringValue(row.position), booleanValue(row.is_goalie)),
       leadershipRole: stringValue(row.leadership_role), playerType: stringValue(row.player_type),
-      gamesPlayed: canonicalMetrics ? canonicalMetrics.gamesPlayed.value : overrideGamesPlayed ?? estimatedGamesPlayed ?? null,
-      gamesPlayedProvenance: canonicalMetrics ? (canonicalMetrics.gamesPlayed.state === 'estimated' ? 'estimated' : canonicalMetrics.gamesPlayed.value !== null ? 'authoritative' : null) : overrideGamesPlayed != null ? 'authoritative' : estimatedGamesPlayed != null ? 'estimated' : null,
-      goals: canonicalMetrics ? canonicalMetrics.goals.value : goals,
-      assists: canonicalMetrics ? canonicalMetrics.assists.value : assists,
-      points: canonicalMetrics ? canonicalMetrics.points.value : raw ? raw.goals + raw.assists : statsAvailable ? numberValue(stat?.points) ?? (goals != null && assists != null ? goals + assists : null) : null,
-      penaltyMinutes: canonicalMetrics ? canonicalMetrics.penaltyMinutes.value : raw ? raw.penaltyMinutes : null,
-      goalieGamesPlayed: useCanonicalGoalie ? canonicalGoalie?.gamesPlayed.value ?? null : goalieGames,
-      goalieGamesPlayedProvenance: useCanonicalGoalie ? (canonicalGoalie?.gamesPlayed.state === 'estimated' ? 'estimated' : canonicalGoalie?.gamesPlayed.value != null ? 'authoritative' : null) : goalieGames != null ? 'estimated' : null,
-      goalsAgainstAverage: useCanonicalGoalie ? canonicalGoalie?.goalsAgainstAverage.value ?? null : goalieTotals?.explicitGaa ?? (goalieTotals && goalieGames && goalieGames > 0 ? goalieTotals.goalsAgainst / goalieGames : null),
-      goalsAgainstAverageProvenance: useCanonicalGoalie ? (canonicalGoalie?.goalsAgainstAverage.state === 'estimated' ? 'estimated' : canonicalGoalie?.goalsAgainstAverage.value != null ? 'authoritative' : null) : goalieTotals && (goalieTotals.explicitGaa != null || (goalieGames != null && goalieGames > 0)) ? 'estimated' : null,
+      gamesPlayed: canonicalMetrics ? publicMetricValue(canonicalMetrics.gamesPlayed) : overrideGamesPlayed,
+      gamesPlayedProvenance: canonicalMetrics ? (publicMetricValue(canonicalMetrics.gamesPlayed) !== null ? 'authoritative' : null) : overrideGamesPlayed != null ? 'authoritative' : null,
+      goals: canonicalMetrics ? publicMetricValue(canonicalMetrics.goals) : goals,
+      assists: canonicalMetrics ? publicMetricValue(canonicalMetrics.assists) : assists,
+      points: canonicalMetrics ? publicMetricValue(canonicalMetrics.points) : raw ? raw.goals + raw.assists : statsAvailable ? numberValue(stat?.points) ?? (goals != null && assists != null ? goals + assists : null) : null,
+      penaltyMinutes: canonicalMetrics ? publicMetricValue(canonicalMetrics.penaltyMinutes) : raw ? raw.penaltyMinutes : null,
+      goalieGamesPlayed: useCanonicalGoalie ? publicMetricValue(canonicalGoalie?.gamesPlayed) : null,
+      goalieGamesPlayedProvenance: useCanonicalGoalie && publicMetricValue(canonicalGoalie?.gamesPlayed) !== null ? 'authoritative' : null,
+      goalsAgainstAverage: useCanonicalGoalie ? publicMetricValue(canonicalGoalie?.goalsAgainstAverage) : null,
+      goalsAgainstAverageProvenance: useCanonicalGoalie && publicMetricValue(canonicalGoalie?.goalsAgainstAverage) !== null ? 'authoritative' : null,
       publicMetrics: canonicalMetrics,
       publicGoalieMetrics: canonicalGoalie,
     };

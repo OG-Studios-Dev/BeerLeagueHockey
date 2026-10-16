@@ -68,9 +68,9 @@ describe('review findings: canonical season aggregation', () => {
     const goalie = aggregatePublicSeasonStats(rows, { leagueId: LEAGUE, seasonId: SEASON }).players[0];
     expect(goalie.metrics.gamesPlayed.state).toBe('conflicted');
     expect(goalie.goalie?.gamesPlayed.state).toBe('conflicted');
-    expect(goalie.goalie?.wins.value).toBe(1);
-    expect(goalie.goalie?.losses.value).toBe(0);
-    expect(goalie.goalie?.shutouts.value).toBeNull();
+    expect(goalie.goalie?.wins).toEqual(expect.objectContaining({ value: null, state: 'conflicted' }));
+    expect(goalie.goalie?.losses).toEqual(expect.objectContaining({ value: null, state: 'conflicted' }));
+    expect(goalie.goalie?.shutouts).toEqual(expect.objectContaining({ value: null, state: 'conflicted' }));
 
     rows.checkins = [];
     rows.goalieStats[0] = { ...rows.goalieStats[0], game_result: 'SOL', shutout: false };
@@ -93,7 +93,9 @@ describe('review findings: canonical season aggregation', () => {
       league_id: LEAGUE, season_id: SEASON, game_result: 'LOSS', saves: 0, shots_against: 0,
       goals_against: 0, shutout: false, scorekeeping_provenance: null,
     }];
-    expect(aggregatePublicSeasonStats(assigned, { leagueId: LEAGUE, seasonId: SEASON }).players[0].goalie?.saves.state).toBe('recorded');
+    expect(aggregatePublicSeasonStats(assigned, { leagueId: LEAGUE, seasonId: SEASON }).players[0].goalie?.saves).toEqual({
+      value: null, state: 'unknown', sources: [],
+    });
   });
 
   it('excludes ineligible/non-regular rosters and preserves a valid games-played override', () => {

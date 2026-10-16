@@ -95,22 +95,23 @@ describe('Stats table responsive accessibility', () => {
     const { h } = tableRuntime();
     const expected = {
       gp: /GP, 4.*Reported from imported records/i,
-      g: /G, ~2.*Estimated from roster eligibility/i,
+      g: /G, unavailable.*Display value —.*Not recorded.*roster eligibility/i,
       a: /A, 1.*Recorded from game statistics/i,
       pts: /PTS, unavailable.*Conflicting records need review/i,
       ch: /CH, unavailable.*Not recorded/i,
-      gpg: /GPG, ~0\.50.*Estimated from roster eligibility/i,
+      gpg: /GPG, unavailable.*Display value —.*Not recorded.*roster eligibility/i,
       ppg: /PPG, unavailable.*Conflicting source metrics need review/i,
     };
     for (const [key, label] of Object.entries(expected)) {
       const cell = findNode(h.output, (node) => node.props.testID === `stats-metric-player-a-${key}`);
       assert.ok(cell, `missing ${key} cell`);
       assert.match(cell.props.accessibilityLabel, label);
+      if (key === 'g' || key === 'gpg') assert.doesNotMatch(cell.props.accessibilityLabel, /estimated|\b2(?:\.00)?\b/i);
       assert.notEqual(cell.props.allowFontScaling, false);
       assert.equal(cell.props.maxFontSizeMultiplier, 1.4);
     }
     assert.match(findNode(h.output, (node) => node.props.accessibilityRole === 'summary')?.props.accessibilityLabel ?? '', /Skater statistics table.*GP.*PPG/i);
-    assert.equal(nodeText(findNode(h.output, (node) => node.props.testID === 'stats-metric-player-a-pts')), 'Review');
+    assert.equal(nodeText(findNode(h.output, (node) => node.props.testID === 'stats-metric-player-a-pts')), '—');
   });
 
   it('keeps the Team column inside the synchronized metrics pane with a readable header width', () => {
@@ -245,7 +246,7 @@ describe('Stats table responsive accessibility', () => {
     const rows = [{ columns: [
       { display: '10000000', state: 'recorded' },
       { display: '10000000', state: 'recorded' },
-      { display: '~10000000.00', state: 'estimated' },
+      { display: '—', state: 'estimated' },
       { display: 'Review', state: 'conflicted' },
     ] }];
     assert.equal(Table.needsExpandedGoalieMetrics(rows), true);
@@ -261,7 +262,7 @@ describe('Stats table responsive accessibility', () => {
       championships: metric(null, 'conflicted', ['player_badges']),
     } });
     const cells = allNodes(runtime.h.output, (node) => String(node.props.testID ?? '').startsWith('stats-metric-'));
-    assert.deepEqual(cells.map(nodeText), ['10000000', '10000000', '~10000000.00', 'Review']);
+    assert.deepEqual(cells.map(nodeText), ['10000000', '10000000', '—', '—']);
     assert.ok(cells.every((cell) => flattenStyle(cell.props.style).width === 144));
     assert.ok(cells.every((cell) => cell.props.numberOfLines === undefined));
     assert.ok(allNodes(runtime.h.output, (node) => node.type === 'ScrollView').every((node) => node.props.scrollEnabled === true));

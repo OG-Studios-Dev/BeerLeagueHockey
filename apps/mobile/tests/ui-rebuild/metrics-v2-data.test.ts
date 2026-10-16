@@ -75,14 +75,14 @@ describe('public metrics v2 boundary', () => {
     assert.deepEqual(calls[0].init.headers, { Accept: 'application/json' });
     assert.equal(result.players[0].metrics.gamesPlayed.state, 'conflicted');
     assert.equal(result.players[0].metrics.penaltyMinutes.value, null);
-    assert.equal(result.players[0].goalie.saves.state, 'estimated');
+    assert.deepEqual(result.players[0].goalie.saves, metric(null, 'unknown', []));
     assert.equal(result.players[0].goalie.goalsAgainst.state, 'recorded');
   });
 
   it('formats every state without turning missing or conflicted facts into zero', () => {
     const api = moduleWith();
-    assert.deepEqual(api.formatPublicMetric(metric(null, 'conflicted', ['attendance'])), { value: 'Needs review', hint: 'Conflicting records need review.' });
-    assert.deepEqual(api.formatPublicMetric(metric(11, 'estimated', ['roster_window'])), { value: '~11', hint: 'Estimated from roster eligibility.' });
+    assert.deepEqual(api.formatPublicMetric(metric(null, 'conflicted', ['attendance'])), { value: '—', hint: 'Conflicting records need review.' });
+    assert.deepEqual(api.formatPublicMetric(metric(11, 'estimated', ['roster_window'])), { value: '—', hint: 'Not recorded.' });
     assert.deepEqual(api.formatPublicMetric(metric(null, 'unknown', [])), { value: '—', hint: 'Not recorded.' });
     assert.deepEqual(api.formatPublicMetric(metric(0, 'verified', ['capture_confirmation'])), { value: '0', hint: 'Verified.' });
     assert.deepEqual(api.formatPublicMetric(metric(6, 'reported', ['imported'])), { value: '6', hint: 'Reported from imported records.' });
@@ -146,7 +146,7 @@ describe('public metrics v2 boundary', () => {
       requested = url; return response(payload);
     });
     assert.match(requested, /contractVersion=2/);
-    assert.equal(result.goalies[0].metrics.saves.state, 'estimated');
+    assert.deepEqual(result.goalies[0].metrics.saves, metric(null, 'unknown', []));
     assert.equal(result.goalies[0].metrics.goalsAgainst.state, 'recorded');
     assert.equal(api.formatPublicMetric(result.goalies[0].metrics.savePercentage).value, '—');
   });
@@ -171,7 +171,7 @@ describe('public metrics v2 boundary', () => {
     assert.deepEqual(result.seasons[0].roles, ['skater', 'goalie']);
     assert.equal(result.seasons[0].metrics.points.value, 19);
     assert.equal(result.seasons[0].metrics.assists.sources[0], 'imported');
-    assert.equal(result.seasons[0].goalie.saves.value, 18);
+    assert.deepEqual(result.seasons[0].goalie.saves, metric(null, 'unknown', []));
   });
 
   it('preserves an authoritative single-league rate independently and keeps an unrecomputable multi-league rate unknown', async () => {

@@ -159,7 +159,12 @@ describe('shell form exits', () => {
           playerId: 'synthetic-player', rosterId: 'roster-1', fullName: 'Synthetic Player', photoUrl: null,
           position: null, leadershipRole: null, jerseyNumber: null, isGoalie: false,
           team: { id: 'viewed-team', name: 'Viewed Purple', logoUrl: null, primaryColor: '#6046A8' },
-          seasons: [], selectedSeasonId: null, selectedSeasonName: null, isCareer: true, metrics: null,
+          seasons: [], selectedSeasonId: null, selectedSeasonName: null, isCareer: true,
+          metrics: { games_played: 0, goals: null, assists: null, points: null, penalty_minutes: null, plus_minus: null },
+          metricProvenance: {
+            games_played: { state: 'reported', sources: ['roster_window'] },
+            goals: { state: 'conflicted', sources: ['skater_stats', 'attendance'] },
+          },
           careerRows: [], badges: [], games: [], matchups: [], articles: [],
         }) },
         '../theme/colors': { default: { ...colors, primary: '#0ff', bgBase: '#000', brandArena: '#00f', brandGold: '#fc0', bgElevated: '#222', bgInteractive: '#222', glassStroke: '#333' } },
@@ -175,6 +180,11 @@ describe('shell form exits', () => {
     assert.equal(playerSurface?.props.accentColor, '#6046A8');
     const playerHero = findNode(harness.output, (node) => node.props.testID === 'focus-card-player:synthetic-player:identity');
     assert.equal(playerHero?.props.accentColor, '#6046A8');
+    const conflictedGoals = findNode(harness.output, (node) => typeof node.props.accessibilityLabel === 'string' && /G, unavailable.*conflicting records need review.*skater stats.*attendance/i.test(node.props.accessibilityLabel));
+    const reportedGames = findNode(harness.output, (node) => typeof node.props.accessibilityLabel === 'string' && /GP, 0.*reported.*roster window/i.test(node.props.accessibilityLabel));
+    assert.ok(conflictedGoals, 'conflicted values render blank with a non-leaking accessibility explanation');
+    assert.ok(reportedGames, 'authoritative zero remains visible and described');
+    assert.doesNotMatch(`${conflictedGoals?.props.accessibilityLabel}`, /confirmed|recorded \d|estimated \d|candidate/i);
     await share.props.onPress();
     assert.deepEqual(shares, [{ title: 'Synthetic Player · Hockey Life Player', message: 'Synthetic Player · Hockey Life Player\nCareer stats and history: https://hockey-life.beerleaguehockey.ca/hockey-life/players/synthetic-player?season=all' }]);
   });

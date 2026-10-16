@@ -208,6 +208,8 @@ function publicGoalieMetrics(value: unknown, label: string): PublicGoalieMetrics
   const keys = ['gamesPlayed', 'wins', 'losses', 'saves', 'goalsAgainst', 'savePercentage', 'goalsAgainstAverage', 'shutouts'];
   exactKeys(raw, keys, label);
   const result = Object.fromEntries(keys.map((key) => [key, publicMetric(raw[key], `${label} ${key}`)])) as PublicGoalieMetrics;
+  result.saves = { value: null, state: 'unknown', sources: [] };
+  result.savePercentage = { value: null, state: 'unknown', sources: [] };
   if (result.gamesPlayed.value !== null && result.wins.value !== null && result.losses.value !== null
     && result.wins.value + result.losses.value > result.gamesPlayed.value) throw new TypeError(`Invalid ${label} game reconciliation`);
   return result;
@@ -215,12 +217,7 @@ function publicGoalieMetrics(value: unknown, label: string): PublicGoalieMetrics
 
 function metricHint(metric: PublicStatMetric): string {
   if (metric.state === 'conflicted') return 'Conflicting records need review.';
-  if (metric.state === 'unknown') return 'Not recorded.';
-  if (metric.state === 'estimated') {
-    if (metric.sources.includes('roster_window')) return 'Estimated from roster eligibility.';
-    if (metric.sources.includes('accepted_sub')) return 'Estimated from accepted substitute records.';
-    return 'Estimated.';
-  }
+  if (metric.state === 'unknown' || metric.state === 'estimated') return 'Not recorded.';
   if (metric.state === 'verified') return 'Verified.';
   if (metric.state === 'reported') return metric.sources.includes('imported')
     ? 'Reported from imported records.' : 'Reported.';
@@ -232,10 +229,9 @@ function metricHint(metric: PublicStatMetric): string {
 
 export function formatPublicMetric(metric: PublicStatMetric, digits?: number): PublicMetricDisplay {
   const hint = metricHint(metric);
-  if (metric.state === 'conflicted') return { value: 'Needs review', hint };
-  if (metric.value === null) return { value: '—', hint };
+  if (metric.state === 'conflicted' || metric.value === null || metric.state === 'estimated') return { value: '—', hint };
   const rendered = digits === undefined ? String(metric.value) : metric.value.toFixed(digits);
-  return { value: `${metric.state === 'estimated' ? '~' : ''}${rendered}`, hint };
+  return { value: rendered, hint };
 }
 function byteLength(value: string) {
   if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(value).length;
@@ -300,22 +296,20 @@ export async function getPublicGoalies(
     const estimated = row.estimated;
     if (typeof estimated !== 'boolean') throw new TypeError('Invalid goalie estimate flag');
     if ((source === 'estimated') !== estimated) throw new TypeError('Goalie estimate provenance mismatch');
+    nullableNumber(row.save_percentage, 'save percentage', 100);
+    if (row.saves !== null) integer(row.saves, 'saves');
     const result = { player_id: id(row.player_id, 'goalie player id'), player_name: text(row.player_name, 'goalie player name'),
       team_id: row.team_id === null ? null : id(row.team_id, 'goalie team id'), team_name: text(row.team_name, 'goalie team name'),
       avatar_url: nullableText(row.avatar_url, 'goalie avatar'), games_played: integer(row.games_played, 'games played'),
       wins: integer(row.wins, 'wins'), losses: integer(row.losses, 'losses'),
-      save_percentage: nullableNumber(row.save_percentage, 'save percentage', 100),
+      save_percentage: null,
       goals_against_average: nullableNumber(row.goals_against_average, 'goals against average'),
-      shutouts: integer(row.shutouts, 'shutouts'), saves: row.saves === null ? null : integer(row.saves, 'saves'),
+      shutouts: integer(row.shutouts, 'shutouts'), saves: null,
       goals_against: integer(row.goals_against, 'goals against'), estimated };
     if (result.wins + result.losses > result.games_played || result.shutouts > result.games_played) {
       throw new TypeError('Invalid goalie game reconciliation');
     }
-    if (result.save_percentage !== null) {
-      if (result.saves === null || result.saves + result.goals_against === 0) throw new TypeError('Invalid goalie save reconciliation');
-      const expected = Math.round((result.saves / (result.saves + result.goals_against)) * 1000) / 10;
-      if (Math.abs(result.save_percentage - expected) > 0.0500001) throw new TypeError('Invalid goalie save reconciliation');
-    }
+
     if (result.goals_against_average !== null) {
       if (result.games_played === 0) throw new TypeError('Invalid goalie GAA reconciliation');
       const expected = Math.round((result.goals_against / result.games_played) * 100) / 100;
@@ -326,8 +320,7 @@ export async function getPublicGoalies(
   if ((!presentationSeason || source === 'empty') && goalies.length) throw new TypeError('Empty goalie scope contains rows');
   if (goalies.length === 0 && source !== 'empty') throw new TypeError('Empty goalie rows require empty source');
   unique(goalies.map((row) => `${row.player_id}:${row.team_id}`), 'goalie row');
-  return { leagueId, leagueSlug: slug, presentationSeason, divisionId: responseDivision, source,
-    goalies: goalies.map((row) => ({ ...row, save_percentage: row.save_percentage === null ? null : row.save_percentage / 100 })) };
+  return { leagueId, leagueSlug: slug, presentationSeason, divisionId: responseDivision, source, goalies };
 }
 
 export async function getPublicPlayerCareer(slug: string, leagueId: string, playerId: string, fetchImpl: FetchLike = fetch, timeoutMs = 8000) {

@@ -5,7 +5,6 @@ import {
   getDivisions,
   getLeagueBySlug,
   getStandings,
-  getUnifiedSkaterStatsRows,
   hasPlatformSubscription,
 } from '@/lib/data';
 import type {
@@ -13,13 +12,18 @@ import type {
   League,
   Season,
   TeamStanding,
-  UnifiedSkaterStatsRow,
 } from '@/lib/types';
 import {
   MAX_STANDINGS_ROWS,
   buildPublicHomeLeaders,
   handlePublicHomeRequest,
 } from '@/lib/public-home';
+import {
+  aggregatePublicSeasonStats,
+  readPublicStatMetricRows,
+  type PublicMetricState,
+  type PublicSeasonMetricPlayer,
+} from '@/lib/public-stat-metrics';
 import { GET, dynamic } from '@/app/api/public/home/route';
 
 jest.mock('@/lib/data', () => ({
@@ -27,8 +31,11 @@ jest.mock('@/lib/data', () => ({
   getDivisions: jest.fn(),
   getLeagueBySlug: jest.fn(),
   getStandings: jest.fn(),
-  getUnifiedSkaterStatsRows: jest.fn(),
   hasPlatformSubscription: jest.fn(),
+}));
+jest.mock('@/lib/public-stat-metrics', () => ({
+  aggregatePublicSeasonStats: jest.fn(),
+  readPublicStatMetricRows: jest.fn(),
 }));
 
 const LEAGUE_ID = '10000000-0000-4000-8000-000000000001';
@@ -40,7 +47,37 @@ const mockedHasPlatformSubscription = jest.mocked(hasPlatformSubscription);
 const mockedGetCurrentSeason = jest.mocked(getCurrentSeason);
 const mockedGetDivisions = jest.mocked(getDivisions);
 const mockedGetStandings = jest.mocked(getStandings);
-const mockedGetUnifiedSkaterStatsRows = jest.mocked(getUnifiedSkaterStatsRows);
+const mockedAggregatePublicSeasonStats = jest.mocked(aggregatePublicSeasonStats);
+const mockedReadPublicStatMetricRows = jest.mocked(readPublicStatMetricRows);
+
+function policyMetric(value: number | null, state: PublicMetricState = value === null ? 'unknown' : 'recorded') {
+  return { value, state, sources: value === null ? [] : ['skater_stats'] } as const;
+}
+
+function policyPlayer(
+  playerId: string,
+  playerName: string,
+  goals: ReturnType<typeof policyMetric>,
+  assists: ReturnType<typeof policyMetric>,
+  points: ReturnType<typeof policyMetric>,
+): PublicSeasonMetricPlayer {
+  return {
+    playerId,
+    playerName,
+    avatarUrl: `https://images.example/${playerId}.png`,
+    displayTeam: { id: `team-${playerId}`, name: `Current ${playerId}` },
+    teams: [{ id: `team-${playerId}`, name: `Current ${playerId}` }],
+    roles: ['skater'],
+    metrics: {
+      gamesPlayed: policyMetric(8, 'reported'),
+      goals,
+      assists,
+      points,
+      penaltyMinutes: policyMetric(null),
+    },
+    goalie: null,
+  } as PublicSeasonMetricPlayer;
+}
 
 function request(
   query = `leagueSlug=hockey-life&seasonId=${SEASON_ID}`,
@@ -60,23 +97,17 @@ function canonicalPlayer(
   assists: number,
   extras: Record<string, unknown> = {},
 ) {
-  return {
-    player_id: playerId,
-    player_name: playerName,
-    avatar_url: `https://images.example/${playerId}.png`,
-    team_id: `team-${playerId}`,
-    team_name: `Recorded ${playerId}`,
-    display_team_name: `Current ${playerId}`,
-    display_team_logo_url: `https://images.example/team-${playerId}.png`,
-    position: 'C',
-    goals,
-    assists,
-    points: goals + assists,
-    games_played: 8,
-    championships: 2,
-    email: `${playerId}@private.example`,
-    ...extras,
-  } as unknown as UnifiedSkaterStatsRow;
+  const player = policyPlayer(
+    playerId,
+    playerName,
+    policyMetric(goals),
+    policyMetric(assists),
+    policyMetric(goals + assists),
+  );
+  if ('goals' in extras) {
+    player.metrics.goals = { value: extras.goals as number, state: 'recorded', sources: ['skater_stats'] };
+  }
+  return player;
 }
 
 function canonicalStanding(index = 0) {
@@ -123,9 +154,11 @@ beforeEach(() => {
   mockedGetDivisions.mockResolvedValue([
     { id: DIVISION_ID, league_id: LEAGUE_ID, name: 'A Division', sort_order: 1 },
   ] as Division[]);
-  mockedGetUnifiedSkaterStatsRows.mockResolvedValue([
-    canonicalPlayer('player-a', 'Alex Alpha', 5, 3),
-  ]);
+  mockedReadPublicStatMetricRows.mockResolvedValue({} as never);
+  mockedAggregatePublicSeasonStats.mockReturnValue({
+    players: [canonicalPlayer('player-a', 'Alex Alpha', 5, 3)],
+    coverage: { participation: [], penalties: [], goalies: [] },
+  });
   mockedGetStandings.mockResolvedValue([canonicalStanding(1)]);
 });
 
@@ -135,9 +168,10 @@ describe('public Home numeric integrity', () => {
     async (invalid) => {
       const log = jest.spyOn(console, 'error').mockImplementation(() => {});
       try {
-        mockedGetUnifiedSkaterStatsRows.mockResolvedValue([
-          canonicalPlayer('player-a', 'Alex Alpha', 5, 3, { goals: invalid }),
-        ]);
+        mockedAggregatePublicSeasonStats.mockReturnValue({
+          players: [canonicalPlayer('player-a', 'Alex Alpha', 5, 3, { goals: invalid })],
+          coverage: { participation: [], penalties: [], goalies: [] },
+        });
         const response = await GET(request(), { params: Promise.resolve({}) });
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ error: {
@@ -151,6 +185,53 @@ describe('public Home numeric integrity', () => {
 });
 
 describe('public Home leader DTO', () => {
+  it('ranks only publishable policy metrics and retains an authoritative zero', () => {
+    const rows = [
+      policyPlayer('estimated', 'Estimated', policyMetric(99, 'estimated'), policyMetric(0, 'estimated'), policyMetric(99, 'estimated')),
+      policyPlayer('conflicted', 'Conflicted', policyMetric(98, 'conflicted'), policyMetric(0, 'conflicted'), policyMetric(98, 'conflicted')),
+      policyPlayer('zero', 'Recorded Zero', policyMetric(0), policyMetric(0), policyMetric(0)),
+    ];
+
+    expect(buildPublicHomeLeaders(rows as never).map((leader) => leader.player_id)).toEqual(['zero']);
+  });
+
+  it('keeps a metric-specific cutoff tie within the strict first-five visible limit', () => {
+    const values = [9, 8, 7, 6, 5, 5];
+    const rows = values.map((value, index) => policyPlayer(
+      `p${index + 1}`,
+      `Player ${index + 1}`,
+      policyMetric(value),
+      policyMetric(null),
+      policyMetric(null),
+    ));
+
+    expect(buildPublicHomeLeaders(rows).map((leader) => leader.player_id)).toEqual([
+      'p1', 'p2', 'p3', 'p4', 'p5',
+    ]);
+  });
+
+  it('caps the disjoint Goals, Assists, and Points union at fifteen skaters', () => {
+    const rows = (['goals', 'assists', 'points'] as const).flatMap((metric) =>
+      Array.from({ length: 6 }, (_, index) => {
+        const values = {
+          goals: policyMetric(null),
+          assists: policyMetric(null),
+          points: policyMetric(null),
+        };
+        values[metric] = policyMetric(6 - index);
+        return policyPlayer(`${metric}-${index + 1}`, `${metric} ${index + 1}`, values.goals, values.assists, values.points);
+      }));
+
+    const leaders = buildPublicHomeLeaders(rows);
+
+    expect(leaders).toHaveLength(15);
+    expect(leaders.map((leader) => leader.player_id)).toEqual([
+      'goals-1', 'goals-2', 'goals-3', 'goals-4', 'goals-5',
+      'assists-1', 'assists-2', 'assists-3', 'assists-4', 'assists-5',
+      'points-1', 'points-2', 'points-3', 'points-4', 'points-5',
+    ]);
+  });
+
   it('returns the canonical-ID union of positive top-five goals, assists, and points with deterministic ties', () => {
     const rows = [
       canonicalPlayer('p1', 'Zed Same', 10, 0),
@@ -192,6 +273,7 @@ describe('public Home leader DTO', () => {
 
 describe('GET /api/public/home', () => {
   it('is mounted as a dynamic GET route and returns only the version-1 public DTO', async () => {
+    mockedGetStandings.mockResolvedValue([{ ...canonicalStanding(1), team_id: 'team-player-a' }]);
     const response = await GET(request(), { params: Promise.resolve({}) });
     const payload = await response.json();
 
@@ -216,16 +298,16 @@ describe('GET /api/public/home', () => {
         player_name: 'Alex Alpha',
         avatar_url: 'https://images.example/player-a.png',
         team_id: 'team-player-a',
-        team_name: 'Recorded player-a',
+        team_name: 'Current player-a',
         display_team_name: 'Current player-a',
-        display_team_logo_url: 'https://images.example/team-player-a.png',
-        position: 'C',
+        display_team_logo_url: 'https://images.example/standing-1.png',
+        position: null,
         goals: 5,
         assists: 3,
         points: 8,
       }],
       standings: [{
-        team_id: '40000000-0000-4000-8000-000000000001',
+        team_id: 'team-player-a',
         team_name: 'Team 1',
         logo_url: 'https://images.example/standing-1.png',
         primary_color: null,
@@ -244,13 +326,9 @@ describe('GET /api/public/home', () => {
       divisions: [{ id: DIVISION_ID, name: 'A Division', sort_order: 1 }],
     });
     expect(JSON.stringify(payload)).not.toMatch(/owner@|private_note|championships|overtime_losses|email/);
-    expect(mockedGetUnifiedSkaterStatsRows).toHaveBeenCalledWith(
-      LEAGUE_ID,
-      SEASON_ID,
-      undefined,
-      'hockey-life',
-      'Fall 2026',
-    );
+    const scope = { leagueId: LEAGUE_ID, seasonId: SEASON_ID, divisionId: null };
+    expect(mockedReadPublicStatMetricRows).toHaveBeenCalledWith(scope);
+    expect(mockedAggregatePublicSeasonStats).toHaveBeenCalledWith(expect.anything(), scope);
     expect(mockedGetStandings).toHaveBeenCalledWith(LEAGUE_ID, SEASON_ID);
   });
 
@@ -266,7 +344,7 @@ describe('GET /api/public/home', () => {
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe(code);
     expect(mockedGetLeagueBySlug).not.toHaveBeenCalled();
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
   });
 
   it('rejects a known tenant host/query mismatch before canonical aggregators', async () => {
@@ -276,7 +354,7 @@ describe('GET /api/public/home', () => {
     );
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe('TENANT_MISMATCH');
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
     expect(mockedGetStandings).not.toHaveBeenCalled();
   });
 
@@ -318,7 +396,7 @@ describe('GET /api/public/home', () => {
     expect(rejected.status).toBe(400);
     expect((await rejected.json()).error.code).toBe('TENANT_MISMATCH');
     expect(mockedHasPlatformSubscription).not.toHaveBeenCalled();
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
   });
 
   it('returns 404 for unknown or inactive leagues before subscription/stat reads', async () => {
@@ -327,7 +405,7 @@ describe('GET /api/public/home', () => {
     expect(response.status).toBe(404);
     expect((await response.json()).error.code).toBe('LEAGUE_NOT_FOUND');
     expect(mockedHasPlatformSubscription).not.toHaveBeenCalled();
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
   });
 
   it('applies the existing web subscription gate before season/division/aggregator reads', async () => {
@@ -337,7 +415,7 @@ describe('GET /api/public/home', () => {
     expect((await response.json()).error.code).toBe('LEAGUE_NOT_FOUND');
     expect(mockedGetCurrentSeason).not.toHaveBeenCalled();
     expect(mockedGetDivisions).not.toHaveBeenCalled();
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
   });
 
   it('rejects a division outside the resolved league before aggregators', async () => {
@@ -348,7 +426,7 @@ describe('GET /api/public/home', () => {
     );
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe('DIVISION_NOT_IN_LEAGUE');
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
     expect(mockedGetStandings).not.toHaveBeenCalled();
   });
 
@@ -366,7 +444,7 @@ describe('GET /api/public/home', () => {
         presentationSeasonId: SEASON_ID,
       },
     });
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
     expect(mockedGetStandings).not.toHaveBeenCalled();
   });
 
@@ -379,12 +457,15 @@ describe('GET /api/public/home', () => {
       leaders: [],
       standings: [],
     });
-    expect(mockedGetUnifiedSkaterStatsRows).not.toHaveBeenCalled();
+    expect(mockedReadPublicStatMetricRows).not.toHaveBeenCalled();
     expect(mockedGetStandings).not.toHaveBeenCalled();
   });
 
   it('distinguishes a successful canonical empty from a producer failure', async () => {
-    mockedGetUnifiedSkaterStatsRows.mockResolvedValue([]);
+    mockedAggregatePublicSeasonStats.mockReturnValue({
+      players: [],
+      coverage: { participation: [], penalties: [], goalies: [] },
+    });
     mockedGetStandings.mockResolvedValue([]);
     const emptyResponse = await GET(request(), { params: Promise.resolve({}) });
     expect(emptyResponse.status).toBe(200);
@@ -422,9 +503,11 @@ describe('GET /api/public/home', () => {
     );
     expect(response.status).toBe(200);
     expect((await response.json()).standings).toHaveLength(1);
-    expect(mockedGetUnifiedSkaterStatsRows).toHaveBeenCalledWith(
-      LEAGUE_ID, SEASON_ID, DIVISION_ID, 'hockey-life', 'Fall 2026',
-    );
+    expect(mockedReadPublicStatMetricRows).toHaveBeenCalledWith({
+      leagueId: LEAGUE_ID,
+      seasonId: SEASON_ID,
+      divisionId: DIVISION_ID,
+    });
     expect(mockedGetStandings).toHaveBeenCalledWith(LEAGUE_ID, SEASON_ID);
   });
 

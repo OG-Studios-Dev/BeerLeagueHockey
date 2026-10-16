@@ -44,6 +44,9 @@ describe('approved unified stats redesign source contract', () => {
     assert.doesNotMatch(screen, /StatsTable|stats-leaderboards-action|Leaderboards|<PillToggle/);
     assert.match(rankedRow, /stats-ranked-row-/);
     assert.match(rankedRow, /Open player card/);
+    assert.match(screen, /Unavailable selected values are excluded/);
+    assert.match(screen, /Unavailable GAA values are excluded/);
+    assert.doesNotMatch(screen, /estimated selected values|estimated GAA values/i);
   });
 
   it('keeps the stats page within its viewport and preserves player-card navigation', () => {

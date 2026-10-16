@@ -4,6 +4,7 @@ import {
   handlePublicGoaliesRequest,
   handlePublicPlayerCareerRequest,
   readAllPenaltyRows,
+  readCareerMetricSeasonIds,
   readCareerScope,
   readPublicProfileIdentity,
   readPresentationSeason,
@@ -16,6 +17,10 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
+}));
+jest.mock('@/lib/public-stat-metrics', () => ({
+  ...jest.requireActual('@/lib/public-stat-metrics'),
+  assertRequiredPrivilegedMetricConfig: jest.fn(),
 }));
 
 const mockedCreateClient = jest.mocked(createClient);
@@ -30,6 +35,13 @@ const TEAM_ID = '70000000-0000-4000-8000-000000000007';
 const TEAM_ID_2 = '71000000-0000-4000-8000-000000000007';
 const BASELINE_ID = '50000000-0000-4000-8000-000000000005';
 const FOREIGN_SEASON_ID = '60000000-0000-4000-8000-000000000006';
+
+function completedScopeQuery() {
+  const query: Record<string, unknown> = {};
+  for (const method of ['select', 'eq', 'order', 'limit']) query[method] = jest.fn(() => query);
+  query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: null, count: 0 }).then(resolve);
+  return query as Record<'select' | 'eq' | 'order' | 'limit', jest.Mock>;
+}
 
 function request(path: 'player-career' | 'goalies', query: string, host = 'hockey-life.beerleaguehockey.ca', method = 'GET') {
   return new NextRequest(`https://${host}/api/public/${path}?${query}`, {
@@ -458,7 +470,7 @@ describe('GET /api/public/player-career', () => {
 });
 
 describe('GET /api/public/goalies', () => {
-  it('uses only the explicit current season, keeps web percent scale, and sorts deterministically', async () => {
+  it('uses only the explicit current season, blanks saves/SV%, and sorts deterministically', async () => {
     const deps = dependencies();
     deps.getUnifiedGoalieStatsRows.mockResolvedValue([
       {
@@ -482,7 +494,8 @@ describe('GET /api/public/goalies', () => {
     expect(response.status).toBe(200);
     expect(payload.source).toBe('recorded');
     expect(payload.goalies.map((row: { player_id: string }) => row.player_id)).toEqual([PLAYER_ID, PLAYER_ID_2]);
-    expect(payload.goalies[1].save_percentage).toBe(91.2);
+    expect(payload.goalies[1].save_percentage).toBeNull();
+    expect(payload.goalies[1].saves).toBeNull();
     // eslint-disable-next-line supabase-test-quality/no-mock-echo -- estimated is adapter-derived and absent from producer rows
     expect(payload.goalies.every((row: { estimated: boolean }) => row.estimated === false)).toBe(true);
     expect(JSON.stringify(payload)).not.toMatch(/championships|division_name|position|jersey|email/);
@@ -496,7 +509,7 @@ describe('GET /api/public/goalies', () => {
     expect(deps.readGoalieStatsSourceCount).toHaveBeenCalledWith(LEAGUE_ID, SEASON_ID, DIVISION_ID);
   });
 
-  it('marks the canonical 20-shots fallback as estimated without converting its web percentage', async () => {
+  it('suppresses the canonical 20-shots goalie fallback', async () => {
     const deps = dependencies();
     deps.readGoalieStatsSourceCount.mockResolvedValue(0);
     deps.getUnifiedGoalieStatsRows.mockResolvedValue([{
@@ -506,8 +519,9 @@ describe('GET /api/public/goalies', () => {
     }]);
     const response = await handlePublicGoaliesRequest(request('goalies', 'leagueSlug=hockey-life'), deps);
     const payload = await response.json();
-    expect(payload.source).toBe('estimated');
-    expect(payload.goalies[0]).toEqual(expect.objectContaining({ estimated: true, saves: 35, save_percentage: 87.5 }));
+    expect(payload.source).toBe('empty');
+    expect(payload.goalies).toHaveLength(0);
+    expect(deps.getUnifiedGoalieStatsRows).not.toHaveBeenCalled();
   });
 
   it('returns factual empty data without invoking all-time when there is no current season', async () => {
@@ -528,7 +542,7 @@ describe('GET /api/public/goalies', () => {
     expect(deps.readGoalieStatsSourceCount).not.toHaveBeenCalled();
   });
 
-  it('marks imported Winter goalie saves estimated even when recorded source rows exist and permits null team provenance', async () => {
+  it('suppresses imported Winter goalie estimates even when source rows exist', async () => {
     const deps = dependencies();
     deps.readPresentationSeason.mockResolvedValue({
       id: HLHL_WINTER_2026_SEASON_ID, league_id: LEAGUE_ID, name: 'Winter 2026', status: 'completed',
@@ -542,9 +556,10 @@ describe('GET /api/public/goalies', () => {
     const response = await handlePublicGoaliesRequest(request('goalies', 'leagueSlug=hockey-life'), deps);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(expect.objectContaining({
-      source: 'estimated',
-      goalies: [expect.objectContaining({ player_id: PLAYER_ID, team_id: null, estimated: true })],
+      source: 'empty',
+      goalies: [],
     }));
+    expect(deps.getUnifiedGoalieStatsRows).not.toHaveBeenCalled();
   });
 
   it('rejects invalid player/team IDs and duplicate goalie DTO keys', async () => {
@@ -606,11 +621,11 @@ describe('GET /api/public/goalies', () => {
     expect(sourceResponse.status).toBe(503);
     expect(JSON.stringify(await sourceResponse.json())).not.toContain('provider secret');
 
-    for (const value of [Number.POSITIVE_INFINITY, 101]) {
+    for (const value of [Number.POSITIVE_INFINITY, -1]) {
       const deps = dependencies();
       deps.getUnifiedGoalieStatsRows.mockResolvedValue([{
         player_id: PLAYER_ID, player_name: 'G', team_id: TEAM_ID, team_name: 'T', avatar_url: null,
-        games_played: 1, wins: 1, losses: 0, save_percentage: value, goals_against_average: 0,
+        games_played: 1, wins: 1, losses: 0, save_percentage: 90, goals_against_average: value,
         shutouts: 1, saves: 20, goals_against: 0, division_name: null, position: 'Goalie', championships: 0,
       }]);
       const log = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -659,74 +674,243 @@ describe('strict support reads', () => {
   });
 
   it('uses scoped baseline eligibility and its is_goalie flag from the deployed schema when there is no roster', async () => {
-    const seasonLimit = jest.fn().mockResolvedValue({ data: [], error: null });
-    const seasonEq = jest.fn().mockReturnValue({ limit: seasonLimit });
-
-    const rosterLimit = jest.fn().mockResolvedValue({ data: [], count: 0, error: null });
-    const rosterOrderId = jest.fn().mockReturnValue({ limit: rosterLimit });
-    const rosterOrderJoined = jest.fn().mockReturnValue({ order: rosterOrderId });
-    const rosterEqPlayer = jest.fn().mockReturnValue({ order: rosterOrderJoined });
-    const rosterEqLeague = jest.fn().mockReturnValue({ eq: rosterEqPlayer });
-
-    const penaltyRange = jest.fn().mockResolvedValue({ data: [], count: 0, error: null });
-    const penaltyOrder = jest.fn().mockReturnValue({ range: penaltyRange });
-    const penaltyEqGame = jest.fn().mockReturnValue({ order: penaltyOrder });
-    const penaltyEqPlayer = jest.fn().mockReturnValue({ eq: penaltyEqGame });
-    const penaltyEqLeague = jest.fn().mockReturnValue({ eq: penaltyEqPlayer });
-
-    const goalieEqPlayer = jest.fn().mockResolvedValue({ data: null, count: 0, error: null });
-    const goalieEqLeague = jest.fn().mockReturnValue({ eq: goalieEqPlayer });
-
+    const queryFor = (data: unknown[], count = data.length) => {
+      const query: Record<string, unknown> = {};
+      for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = jest.fn(() => query);
+      query.range = jest.fn(() => Promise.resolve({ data, count, error: null }));
+      query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count, error: null }).then(resolve);
+      return query as Record<string, jest.Mock>;
+    };
     mockedCreateClient.mockResolvedValue({
-      from: jest.fn((table: string) => ({
-        select: table === 'seasons'
-          ? jest.fn().mockReturnValue({ eq: seasonEq })
-          : table === 'team_rosters'
-            ? jest.fn().mockReturnValue({ eq: rosterEqLeague })
-            : table === 'goalie_stats'
-              ? jest.fn().mockReturnValue({ eq: goalieEqLeague })
-              : jest.fn().mockReturnValue({ eq: penaltyEqLeague }),
-      })),
+      from: jest.fn(() => queryFor([])),
     } as never);
-
-    const baselineLimit = jest.fn().mockResolvedValue({
-      data: [{ id: BASELINE_ID, is_goalie: true, games_played: 12, goals: 1, assists: 3, points: 4 }],
-      count: 1,
-      error: null,
-    });
-    const baselineEqPlayer = jest.fn().mockReturnValue({ limit: baselineLimit });
-    const baselineEqLeague = jest.fn().mockReturnValue({ eq: baselineEqPlayer });
-    const baselineSelect = jest.fn().mockReturnValue({ eq: baselineEqLeague });
+    const baseline = {
+      id: BASELINE_ID,
+      is_goalie: true,
+      games_played: 12,
+      goals: 1,
+      assists: 3,
+      points: 4,
+    };
+    const serviceBuilders = new Map<string, Record<string, jest.Mock>>();
     mockedCreateServiceRoleClient.mockReturnValue({
-      from: jest.fn().mockReturnValue({ select: baselineSelect }),
+      from: jest.fn((table: string) => {
+        const builder = queryFor(table === 'player_career_baselines' ? [baseline] : []);
+        serviceBuilders.set(table, builder);
+        return builder;
+      }),
     } as never);
 
     await expect(readCareerScope(LEAGUE_ID, PLAYER_ID)).resolves.toEqual({
       isEligible: true,
       isGoalie: true,
       seasonCatalog: [],
+      canonicalSeasonIds: [],
       penaltyRows: [],
       canonicalSourceRowCount: 0,
       historicalBaselineSourceRowCount: 1,
-      careerBaseline: {
-        id: BASELINE_ID,
-        is_goalie: true,
-        games_played: 12,
-        goals: 1,
-        assists: 3,
-        points: 4,
-      },
+      careerBaseline: baseline,
     });
-    expect(baselineSelect).toHaveBeenCalledWith(
+    expect(serviceBuilders.get('player_career_baselines')?.select).toHaveBeenCalledWith(
       'id, is_goalie, games_played, goals, assists, points, wins, ties, saves, goals_against, shutouts, goals_against_average, save_percentage',
       { count: 'exact' },
     );
-    expect(rosterOrderJoined).toHaveBeenCalledWith('joined_at', { ascending: false, nullsFirst: false });
-    expect(rosterOrderId).toHaveBeenCalledWith('id', { ascending: false });
-    expect(rosterLimit).toHaveBeenCalledWith(1);
-    expect(baselineEqLeague).toHaveBeenCalledWith('league_id', LEAGUE_ID);
-    expect(baselineEqPlayer).toHaveBeenCalledWith('player_id', PLAYER_ID);
-    expect(baselineLimit).toHaveBeenCalledWith(2);
+    expect(serviceBuilders.get('player_career_baselines')?.eq).toHaveBeenCalledWith('league_id', LEAGUE_ID);
+    expect(serviceBuilders.get('player_career_baselines')?.eq).toHaveBeenCalledWith('player_id', PLAYER_ID);
+    expect(serviceBuilders.get('player_career_baselines')?.limit).toHaveBeenCalledWith(2);
+  });
+
+  it('keeps future roster and non-completed goalie rows out of career eligibility and role', async () => {
+    const futureRoster = {
+      id: '90000000-0000-4000-8000-000000000020',
+      season_id: FOREIGN_SEASON_ID,
+      team_id: TEAM_ID,
+      start_date: '2027-01-01',
+      end_date: null,
+      joined_at: '2027-01-01T00:00:00Z',
+      position: 'Goalie',
+      is_goalie: true,
+    };
+    const queryFor = (data: unknown[], count = data.length) => {
+      const query: Record<string, unknown> = {};
+      for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = jest.fn(() => query);
+      query.range = jest.fn(() => Promise.resolve({ data, count, error: null }));
+      query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count, error: null }).then(resolve);
+      return query as Record<string, jest.Mock>;
+    };
+    const publicBuilders = new Map<string, Record<string, jest.Mock>>();
+    mockedCreateClient.mockResolvedValue({
+      from: jest.fn((table: string) => {
+        const builder = queryFor(
+          table === 'team_rosters' ? [futureRoster]
+            : table === 'goalie_stats' ? [{ id: 'a0000000-0000-4000-8000-000000000020' }]
+              : [],
+        );
+        publicBuilders.set(table, builder);
+        return builder;
+      }),
+    } as never);
+    const serviceBuilders = new Map<string, Record<string, jest.Mock>>();
+    mockedCreateServiceRoleClient.mockReturnValue({
+      from: jest.fn((table: string) => {
+        const builder = queryFor(table === 'team_rosters' ? [futureRoster] : []);
+        serviceBuilders.set(table, builder);
+        return builder;
+      }),
+    } as never);
+
+    await expect(readCareerScope(LEAGUE_ID, PLAYER_ID)).resolves.toEqual({
+      isEligible: false,
+      isGoalie: false,
+      seasonCatalog: [],
+      canonicalSeasonIds: [],
+      penaltyRows: [],
+      canonicalSourceRowCount: 0,
+      historicalBaselineSourceRowCount: 0,
+    });
+
+    expect(serviceBuilders.get('goalie_stats')?.select).toHaveBeenCalledWith(
+      expect.stringContaining('game:games!inner(id)'),
+      { count: 'exact' },
+    );
+    expect(serviceBuilders.get('goalie_stats')?.eq).toHaveBeenCalledWith('game.status', 'completed');
+    expect(publicBuilders.has('goalie_stats')).toBe(false);
+  });
+
+  it('intersects roster-default seasons with completed team games and roster windows in code', async () => {
+    const futureSeasonId = FOREIGN_SEASON_ID;
+    const rosterRows = [
+      {
+        id: '90000000-0000-4000-8000-000000000001',
+        season_id: SEASON_ID,
+        team_id: TEAM_ID,
+        start_date: '2026-01-01',
+        end_date: null,
+        joined_at: '2026-01-01T00:00:00Z',
+        position: 'C',
+        is_goalie: false,
+      },
+      {
+        id: '90000000-0000-4000-8000-000000000002',
+        season_id: futureSeasonId,
+        team_id: TEAM_ID_2,
+        start_date: '2027-01-01',
+        end_date: null,
+        joined_at: '2027-01-01T00:00:00Z',
+        position: 'Goalie',
+        is_goalie: true,
+      },
+    ];
+    const tableRows: Record<string, unknown[]> = {
+      team_rosters: rosterRows,
+      games: [{
+        id: '80000000-0000-4000-8000-000000000001',
+        season_id: SEASON_ID,
+        home_team_id: TEAM_ID,
+        away_team_id: TEAM_ID_2,
+        scheduled_at: '2026-09-01T20:00:00Z',
+      }],
+      player_stats: [],
+      goalie_stats: [],
+      game_goalie_appearances: [],
+      game_checkins: [],
+      sub_invitations: [],
+    };
+    const builders = new Map<string, Record<string, jest.Mock>>();
+    mockedCreateServiceRoleClient.mockReturnValue({
+      from: jest.fn((table: string) => {
+        const query: Record<string, unknown> = {};
+        for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = jest.fn(() => query);
+        query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({
+          data: tableRows[table] ?? [],
+          error: null,
+          count: (tableRows[table] ?? []).length,
+        }).then(resolve);
+        builders.set(table, query as Record<string, jest.Mock>);
+        return query;
+      }),
+    } as never);
+
+    await expect(readCareerMetricSeasonIds(LEAGUE_ID, PLAYER_ID)).resolves.toEqual([SEASON_ID]);
+
+    expect(builders.get('games')?.eq).toHaveBeenCalledWith('status', 'completed');
+    expect(builders.get('games')?.in).toHaveBeenCalledWith('season_id', [SEASON_ID, futureSeasonId]);
+  });
+
+  it('indexes completed games by season and team instead of scanning an 8,000 by 8,000 cross-product', async () => {
+    const rowCount = 8_000;
+    const rosterRows = Array.from({ length: rowCount }, (_, index) => ({
+      id: `roster-${String(index).padStart(4, '0')}`,
+      season_id: SEASON_ID,
+      team_id: index === rowCount - 1 ? TEAM_ID : `unmatched-team-${index}`,
+      start_date: null,
+      end_date: null,
+      joined_at: null,
+      position: 'C',
+      is_goalie: false,
+    }));
+    let completedGameFieldReads = 0;
+    const completedGames = Array.from({ length: rowCount }, (_, index) => new Proxy({
+      id: `game-${String(index).padStart(4, '0')}`,
+      season_id: SEASON_ID,
+      home_team_id: TEAM_ID,
+      away_team_id: TEAM_ID_2,
+      scheduled_at: '2026-09-01T20:00:00Z',
+    }, {
+      get(target, property, receiver) {
+        if (['season_id', 'home_team_id', 'away_team_id', 'scheduled_at'].includes(String(property))) {
+          completedGameFieldReads += 1;
+          if (completedGameFieldReads > 100_000) throw new Error('quadratic completed-game scan');
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    }));
+    const tableRows: Record<string, unknown[]> = {
+      team_rosters: rosterRows,
+      games: completedGames,
+      player_stats: [],
+      goalie_stats: [],
+      game_goalie_appearances: [],
+      game_checkins: [],
+      sub_invitations: [],
+    };
+    mockedCreateServiceRoleClient.mockReturnValue({
+      from: jest.fn((table: string) => {
+        const query: Record<string, unknown> = {};
+        for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = jest.fn(() => query);
+        query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({
+          data: tableRows[table] ?? [],
+          error: null,
+          count: (tableRows[table] ?? []).length,
+        }).then(resolve);
+        return query;
+      }),
+    } as never);
+
+    await expect(readCareerMetricSeasonIds(LEAGUE_ID, PLAYER_ID)).resolves.toEqual([SEASON_ID]);
+    expect(completedGameFieldReads).toBeLessThanOrEqual(40_000);
+  });
+
+  it('discovers stat-backed career seasons only through completed games', async () => {
+    const builders = new Map<string, ReturnType<typeof completedScopeQuery>>();
+    mockedCreateServiceRoleClient.mockReturnValue({
+      from: jest.fn((table: string) => {
+        const builder = completedScopeQuery();
+        builders.set(table, builder);
+        return builder;
+      }),
+    } as never);
+
+    await expect(readCareerMetricSeasonIds(LEAGUE_ID, PLAYER_ID)).resolves.toEqual([]);
+
+    for (const table of ['player_stats', 'goalie_stats']) {
+      expect(builders.get(table)?.select).toHaveBeenCalledWith(
+        expect.stringContaining('game:games!inner(id)'),
+        { count: 'exact' },
+      );
+      expect(builders.get(table)?.eq).toHaveBeenCalledWith('game.status', 'completed');
+    }
+    expect(builders.get('game_goalie_appearances')?.eq).toHaveBeenCalledWith('game.status', 'completed');
   });
 
   it('rejects ambiguous scoped baseline records', async () => {

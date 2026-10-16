@@ -7,6 +7,7 @@ import {
   getCareerMetricDefinitions,
   getPlayerMetricDefinitions,
   lineChartGeometry,
+  playerMetricAccessibilityLabel,
   resolvePlayerSeasonSelection,
   visiblePlayerSections,
 } from '../../src/lib/playerPageModel.ts';
@@ -42,6 +43,18 @@ describe('Hockey Life player page parity model', () => {
     assert.equal(chart.minimum, 4);
     assert.equal(chart.maximum, 10);
     assert.match(chart.areaPath, /^M/);
+  });
+
+  it('describes unavailable profile metrics without exposing conflict or legacy estimate details', () => {
+    const conflicted = playerMetricAccessibilityLabel('Saves', '—', { state: 'conflicted', sources: ['goalie_stats', 'goalie_assignment'] });
+    const estimated = playerMetricAccessibilityLabel('SV%', '0.917', { state: 'estimated', sources: ['goalie_stats'] });
+    const reportedZero = playerMetricAccessibilityLabel('GP', '0', { state: 'reported', sources: ['roster_window'] });
+
+    assert.match(conflicted, /Saves, unavailable.*conflicting records need review.*goalie stats.*goalie assignment/i);
+    assert.match(estimated, /SV%, unavailable.*not recorded.*goalie stats/i);
+    assert.doesNotMatch(estimated, /estimated|0\.917/i);
+    assert.match(reportedZero, /GP, 0.*reported.*roster window/i);
+    assert.doesNotMatch(`${conflicted} ${estimated}`, /confirmed 19|recorded 18|candidate/i);
   });
 
   it('uses season identity rather than array position and supports the career view', () => {

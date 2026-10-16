@@ -15,7 +15,7 @@ import StatsTimelineFilter from '../components/StatsTimelineFilter';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
 import { buildRankedRows } from '../lib/statsPresentationModel';
-import { getPublicGoalies, getPublicStatsScope, type PublicGoalie, type PublicStatsScope, type PublicStatsScopeSelection } from '../lib/supabase/publicStats';
+import { getPublicStatsScope, type PublicStatsScope, type PublicStatsScopeSelection } from '../lib/supabase/publicStats';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { navigateToPlayerCard } from '../navigation/playerCard';
 import type { StatsStackParamList } from '../navigation/types';
@@ -24,13 +24,13 @@ import { getSurfacePalette } from '../theme/ui';
 
 type PlayerMetric = Extract<StatsLeaderMetric, 'goals' | 'assists' | 'points'>;
 type StatsView = { role: 'player'; metric: PlayerMetric } | { role: 'goalie'; metric: 'gaa' };
-type Snapshot = { key: string; status: 'loading' | 'ready' | 'error'; payload: PublicStatsScope | null; currentGoalies: PublicGoalie[] };
+type Snapshot = { key: string; status: 'loading' | 'ready' | 'error'; payload: PublicStatsScope | null };
 const PLAYER_METRICS: ReadonlyArray<{ key: PlayerMetric; label: string }> = [
   { key: 'goals', label: 'Goals' },
   { key: 'assists', label: 'Assists' },
   { key: 'points', label: 'Points' },
 ];
-const emptySnapshot = (key = ''): Snapshot => ({ key, status: 'loading', payload: null, currentGoalies: [] });
+const emptySnapshot = (key = ''): Snapshot => ({ key, status: 'loading', payload: null });
 
 function selectionKey(selection: PublicStatsScopeSelection) {
   return `${selection.kind}:${[...(selection.seasonIds ?? [])].sort().join(',')}`;
@@ -73,26 +73,8 @@ export default function StatsScreen() {
     if (!leagueId || !leagueSlug) return;
     setSnapshot(emptySnapshot(requestKey));
     void getPublicStatsScope(leagueSlug, leagueId, selection, requestDivisionId)
-      .then(async (payload) => {
-        let currentGoalies: PublicGoalie[] = [];
-        const isCurrentSeasonOnly = (payload.scope.kind === 'current' || payload.scope.kind === 'single')
-          && payload.scope.seasonIds.length === 1
-          && payload.scope.seasonIds[0] === payload.scope.currentSeasonId;
-        if (isCurrentSeasonOnly) {
-          try {
-            currentGoalies = (await getPublicGoalies(
-              leagueSlug,
-              leagueId,
-              payload.scope.currentSeasonId,
-              requestDivisionId,
-            )).goalies;
-          } catch {
-            currentGoalies = [];
-          }
-        }
-        if (mounted) setSnapshot({ key: requestKey, status: 'ready', payload, currentGoalies });
-      })
-      .catch(() => { if (mounted) setSnapshot({ key: requestKey, status: 'error', payload: null, currentGoalies: [] }); });
+      .then((payload) => { if (mounted) setSnapshot({ key: requestKey, status: 'ready', payload }); })
+      .catch(() => { if (mounted) setSnapshot({ key: requestKey, status: 'error', payload: null }); });
     return () => { mounted = false; };
   }, [leagueId, leagueSlug, requestDivisionId, requestKey, selection]);
 
@@ -104,7 +86,7 @@ export default function StatsScreen() {
   const players = view.payload?.players ?? [];
   const selectedTab = statsView.role === 'goalie' ? 'Goalies' : 'Skaters';
   const leaderMetric = statsView.metric;
-  const rankedRows = buildRankedRows(players, leaderMetric, view.currentGoalies);
+  const rankedRows = buildRankedRows(players, leaderMetric);
   const leaders = rankedRows.slice(0, 5);
   const scopeLabel = view.payload?.scope.label ?? (selection.kind === 'current' ? 'Current season' : selection.kind === 'all' ? 'All time' : selection.kind === 'single' ? 'One season' : `${selection.seasonIds?.length ?? 0} seasons`);
   const openPlayer = (playerId: string) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id });
@@ -155,7 +137,7 @@ export default function StatsScreen() {
           : view.status === 'error' ? <View style={styles.tableState}><Text style={styles.emptyTitle}>Complete authoritative stats are unavailable for this timeline.</Text><Pressable testID="stats-scope-retry" accessibilityRole="button" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></Pressable></View>
             : <View style={styles.tableState}><Text style={styles.emptyTitle}>No eligible {selectedTab === 'Goalies' ? 'goalie' : 'player'} stats yet</Text></View>}
         renderItem={({ item }) => <StatsRankedRow row={item} metric={leaderMetric} onOpenPlayer={openPlayer} />}
-        ListFooterComponent={<View style={styles.foot}><View style={styles.footDot} /><Text style={styles.footText}>{selectedTab === 'Skaters' ? 'Rankings include every player with a known selected metric. Unknown and conflicted selected values are excluded; other unavailable values remain —.' : 'GAA ranks every eligible goalie from lowest to highest. Unknown and conflicted GAA values are excluded.'}</Text></View>}
+        ListFooterComponent={<View style={styles.foot}><View style={styles.footDot} /><Text style={styles.footText}>{selectedTab === 'Skaters' ? 'Rankings include every player with a known selected metric. Unavailable selected values are excluded; other unavailable values remain —.' : 'GAA ranks every eligible goalie from lowest to highest. Unavailable GAA values are excluded.'}</Text></View>}
       />
     </SafeAreaView>
   );

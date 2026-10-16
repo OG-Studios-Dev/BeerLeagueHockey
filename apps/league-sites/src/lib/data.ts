@@ -186,6 +186,7 @@ export type PlayerCareerSeasonRow = {
   games_played: number;
   team_games: number;
   attendance_pct: number;
+  attendance_known?: boolean;
   goals: number;
   assists: number;
   points: number;
@@ -1239,6 +1240,7 @@ export type TeamRosterStatsByPlayer = Record<string, {
 
 const PLAYED_GAME_STATUSES = ['in_progress', 'pending_verification', 'completed'] as const;
 const COMPLETED_GAME_STATUSES = ['completed'] as const;
+const MAX_PLAYER_CAREER_TIMELINE_SEASONS = 32;
 
 type ConfirmedCheckinAppearanceRow = {
   player_id: string;
@@ -1328,7 +1330,7 @@ export async function getFallbackRosterAppearanceRows(
     return [];
   }
 
-  const gameStatuses = options.gameStatuses ?? PLAYED_GAME_STATUSES;
+  const gameStatuses = options.gameStatuses ?? COMPLETED_GAME_STATUSES;
 
   let rosterQuery = supabase
     .from('team_rosters')
@@ -5114,15 +5116,6 @@ export function summarizePlayerCareerTotalsFromTimeline(
   } as PlayerStats;
 }
 
-function emojiForHotFact(text: string) {
-  const normalized = text.toLowerCase();
-  if (normalized.includes('milestone') || normalized.includes('pace') || normalized.includes('tracking')) return '🔥';
-  if (normalized.includes('league') || normalized.includes('team')) return '👀';
-  if (normalized.includes('bounce') || normalized.includes('jump') || normalized.includes('surge')) return '📈';
-  if (normalized.includes('wall') || normalized.includes('save') || normalized.includes('shutout')) return '🧱';
-  return '🌶️';
-}
-
 function buildDeterministicPlayerCareerHotFact(input: {
   playerName: string;
   seasons: PlayerCareerSeasonRow[];
@@ -5182,11 +5175,13 @@ function buildDeterministicPlayerCareerHotFact(input: {
         : `🌶️ ${playerName} cooled off by ${Math.abs(pointJump)} points in ${latest.season_name}, so the bounce-back watch is officially on.`;
     }
 
-    const attendanceSwing = roundCareerMetric(latest.attendance_pct - previous.attendance_pct, 1);
-    if (Math.abs(attendanceSwing) >= 15) {
-      return attendanceSwing > 0
-        ? `👏 ${playerName} showed up way more in ${latest.season_name}, with attendance up ${attendanceSwing} points from the year before.`
-        : `👀 ${playerName}'s attendance dipped ${Math.abs(attendanceSwing)} points in ${latest.season_name}, which definitely hit the box score rhythm.`;
+    if (latest.attendance_known !== false && previous.attendance_known !== false) {
+      const attendanceSwing = roundCareerMetric(latest.attendance_pct - previous.attendance_pct, 1);
+      if (Math.abs(attendanceSwing) >= 15) {
+        return attendanceSwing > 0
+          ? `👏 ${playerName} showed up way more in ${latest.season_name}, with attendance up ${attendanceSwing} points from the year before.`
+          : `👀 ${playerName}'s attendance dipped ${Math.abs(attendanceSwing)} points in ${latest.season_name}, which definitely hit the box score rhythm.`;
+      }
     }
   }
 
@@ -5217,10 +5212,12 @@ export async function generatePlayerCareerHotFacts(input: {
         const teamGames = existing.team_games + row.team_games;
         const saves = existing.saves + row.saves;
         const goalsAgainst = existing.goals_against + row.goals_against;
+        const attendanceKnown = existing.attendance_known !== false && row.attendance_known !== false;
         Object.assign(existing, {
           games_played: gamesPlayed,
           team_games: teamGames,
-          attendance_pct: teamGames > 0 ? roundCareerMetric((gamesPlayed / teamGames) * 100, 1) : 0,
+          attendance_pct: attendanceKnown && teamGames > 0 ? roundCareerMetric((gamesPlayed / teamGames) * 100, 1) : 0,
+          attendance_known: attendanceKnown,
           goals: existing.goals + row.goals,
           assists: existing.assists + row.assists,
           points: existing.points + row.points,
@@ -5323,13 +5320,15 @@ export async function generatePlayerCareerHotFacts(input: {
         );
       }
 
-      const attendanceSwing = roundCareerMetric(latest.attendance_pct - previous.attendance_pct, 1);
-      if (Math.abs(attendanceSwing) >= 15) {
-        pushFact(
-          attendanceSwing > 0
-            ? `👏 ${playerName} showed up way more in ${latest.season_name}, with attendance up ${attendanceSwing} points from the year before.`
-            : `🗓️ ${playerName}'s attendance slid ${Math.abs(attendanceSwing)} points in ${latest.season_name}, and that changes the rhythm in a hurry.`
-        );
+      if (latest.attendance_known !== false && previous.attendance_known !== false) {
+        const attendanceSwing = roundCareerMetric(latest.attendance_pct - previous.attendance_pct, 1);
+        if (Math.abs(attendanceSwing) >= 15) {
+          pushFact(
+            attendanceSwing > 0
+              ? `👏 ${playerName} showed up way more in ${latest.season_name}, with attendance up ${attendanceSwing} points from the year before.`
+              : `🗓️ ${playerName}'s attendance slid ${Math.abs(attendanceSwing)} points in ${latest.season_name}, and that changes the rhythm in a hurry.`
+          );
+        }
       }
     }
     if (careerPoints >= 25) {
@@ -5376,7 +5375,7 @@ export async function loadTeamGameCountsBySeasonTeam(
     .select('id, season_id, home_team_id, away_team_id, location', { count: 'exact' })
     .eq('league_id', leagueId)
     .in('season_id', seasonIds)
-    .in('status', [...PLAYED_GAME_STATUSES])
+    .in('status', [...COMPLETED_GAME_STATUSES])
     .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`)
     .order('id', { ascending: true });
   const first = options.strict
@@ -5386,7 +5385,7 @@ export async function loadTeamGameCountsBySeasonTeam(
         .select('id, season_id, home_team_id, away_team_id')
         .eq('league_id', leagueId)
         .in('season_id', seasonIds)
-        .in('status', [...PLAYED_GAME_STATUSES])
+        .in('status', [...COMPLETED_GAME_STATUSES])
         .or(`home_team_id.in.(${normalizedTeamIds.join(',')}),away_team_id.in.(${normalizedTeamIds.join(',')})`);
   if (first.error && options.strict) throwCanonicalReadError(first.error, 'career timeline team games');
   const data = [...(first.data || [])];
@@ -5622,20 +5621,36 @@ export async function getPlayerCareerStatsTimeline(
   const historicalBaselineSeason = seasons.find((season) => isHistoricalCareerBaselineSeasonName(season.name));
   const leagueSeasonIds = seasons.map((season) => season.id);
 
+  const loadAppearanceRows = async (activeSeasonIds: string[]) => {
+    const confirmedCheckins: ConfirmedCheckinAppearanceRow[] = [];
+    const fallbackAppearances: ConfirmedCheckinAppearanceRow[] = [];
+    for (const seasonId of activeSeasonIds) {
+      confirmedCheckins.push(...await getConfirmedCheckinAppearanceRows(supabase, {
+        leagueId, seasonId, playerIds: [playerId], gameStatuses: COMPLETED_GAME_STATUSES, strict,
+      }));
+      fallbackAppearances.push(...await getFallbackRosterAppearanceRows(supabase, {
+        seasonId, playerIds: [playerId], gameStatuses: COMPLETED_GAME_STATUSES, strict,
+      }));
+    }
+    return { confirmedCheckins, fallbackAppearances };
+  };
+
   if (isGoalie) {
     const rawResult = strict
       ? leagueSeasonIds.length === 0
         ? { data: [], error: null, count: 0 }
         : await supabase
             .from('goalie_stats')
-            .select('id, game_id, season_id, team_id, saves, shots_against, goals_against, game_result, shutout', { count: 'exact' })
+            .select('id, game_id, season_id, team_id, saves, shots_against, goals_against, game_result, shutout, game:games!inner(id)', { count: 'exact' })
             .eq('league_id', leagueId)
             .eq('player_id', playerId)
+            .eq('game.status', 'completed')
             .in('season_id', leagueSeasonIds)
       : await supabase
           .from('goalie_stats')
-          .select('season_id, team_id, saves, goals_against, game_result, shutout')
-          .eq('player_id', playerId);
+          .select('season_id, team_id, saves, goals_against, game_result, shutout, game:games!inner(id)')
+          .eq('player_id', playerId)
+          .eq('game.status', 'completed');
     const { data: rawRows, error } = rawResult;
     const count = 'count' in rawResult ? rawResult.count : null;
 
@@ -5668,12 +5683,10 @@ export async function getPlayerCareerStatsTimeline(
       : (rawRows || []) as StrictGoalieRawRow[];
 
     const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
-    const [confirmedBuckets, fallbackBuckets] = await Promise.all([
-      Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId], strict }))),
-      Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))),
-    ]);
-    const confirmedCheckins = confirmedBuckets.flat();
-    const fallbackAppearances = fallbackBuckets.flat();
+    if (activeSeasonIds.length > MAX_PLAYER_CAREER_TIMELINE_SEASONS) {
+      throw new Error('career timeline season work limit exceeded');
+    }
+    const { confirmedCheckins, fallbackAppearances } = await loadAppearanceRows(activeSeasonIds);
 
     const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
     const teamGameCountBySeasonTeam = await loadTeamGameCountsBySeasonTeam(supabase, leagueId, activeSeasonIds, [
@@ -5842,12 +5855,10 @@ export async function getPlayerCareerStatsTimeline(
   }
 
   const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
-  const [confirmedBuckets, fallbackBuckets] = await Promise.all([
-    Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId], strict }))),
-    Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))),
-  ]);
-  const confirmedCheckins = confirmedBuckets.flat();
-  const fallbackAppearances = fallbackBuckets.flat();
+  if (activeSeasonIds.length > MAX_PLAYER_CAREER_TIMELINE_SEASONS) {
+    throw new Error('career timeline season work limit exceeded');
+  }
+  const { confirmedCheckins, fallbackAppearances } = await loadAppearanceRows(activeSeasonIds);
 
   const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
   const teamGameCountBySeasonTeam = await loadTeamGameCountsBySeasonTeam(supabase, leagueId, activeSeasonIds, [
@@ -6344,7 +6355,7 @@ export async function getPlayerGameLog(
       penalty_minutes,
       game_id,
       team_id,
-      game:games(
+      game:games!inner(
         id,
         scheduled_at,
         home_score,
@@ -6355,7 +6366,9 @@ export async function getPlayerGameLog(
       )
     `)
     .eq('player_id', playerId)
-    .order('created_at', { ascending: false })
+    .eq('game.status', 'completed')
+    .order('game(scheduled_at)', { ascending: false })
+    .order('id', { ascending: false })
     .limit(limit);
 
   if (seasonId) {
@@ -6369,12 +6382,18 @@ export async function getPlayerGameLog(
     return [];
   }
 
-  const rows = [...data];
+  const rows = [...data].filter((row: any) => {
+    const game = Array.isArray(row.game) ? row.game[0] : row.game;
+    return game?.status === 'completed';
+  }) as Array<(typeof data)[number] & {
+    metric_availability?: PlayerGameLogEntry['metric_availability'];
+  }>;
 
   if (seasonId) {
     const fallbackRosterAppearances = await getFallbackRosterAppearanceRows(supabase, {
       seasonId,
       playerIds: [playerId],
+      gameStatuses: COMPLETED_GAME_STATUSES,
       strict: options.strict,
     });
 
@@ -6406,6 +6425,16 @@ export async function getPlayerGameLog(
           game_id: row.game_id,
           team_id: row.team_id,
           game: gameMap.get(row.game_id) || row.game || null,
+          metric_availability: {
+            goals: false,
+            assists: false,
+            points: false,
+            penalty_minutes: false,
+            plus_minus: false,
+            saves: false,
+            goals_against: false,
+            save_percentage: false,
+          },
         });
       }
     }
@@ -6420,9 +6449,14 @@ export async function getPlayerGameLog(
     const myScore = isHome ? game?.home_score : game?.away_score;
     const theirScore = isHome ? game?.away_score : game?.home_score;
     let result = '-';
-    if ((game?.status === 'completed' || game?.status === 'pending_verification') && myScore != null && theirScore != null) {
+    if (game?.status === 'completed' && myScore != null && theirScore != null) {
       result = myScore > theirScore ? 'W' : myScore < theirScore ? 'L' : 'T';
     }
+    const suppliedAvailability = stat.metric_availability as PlayerGameLogEntry['metric_availability'] | undefined;
+    const goalsKnown = suppliedAvailability?.goals ?? (typeof stat.goals === 'number' && Number.isFinite(stat.goals));
+    const assistsKnown = suppliedAvailability?.assists ?? (typeof stat.assists === 'number' && Number.isFinite(stat.assists));
+    const penaltyMinutesKnown = suppliedAvailability?.penalty_minutes
+      ?? (typeof stat.penalty_minutes === 'number' && Number.isFinite(stat.penalty_minutes));
     return {
       game_id: game?.id || stat.game_id || '',
       date: game?.scheduled_at || '',
@@ -6435,6 +6469,16 @@ export async function getPlayerGameLog(
       points: (stat.goals || 0) + (stat.assists || 0),
       plus_minus: 0,
       pim: stat.penalty_minutes || 0,
+      metric_availability: {
+        goals: goalsKnown,
+        assists: assistsKnown,
+        points: suppliedAvailability?.points ?? (goalsKnown && assistsKnown),
+        penalty_minutes: penaltyMinutesKnown,
+        plus_minus: suppliedAvailability?.plus_minus ?? false,
+        saves: false,
+        goals_against: false,
+        save_percentage: false,
+      },
     };
   }) as PlayerGameLogEntry[];
 

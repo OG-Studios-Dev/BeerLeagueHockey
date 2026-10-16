@@ -85,10 +85,10 @@ describe('public Goalies/Career v2 mobile DTOs', () => {
       teams: [{ id: TEAM_ID, name: 'Ice Owls' }],
       metrics: expect.objectContaining({
         gamesPlayed: expect.objectContaining({ value: null, state: 'conflicted' }),
-        saves: { value: 20, state: 'verified', sources: ['goalie_stats', 'goalie_assignment', 'capture_confirmation'] },
+        saves: { value: null, state: 'unknown', sources: [] },
       }),
     }]);
-    expect(payload.coverage).toEqual({ goalies: ['verified', 'conflicted'] });
+    expect(payload.coverage).toEqual({ goalies: ['unknown', 'conflicted'] });
     expect(JSON.stringify(payload)).not.toMatch(/game_id|checkin|scheduled_at|goalie_capture_status/);
     expect(deps.readPresentationSeason).not.toHaveBeenCalled();
   });

@@ -122,4 +122,62 @@ describe('web-contract Home data boundary', () => {
     assert.ok(has('league_sponsors', 'eq', 'is_active', true));
     assert.equal(calls.some(([, method]) => method === 'rpc'), false);
   });
+
+  it('rejects sixteen skater leaders but accepts five authoritative zero rows', async () => {
+    const seasonId = '20000000-0000-4000-8000-000000000002';
+    const results: Record<string, { data: unknown; error: unknown }> = {
+      leagues: { data: { id: 'league-1', slug: 'harbour', status: 'active', timezone: 'America/Toronto', settings: {} }, error: null },
+      seasons: { data: [{ id: seasonId, league_id: 'league-1', name: '2026', status: 'active', start_date: '2026-01-01', end_date: null, created_at: null }], error: null },
+      articles: { data: [], error: null }, games: { data: [], error: null }, gallery_photos: { data: [], error: null },
+      league_gallery: { data: [], error: null }, league_sponsors: { data: [], error: null }, teams: { data: [], error: null },
+    };
+    const query = (table: string) => {
+      const chain: Record<string, any> = {};
+      for (const method of ['select', 'eq', 'in', 'or', 'gte', 'lte', 'order', 'limit']) chain[method] = () => chain;
+      chain.range = async (from: number, to: number) => {
+        const value = results[table];
+        return { ...value, data: Array.isArray(value.data) ? value.data.slice(from, to + 1) : value.data };
+      };
+      chain.maybeSingle = async () => results[table];
+      chain.then = (resolve: (value: unknown) => void) => resolve(results[table]);
+      return chain;
+    };
+    const loader = compileCommonJs<any>(new URL('../../src/lib/supabase/home.ts', import.meta.url), {
+      './client': { supabase: { from: (table: string) => query(table) } },
+    });
+    let leaderCount = 16;
+    const payload = () => ({
+      schemaVersion: 1,
+      leagueId: 'league-1',
+      leagueSlug: 'harbour',
+      presentationSeason: { id: seasonId, league_id: 'league-1', name: '2026', status: 'active', start_date: '2026-01-01', end_date: null, created_at: null },
+      leaders: Array.from({ length: leaderCount }, (_, index) => ({
+        player_id: `recorded-zero-${index + 1}`, player_name: `Recorded Zero ${index + 1}`, avatar_url: null,
+        team_id: null, team_name: 'Unknown team', display_team_name: null,
+        display_team_logo_url: null, position: null, goals: 0, assists: null, points: null,
+      })),
+      standings: [],
+      divisions: [],
+    });
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = (async (input) => String(input).includes('/api/public/home')
+      ? new Response(JSON.stringify(payload()), { status: 200 })
+      : new Response('', { status: 404 })) as typeof fetch;
+    try {
+      const overbound = await loader.loadHomePublicSnapshot('league-1', 'harbour', new Date('2026-09-11T12:00:00Z'));
+      assert.equal(overbound.leaders.status, 'error');
+      assert.deepEqual(overbound.leaders.data, []);
+
+      leaderCount = 5;
+      const accepted = await loader.loadHomePublicSnapshot('league-1', 'harbour', new Date('2026-09-11T12:00:00Z'));
+      assert.equal(accepted.leaders.status, 'ready');
+      assert.equal(accepted.leaders.data.length, 5);
+      assert.deepEqual(
+        [accepted.leaders.data[0].player_id, accepted.leaders.data[0].goals, accepted.leaders.data[0].assists, accepted.leaders.data[0].points],
+        ['recorded-zero-1', 0, null, null],
+      );
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
 });

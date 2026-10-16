@@ -22,8 +22,7 @@ function center(columnIndex: number, rank: number) {
 
 function accessibilityLabel(team: PositioningData['teams'][number], metricKey: PositionMetric, metricLabel: string, totalTeams: number) {
   const metric = team.metrics[metricKey];
-  const estimate = metricKey === 'commitment' ? ', estimated from confirmed attendance plus roster appearances' : '';
-  return `${team.teamName}, rank ${metric.rank} of ${totalTeams} in ${metricLabel}, ${metric.valueLabel}${estimate}`;
+  return `${team.teamName}, rank ${metric.rank} of ${totalTeams} in ${metricLabel}, ${metric.valueLabel}`;
 }
 
 export default function TeamPositioningChart({ positioning }: { positioning: PositioningData }) {

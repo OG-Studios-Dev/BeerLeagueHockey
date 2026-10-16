@@ -75,6 +75,27 @@ export function getCareerMetricDefinitions(isGoalie: boolean) {
   return isGoalie ? GOALIE_CAREER_METRICS : SKATER_CAREER_METRICS;
 }
 
+export function playerMetricAccessibilityLabel(
+  label: string,
+  display: string,
+  provenance?: { state: 'verified' | 'recorded' | 'reported' | 'estimated' | 'unknown' | 'conflicted'; sources: string[] } | null,
+) {
+  const isLegacyEstimate = provenance?.state === 'estimated';
+  const visibleValue = display === '—' || isLegacyEstimate ? 'unavailable' : display;
+  if (!provenance) return `${label}, ${visibleValue}`;
+  const stateDescription = provenance.state === 'conflicted'
+    ? 'Conflicting records need review.'
+    : isLegacyEstimate
+      ? 'Not recorded.'
+      : provenance.state === 'unknown'
+        ? 'Value unavailable.'
+        : `${provenance.state[0].toUpperCase()}${provenance.state.slice(1)}.`;
+  const sourceDescription = provenance.sources.length > 0
+    ? ` Sources: ${provenance.sources.map((source) => source.replace(/_/g, ' ')).join(', ')}.`
+    : '';
+  return `${label}, ${visibleValue}. ${stateDescription}${sourceDescription}`;
+}
+
 export function lineChartGeometry(values: readonly (number | null)[], width: number, height: number) {
   const known = values.flatMap((value, index) => value == null || !Number.isFinite(value) ? [] : [{ value, index }]);
   if (!known.length || width <= 0 || height <= 0) {

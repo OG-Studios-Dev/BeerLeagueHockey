@@ -4,16 +4,20 @@ const ENDPOINT = 'https://hockey-life.beerleaguehockey.ca/api/mobile/player-prof
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_BODY_BYTES = 512_000;
 const DEFAULT_TIMEOUT_MS = 8_000;
+const ALWAYS_BLANK_GOALIE_METRICS = new Set(['saves', 'save_percentage', 'savePercentage']);
 
 export type PlayerSeason = { id: string; name: string; start_date: string | null; status: string | null };
 export type PlayerMetricValues = Record<string, number | null>;
+export type PlayerMetricState = 'verified' | 'recorded' | 'reported' | 'estimated' | 'unknown' | 'conflicted';
+export type PlayerMetricProvenance = Record<string, { state: PlayerMetricState; sources: string[] }>;
 export type HockeyLifePlayerPage = {
   playerId: string; rosterId: string; fullName: string; photoUrl: string | null; position: string | null;
   leadershipRole: string | null; jerseyNumber: number | null; isGoalie: boolean;
   team: { id: string; name: string; slug: string | null; logoUrl: string | null; primaryColor: string | null } | null;
   seasons: PlayerSeason[]; selectedSeasonId: string | null; selectedSeasonName: string | null; isCareer: boolean;
   metrics: PlayerMetricValues | null;
-  careerRows: Array<{ seasonId: string; seasonName: string; teamId?: string | null; teamName?: string | null; metrics: PlayerMetricValues }>;
+  metricProvenance: PlayerMetricProvenance | null;
+  careerRows: Array<{ seasonId: string; seasonName: string; teamId?: string | null; teamName?: string | null; metrics: PlayerMetricValues; metricProvenance: PlayerMetricProvenance | null }>;
   badges: Array<{ id: string; type: string; seasonId: string | null; seasonName: string | null; teamName: string | null; createdAt: string }>;
   games: Array<{ id: string; date: string; opponent: string | null; result: string | null; score: string | null; metrics: PlayerMetricValues }>;
   matchups: Array<{ id: string; name: string; gamesPlayed: number; goals: number; assists: number; points: number; shots: number; shootingPct: number | null }>;
@@ -68,7 +72,34 @@ function mediaUrl(value: unknown, label: string) {
 function metrics(value: unknown, label: string): PlayerMetricValues {
   const row = object(value, label);
   if (Object.keys(row).length > 64) throw new TypeError(`Invalid ${label} bound`);
-  return Object.fromEntries(Object.entries(row).map(([key, item]) => [string(key, `${label} key`, 64), nullableNumber(item, `${label}.${key}`)]));
+  return Object.fromEntries(Object.entries(row).map(([key, item]) => {
+    const metricKey = string(key, `${label} key`, 64);
+    const metricValue = nullableNumber(item, `${label}.${key}`);
+    return [metricKey, ALWAYS_BLANK_GOALIE_METRICS.has(metricKey) ? null : metricValue];
+  }));
+}
+function metricProvenance(value: unknown, label: string): PlayerMetricProvenance | null {
+  if (value === undefined || value === null) return null;
+  const row = object(value, label);
+  if (Object.keys(row).length > 64) throw new TypeError(`Invalid ${label} bound`);
+  const states = new Set<PlayerMetricState>(['verified', 'recorded', 'reported', 'estimated', 'unknown', 'conflicted']);
+  return Object.fromEntries(Object.entries(row).map(([key, item]) => {
+    const metricKey = string(key, `${label} key`, 64);
+    const metric = object(item, `${label}.${key}`);
+    const state = string(metric.state, `${label}.${key}.state`, 16) as PlayerMetricState;
+    if (!states.has(state)) throw new TypeError(`Invalid ${label}.${key}.state`);
+    const sources = array(metric.sources, `${label}.${key}.sources`, 16).map((source) => string(source, `${label}.${key}.source`, 48));
+    if (new Set(sources).size !== sources.length) throw new TypeError(`Invalid ${label}.${key}.sources`);
+    return [metricKey, ALWAYS_BLANK_GOALIE_METRICS.has(metricKey)
+      ? { state: 'unknown' as const, sources: [] }
+      : { state, sources }];
+  }));
+}
+function publishableMetrics(values: PlayerMetricValues, provenance: PlayerMetricProvenance | null): PlayerMetricValues {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => {
+    const state = provenance?.[key]?.state;
+    return [key, state === 'conflicted' || state === 'estimated' || state === 'unknown' ? null : value];
+  }));
 }
 function utf8ByteLength(value: string) {
   let bytes = 0;
@@ -113,7 +144,15 @@ export function decodeHockeyLifePlayerProfileEnvelope(value: unknown, requestedP
   })();
   const careerRows = array(data.careerRows, 'career rows', 256).map((value) => {
     const row = object(value, 'career row');
-    return { seasonId: uuid(row.seasonId, 'career season id'), seasonName: string(row.seasonName, 'career season name'), teamId: row.teamId === undefined ? undefined : nullableUuid(row.teamId, 'career team id'), teamName: row.teamName === undefined ? undefined : nullableString(row.teamName, 'career team name'), metrics: metrics(row.metrics, 'career metrics') };
+    const provenance = metricProvenance(row.metricProvenance, 'career metric provenance');
+    return {
+      seasonId: uuid(row.seasonId, 'career season id'),
+      seasonName: string(row.seasonName, 'career season name'),
+      teamId: row.teamId === undefined ? undefined : nullableUuid(row.teamId, 'career team id'),
+      teamName: row.teamName === undefined ? undefined : nullableString(row.teamName, 'career team name'),
+      metrics: publishableMetrics(metrics(row.metrics, 'career metrics'), provenance),
+      metricProvenance: provenance,
+    };
   });
   const badges = array(data.badges, 'badges', 128).map((value) => {
     const row = object(value, 'badge');
@@ -138,10 +177,15 @@ export function decodeHockeyLifePlayerProfileEnvelope(value: unknown, requestedP
   const hotFacts = array(data.hotFacts, 'hot facts', 5).map((value) => string(value, 'hot fact', 500));
   const jerseyNumber = nullableNumber(data.jerseyNumber, 'jersey');
   if (jerseyNumber !== null && (!Number.isInteger(jerseyNumber) || jerseyNumber < 0 || jerseyNumber > 999)) throw new TypeError('Invalid jersey number');
+  const selectedMetricProvenance = metricProvenance(data.metricProvenance, 'selected metric provenance');
+  const selectedMetrics = data.metrics === null
+    ? null
+    : publishableMetrics(metrics(data.metrics, 'selected metrics'), selectedMetricProvenance);
   return {
     playerId, rosterId, fullName: string(data.fullName, 'player name'), photoUrl: mediaUrl(data.photoUrl, 'player photo'), position: nullableString(data.position, 'position', 80),
     leadershipRole: nullableString(data.leadershipRole, 'leadership role', 80), jerseyNumber, isGoalie: bool(data.isGoalie, 'goalie state'), team, seasons, selectedSeasonId,
-    selectedSeasonName: nullableString(data.selectedSeasonName, 'selected season name'), isCareer, metrics: data.metrics === null ? null : metrics(data.metrics, 'selected metrics'),
+    selectedSeasonName: nullableString(data.selectedSeasonName, 'selected season name'), isCareer, metrics: selectedMetrics,
+    metricProvenance: selectedMetricProvenance,
     careerRows, badges, games, matchups, articles, heroAwards, aggregateOnly: bool(data.aggregateOnly, 'aggregate-only state'), hotFacts,
   };
 }

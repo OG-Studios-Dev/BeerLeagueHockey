@@ -1,5 +1,5 @@
 import { supabase } from './client';
-import { getPublicGoalies, type PublicGoalie } from './publicStats';
+import { getPublicGoaliesV2, type PublicGoalieV2 } from './publicStats';
 import { buildGamePresentation, normalizeGameStatus, resolveGameAccentColors } from '../gamePresentation';
 
 export type PresentationSeason = {
@@ -431,37 +431,37 @@ function validateLeader(value: unknown): HomeLeader {
     team_name: string(row.team_name, 'leader team name'),
     display_team_name: nullableString(row.display_team_name, 'leader display team'),
     display_team_logo_url: nullableString(row.display_team_logo_url, 'leader display team logo'),
-    position: nullableString(row.position, 'leader position'), goals: finite(row.goals, 'leader goals'),
-    assists: finite(row.assists, 'leader assists'), points: finite(row.points, 'leader points'),
+    position: nullableString(row.position, 'leader position'), goals: nullableFinite(row.goals, 'leader goals'),
+    assists: nullableFinite(row.assists, 'leader assists'), points: nullableFinite(row.points, 'leader points'),
     gaa: null, is_goalie: false, estimated: false,
   };
 }
 
-function mapPublicGoalieToHomeLeader(goalie: PublicGoalie): HomeLeader {
-  return {
-    player_id: goalie.player_id,
-    player_name: goalie.player_name,
-    avatar_url: goalie.avatar_url,
-    team_id: goalie.team_id,
-    team_name: goalie.team_name,
-    display_team_name: goalie.team_id ? goalie.team_name : null,
+function mapPublicGoalieToHomeLeader(goalie: PublicGoalieV2): HomeLeader[] {
+  const gaa = goalie.metrics.goalsAgainstAverage;
+  if (gaa.value === null || !['verified', 'recorded', 'reported'].includes(gaa.state)) return [];
+  return [{
+    player_id: goalie.playerId,
+    player_name: goalie.playerName,
+    avatar_url: goalie.avatarUrl,
+    team_id: goalie.displayTeam?.id ?? null,
+    team_name: goalie.displayTeam?.name ?? 'Unknown team',
+    display_team_name: goalie.displayTeam?.name ?? null,
     display_team_logo_url: null,
     position: 'Goalie',
     goals: null,
     assists: null,
     points: null,
-    gaa: goalie.games_played > 0 ? goalie.goals_against / goalie.games_played : goalie.goals_against_average,
+    gaa: gaa.value,
     is_goalie: true,
-    estimated: goalie.estimated,
-  };
+    estimated: false,
+  }];
 }
 
-function selectUnambiguousPublicGoalies(goalies: readonly PublicGoalie[]) {
-  const rowsPerPlayer = new Map<string, number>();
-  for (const goalie of goalies) rowsPerPlayer.set(goalie.player_id, (rowsPerPlayer.get(goalie.player_id) ?? 0) + 1);
-  // Public goalies v1 is team-scoped and defines no cross-team aggregation.
-  // Exclude every ambiguous player's rows instead of choosing a team or inventing combined GAA.
-  return goalies.filter((goalie) => rowsPerPlayer.get(goalie.player_id) === 1);
+function mapPublicGoaliesToHomeLeaders(goalies: PublicGoalieV2[]): HomeLeader[] {
+  const byPlayer = new Map<string, PublicGoalieV2[]>();
+  for (const goalie of goalies) byPlayer.set(goalie.playerId, [...(byPlayer.get(goalie.playerId) ?? []), goalie]);
+  return [...byPlayer.values()].flatMap((rows) => rows.length === 1 ? mapPublicGoalieToHomeLeader(rows[0]) : []);
 }
 
 function validateStanding(value: unknown): HomeStanding {
@@ -621,8 +621,8 @@ export async function loadHomePublicSnapshot(leagueId: string, leagueSlug: strin
   const goalieLeadersPromise = section<HomeLeader[]>([], 'Current-season goalie GAA is temporarily unavailable.', async () => {
     if (seasonLookupFailed) throw new Error('Season unavailable');
     if (!presentationSeason) return [];
-    const payload = await getPublicGoalies(leagueSlug, leagueId, presentationSeason.id, null);
-    return selectUnambiguousPublicGoalies(payload.goalies).map(mapPublicGoalieToHomeLeader);
+    const payload = await getPublicGoaliesV2(leagueSlug, leagueId, presentationSeason.id, null);
+    return mapPublicGoaliesToHomeLeaders(payload.goalies);
   });
   const photosPromise = section<HomePhoto[]>([], 'League photos are temporarily unavailable.', async () => {
     const result = await supabase.from('gallery_photos')

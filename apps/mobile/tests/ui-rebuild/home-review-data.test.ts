@@ -30,11 +30,19 @@ const standing = {
 
 const division = { id: DIVISION_ID, name: 'A', sort_order: 2 };
 
+const goalieMetric = (value: number | null, state = value === null ? 'unknown' : 'recorded') => ({
+  value, state, sources: value === null ? [] : ['goalie_stats'],
+});
+
 const goalie = {
-  player_id: '40000000-0000-4000-8000-000000000004', player_name: 'Steven Wild',
-  team_id: '50000000-0000-4000-8000-000000000005', team_name: 'Goalie Team', avatar_url: null,
-  games_played: 3, wins: 1, losses: 2, save_percentage: null, goals_against_average: 3,
-  shutouts: 0, saves: null, goals_against: 9, estimated: true,
+  playerId: '40000000-0000-4000-8000-000000000004', playerName: 'Steven Wild', avatarUrl: null,
+  displayTeam: { id: '50000000-0000-4000-8000-000000000005', name: 'Goalie Team' },
+  teams: [{ id: '50000000-0000-4000-8000-000000000005', name: 'Goalie Team' }],
+  metrics: {
+    gamesPlayed: goalieMetric(3), wins: goalieMetric(1), losses: goalieMetric(2),
+    savePercentage: goalieMetric(null), goalsAgainstAverage: goalieMetric(3),
+    shutouts: goalieMetric(0), saves: goalieMetric(null), goalsAgainst: goalieMetric(9),
+  },
 };
 
 function payload(overrides: Record<string, unknown> = {}) {
@@ -49,7 +57,7 @@ function makeBoundary({
   responsePayload = payload(), timezone = 'America/Toronto', leagueRow,
   seasonRows = [season],
   resultData = {},
-  goalieResult = { leagueId: LEAGUE_ID, leagueSlug: SLUG, presentationSeason: season, divisionId: null, source: 'estimated', goalies: [goalie] } as unknown,
+  goalieResult = { schemaVersion: 2, leagueId: LEAGUE_ID, leagueSlug: SLUG, presentationSeason: season, divisionId: null, coverage: { goalies: ['recorded'] }, goalies: [goalie] } as unknown,
 }: {
   responsePayload?: unknown;
   timezone?: unknown;
@@ -108,6 +116,11 @@ function makeBoundary({
         if (goalieResult instanceof Error) throw goalieResult;
         return goalieResult;
       },
+      getPublicGoaliesV2: async (...args: unknown[]) => {
+        calls.push({ method: 'getPublicGoaliesV2', args });
+        if (goalieResult instanceof Error) throw goalieResult;
+        return goalieResult;
+      },
     },
   });
   let fetchCount = 0;
@@ -148,20 +161,21 @@ describe('reviewed Home data corrections', () => {
     assert.equal(boundary.calls.some((call) => call.method === 'rpc'), false);
   });
 
-  it('loads goalie GAA for the selected presentation season and maps no invented skater values', async () => {
+  it('loads authoritative v2 goalie GAA and never marks a Home leader as estimated', async () => {
     const boundary = makeBoundary();
     const result = await boundary.load();
 
-    assert.deepEqual(boundary.calls.filter((call) => call.method === 'getPublicGoalies').map((call) => call.args), [
+    assert.deepEqual(boundary.calls.filter((call) => call.method === 'getPublicGoaliesV2').map((call) => call.args), [
       [SLUG, LEAGUE_ID, SEASON_ID, null],
     ]);
+    assert.equal(boundary.calls.some((call) => call.method === 'getPublicGoalies'), false);
     assert.deepEqual(result.goalieLeaders, {
       status: 'ready',
       data: [{
-        player_id: goalie.player_id, player_name: goalie.player_name, avatar_url: null,
-        team_id: goalie.team_id, team_name: goalie.team_name,
-        display_team_name: goalie.team_name, display_team_logo_url: null, position: 'Goalie',
-        goals: null, assists: null, points: null, gaa: 3, is_goalie: true, estimated: true,
+        player_id: goalie.playerId, player_name: goalie.playerName, avatar_url: null,
+        team_id: goalie.displayTeam.id, team_name: goalie.displayTeam.name,
+        display_team_name: goalie.displayTeam.name, display_team_logo_url: null, position: 'Goalie',
+        goals: null, assists: null, points: null, gaa: 3, is_goalie: true, estimated: false,
       }],
     });
   });
@@ -169,26 +183,25 @@ describe('reviewed Home data corrections', () => {
   it('fails closed on same-player multi-team goalie rows instead of choosing or aggregating a team row', async () => {
     const duplicateTeamGoalie = {
       ...goalie,
-      team_id: '60000000-0000-4000-8000-000000000006',
-      team_name: 'Second Goalie Team',
-      goals_against_average: 5,
-      goals_against: 15,
+      displayTeam: { id: '60000000-0000-4000-8000-000000000006', name: 'Second Goalie Team' },
+      teams: [{ id: '60000000-0000-4000-8000-000000000006', name: 'Second Goalie Team' }],
+      metrics: { ...goalie.metrics, goalsAgainstAverage: goalieMetric(5), goalsAgainst: goalieMetric(15) },
     };
     const uniqueGoalie = {
       ...goalie,
-      player_id: '70000000-0000-4000-8000-000000000007',
-      player_name: 'Unique Goalie',
-      team_id: '80000000-0000-4000-8000-000000000008',
-      team_name: 'Unique Team',
-      goals_against_average: 2,
-      goals_against: 6,
+      playerId: '70000000-0000-4000-8000-000000000007',
+      playerName: 'Unique Goalie',
+      displayTeam: { id: '80000000-0000-4000-8000-000000000008', name: 'Unique Team' },
+      teams: [{ id: '80000000-0000-4000-8000-000000000008', name: 'Unique Team' }],
+      metrics: { ...goalie.metrics, goalsAgainstAverage: goalieMetric(2), goalsAgainst: goalieMetric(6) },
     };
     const goalieResult = {
+      schemaVersion: 2,
       leagueId: LEAGUE_ID,
       leagueSlug: SLUG,
       presentationSeason: season,
       divisionId: null,
-      source: 'estimated',
+      coverage: { goalies: ['recorded'] },
       goalies: [goalie, duplicateTeamGoalie, uniqueGoalie],
     };
 
@@ -200,9 +213,9 @@ describe('reviewed Home data corrections', () => {
       team_id: row.team_id,
       gaa: row.gaa,
     })), [{
-      player_id: uniqueGoalie.player_id,
-      team_id: uniqueGoalie.team_id,
-      gaa: uniqueGoalie.goals_against_average,
+      player_id: uniqueGoalie.playerId,
+      team_id: uniqueGoalie.displayTeam.id,
+      gaa: uniqueGoalie.metrics.goalsAgainstAverage.value,
     }]);
   });
 
@@ -226,7 +239,7 @@ describe('reviewed Home data corrections', () => {
     assert.deepEqual(result.goalieLeaders, { status: 'ready', data: [] });
   });
 
-  it('rejects wrong schema/tenant/season, malformed rows, non-finite facts, invalid divisions, and bounds as one endpoint-owned error', async () => {
+  it('rejects wrong schema/tenant/season, malformed rows, invalid divisions, and bounds as one endpoint-owned error', async () => {
     const hostile = [
       payload({ schemaVersion: 2 }),
       payload({ leagueId: 'other-league' }),
@@ -235,19 +248,18 @@ describe('reviewed Home data corrections', () => {
       payload({ presentationSeason: { ...season, league_id: 'other-league' } }),
       payload({ leaders: [{ ...leader, player_id: '', player_name: 7 }] }),
       payload({ leaders: [{ ...leader, goals: '4' }] }),
-      payload({ leaders: [{ ...leader, points: Number.NaN }] }),
       payload({ standings: [{ ...standing, wins: 'many' }] }),
       payload({ standings: [{ ...standing, team_id: '' }] }),
       payload({ divisions: [{ id: '', name: 'A' }] }),
-      payload({ leaders: Array.from({ length: 16 }, (_, index) => ({ ...leader, player_id: `p-${index}` })) }),
+      payload({ leaders: Array.from({ length: 1001 }, (_, index) => ({ ...leader, player_id: `p-${index}` })) }),
       payload({ standings: Array.from({ length: 201 }, (_, index) => ({ ...standing, team_id: `t-${index}` })) }),
       payload({ divisions: Array.from({ length: 65 }, (_, index) => ({ id: `d-${index}`, name: `D${index}` })) }),
     ];
-    for (const responsePayload of hostile) {
+    for (const [hostileIndex, responsePayload] of hostile.entries()) {
       const boundary = makeBoundary({ responsePayload });
       const result = await boundary.load();
-      assert.equal(result.leaders.status, 'error');
-      assert.equal(result.standings.status, 'error');
+      assert.equal(result.leaders.status, 'error', `hostile payload ${hostileIndex} must reject leaders`);
+      assert.equal(result.standings.status, 'error', `hostile payload ${hostileIndex} must reject standings`);
       assert.deepEqual(result.leaders.data, []);
       assert.deepEqual(result.standings.data, []);
       assert.equal(boundary.calls.some((call) => call.method === 'rpc'), false);

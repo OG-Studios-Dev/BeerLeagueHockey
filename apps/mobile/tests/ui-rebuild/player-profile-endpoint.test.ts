@@ -13,6 +13,7 @@ const PROFILE_ID = 'add94b26-b344-459f-9727-8cddae9783de';
 const ROSTER_ID = '751c2f47-f0e8-4506-b10e-b39a7bbcd302';
 const SEASON_ID = '145ac7ee-99fb-4a50-a0b5-37f24e9991f3';
 const SUMMER_ID = '1df8f917-a87e-4053-8650-f55aff2c0fcb';
+const GAME_ID = '80000000-0000-4000-8000-000000000008';
 const capturedMattSummerWire = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/matt-summer-player-profile-wire.json', import.meta.url).toString()), 'utf8')) as unknown;
 
 function envelope(overrides: Record<string, unknown> = {}) {
@@ -70,6 +71,87 @@ describe('public player profile endpoint boundary', () => {
     const noOperationalSeason = decodeHockeyLifePlayerProfileEnvelope(envelope({ selectedSeasonId: null, selectedSeasonName: null, isCareer: false, metrics: null }), PROFILE_ID);
     assert.equal(noOperationalSeason.isCareer, false);
     assert.equal(noOperationalSeason.selectedSeasonId, null);
+  });
+
+  it('decodes metric state and sources without retaining conflict candidate values', () => {
+    const page = decodeHockeyLifePlayerProfileEnvelope(envelope({
+      metrics: { games_played: 0, goals: 19, penalty_minutes: 7 },
+      metricProvenance: {
+        games_played: { state: 'reported', sources: ['roster_window'] },
+        saves: { state: 'conflicted', sources: ['goalie_stats', 'goalie_assignment'], candidates: { recorded: 18, confirmed: 19 } },
+        goals: { state: 'conflicted', sources: ['skater_stats'], candidates: { recorded: 19, confirmed: 18 } },
+        penalty_minutes: { state: 'estimated', sources: ['skater_stats'], candidates: { estimated: 7 } },
+      },
+      careerRows: [{
+        seasonId: SEASON_ID, seasonName: 'Fall 2026', teamId: null, teamName: null,
+        metrics: { saves: 18 },
+        metricProvenance: { saves: { state: 'conflicted', sources: ['goalie_stats'] } },
+      }],
+    }), PROFILE_ID, SEASON_ID);
+
+    assert.deepEqual(page.metricProvenance, {
+      games_played: { state: 'reported', sources: ['roster_window'] },
+      saves: { state: 'unknown', sources: [] },
+      goals: { state: 'conflicted', sources: ['skater_stats'] },
+      penalty_minutes: { state: 'estimated', sources: ['skater_stats'] },
+    });
+    assert.deepEqual(page.careerRows[0]?.metricProvenance, {
+      saves: { state: 'unknown', sources: [] },
+    });
+    assert.equal(page.metrics?.games_played, 0);
+    assert.equal(page.metrics?.goals, null);
+    assert.equal(page.metrics?.penalty_minutes, null);
+    assert.equal(page.careerRows[0]?.metrics.saves, null);
+    assert.doesNotMatch(JSON.stringify(page.metricProvenance), /18|19|candidate/i);
+  });
+
+  it('forces Saves and SV% values and provenance blank in selected-season, career, and game metrics', () => {
+    const goalieValues = { saves: 18, save_percentage: 0.9, savePercentage: 0.91 };
+    const goalieProvenance = {
+      saves: { state: 'recorded', sources: ['goalie_stats'] },
+      save_percentage: { state: 'verified', sources: ['goalie_stats'] },
+      savePercentage: { state: 'reported', sources: ['imported'] },
+    };
+    const shared = {
+      isGoalie: true,
+      metrics: goalieValues,
+      metricProvenance: goalieProvenance,
+      careerRows: [{
+        seasonId: SEASON_ID,
+        seasonName: 'Fall 2026',
+        teamId: null,
+        teamName: null,
+        metrics: goalieValues,
+        metricProvenance: goalieProvenance,
+      }],
+      games: [{
+        id: GAME_ID,
+        date: '2026-09-01T20:00:00Z',
+        opponent: 'Other',
+        result: 'W',
+        score: '3-2',
+        metrics: goalieValues,
+      }],
+    };
+    const selected = decodeHockeyLifePlayerProfileEnvelope(envelope(shared), PROFILE_ID, SEASON_ID);
+    const career = decodeHockeyLifePlayerProfileEnvelope(envelope({
+      ...shared,
+      selectedSeasonId: null,
+      selectedSeasonName: null,
+      isCareer: true,
+    }), PROFILE_ID, null);
+    const keys = ['saves', 'save_percentage', 'savePercentage'];
+    const unknown = { state: 'unknown', sources: [] };
+
+    for (const page of [selected, career]) {
+      for (const key of keys) {
+        assert.equal(page.metrics?.[key], null);
+        assert.deepEqual(page.metricProvenance?.[key], unknown);
+        assert.equal(page.careerRows[0]?.metrics[key], null);
+        assert.deepEqual(page.careerRows[0]?.metricProvenance?.[key], unknown);
+        assert.equal(page.games[0]?.metrics[key], null);
+      }
+    }
   });
 
   it('rejects tenant, identity, selected-season, numeric, null, and media violations', () => {

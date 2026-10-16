@@ -68,4 +68,14 @@ describe('composite surface accessibility', () => {
     assert.equal(flattenStyle(reduced?.props.style).backgroundColor, '#0C1B31');
     assert.equal(flattenStyle(target?.props.style).backgroundColor, '#1C2A42');
   });
+
+  it('announces commitment value and rank without calling policy-reported participation estimated', () => {
+    const commitment = findNode(
+      renderPositioning(false),
+      (node) => node.props.testID === 'team-positioning-team-a-commitment',
+    );
+
+    assert.equal(commitment?.props.accessibilityLabel, 'Owls, rank 1 of 1 in Commitment, 1');
+    assert.doesNotMatch(String(commitment?.props.accessibilityLabel), /estimat/i);
+  });
 });

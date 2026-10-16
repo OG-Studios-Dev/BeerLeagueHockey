@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { formatPublicMetric } from '../../src/lib/supabase/publicStats';
 
 import {
   compileCommonJs,
@@ -225,7 +226,7 @@ function createRuntime({
       '@expo/vector-icons': { Ionicons: 'Ionicon' }, 'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
       '../../components/Avatar': (props: Row) => createElement('Avatar', props), '../../components/TeamLogo': (props: Row) => createElement('TeamLogo', props),
       './TeamLogo': (props: Row) => createElement('TeamLogo', props),
-      '../../lib/supabase/publicStats': { formatPublicMetric: (metric: any) => ({ value: metric.state === 'conflicted' ? 'Needs review' : metric.value == null ? '—' : `${metric.state === 'estimated' ? '~' : ''}${metric.value}`, hint: metric.state === 'unknown' ? 'Not recorded.' : metric.state === 'estimated' ? 'Estimated.' : 'Recorded.' }) },
+      '../../lib/supabase/publicStats': { formatPublicMetric },
       '../../theme/colors': { __esModule: true, default: colors }, '../../theme/ui': { ui: { minTouchTarget: 44 } },
       '../../assets/league-leaders/jack-foote.png': 6,
       '../../assets/league-leaders/neutral-goalie.png': 7,
@@ -459,8 +460,8 @@ describe('Team active-season data boundary', () => {
   });
 
   it('renders roster stats and schedule from the same active season and team only', async () => {
-    // The real producer now consumes raw rows, not player_season_stats. Keep the
-    // intended 4 GP / 2 G / 3 A fixture backed by four actual completed games.
+    // The real producer consumes raw rows, but roster-window GP is not public.
+    // Keep the intended 2 G / 3 A fixture backed by four actual completed games.
     const statGames = [0, 1, 2, 3].map((index) => ({
       ...fixtures.games[0], id: `stat-game-${index}`, status: 'completed',
       scheduled_at: `2026-09-0${index + 5}T23:00:00.000Z`, home_score: 2, away_score: 1,
@@ -479,9 +480,9 @@ describe('Team active-season data boundary', () => {
     const output = await settle(createRuntime({ dataset }));
     const text = nodeText(output);
     const player = findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.roster.find((row: Row) => row.playerId === 'player-current');
-    assert.deepEqual([player.gamesPlayed, player.goals, player.assists, player.points], [4, 2, 3, 5]);
+    assert.deepEqual([player.gamesPlayed, player.goals, player.assists, player.points], [null, 2, 3, 5]);
     assert.match(text, /CASEY/);
-    assert.doesNotMatch(text, /~4 GP/);
+    assert.doesNotMatch(text, /~4 GP|\b4 GP\b/);
     assert.match(text, /Current Opponent/);
     assert.match(text, /Current Season Arena/);
     assert.doesNotMatch(text, /Historical Opponent|Historical Arena|90/);

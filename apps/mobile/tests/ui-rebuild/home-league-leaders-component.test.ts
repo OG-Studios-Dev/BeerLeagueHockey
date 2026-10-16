@@ -31,11 +31,12 @@ const steven: HomeLeader = {
   player_id: 'steven', player_name: 'Steven Wild', avatar_url: null,
   team_id: 'goalie-team', team_name: 'Goalie Team', display_team_name: 'Goalie Team',
   display_team_logo_url: null, position: 'Goalie', goals: null, assists: null, points: null,
-  gaa: 6 / 11, is_goalie: true, estimated: true,
+  gaa: 6 / 11, is_goalie: true, estimated: false,
 };
 const aaron: HomeLeader = { ...steven, player_id: 'aaron', player_name: 'Aaron Buehler', gaa: 4 };
 const cody: HomeLeader = { ...steven, player_id: 'cody', player_name: 'Cody Bolman', gaa: 6 };
 const maximilian: HomeLeader = { ...steven, player_id: 'maximilian', player_name: 'Maximilian de la Cruz-Santamaría', gaa: 1.25 };
+const estimatedGoalie: HomeLeader = { ...steven, player_id: 'estimated', player_name: 'Estimated Goalie', gaa: 0.1, estimated: true };
 const fiveRowLeaders: HomeLeader[] = Array.from({ length: 6 }, (_, index) => ({
   ...steven,
   player_id: `leader-${index + 1}`,
@@ -218,13 +219,13 @@ describe('Home League Leaders component', () => {
     assert.equal(missingLogo.props.transparentBacking, true);
   });
 
-  it('selects the exact GAA tab and renders raw goalie values to one decimal without a visible estimate marker', () => {
+  it('selects the exact GAA tab, renders authoritative values, and excludes estimates', () => {
     const harness = createHookHarness();
     const Component = loadComponent(harness);
     const Wrapper = () => {
       const [metric, setMetric] = harness.react.useState<leaderModel.HomeLeaderMetric>('points');
       return Component({
-        leagueId, seasonName: 'Fall 2026', metric, leaders: [jack, cody, steven, aaron], status: 'ready',
+        leagueId, seasonName: 'Fall 2026', metric, leaders: [jack, cody, steven, aaron, estimatedGoalie], status: 'ready',
         width: 390, fontScale: 1, reduceTransparency: false, onMetricChange: setMetric,
         onRetry: () => {}, onOpenPlayer: () => {}, onOpenAllStats: () => {},
       });
@@ -243,9 +244,11 @@ describe('Home League Leaders component', () => {
     assert.match(nodeText(row), /1StevenWild0\.5/);
     assert.doesNotMatch(nodeText(row), /GAA/);
     assert.doesNotMatch(nodeText(row), /~/);
-    assert.match(row.props.accessibilityLabel, /estimated goals against average 0\.5/i);
+    assert.match(row.props.accessibilityLabel, /goals against average 0\.5/i);
+    assert.doesNotMatch(row.props.accessibilityLabel, /estimated/i);
     assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-aaron')), /2AaronBuehler4\.0/);
     assert.match(nodeText(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-cody')), /3CodyBolman6\.0/);
+    assert.equal(findNode(harness.output, (node) => node.props.testID === 'home-leader-row-estimated'), undefined);
     const art = findNode(harness.output, (node) => node.props.testID === 'home-leader-feature-art')!;
     assert.deepEqual(art.props.source, { asset: 'goalie' });
     assert.match(art.props.accessibilityLabel, /no goalie photo available/i);

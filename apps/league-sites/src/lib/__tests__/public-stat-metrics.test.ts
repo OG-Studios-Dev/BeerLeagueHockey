@@ -11,11 +11,14 @@ import {
 const LEAGUE_ID = '10000000-0000-4000-8000-000000000001';
 const SEASON_ID = '20000000-0000-4000-8000-000000000002';
 const DIVISION_ID = '30000000-0000-4000-8000-000000000003';
+const OTHER_DIVISION_ID = '31000000-0000-4000-8000-000000000003';
 const TEAM_A = '70000000-0000-4000-8000-000000000007';
 const TEAM_B = '71000000-0000-4000-8000-000000000007';
+const TEAM_C = '72000000-0000-4000-8000-000000000007';
 const MATT = '40000000-0000-4000-8000-000000000004';
 const ALEX = '41000000-0000-4000-8000-000000000004';
 const GOALIE = '42000000-0000-4000-8000-000000000004';
+const CASEY = '43000000-0000-4000-8000-000000000004';
 
 const completedGames = Array.from({ length: 11 }, (_, index) => ({
   id: `80000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
@@ -77,7 +80,7 @@ describe('aggregatePublicSeasonStats', () => {
       value: null,
       state: 'conflicted',
       sources: ['attendance', 'skater_stats', 'roster_window'],
-      candidates: { confirmed: 8, recorded: 1, estimated: 2 },
+      candidates: { confirmed: 8, recorded: 1 },
     });
     expect(matt.metrics.goals.value).toBe(15);
     expect(matt.metrics.assists.value).toBe(10);
@@ -137,24 +140,24 @@ describe('aggregatePublicSeasonStats', () => {
     const goalie = payload.players.find((player) => player.playerId === GOALIE)!;
     expect(goalie.roles).toEqual(['skater', 'goalie']);
     expect(goalie.metrics.gamesPlayed.value).toBe(2);
-    expect(goalie.goalie?.saves).toEqual({ value: 20, state: 'verified', sources: ['goalie_stats', 'goalie_assignment', 'capture_confirmation'] });
+    expect(goalie.goalie?.saves).toEqual({ value: null, state: 'unknown', sources: [] });
     expect(goalie.goalie?.gamesPlayed.value).toBe(1);
 
     const unmeasured = rows({ games: completedGames.slice(1, 2), checkins: [], playerStats: [], goalieStats: [] });
-    const estimated = aggregatePublicSeasonStats(unmeasured, { leagueId: LEAGUE_ID, seasonId: SEASON_ID });
-    const rosterGoalie = estimated.players.find((player) => player.playerId === GOALIE)!;
-    expect(rosterGoalie.goalie?.gamesPlayed.state).toBe('estimated');
+    const policyDetermined = aggregatePublicSeasonStats(unmeasured, { leagueId: LEAGUE_ID, seasonId: SEASON_ID });
+    const rosterGoalie = policyDetermined.players.find((player) => player.playerId === GOALIE)!;
+    expect(rosterGoalie.goalie?.gamesPlayed.state).toBe('reported');
     expect(rosterGoalie.goalie?.saves).toEqual({ value: null, state: 'unknown', sources: [] });
   });
 
-  it('labels accepted substitutes as estimates rather than confirmed appearances', () => {
+  it('labels accepted substitutes as policy-determined appearances', () => {
     const fixture = rows({
       games: completedGames.slice(0, 1), rosters: [], checkins: [], playerStats: [], goalieStats: [],
       acceptedSubs: [{ id: 'd0000000-0000-4000-8000-000000000001', game_id: completedGames[0].id,
         invited_player_id: ALEX, team_id: TEAM_A, status: 'accepted' }],
     });
     const player = aggregatePublicSeasonStats(fixture, { leagueId: LEAGUE_ID, seasonId: SEASON_ID }).players[0];
-    expect(player.metrics.gamesPlayed).toEqual({ value: 1, state: 'estimated', sources: ['accepted_sub'] });
+    expect(player.metrics.gamesPlayed).toEqual({ value: 1, state: 'reported', sources: ['accepted_sub'] });
   });
 });
 
@@ -213,6 +216,367 @@ describe('GET /api/public/season-stats v2', () => {
 });
 
 describe('bounded metric loader', () => {
+  function memoryClient(source: PublicStatMetricRows) {
+    const tableRows = {
+      games: source.games,
+      teams: source.teams,
+      team_rosters: source.rosters,
+      game_checkins: source.checkins,
+      sub_invitations: source.acceptedSubs,
+      player_stats: source.playerStats,
+      goalie_stats: source.goalieStats,
+      game_goalie_appearances: source.goalieAppearances,
+      profiles: source.profiles,
+    } as Record<string, Array<Record<string, unknown>>>;
+    const games = new Map(source.games.map((game) => [game.id, game]));
+    const calls: Array<{ table: string; method: 'eq' | 'in'; column: string; value: unknown }> = [];
+    const valueFor = (row: Record<string, unknown>, column: string) => {
+      if (!column.startsWith('game.')) return row[column];
+      const game = games.get(String(row.game_id));
+      return game?.[column.slice('game.'.length) as keyof typeof game];
+    };
+    const client = {
+      from(table: string) {
+        return {
+          select() {
+            let filtered = [...(tableRows[table] ?? [])];
+            const query = {
+              eq(column: string, value: unknown) {
+                calls.push({ table, method: 'eq' as const, column, value });
+                filtered = filtered.filter((row) => valueFor(row, column) === value);
+                return query;
+              },
+              in(column: string, values: unknown[]) {
+                calls.push({ table, method: 'in' as const, column, value: values });
+                filtered = filtered.filter((row) => values.includes(valueFor(row, column)));
+                return query;
+              },
+              order() { return query; },
+              async range(from: number, to: number) {
+                return { data: filtered.slice(from, to + 1), count: filtered.length, error: null };
+              },
+            };
+            return query;
+          },
+        };
+      },
+    };
+    return { client, calls };
+  }
+
+  const goalieRoster = (id: string, playerId: string, teamId = TEAM_A) => ({
+    id,
+    player_id: playerId,
+    team_id: teamId,
+    league_id: LEAGUE_ID,
+    season_id: SEASON_ID,
+    start_date: '2026-01-01',
+    end_date: null,
+    is_goalie: true,
+    position: 'Goalie',
+    status: 'active',
+    player_type: 'regular',
+  });
+
+  async function loadPlayerScope(source: PublicStatMetricRows, playerId: string) {
+    const { client, calls } = memoryClient(source);
+    const scope = { leagueId: LEAGUE_ID, seasonId: SEASON_ID, playerId };
+    const loaded = await loadPublicStatMetricRows(client as never, scope);
+    return { loaded, calls, payload: aggregatePublicSeasonStats(loaded, scope) };
+  }
+
+  it('bounds division-scoped rosters to the teams returned by the scoped team query', async () => {
+    const source = rows({
+      games: completedGames.slice(0, 1),
+      teams: [
+        { id: TEAM_A, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Alpha' },
+        { id: TEAM_B, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Beta' },
+        { id: TEAM_C, league_id: LEAGUE_ID, division_id: OTHER_DIVISION_ID, name: 'Gamma' },
+      ],
+      profiles: [
+        { id: MATT, full_name: 'Matt', avatar_url: null, photo_url: null },
+        { id: CASEY, full_name: 'Casey', avatar_url: null, photo_url: null },
+      ],
+      rosters: [
+        {
+          id: '90000000-0000-4000-8000-000000000021', player_id: MATT, team_id: TEAM_A,
+          league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+          is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+        },
+        {
+          id: '90000000-0000-4000-8000-000000000022', player_id: CASEY, team_id: TEAM_C,
+          league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+          is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+        },
+      ],
+      checkins: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
+    });
+    const { client, calls } = memoryClient(source);
+    const scope = { leagueId: LEAGUE_ID, seasonId: SEASON_ID, divisionId: DIVISION_ID };
+
+    const loaded = await loadPublicStatMetricRows(client as never, scope);
+
+    expect(() => aggregatePublicSeasonStats(loaded, scope)).not.toThrow();
+    expect(loaded.teams.map((team) => team.id)).toEqual([TEAM_A, TEAM_B]);
+    expect(loaded.rosters.map((roster) => roster.team_id)).toEqual([TEAM_A]);
+    expect(calls).toContainEqual({
+      table: 'team_rosters', method: 'in', column: 'team_id', value: [TEAM_A, TEAM_B],
+    });
+  });
+
+  it('skips the roster source when a division has no scoped teams', async () => {
+    const source = rows({
+      games: [],
+      teams: [
+        { id: TEAM_C, league_id: LEAGUE_ID, division_id: OTHER_DIVISION_ID, name: 'Gamma' },
+      ],
+      profiles: [{ id: CASEY, full_name: 'Casey', avatar_url: null, photo_url: null }],
+      rosters: [{
+        id: '90000000-0000-4000-8000-000000000023', player_id: CASEY, team_id: TEAM_C,
+        league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+        is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+      }],
+      checkins: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
+    });
+    const { client, calls } = memoryClient(source);
+    const scope = { leagueId: LEAGUE_ID, seasonId: SEASON_ID, divisionId: DIVISION_ID };
+
+    const loaded = await loadPublicStatMetricRows(client as never, scope);
+
+    expect(loaded.teams).toEqual([]);
+    expect(loaded.rosters).toEqual([]);
+    expect(calls.some((call) => call.table === 'team_rosters')).toBe(false);
+    expect(aggregatePublicSeasonStats(loaded, scope).players).toEqual([]);
+  });
+
+  it('preserves the exact-team roster filter without adding a division team-list filter', async () => {
+    const source = rows({
+      games: completedGames.slice(0, 1),
+      teams: [
+        { id: TEAM_A, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Alpha' },
+        { id: TEAM_B, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Beta' },
+        { id: TEAM_C, league_id: LEAGUE_ID, division_id: OTHER_DIVISION_ID, name: 'Gamma' },
+      ],
+      rosters: [
+        {
+          id: '90000000-0000-4000-8000-000000000024', player_id: MATT, team_id: TEAM_A,
+          league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+          is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+        },
+        {
+          id: '90000000-0000-4000-8000-000000000025', player_id: CASEY, team_id: TEAM_C,
+          league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+          is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+        },
+      ],
+      checkins: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
+    });
+    const { client, calls } = memoryClient(source);
+    const scope = {
+      leagueId: LEAGUE_ID, seasonId: SEASON_ID, divisionId: DIVISION_ID, teamId: TEAM_A,
+    };
+
+    const loaded = await loadPublicStatMetricRows(client as never, scope);
+
+    expect(() => aggregatePublicSeasonStats(loaded, scope)).not.toThrow();
+    expect(loaded.teams.map((team) => team.id)).toEqual([TEAM_A]);
+    expect(loaded.rosters.map((roster) => roster.team_id)).toEqual([TEAM_A]);
+    expect(calls).toContainEqual({
+      table: 'team_rosters', method: 'eq', column: 'team_id', value: TEAM_A,
+    });
+    expect(calls).not.toContainEqual(expect.objectContaining({
+      table: 'team_rosters', method: 'in', column: 'team_id',
+    }));
+  });
+
+  it('keeps an explicit rosters-only table selection independent of the teams source', async () => {
+    const source = rows({
+      teams: [
+        { id: TEAM_A, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Alpha' },
+        { id: TEAM_C, league_id: LEAGUE_ID, division_id: OTHER_DIVISION_ID, name: 'Gamma' },
+      ],
+      rosters: [
+        {
+          id: '90000000-0000-4000-8000-000000000026', player_id: MATT, team_id: TEAM_A,
+          league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+          is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+        },
+        {
+          id: '90000000-0000-4000-8000-000000000027', player_id: CASEY, team_id: TEAM_C,
+          league_id: LEAGUE_ID, season_id: SEASON_ID, start_date: null, end_date: null,
+          is_goalie: false, position: 'C', status: 'active', player_type: 'regular',
+        },
+      ],
+    });
+    const { client, calls } = memoryClient(source);
+
+    const loaded = await loadPublicStatMetricRows(
+      client as never,
+      { leagueId: LEAGUE_ID, seasonId: SEASON_ID, divisionId: DIVISION_ID },
+      { tables: ['rosters'] },
+    );
+
+    expect(loaded.teams).toEqual([]);
+    expect(loaded.rosters.map((roster) => roster.team_id)).toEqual([TEAM_A, TEAM_C]);
+    expect(calls.some((call) => call.table === 'teams')).toBe(false);
+    expect(calls).not.toContainEqual(expect.objectContaining({
+      table: 'team_rosters', method: 'in', column: 'team_id',
+    }));
+  });
+
+  it('preserves same-team goalie ambiguity for a player-scoped profile read', async () => {
+    const source = rows({
+      games: completedGames.slice(0, 1),
+      profiles: [
+        { id: GOALIE, full_name: 'Target Goalie', avatar_url: null, photo_url: null },
+        { id: ALEX, full_name: 'Other Goalie', avatar_url: null, photo_url: null },
+      ],
+      rosters: [
+        goalieRoster('90000000-0000-4000-8000-000000000011', GOALIE),
+        goalieRoster('90000000-0000-4000-8000-000000000012', ALEX),
+      ],
+      checkins: [],
+      playerStats: [],
+      goalieStats: [],
+    });
+
+    const { loaded, calls, payload } = await loadPlayerScope(source, GOALIE);
+    const target = payload.players[0];
+
+    expect(loaded.rosters.map((row) => row.player_id)).toEqual([GOALIE, ALEX]);
+    expect(loaded.profiles.map((row) => row.id)).toEqual([GOALIE]);
+    expect(payload.players.map((player) => player.playerId)).toEqual([GOALIE]);
+    expect(target.goalie?.gamesPlayed).toEqual({ value: null, state: 'unknown', sources: ['roster_window'] });
+    expect(target.goalie?.goalsAgainst).toEqual({ value: null, state: 'unknown', sources: ['roster_window'] });
+    expect(target.goalie?.goalsAgainstAverage).toEqual({ value: null, state: 'unknown', sources: ['roster_window'] });
+    for (const table of ['team_rosters', 'game_checkins', 'game_goalie_appearances']) {
+      expect(calls).not.toContainEqual({ table, method: 'eq', column: 'player_id', value: GOALIE });
+    }
+    for (const table of ['player_stats', 'goalie_stats']) {
+      expect(calls).toContainEqual({ table, method: 'eq', column: 'player_id', value: GOALIE });
+    }
+    expect(calls).toContainEqual({ table: 'profiles', method: 'in', column: 'id', value: [GOALIE] });
+  });
+
+  it('preserves an explicit substitute assignment that suppresses the scoped regular goalie', async () => {
+    const source = rows({
+      games: completedGames.slice(0, 1),
+      profiles: [
+        { id: GOALIE, full_name: 'Target Goalie', avatar_url: null, photo_url: null },
+        { id: ALEX, full_name: 'Assigned Substitute', avatar_url: null, photo_url: null },
+      ],
+      rosters: [goalieRoster('90000000-0000-4000-8000-000000000013', GOALIE)],
+      checkins: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [{
+        game_id: completedGames[0].id,
+        player_id: ALEX,
+        team_id: TEAM_A,
+        team_type: 'home',
+      }],
+    });
+
+    const { loaded, payload } = await loadPlayerScope(source, GOALIE);
+    const target = payload.players[0];
+
+    expect(loaded.goalieAppearances.map((row) => row.player_id)).toEqual([ALEX]);
+    expect(payload.players.map((player) => player.playerId)).toEqual([GOALIE]);
+    expect(target.goalie?.gamesPlayed).toEqual({
+      value: null,
+      state: 'unknown',
+      sources: ['goalie_assignment', 'roster_window'],
+    });
+    expect(target.goalie?.goalsAgainst).toEqual({
+      value: null,
+      state: 'unknown',
+      sources: ['goalie_assignment', 'roster_window'],
+    });
+  });
+
+  it('emits only the requested skater and their own scoring rows from full aggregation context', () => {
+    const source = rows({
+      games: completedGames.slice(0, 1),
+      rosters: [],
+      checkins: [],
+      goalieStats: [],
+      playerStats: [
+        {
+          id: 'b0000000-0000-4000-8000-000000000011', game_id: completedGames[0].id,
+          player_id: MATT, team_id: TEAM_A, league_id: LEAGUE_ID, season_id: SEASON_ID,
+          goals: 2, assists: 1, penalty_minutes: 0,
+        },
+        {
+          id: 'b0000000-0000-4000-8000-000000000012', game_id: completedGames[0].id,
+          player_id: ALEX, team_id: TEAM_B, league_id: LEAGUE_ID, season_id: SEASON_ID,
+          goals: 50, assists: 50, penalty_minutes: 0,
+        },
+      ],
+    });
+
+    const payload = aggregatePublicSeasonStats(source, {
+      leagueId: LEAGUE_ID,
+      seasonId: SEASON_ID,
+      playerId: MATT,
+    });
+
+    expect(payload.players.map((player) => player.playerId)).toEqual([MATT]);
+    expect(payload.players[0].metrics).toMatchObject({
+      goals: { value: 2 },
+      assists: { value: 1 },
+      points: { value: 3 },
+    });
+  });
+
+  it('keeps full goalie context isolated by team for a player-scoped profile read', async () => {
+    const source = rows({
+      games: completedGames.slice(0, 1),
+      profiles: [
+        { id: GOALIE, full_name: 'Target Goalie', avatar_url: null, photo_url: null },
+        { id: ALEX, full_name: 'Away Goalie', avatar_url: null, photo_url: null },
+      ],
+      rosters: [
+        goalieRoster('90000000-0000-4000-8000-000000000014', GOALIE, TEAM_A),
+        goalieRoster('90000000-0000-4000-8000-000000000015', ALEX, TEAM_B),
+      ],
+      checkins: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [{
+        game_id: completedGames[0].id,
+        player_id: ALEX,
+        team_id: TEAM_B,
+        team_type: 'away',
+      }],
+    });
+
+    const { payload } = await loadPlayerScope(source, GOALIE);
+
+    expect(payload.players.map((player) => player.playerId)).toEqual([GOALIE]);
+    expect(payload.players[0].goalie?.gamesPlayed).toEqual({
+      value: 1,
+      state: 'reported',
+      sources: ['roster_window'],
+    });
+    expect(payload.players[0].goalie?.goalsAgainst).toEqual({
+      value: 2,
+      state: 'reported',
+      sources: ['roster_window'],
+    });
+  });
+
   it('loads league-scoped teams without assuming a nonexistent season_id column', async () => {
     const client = {
       from(table: string) {

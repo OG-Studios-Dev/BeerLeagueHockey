@@ -75,6 +75,18 @@ describe('Home League Leaders ranking model', () => {
     );
   });
 
+  it('keeps an authoritative skater zero eligible while rejecting estimated and non-finite values', () => {
+    const rows = [
+      leader({ player_id: 'recorded-zero', player_name: 'Recorded Zero', goals: 0 }),
+      leader({ player_id: 'estimated-zero', player_name: 'Estimated Zero', goals: 0, estimated: true }),
+      leader({ player_id: 'invalid', player_name: 'Invalid', goals: Number.NaN }),
+    ];
+
+    assert.deepEqual(rankHomeLeaders(rows, 'goals').map((row) => [row.player_id, row.metricValue, row.rankLabel]), [
+      ['recorded-zero', 0, '1'],
+    ]);
+  });
+
   it('ranks only finite goalie GAA ascending, accepts zero, and derives ties before the top-three limit', () => {
     const rows = [
       leader({ player_id: 'skater', player_name: 'Skater', is_goalie: false, gaa: 0 }),
@@ -82,6 +94,7 @@ describe('Home League Leaders ranking model', () => {
       leader({ player_id: 'tie-b', player_name: 'Tie B', is_goalie: true, gaa: 1.5 }),
       leader({ player_id: 'tie-a', player_name: 'Tie A', is_goalie: true, gaa: 1.5 }),
       leader({ player_id: 'tie-c', player_name: 'Tie C', is_goalie: true, gaa: 1.5 }),
+      leader({ player_id: 'estimated', player_name: 'Estimated', is_goalie: true, gaa: 0.25, estimated: true }),
       leader({ player_id: 'null', player_name: 'Null', is_goalie: true, gaa: null }),
       leader({ player_id: 'nan', player_name: 'NaN', is_goalie: true, gaa: Number.NaN }),
     ] as HomeLeader[];
@@ -89,7 +102,6 @@ describe('Home League Leaders ranking model', () => {
     assert.deepEqual(rankHomeLeaders(rows, 'gaa').map((row) => [row.player_id, row.metricValue, row.rankLabel]), [
       ['zero', 0, '1'], ['tie-a', 1.5, 'T2'], ['tie-b', 1.5, 'T2'],
     ]);
-    assert.deepEqual(rankHomeLeaders(rows, 'goals'), [], 'skater zero exclusion remains unchanged');
   });
 
   it('includes Connor and Christian whenever their goalie rows contain eligible GAA values', () => {

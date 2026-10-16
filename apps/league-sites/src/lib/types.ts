@@ -603,6 +603,16 @@ export interface PlayerGameLogEntry {
   saves?: number;
   goals_against?: number;
   save_percentage?: number;
+  metric_availability?: {
+    goals?: boolean;
+    assists?: boolean;
+    points?: boolean;
+    penalty_minutes?: boolean;
+    plus_minus?: boolean;
+    saves?: boolean;
+    goals_against?: boolean;
+    save_percentage?: boolean;
+  };
 }
 
 /**

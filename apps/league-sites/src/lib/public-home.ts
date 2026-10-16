@@ -5,13 +5,17 @@ import {
   getDivisions,
   getLeagueBySlug,
   getStandings,
-  getUnifiedSkaterStatsRows,
   hasPlatformSubscription,
 } from '@/lib/data';
+import {
+  aggregatePublicSeasonStats,
+  readPublicStatMetricRows,
+  type PublicSeasonMetricPlayer,
+  type PublicStatMetric,
+} from '@/lib/public-stat-metrics';
 import type {
   Division,
   TeamStanding,
-  UnifiedSkaterStatsRow,
 } from '@/lib/types';
 
 export const PUBLIC_HOME_SCHEMA_VERSION = 1 as const;
@@ -54,14 +58,14 @@ export type PublicHomeLeader = {
   player_id: string;
   player_name: string;
   avatar_url: string | null;
-  team_id: string;
+  team_id: string | null;
   team_name: string;
   display_team_name: string | null;
   display_team_logo_url: string | null;
   position: string | null;
-  goals: number;
-  assists: number;
-  points: number;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
 };
 
 export type PublicHomeStanding = {
@@ -109,54 +113,61 @@ function finiteNumber(value: number): number {
   return value;
 }
 
-function mapLeader(row: UnifiedSkaterStatsRow): PublicHomeLeader {
+const PUBLISHABLE_LEADER_STATES = new Set(['verified', 'recorded', 'reported']);
+
+function publishableLeaderMetric(metric: PublicStatMetric): number | null {
+  if (metric.value === null) {
+    if (PUBLISHABLE_LEADER_STATES.has(metric.state)) throw new TypeError('Invalid canonical numeric value');
+    return null;
+  }
+  const value = finiteNumber(metric.value);
+  return PUBLISHABLE_LEADER_STATES.has(metric.state) ? value : null;
+}
+
+function mapLeader(row: PublicSeasonMetricPlayer): PublicHomeLeader {
+  const displayTeam = row.displayTeam ?? row.teams[0] ?? null;
   return {
-    player_id: row.player_id,
-    player_name: row.player_name,
-    avatar_url: row.avatar_url ?? null,
-    team_id: row.team_id,
-    team_name: row.team_name,
-    display_team_name: row.display_team_name ?? null,
-    display_team_logo_url: row.display_team_logo_url ?? null,
-    position: row.position ?? null,
-    goals: finiteNumber(row.goals),
-    assists: finiteNumber(row.assists),
-    points: finiteNumber(row.points),
+    player_id: row.playerId,
+    player_name: row.playerName,
+    avatar_url: row.avatarUrl ?? null,
+    team_id: displayTeam?.id ?? null,
+    team_name: displayTeam?.name ?? 'Unknown team',
+    display_team_name: displayTeam?.name ?? null,
+    display_team_logo_url: null,
+    position: row.roles.includes('goalie') ? 'Goalie' : null,
+    goals: publishableLeaderMetric(row.metrics.goals),
+    assists: publishableLeaderMetric(row.metrics.assists),
+    points: publishableLeaderMetric(row.metrics.points),
   };
 }
 
 /**
- * Produces the canonical-player-ID union of the web Home top-five lists.
- * Input rows already carry the canonical producer's goalie exclusions and
- * current display-team resolution; this adapter deliberately does not infer or
- * merge identities from player names.
+ * Produces the canonical-player-ID union of the policy-publishable Home top-five
+ * lists. Each metric is sorted across its full eligible population before the
+ * strict visible limit is applied, so the response contains at most 15 skaters.
  */
 export function buildPublicHomeLeaders(
-  rows: UnifiedSkaterStatsRow[],
+  rows: PublicSeasonMetricPlayer[],
 ): PublicHomeLeader[] {
-  const metrics: Array<keyof Pick<UnifiedSkaterStatsRow, 'goals' | 'assists' | 'points'>> = [
-    'goals',
-    'assists',
-    'points',
-  ];
+  const metrics = ['goals', 'assists', 'points'] as const;
   const selected = new Map<string, PublicHomeLeader>();
+  const skaters = rows.filter((row) => row.roles.includes('skater'));
 
   for (const metric of metrics) {
-    const topRows = [...rows]
-      .filter((row) => finiteNumber(row[metric]) > 0)
+    const eligible = skaters
+      .map((row) => ({ row, value: publishableLeaderMetric(row.metrics[metric]) }))
+      .filter((item): item is { row: PublicSeasonMetricPlayer; value: number } => item.value !== null && item.value >= 0)
       .sort((left, right) => {
-        const valueDelta = finiteNumber(right[metric]) - finiteNumber(left[metric]);
+        const valueDelta = right.value - left.value;
         if (valueDelta !== 0) return valueDelta;
-        const nameDelta = left.player_name.localeCompare(right.player_name, 'en');
+        const nameDelta = left.row.playerName.localeCompare(right.row.playerName, 'en');
         if (nameDelta !== 0) return nameDelta;
-        return left.player_id.localeCompare(right.player_id, 'en');
-      })
-      .slice(0, MAX_LEADERS_PER_METRIC);
+        return left.row.playerId.localeCompare(right.row.playerId, 'en');
+      });
+    const topRows = eligible.slice(0, MAX_LEADERS_PER_METRIC);
 
-    for (const row of topRows) {
-      if (!selected.has(row.player_id)) {
-        selected.set(row.player_id, mapLeader(row));
-      }
+    for (const { row } of topRows) {
+      if (!selected.has(row.playerId)) selected.set(row.playerId, mapLeader(row));
     }
   }
 
@@ -349,21 +360,27 @@ export async function handlePublicHomeRequest(request: NextRequest): Promise<Nex
     let leaders: PublicHomeLeader[] = [];
     let standings: PublicHomeStanding[] = [];
 
-    // Never pass null/undefined to the unified producer: those values select
-    // all-time data. A league without an operational season has factual empties.
+    // Never pass a missing season to the canonical metric producer: a league
+    // without an operational presentation season has factual empties.
     if (presentationSeason) {
-      const [canonicalLeaderRows, canonicalStandingRows] = await Promise.all([
-        getUnifiedSkaterStatsRows(
-          league.id,
-          presentationSeason.id,
-          divisionId,
-          league.slug,
-          presentationSeason.name,
-        ),
+      const metricScope = {
+        leagueId: league.id,
+        seasonId: presentationSeason.id,
+        divisionId: divisionId ?? null,
+      };
+      const [metricRows, canonicalStandingRows] = await Promise.all([
+        readPublicStatMetricRows(metricScope),
         getStandings(league.id, presentationSeason.id),
       ]);
 
-      leaders = buildPublicHomeLeaders(canonicalLeaderRows);
+      const standingLogoByTeamId = new Map(
+        canonicalStandingRows.map((standing) => [standing.team_id, standing.team_logo ?? null]),
+      );
+      leaders = buildPublicHomeLeaders(aggregatePublicSeasonStats(metricRows, metricScope).players)
+        .map((leader) => ({
+          ...leader,
+          display_team_logo_url: leader.team_id ? standingLogoByTeamId.get(leader.team_id) ?? null : null,
+        }));
       const selectedStandings = divisionId
         ? canonicalStandingRows.filter((standing) => standing.division_id === divisionId)
         : canonicalStandingRows;

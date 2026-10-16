@@ -57,7 +57,7 @@ describe('canonical public stats boundary', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('scopes goalie requests, converts percent to fraction, and preserves unknown metrics and estimates', async () => {
+  it('scopes goalie requests and forces saves/SV% blank at the mobile public boundary', async () => {
     const calls: any[] = [];
     const api = moduleWith();
     const payload = { schemaVersion: 1, leagueId: LEAGUE, leagueSlug: 'harbour',
@@ -77,7 +77,8 @@ describe('canonical public stats boundary', () => {
     const measured = { ...payload, source: 'recorded', goalies: [{ ...payload.goalies[0], save_percentage: 72.0,
       goals_against_average: 2.33, saves: 18, estimated: false }] };
     const converted = await api.getPublicGoalies('harbour', LEAGUE, SEASON, null, async () => response(measured));
-    assert.equal(converted.goalies[0].save_percentage, 0.72);
+    assert.equal(converted.goalies[0].save_percentage, null);
+    assert.equal(converted.goalies[0].saves, null);
   });
 
   it('accepts an unknown goalie team without inventing an id', async () => {
@@ -150,7 +151,6 @@ describe('canonical public stats boundary', () => {
       { ...base.goalies[0], wins: 2 },
       { ...base.goalies[0], wins: 1, losses: 1 },
       { ...base.goalies[0], shutouts: 2 },
-      { ...base.goalies[0], save_percentage: 91.7 },
       { ...base.goalies[0], goals_against_average: 3 },
     ]) await assert.rejects(api.getPublicGoalies('harbour', LEAGUE, null, null, async () => response({ ...base, goalies: [row] })), /goalie/i);
   });

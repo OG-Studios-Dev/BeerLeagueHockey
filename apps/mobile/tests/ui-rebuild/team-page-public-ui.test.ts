@@ -253,20 +253,20 @@ describe('native Team public composition', () => {
     assert.ok(list);
     const labels = ['GP', 'G', 'A', 'PTS', 'PIM'];
     const keys = ['gamesPlayed', 'goals', 'assists', 'points', 'penaltyMinutes'];
-    for (const [playerId, values] of [['p1', ['~11', '12', '13', '25', '4']], ['p2', ['~0', '0', '0', '0', '0']], ['p3', ['—', '—', '—', '—', '—']]] as const) {
+    for (const [playerId, values] of [['p1', ['—', '12', '13', '25', '4']], ['p2', ['—', '0', '0', '0', '0']], ['p3', ['—', '—', '—', '—', '—']]] as const) {
       for (let i = 0; i < keys.length; i++) {
         const cell = findNode(list, (node) => node.props.testID === `team-roster-stat-${playerId}-${keys[i]}`);
         assert.equal(nodeText(cell), `${labels[i]}${values[i]}`);
       }
     }
     const current = findNode(list, (node) => node.props.testID === 'team-roster-player-p1');
-    assert.match(current?.props.accessibilityLabel, /Matt Grossi.*11 games played.*12 goals.*13 assists.*25 points.*4 penalty minutes/i);
+    assert.match(current?.props.accessibilityLabel, /Matt Grossi.*— games played.*12 goals.*13 assists.*25 points.*4 penalty minutes/i);
     assert.doesNotMatch(nodeText(run.harness.output), /~GP is estimated.*Needs review/i);
     current?.props.onPress();
     assert.deepEqual(run.openedPlayers, ['p1']);
   });
 
-  it('renders conflicted, estimated, unknown, and verified-zero v2 metrics literally', () => {
+  it('renders conflicted, estimated, unknown, and verified-zero v2 metrics truthfully', () => {
     const m = (value: number | null, state: string, sources: string[]) => ({ value, state, sources });
     const sourcePlayer = { ...roster[0], gamesPlayed: null, penaltyMinutes: null, publicMetrics: {
       gamesPlayed: m(null, 'conflicted', ['attendance']), goals: m(15, 'recorded', ['skater_stats']),
@@ -279,13 +279,14 @@ describe('native Team public composition', () => {
     const run = runtime(320, { ...snapshot, roster: [sourcePlayer, verifiedZero] });
     findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
     const output = run.harness.render();
-    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed')), 'GPNeeds review');
+    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed')), 'GP—');
     assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-penaltyMinutes')), 'PIM—');
-    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-gamesPlayed')), 'GP~11');
+    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-gamesPlayed')), 'GP—');
     assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-penaltyMinutes')), 'PIM0');
-    assert.match(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /Needs review.*Conflicting records need review.*Not recorded/i);
+    assert.match(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /— games played.*Conflicting records need review.*Not recorded/i);
+    assert.doesNotMatch(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /confirmed \d|recorded \d|estimated \d|candidate/i);
     const reviewCell = findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed');
-    assert.equal(flattenStyle(reviewCell?.props.style).flexBasis, '100%', 'full conflict status needs a readable row');
+    assert.equal(flattenStyle(reviewCell?.props.style).flexBasis, '30%', 'blank conflict values use the ordinary metric-cell layout');
   });
 
   it('exposes fact-bearing game/player labels and authoritative live/final scores without inventing jersey zero', () => {
@@ -309,16 +310,16 @@ describe('native Team public composition', () => {
     }
   });
 
-  it('retains both teams strengths and weaknesses plus goalie GP/GAA units', () => {
+  it('retains both teams strengths and weaknesses while blanking estimated rival GP/GAA', () => {
     const output = runtime(320, { ...snapshot, rivals: [{ ...snapshot.rivals[0],
       team: { ...viewedSide, strength: 'team strength', weakness: 'team weakness', tendy: { name: 'Home Goalie', gamesPlayed: 11, gamesPlayedProvenance: 'estimated', goalsAgainstAverage: 4.09, goalsAgainstAverageProvenance: 'estimated' } },
       rival: { ...snapshot.rivals[0].rival, strength: 'rival strength', weakness: 'rival weakness', tendy: { name: 'Away Goalie', gamesPlayed: 9, gamesPlayedProvenance: 'estimated', goalsAgainstAverage: 4.91, goalsAgainstAverageProvenance: 'estimated' } },
     }] }).harness.output;
     const text = nodeText(findNode(output, (node) => node.props.testID === 'team-rivals-section'));
     for (const trait of ['TEAM STRENGTH', 'TEAM WEAKNESS', 'RIVAL STRENGTH', 'RIVAL WEAKNESS']) assert.ok(text.includes(trait), trait);
-    assert.match(text, /Home Goalie~11 GP • ~4.09 GAA/);
-    assert.match(text, /Away Goalie~9 GP • ~4.91 GAA/);
-    assert.match(text, /~Goalie GP\/GAA is derived.*may be incomplete/i);
+    assert.match(text, /Home Goalie— GP • — GAA/);
+    assert.match(text, /Away Goalie— GP • — GAA/);
+    assert.doesNotMatch(text, /~|estimated|may be incomplete/i);
   });
 
   it('renders the approved C broadcast hierarchy from dynamic team facts with a complete crest at phone widths', () => {
@@ -687,11 +688,12 @@ describe('native Team public composition', () => {
     const run = runtime(390, { ...snapshot, roster: [goalie] });
     findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
     const row = findNode(run.harness.render(), (node) => node.props.testID === 'team-roster-player-goalie');
-    assert.match(nodeText(row), /GP4W2L1GAANeeds reviewSV%Needs reviewSO—/);
-    assert.match(row?.props.accessibilityLabel, /goals against average Needs review.*Conflicting records need review.*shutouts —.*Not recorded/i);
+    assert.match(nodeText(row), /GP4W2L1GAA—SV%—SO—/);
+    assert.match(row?.props.accessibilityLabel, /goals against average —.*Conflicting records need review.*shutouts —.*Not recorded/i);
+    assert.doesNotMatch(row?.props.accessibilityLabel, /confirmed \d|recorded \d|estimated \d|candidate/i);
     assert.doesNotMatch(nodeText(row), /PTS|PIM/);
     const saveCell = findNode(row, (node) => node.props.testID === 'team-roster-stat-goalie-savePercentage');
-    assert.equal(flattenStyle(saveCell?.props.style).flexBasis, '100%');
+    assert.equal(flattenStyle(saveCell?.props.style).flexBasis, '30%');
   });
 
   it('uses goalie role for six truthful columns even when canonical goalie metrics are absent', () => {

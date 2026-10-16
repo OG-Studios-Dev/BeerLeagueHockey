@@ -1,4 +1,4 @@
-import { formatPublicMetric, type PublicGoalie, type PublicMetricSource, type PublicStatMetric, type PublicTeamRef } from './supabase/publicStats';
+import { formatPublicMetric, type PublicMetricSource, type PublicStatMetric, type PublicTeamRef } from './supabase/publicStats';
 import { formatLeagueLeaderGaa, splitLeagueLeaderName } from './leaderPresentation';
 
 export type StatsScopeKind = 'current' | 'single' | 'multiple' | 'all';
@@ -136,20 +136,16 @@ const SOURCE_LABELS: Readonly<Record<PublicMetricSource, string>> = {
 };
 
 function provenanceDescription(metric: PublicStatMetric): string {
-  const sources = metric.sources.length > 0
+  return metric.sources.length > 0
     ? `Sources: ${metric.sources.map((source) => SOURCE_LABELS[source]).join('; ')}.`
     : 'No provenance source was provided.';
-  const candidates = metric.candidates
-    ? ` Source values: ${(['confirmed', 'recorded', 'estimated'] as const)
-      .filter((key) => metric.candidates?.[key] !== undefined)
-      .map((key) => `${key} ${metric.candidates![key]}`)
-      .join('; ')}.`
-    : '';
-  return `${sources}${candidates}`;
 }
 
 function metricAccessibilityLabel(label: string, metric: PublicStatMetric, digits?: number): string {
   const formatted = formatPublicMetric(metric, digits);
+  if (metric.state === 'estimated') {
+    return `${label}, unavailable. Display value —. Not recorded. ${provenanceDescription(metric)}`;
+  }
   const spokenValue = metric.state === 'conflicted' || metric.value === null ? 'unavailable' : formatted.value;
   return `${label}, ${spokenValue}. Display value ${formatted.value}. State: ${metric.state}. ${formatted.hint} ${provenanceDescription(metric)}`;
 }
@@ -175,7 +171,7 @@ function rateColumn(
     const metric: PublicStatMetric = { value: null, state: 'conflicted', sources };
     return {
       ...metricColumn(key, label, metric, 2),
-      accessibilityLabel: `${label}, unavailable. Display value Needs review. Conflicting source metrics need review. ${key === 'gpg' ? 'Goals' : 'Points'} source: ${metricAccessibilityLabel(key === 'gpg' ? 'G' : 'PTS', numerator)} Games played source: ${metricAccessibilityLabel('GP', denominator)}`,
+      accessibilityLabel: `${label}, unavailable. Display value —. Conflicting source metrics need review. ${key === 'gpg' ? 'Goals' : 'Points'} source: ${metricAccessibilityLabel(key === 'gpg' ? 'G' : 'PTS', numerator)} Games played source: ${metricAccessibilityLabel('GP', denominator)}`,
     };
   }
   if (numerator.value === null || denominator.value === null || denominator.value <= 0
@@ -206,11 +202,19 @@ function deterministicName(left: StatsScopePlayer, right: StatsScopePlayer): num
     || left.playerId.localeCompare(right.playerId);
 }
 
+const PUBLISHABLE_RANK_STATES = new Set<PublicStatMetric['state']>(['verified', 'recorded', 'reported']);
+
+function publishableRankValue(metric: PublicStatMetric): number | null {
+  return metric.value !== null && Number.isFinite(metric.value) && PUBLISHABLE_RANK_STATES.has(metric.state)
+    ? metric.value
+    : null;
+}
+
 export function buildSkaterRows(players: readonly StatsScopePlayer[]): StatsTableRow[] {
   return players.filter((player) => player.skater !== null)
     .sort((left, right) => {
-      const leftValue = left.skater!.points.value;
-      const rightValue = right.skater!.points.value;
+      const leftValue = publishableRankValue(left.skater!.points);
+      const rightValue = publishableRankValue(right.skater!.points);
       if (leftValue === null && rightValue !== null) return 1;
       if (rightValue === null && leftValue !== null) return -1;
       return (rightValue ?? 0) - (leftValue ?? 0) || deterministicName(left, right);
@@ -237,8 +241,8 @@ export function buildSkaterRows(players: readonly StatsScopePlayer[]): StatsTabl
 export function buildGoalieRows(players: readonly StatsScopePlayer[]): StatsTableRow[] {
   return players.filter((player) => player.goalie !== null)
     .sort((left, right) => {
-      const leftValue = left.goalie!.goalsAgainstAverage.value;
-      const rightValue = right.goalie!.goalsAgainstAverage.value;
+      const leftValue = publishableRankValue(left.goalie!.goalsAgainstAverage);
+      const rightValue = publishableRankValue(right.goalie!.goalsAgainstAverage);
       if (leftValue === null && rightValue !== null) return 1;
       if (rightValue === null && leftValue !== null) return -1;
       return (leftValue ?? 0) - (rightValue ?? 0) || deterministicName(left, right);
@@ -259,33 +263,15 @@ export function buildGoalieRows(players: readonly StatsScopePlayer[]): StatsTabl
     });
 }
 
-function currentGoalieMetric(
-  player: StatsScopePlayer,
-  currentGoalies: readonly PublicGoalie[],
-): PublicStatMetric | undefined {
-  const authoritative = player.goalie?.goalsAgainstAverage;
-  if (!authoritative || authoritative.value !== null || authoritative.state === 'conflicted') return authoritative;
-  const matches = currentGoalies.filter((goalie) => goalie.player_id === player.playerId);
-  if (matches.length !== 1) return authoritative;
-  const goalie = matches[0];
-  if (goalie.goals_against_average === null
-    || (goalie.team_id !== null && goalie.team_id !== player.displayTeam?.id)) return authoritative;
-  return {
-    value: goalie.games_played > 0 ? goalie.goals_against / goalie.games_played : goalie.goals_against_average,
-    state: goalie.estimated ? 'estimated' : 'recorded',
-    sources: goalie.estimated ? [] : ['goalie_stats'],
-  };
-}
-
 export function buildRankedRows(
   players: readonly StatsScopePlayer[],
   metric: StatsLeaderMetric,
-  currentGoalies: readonly PublicGoalie[] = [],
 ): StatsLeaderRow[] {
   const candidates = players.flatMap((player) => {
-    const value = metric === 'gaa' ? currentGoalieMetric(player, currentGoalies) : player.skater?.[metric];
-    return value && value.value !== null && value.state !== 'unknown' && value.state !== 'conflicted'
-      ? [{ ...player, value, display: metric === 'gaa' ? formatLeagueLeaderGaa(value.value) : display(value) }]
+    const value = metric === 'gaa' ? player.goalie?.goalsAgainstAverage : player.skater?.[metric];
+    const rankValue = value ? publishableRankValue(value) : null;
+    return value && rankValue !== null
+      ? [{ ...player, value, display: metric === 'gaa' ? formatLeagueLeaderGaa(rankValue) : display(value) }]
       : [];
   });
   candidates.sort((left, right) => {
@@ -304,8 +290,7 @@ export function buildRankedRows(
 export function buildLeaderRows(
   players: readonly StatsScopePlayer[],
   metric: StatsLeaderMetric,
-  currentGoalies: readonly PublicGoalie[] = [],
   limit = 5,
 ): StatsLeaderRow[] {
-  return buildRankedRows(players, metric, currentGoalies).slice(0, limit);
+  return buildRankedRows(players, metric).slice(0, limit);
 }

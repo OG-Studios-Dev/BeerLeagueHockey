@@ -61,10 +61,9 @@ function nullableDisplay(value: number | null | undefined, prefix = ''): string 
   return value == null ? '—' : `${prefix}${value}`;
 }
 
-function estimatedDisplay(value: number | null | undefined, estimated: boolean, digits?: number): string {
-  if (value == null) return '—';
-  const rendered = digits == null ? String(value) : value.toFixed(digits);
-  return `${estimated ? '~' : ''}${rendered}`;
+function recordedDisplay(value: number | null | undefined, provenance: TeamPageRosterPlayer['gamesPlayedProvenance'], digits?: number): string {
+  if (value == null || provenance === 'estimated') return '—';
+  return digits == null ? String(value) : value.toFixed(digits);
 }
 
 function formatDate(iso: string, timeZone: string): string {
@@ -343,13 +342,13 @@ function RosterStatRow({ player, onOpenPlayer }: { player: TeamPageRosterPlayer;
   const metricFor = (key: (typeof ROSTER_STAT_COLUMNS)[number]['key']) => player.publicMetrics?.[key];
   const displayFor = (key: (typeof ROSTER_STAT_COLUMNS)[number]['key']) => metricFor(key)
     ? formatPublicMetric(metricFor(key)!).value
-    : key === 'gamesPlayed' ? estimatedDisplay(player[key], player.gamesPlayedProvenance === 'estimated') : nullableDisplay(player[key]);
+    : key === 'gamesPlayed' ? recordedDisplay(player[key], player.gamesPlayedProvenance) : nullableDisplay(player[key]);
   const goalie = positionBucket(player) === 'goalie';
   const goalieDisplay = (key: (typeof GOALIE_STAT_COLUMNS)[number]['key']) => {
     const metric = player.publicGoalieMetrics?.[key];
     if (!metric) return { value: '—', hint: 'Not recorded.' };
     const formatted = formatPublicMetric(metric, key === 'goalsAgainstAverage' ? 2 : undefined);
-    if (key === 'savePercentage' && metric.value != null && metric.state !== 'unknown' && metric.state !== 'conflicted') return { ...formatted, value: `${metric.state === 'estimated' ? '~' : ''}${(metric.value <= 1 ? metric.value * 100 : metric.value).toFixed(1)}%` };
+    if (key === 'savePercentage' && metric.value != null && metric.state !== 'unknown' && metric.state !== 'conflicted' && metric.state !== 'estimated') return { ...formatted, value: `${(metric.value <= 1 ? metric.value * 100 : metric.value).toFixed(1)}%` };
     return formatted;
   };
   const facts = goalie
@@ -365,7 +364,7 @@ function RosterStatRow({ player, onOpenPlayer }: { player: TeamPageRosterPlayer;
       <View style={styles.rosterStatGrid}>
         {(goalie ? GOALIE_STAT_COLUMNS.map(({ key, label }) => ({ key, label, value: goalieDisplay(key).value })) : ROSTER_STAT_COLUMNS.map(({ key, label }) => ({ key, label, value: displayFor(key) }))).map(({ key, label, value }) => {
           return (
-            <View key={key} testID={`team-roster-stat-${player.playerId}-${key}`} style={[styles.rosterStatCell, value === 'Needs review' && styles.rosterStatCellStatus]}>
+            <View key={key} testID={`team-roster-stat-${player.playerId}-${key}`} style={styles.rosterStatCell}>
               <Text style={styles.rosterStatLabel}>{label}</Text><Text style={styles.rosterStatValue}>{value}</Text>
             </View>
           );
@@ -427,8 +426,8 @@ function Rivals({ snapshot, accent }: { snapshot: TeamPageSnapshot; accent: stri
         <MetricComparison label="DIFF" left={entry.team.goalDifferential} right={entry.rival.goalDifferential} leftColor={entry.team.primaryColor ?? accent} rightColor={entry.rival.primaryColor ?? accent} />
         <View style={styles.rivalLeaderRow}><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={styles.rivalLeaderName}>{entry.team.sniper.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.team.primaryColor ?? accent }]}>{nullableDisplay(entry.team.sniper.goals)} G</Text></View><Text style={styles.rivalMetricLabel}>SNIPER</Text><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={[styles.rivalLeaderName, { textAlign: 'right' }]}>{entry.rival.sniper.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.rival.primaryColor ?? accent, textAlign: 'right' }]}>{nullableDisplay(entry.rival.sniper.goals)} G</Text></View></View>
         <View style={styles.rivalLeaderRow}><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={styles.rivalLeaderName}>{entry.team.playmaker.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.team.primaryColor ?? accent }]}>{nullableDisplay(entry.team.playmaker.assists)} A</Text></View><Text style={styles.rivalMetricLabel}>PLAYMAKER</Text><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={[styles.rivalLeaderName, { textAlign: 'right' }]}>{entry.rival.playmaker.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.rival.primaryColor ?? accent, textAlign: 'right' }]}>{nullableDisplay(entry.rival.playmaker.assists)} A</Text></View></View>
-        <View style={styles.rivalLeaderRow}><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={styles.rivalLeaderName}>{entry.team.tendy.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.team.primaryColor ?? accent }]}>{estimatedDisplay(entry.team.tendy.gamesPlayed, entry.team.tendy.gamesPlayedProvenance === 'estimated')} GP • {estimatedDisplay(entry.team.tendy.goalsAgainstAverage, entry.team.tendy.goalsAgainstAverageProvenance === 'estimated', 2)} GAA</Text></View><Text style={styles.rivalMetricLabel}>TENDY</Text><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={[styles.rivalLeaderName, { textAlign: 'right' }]}>{entry.rival.tendy.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.rival.primaryColor ?? accent, textAlign: 'right' }]}>{estimatedDisplay(entry.rival.tendy.gamesPlayed, entry.rival.tendy.gamesPlayedProvenance === 'estimated')} GP • {estimatedDisplay(entry.rival.tendy.goalsAgainstAverage, entry.rival.tendy.goalsAgainstAverageProvenance === 'estimated', 2)} GAA</Text></View></View>
-        <Text style={styles.estimateNote}>~Goalie GP/GAA is derived from public game and stat rows and may be incomplete.</Text>
+        <View style={styles.rivalLeaderRow}><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={styles.rivalLeaderName}>{entry.team.tendy.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.team.primaryColor ?? accent }]}>{recordedDisplay(entry.team.tendy.gamesPlayed, entry.team.tendy.gamesPlayedProvenance)} GP • {recordedDisplay(entry.team.tendy.goalsAgainstAverage, entry.team.tendy.goalsAgainstAverageProvenance, 2)} GAA</Text></View><Text style={styles.rivalMetricLabel}>TENDY</Text><View style={styles.rivalLeaderSide}><Text numberOfLines={1} style={[styles.rivalLeaderName, { textAlign: 'right' }]}>{entry.rival.tendy.name}</Text><Text style={[styles.rivalLeaderValue, { color: entry.rival.primaryColor ?? accent, textAlign: 'right' }]}>{recordedDisplay(entry.rival.tendy.gamesPlayed, entry.rival.tendy.gamesPlayedProvenance)} GP • {recordedDisplay(entry.rival.tendy.goalsAgainstAverage, entry.rival.tendy.goalsAgainstAverageProvenance, 2)} GAA</Text></View></View>
+        <Text style={styles.estimateNote}>Goalie GP/GAA appears when recorded.</Text>
         {(['strength', 'weakness'] as const).map((trait) => <View key={trait} style={styles.badgesRow}>{[entry.team, entry.rival].map((side, sideIndex) => <View key={side.id} accessible accessibilityLabel={`${side.name} ${trait}: ${side[trait]}`} style={{ flex: 1, minWidth: 0, alignItems: sideIndex ? 'flex-end' : 'flex-start' }}><Text style={styles.rivalMetricLabel}>{trait.toUpperCase()}</Text><View style={styles.badge}><Text style={styles.badgeText}>{side[trait].toUpperCase()}</Text></View></View>)}</View>)}
         <CarouselPager currentIndex={index} pageCount={snapshot.rivals.length} onPrevious={() => setIndex((value) => (value - 1 + snapshot.rivals.length) % snapshot.rivals.length)} onNext={() => setIndex((value) => (value + 1) % snapshot.rivals.length)} previousLabel="Previous rival" nextLabel="Next rival" positionLabel="Rivals position" loop testID="team-rival" />
       </FocusCard> : <View style={styles.emptyPanel}><Text style={styles.emptyTitle}>No rivalry sample yet</Text><Text style={styles.emptyBody}>Rival matchups will appear after completed games.</Text></View>}
@@ -469,7 +468,7 @@ const styles = StyleSheet.create({
   rosterListRow: { minHeight: 88, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,.13)', paddingVertical: 12 },
   rosterListIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rosterListCopy: { flex: 1, minWidth: 0 }, rosterListName: { color: '#F7FBFF', fontSize: 13, lineHeight: 18, fontWeight: '900' }, rosterListMeta: { marginTop: 3, color: '#A8B4C8', fontSize: 10, lineHeight: 14 },
-  rosterStatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, rosterStatCell: { flexBasis: '30%', flexGrow: 1, flexShrink: 1, minWidth: 68, alignItems: 'center', paddingHorizontal: 2 }, rosterStatCellStatus: { flexBasis: '100%' },
+  rosterStatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, rosterStatCell: { flexBasis: '30%', flexGrow: 1, flexShrink: 1, minWidth: 68, alignItems: 'center', paddingHorizontal: 2 },
   rosterStatLabel: { color: '#A8B4C8', fontSize: 10, lineHeight: 14, fontWeight: '800', textAlign: 'center' }, rosterStatValue: { color: '#F7FBFF', fontSize: 15, lineHeight: 20, fontWeight: '900', textAlign: 'center' },
   rivalPanel: { borderRadius: 28, borderWidth: 1, borderColor: colors.glassStrokeStrong, backgroundColor: colors.bgSurface, padding: 16, gap: 15 }, rivalEyebrow: { color: '#748196', fontSize: 8, fontWeight: '900', letterSpacing: 1.25, textAlign: 'center' }, rivalTeams: { flexDirection: 'row', alignItems: 'center', gap: 10 }, rivalIdentity: { flex: 1, alignItems: 'center', gap: 7 }, rivalName: { minHeight: 30, color: '#F7FBFF', fontSize: 12, lineHeight: 15, fontWeight: '900' }, rivalVs: { color: '#586579', fontSize: 10, fontWeight: '900' }, rivalMetric: { gap: 5 }, rivalMetricHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, rivalMetricLabel: { color: '#748196', fontSize: 8, fontWeight: '900', letterSpacing: 1 }, rivalMetricValue: { minWidth: 46, color: '#E8EEF7', fontSize: 11, fontWeight: '900', textAlign: 'center' }, rivalBars: { flexDirection: 'row', gap: 8 }, rivalTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: '#171D27', overflow: 'hidden' }, rivalBarLeft: { alignSelf: 'flex-end', height: 5, borderRadius: 3 }, rivalBarRight: { height: 5, borderRadius: 3 }, h2hRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, rivalLeaderRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 }, rivalLeaderSide: { minWidth: 0, flex: 1 }, rivalLeaderName: { color: '#E8EEF7', fontSize: 10, fontWeight: '800' }, rivalLeaderValue: { marginTop: 2, fontSize: 11, fontWeight: '900' }, badgesRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', justifyContent: 'space-between' }, badge: { maxWidth: '100%', marginTop: 5, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(34,211,238,.28)', backgroundColor: 'rgba(34,211,238,.08)', paddingHorizontal: 9, paddingVertical: 5 }, badgeText: { color: '#B8F5FF', fontSize: 8, fontWeight: '900' },
   captainContact: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12 }, captainName: { color: '#F7FBFF', fontSize: 14, fontWeight: '900' }, captainMeta: { marginTop: 3, color: '#7D899C', fontSize: 11 },

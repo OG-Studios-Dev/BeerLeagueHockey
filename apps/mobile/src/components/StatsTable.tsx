@@ -194,7 +194,7 @@ export function StatsTableRowView({ row, last, onOpenPlayer, ...props }: SharedP
         accessibilityLabel={column.accessibilityLabel}
         maxFontSizeMultiplier={MAX_FONT_SIZE_MULTIPLIER}
         style={[styles.metricValue, column.key === 'pts' || column.key === 'gaa' ? styles.metricEmphasis : null, column.state === 'unknown' || column.state === 'conflicted' ? styles.metricUnknown : null, column.state === 'estimated' ? styles.metricEstimated : null, { width: metricCellWidth }]}
-      >{column.state === 'conflicted' ? 'Review' : column.display}</Text>)}</View>
+      >{column.display}</Text>)}</View>
     </SyncedMetrics>
   </View>;
 }

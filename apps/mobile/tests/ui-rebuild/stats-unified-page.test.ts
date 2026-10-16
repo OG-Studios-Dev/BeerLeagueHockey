@@ -390,6 +390,19 @@ describe('unified Stats page controls', () => {
 });
 
 describe('unified Stats ranked section', () => {
+  it('describes unavailable footer values without exposing the legacy estimate state', async () => {
+    const result = runtime(390, 1, { payload: payloadWith(rankedPlayers()) });
+    let output = await settle(result);
+
+    assert.match(nodeText(output), /Unavailable selected values are excluded; other unavailable values remain —\./);
+    assert.doesNotMatch(nodeText(output), /estimated/i);
+
+    findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')?.props.onPress();
+    output = result.h.render();
+    assert.match(nodeText(output), /Unavailable GAA values are excluded\./);
+    assert.doesNotMatch(nodeText(output), /estimated/i);
+  });
+
   it('uses the authoritative metric for the complete ranked table, dynamic heading, goalie GAA, and player-card actions', async () => {
     const players = rankedPlayers();
     const result = runtime(390, 1, { payload: payloadWith(players) });

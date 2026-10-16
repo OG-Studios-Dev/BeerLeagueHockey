@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { formatPublicMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
 function native() {
@@ -17,13 +18,12 @@ function native() {
 const colors = { __esModule: true, default: { primary: '#0ff', bgBase: '#000', bgSurface: '#111', textPrimary: '#fff', textSecondary: '#aaa', brandGold: '#fc0', borderCard: '#333', glassStroke: '#333', glassStrokeStrong: '#444', brandRink: '#0ff' } };
 async function settle(h: ReturnType<typeof createHookHarness>) { for (let index = 0; index < 10; index += 1) { await new Promise<void>((resolve) => setImmediate(resolve)); h.render(); } return h.output; }
 const metric = (value: number | null, state = value === null ? 'unknown' : 'recorded', sources: string[] = value === null ? [] : ['skater_stats']) => ({ value, state, sources });
-const formatPublicMetric = (value: any, digits?: number) => ({ value: value.state === 'conflicted' ? 'Needs review' : value.value == null ? '—' : `${value.state === 'estimated' ? '~' : ''}${digits == null ? value.value : Number(value.value).toFixed(digits)}`, hint: value.state === 'unknown' ? 'Not recorded.' : value.state === 'estimated' ? 'Estimated.' : value.state === 'conflicted' ? 'Conflicting records need review.' : 'Recorded.' });
 const team = { id: '44444444-4444-4444-8444-444444444444', name: 'Owls', logoUrl: null };
 function statsPlayer(name = 'Goalie', id = '22222222-2222-4222-8222-222222222222'): StatsScopePlayer {
   return {
     playerId: id, playerName: name, avatarUrl: null, displayTeam: team,
     skater: { gamesPlayed: metric(3), goals: metric(1), assists: metric(2), points: metric(3), championships: metric(0, 'verified', ['capture_confirmation']) } as any,
-    goalie: { gamesPlayed: metric(3), goalsAgainst: metric(7), goalsAgainstAverage: metric(7 / 3, 'estimated', ['goalie_stats']), championships: metric(null) } as any,
+    goalie: { gamesPlayed: metric(3, 'recorded', ['goalie_stats']), goalsAgainst: metric(7, 'recorded', ['goalie_stats']), goalsAgainstAverage: metric(7 / 3, 'recorded', ['goalie_stats']), championships: metric(null) } as any,
   };
 }
 function scopePayload(name = 'Goalie', leagueId = '11111111-1111-4111-8111-111111111111') {
@@ -95,7 +95,7 @@ describe('career and scoped Stats screen behavior', () => {
     assert.deepEqual(lastCall.slice(0, 4), [league.activeLeague.slug, league.activeLeague.id, { kind: 'current' }, null]);
   });
 
-  it('hydrates current-season GAA leaders from the validated goalie contract when scope GAA is unknown', async () => {
+  it('uses only scope-owned GAA and never fetches the legacy goalie contract', async () => {
     const h = createHookHarness(); const goalieCalls: any[][] = [];
     const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
     const scope = scopePayload('Contract Goalie');
@@ -114,10 +114,8 @@ describe('career and scoped Stats screen behavior', () => {
     h.mount(() => Stats()); await settle(h);
     findNode(h.output, (node) => node.type === 'StatsRoleToggle')!.props.onSelectRole('goalie'); h.render();
     const card = findNode(h.output, (node) => node.type === 'StatsLeadersCard')!;
-    assert.deepEqual(card.props.leaders.map((leader: any) => [leader.playerId, leader.display, leader.value.state]), [
-      [scope.players[0].playerId, '2.5', 'estimated'],
-    ]);
-    assert.deepEqual(goalieCalls[0]?.slice(0, 4), [league.activeLeague.slug, league.activeLeague.id, scope.scope.currentSeasonId, null]);
+    assert.deepEqual(card.props.leaders, []);
+    assert.equal(goalieCalls.length, 0);
   });
 
   it('keeps failure terminal on both tabs and retries the complete scope rather than showing plausible partial rows', async () => {
@@ -139,19 +137,20 @@ describe('career and scoped Stats screen behavior', () => {
     h.mount(() => Career({ navigation: { goBack() {} } })); await settle(h);
     assert.match(nodeText(h.output), /Unable to load career stats/); assert.doesNotMatch(nodeText(h.output), /No career stats yet/);
     fail = false; findNode(h.output, (node) => node.props.testID === 'career-retry')!.props.onPress(); await settle(h);
-    assert.match(nodeText(h.output), /Needs review/); assert.match(nodeText(h.output), /PIM unavailable/);
+    assert.match(nodeText(h.output), /Career Totals—GP/); assert.match(nodeText(h.output), /Conflicting records need review/); assert.match(nodeText(h.output), /PIM unavailable/);
+    assert.doesNotMatch(nodeText(h.output), /Needs review/);
     findNode(h.output, (node) => node.props.testID === 'career-league-11111111-1111-4111-8111-111111111111')!.props.onPress(); h.render();
     assert.match(nodeText(h.output), /Imported/);
   });
 
-  it('renders goalie career totals with truthful goalie-only and dual-role labels', async () => {
+  it('renders estimated goalie career totals as unavailable through the shared formatter', async () => {
     for (const roles of [['goalie'], ['skater', 'goalie']] as const) {
       const h = createHookHarness(); const result: any = career(roles.length === 1 ? 'Goalie Only' : 'Dual Role');
       result.totals.roles = [...roles]; result.totals.goalie = { gamesPlayed: metric(3), wins: metric(2), losses: metric(1), saves: metric(18, 'estimated', ['goalie_stats']), goalsAgainst: metric(7), savePercentage: metric(null), goalsAgainstAverage: metric(null), shutouts: metric(0) };
       const auth = { user: { id: '22222222-2222-4222-8222-222222222222' } }; const league = { availableLeagues: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Harbour', slug: 'harbour' }] };
       const Career = compileCareer(h, auth, league, async () => result);
       h.mount(() => Career({ navigation: { goBack() {} } })); await settle(h);
-      const totals = findNode(h.output, (node) => node.props.testID === 'career-goalie-totals'); assert.ok(totals); assert.match(nodeText(totals), /3.*GP.*2.*W.*1.*L.*18.*SV.*7.*GA.*—.*SV%.*—.*GAA.*0.*SO/);
+      const totals = findNode(h.output, (node) => node.props.testID === 'career-goalie-totals'); assert.ok(totals); assert.match(nodeText(totals), /3.*GP.*2.*W.*1.*L.*—.*SV.*7.*GA.*—.*SV%.*—.*GAA.*0.*SO/);
       const gpCell = findNode(totals, (node) => node.props.testID === 'career-goalie-gp-cell'); assert.equal(flattenStyle(gpCell!.props.style).width, '50%');
       if (roles.length === 1) assert.match(nodeText(h.output), /goalie records/i); else assert.match(nodeText(h.output), /both skater and goalie/i);
     }
@@ -187,12 +186,12 @@ describe('career and scoped Stats screen behavior', () => {
     const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: division, divisions: [division, { id: '88888888-8888-4888-8888-888888888888', name: 'South' }], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
     const Stats = compileStats(h, league, async (...args: any[]) => { calls.push(args); const payload = scopePayload(); payload.scope.kind = args[2].kind; payload.scope.label = args[2].kind === 'all' ? 'All time' : 'Server Summer'; return payload; }, [], async (...args: any[]) => { goalieCalls.push(args); return { goalies: [] }; });
     h.mount(() => Stats()); await settle(h);
-    assert.equal(goalieCalls.length, 1);
+    assert.equal(goalieCalls.length, 0, 'Stats never fetches the legacy goalie contract');
     assert.ok(findNode(h.output, (node) => node.type === 'DivisionFilter'));
     findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'all' });
     await settle(h);
     assert.deepEqual(calls.at(-1)?.slice(2, 4), [{ kind: 'all' }, null]);
-    assert.equal(goalieCalls.length, 1, 'all-time scope never reuses a current-season goalie estimate');
+    assert.equal(goalieCalls.length, 0, 'all-time scope never fetches a goalie estimate');
     assert.match(nodeText(findNode(h.output, (node) => node.props.testID === 'stats-all-time-league-wide')), /league-wide.*unavailable/i);
     assert.equal(findNode(h.output, (node) => node.type === 'DivisionFilter'), undefined);
     findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'current' });

@@ -84,6 +84,73 @@ describe('review findings: canonical career v2', () => {
     expect(payload.totals.metrics.points.value).toBe(19);
   });
 
+  it('keeps imported timeline saves and save percentage unknown without knownness evidence', async () => {
+    const dependencies = deps();
+    dependencies.getPlayerCareerStatsTimeline.mockResolvedValue([timeline({
+      season_id: HLHL_WINTER_2026_SEASON_ID,
+      season_name: 'Winter 2026',
+      position: 'Goalie',
+      games_played: 10,
+      wins: 5,
+      losses: 4,
+      ties: 1,
+      saves: 171,
+      saves_known: false,
+      goals_against: 33,
+      save_percentage: null,
+    })]);
+    dependencies.readCareerScope.mockResolvedValue({
+      isEligible: true,
+      isGoalie: true,
+      seasonCatalog: [{ id: HLHL_WINTER_2026_SEASON_ID, name: 'Winter 2026' }],
+      canonicalSeasonIds: [],
+      penaltyRows: [],
+      canonicalSourceRowCount: 1,
+    });
+
+    const response = await handlePublicPlayerCareerRequest(request(), dependencies);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.seasons[0].goalie.saves).toEqual({ value: null, state: 'unknown', sources: [] });
+    expect(payload.seasons[0].goalie.savePercentage).toEqual({ value: null, state: 'unknown', sources: [] });
+    expect(payload.totals.goalie.saves).toEqual({ value: null, state: 'unknown', sources: [] });
+  });
+
+  it('keeps schema-default baseline saves unknown after imported-baseline normalization', async () => {
+    const dependencies = deps();
+    dependencies.getPlayerCareerStatsTimeline.mockResolvedValue([]);
+    dependencies.readCareerScope.mockResolvedValue({
+      isEligible: true,
+      isGoalie: true,
+      seasonCatalog: [],
+      canonicalSeasonIds: [],
+      penaltyRows: [],
+      canonicalSourceRowCount: 0,
+      historicalBaselineSourceRowCount: 1,
+      careerBaseline: {
+        id: '90000000-0000-4000-8000-000000000009',
+        is_goalie: true,
+        games_played: 10,
+        goals: 0,
+        assists: 0,
+        points: 0,
+        wins: 6,
+        ties: 1,
+        saves: 0,
+        goals_against: 20,
+        shutouts: 2,
+      },
+    });
+
+    const response = await handlePublicPlayerCareerRequest(request(), dependencies);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.seasons[0].goalie.saves).toEqual({ value: null, state: 'unknown', sources: [] });
+    expect(payload.seasons[0].goalie.savePercentage).toEqual({ value: null, state: 'unknown', sources: [] });
+  });
+
   it('emits a strict-parser-valid goalie group for an imported goalie baseline', async () => {
     const dependencies = deps();
     dependencies.getPlayerCareerStatsTimeline.mockResolvedValue([]);
@@ -100,7 +167,8 @@ describe('review findings: canonical career v2', () => {
       gamesPlayed: { value: 10, state: 'reported', sources: ['imported'] },
       wins: { value: 6, state: 'reported', sources: ['imported'] },
       losses: { value: 3, state: 'reported', sources: ['imported'] },
-      saves: { value: 180, state: 'reported', sources: ['imported'] },
+      saves: { value: null, state: 'unknown', sources: [] },
+      savePercentage: { value: null, state: 'unknown', sources: [] },
     }));
     expect(payload.totals.goalie).not.toBeNull();
     expect((payload.totals.goalie !== null)).toBe(payload.totals.roles.includes('goalie'));

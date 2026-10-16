@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { PublicGoalie, PublicStatMetric } from '../../src/lib/supabase/publicStats';
+import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 
 import {
   buildGoalieRows,
@@ -26,15 +26,6 @@ function player(overrides: Partial<StatsScopePlayer> & Pick<StatsScopePlayer, 'p
       gamesPlayed: metric(2), goals: metric(2), assists: metric(1), points: metric(3), championships: metric(null),
     },
     goalie: null,
-    ...overrides,
-  };
-}
-
-function publicGoalie(overrides: Partial<PublicGoalie> & Pick<PublicGoalie, 'player_id'>): PublicGoalie {
-  return {
-    player_name: 'Goalie', team_id: 'team-a', team_name: 'Owls', avatar_url: null,
-    games_played: 2, wins: 1, losses: 1, save_percentage: null,
-    goals_against_average: 2.5, shutouts: 0, saves: null, goals_against: 5, estimated: true,
     ...overrides,
   };
 }
@@ -81,13 +72,13 @@ describe('stats presentation model', () => {
     assert.deepEqual(skaters[0].columns.map((column) => column.key), ['gp', 'g', 'a', 'pts', 'ch', 'gpg', 'ppg']);
     assert.equal(skaters[0].columns.find((column) => column.key === 'gpg')?.display, '1.50');
     assert.equal(skaters[0].columns.find((column) => column.key === 'ppg')?.display, '2.00');
-    assert.equal(skaters[1].columns.find((column) => column.key === 'gpg')?.display, 'Needs review');
+    assert.equal(skaters[1].columns.find((column) => column.key === 'gpg')?.display, '—');
     assert.match(skaters[1].columns.find((column) => column.key === 'gpg')?.accessibilityLabel ?? '', /GPG.*unavailable.*Conflicting/i);
     assert.match(skaters[1].columns.find((column) => column.key === 'ch')?.accessibilityLabel ?? '', /CH.*unavailable.*Not recorded/i);
     assert.deepEqual(buildGoalieRows(rows)[0].columns.map((column) => column.key), ['gp', 'ga', 'gaa', 'ch']);
   });
 
-  it('preserves every provenance source and conflict candidate in accessible metric descriptions', () => {
+  it('preserves provenance sources without revealing conflict candidates in accessible metric descriptions', () => {
     const sourcePlayer = player({
       playerId: 'sources', playerName: 'Source Player', skater: {
         gamesPlayed: metric(4, 'reported', ['imported', 'attendance']),
@@ -99,47 +90,44 @@ describe('stats presentation model', () => {
     });
     const columns = Object.fromEntries(buildSkaterRows([sourcePlayer])[0].columns.map((column) => [column.key, column.accessibilityLabel]));
     assert.match(columns.gp, /display value 4.*reported.*imported records.*attendance records/i);
-    assert.match(columns.g, /display value ~2.*estimated.*roster eligibility.*accepted substitute records/i);
+    assert.match(columns.g, /G, unavailable.*display value —.*not recorded.*roster eligibility.*accepted substitute records/i);
+    assert.doesNotMatch(columns.g, /estimated|\b2\b/i);
     assert.match(columns.a, /display value 1.*verified.*administrative override.*game statistics/i);
-    assert.match(columns.pts, /display value Needs review.*conflicted.*game statistics.*administrative override.*confirmed 4.*recorded 3.*estimated 5/i);
+    assert.match(columns.pts, /display value —.*conflicted.*game statistics.*administrative override/i);
+    assert.doesNotMatch(columns.pts, /confirmed 4|recorded 3|estimated 5|source values/i);
     assert.match(columns.ch, /display value —.*unknown.*not recorded.*no provenance source/i);
-    assert.match(columns.gpg, /calculated from G.*display value ~2.*roster eligibility.*accepted substitute records.*divided by GP.*display value 4.*imported records.*attendance records/i);
-    assert.match(columns.ppg, /unavailable.*points source.*confirmed 4.*recorded 3.*estimated 5.*games played source.*display value 4/i);
+    assert.match(columns.gpg, /GPG, unavailable.*display value —.*not recorded.*calculated from G.*G, unavailable.*display value —.*roster eligibility.*accepted substitute records.*divided by GP.*display value 4.*imported records.*attendance records/i);
+    assert.doesNotMatch(columns.gpg, /estimated|~2/i);
+    assert.match(columns.ppg, /unavailable.*points source.*conflicted.*games played source.*display value 4/i);
+    assert.doesNotMatch(columns.ppg, /confirmed 4|recorded 3|estimated 5|source values/i);
   });
 
-  it('uses a returned current-season goalie estimate when the complete scope marks GAA unknown', () => {
+  it('does not insert a legacy goalie fallback when scope GAA is unknown', () => {
     const goalie = player({
-      playerId: 'goalie-estimated', playerName: 'Estimated Goalie',
+      playerId: 'goalie-missing', playerName: 'Missing Goalie',
       displayTeam: { id: 'team-a', name: 'Owls' },
       skater: null,
-      goalie: { gamesPlayed: metric(2, 'estimated', ['roster_window']), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2, 'recorded', ['goalie_stats']), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
     });
-    const leaders = buildLeaderRows([goalie], 'gaa', [publicGoalie({ player_id: goalie.playerId, player_name: goalie.playerName })]);
+    const leaders = buildLeaderRows([goalie], 'gaa');
 
-    assert.equal(leaders.length, 1);
-    assert.equal(leaders[0].display, '2.5');
-    assert.deepEqual(leaders[0].value, { value: 2.5, state: 'estimated', sources: [] });
+    assert.deepEqual(leaders, []);
   });
 
-  it('formats leader GAA from raw goals-against and games-played without double rounding', () => {
+  it('formats authoritative scope GAA without double rounding', () => {
     const goalie = player({
       playerId: 'rounding-boundary', playerName: 'Boundary Goalie',
       displayTeam: { id: 'team-a', name: 'Owls' }, skater: null,
-      goalie: { gamesPlayed: metric(11, 'estimated'), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
+      goalie: { gamesPlayed: metric(11), goalsAgainst: metric(6), goalsAgainstAverage: metric(6 / 11), championships: metric(0) },
     });
-    const leaders = buildLeaderRows([goalie], 'gaa', [publicGoalie({
-      player_id: goalie.playerId,
-      games_played: 11,
-      goals_against: 6,
-      goals_against_average: 0.55,
-    })]);
+    const leaders = buildLeaderRows([goalie], 'gaa');
 
     assert.equal(leaders[0].value.value, 6 / 11);
     assert.equal(leaders[0].display, '0.5');
     assert.doesNotMatch(leaders[0].display, /~/);
   });
 
-  it('does not replace conflicted GAA or rank nullable and ambiguous goalie fallback rows', () => {
+  it('does not rank conflicted or unknown scope GAA', () => {
     const conflicted = player({
       playerId: 'conflicted', playerName: 'Conflicted Goalie', displayTeam: { id: 'team-a', name: 'Owls' }, skater: null,
       goalie: { gamesPlayed: metric(null, 'conflicted'), goalsAgainst: metric(null, 'conflicted'), goalsAgainstAverage: metric(null, 'conflicted'), championships: metric(0) },
@@ -149,14 +137,70 @@ describe('stats presentation model', () => {
       goalie: { gamesPlayed: metric(2, 'estimated'), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
     });
     const transferred = player({ ...unknown, playerId: 'transferred', playerName: 'Transferred Goalie' });
-    const leaders = buildLeaderRows([conflicted, unknown, transferred], 'gaa', [
-      publicGoalie({ player_id: conflicted.playerId, player_name: conflicted.playerName }),
-      publicGoalie({ player_id: unknown.playerId, player_name: unknown.playerName, goals_against_average: null }),
-      publicGoalie({ player_id: transferred.playerId, player_name: transferred.playerName, team_id: 'team-a' }),
-      publicGoalie({ player_id: transferred.playerId, player_name: transferred.playerName, team_id: 'team-b' }),
-    ]);
+    const leaders = buildLeaderRows([conflicted, unknown, transferred], 'gaa');
 
     assert.deepEqual(leaders, []);
+  });
+
+  it('keeps the legacy estimate state internal while table and rate accessibility expose only unavailable values', () => {
+    const legacyEstimate = player({
+      playerId: 'legacy-estimate', playerName: 'Legacy Value',
+      skater: {
+        gamesPlayed: metric(4), goals: metric(137, 'estimated'), assists: metric(1), points: metric(2), championships: metric(0),
+      },
+    });
+    const columns = Object.fromEntries(buildSkaterRows([legacyEstimate])[0].columns.map((column) => [column.key, column]));
+
+    for (const column of [columns.g, columns.gpg]) {
+      assert.equal(column.display, '—');
+      assert.equal(column.state, 'estimated');
+      assert.match(column.accessibilityLabel, /unavailable.*display value —.*not recorded/i);
+      assert.doesNotMatch(column.accessibilityLabel, /estimated|137|34\.25/i);
+    }
+  });
+
+  it('excludes estimated selected metrics from every ranked leader population', () => {
+    const recorded = player({
+      playerId: 'recorded', playerName: 'Recorded Player',
+      skater: { gamesPlayed: metric(4), goals: metric(2), assists: metric(1), points: metric(3), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(4), goalsAgainstAverage: metric(2), championships: metric(0) },
+    });
+    const estimated = player({
+      playerId: 'estimated', playerName: 'Estimated Player',
+      skater: { gamesPlayed: metric(6, 'estimated'), goals: metric(20, 'estimated'), assists: metric(10, 'estimated'), points: metric(30, 'estimated'), championships: metric(0) },
+      goalie: { gamesPlayed: metric(6, 'estimated'), goalsAgainst: metric(1, 'estimated'), goalsAgainstAverage: metric(1 / 6, 'estimated'), championships: metric(0) },
+    });
+
+    for (const metricName of ['points', 'goals', 'assists', 'gaa'] as const) {
+      assert.deepEqual(buildRankedRows([estimated, recorded], metricName).map((row) => row.playerId), ['recorded']);
+    }
+    const estimatedRates = buildSkaterRows([estimated])[0].columns.filter((column) => column.key === 'gpg' || column.key === 'ppg');
+    assert.deepEqual(estimatedRates.map((column) => [column.display, column.state]), [['—', 'estimated'], ['—', 'estimated']]);
+  });
+
+  it('sorts exported table rows only by publishable metrics before blank estimated or conflicted candidates', () => {
+    const recorded = player({
+      playerId: 'recorded', playerName: 'Recorded',
+      skater: { gamesPlayed: metric(4), goals: metric(0), assists: metric(0), points: metric(0), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(4), goalsAgainstAverage: metric(2), championships: metric(0) },
+    });
+    const estimated = player({
+      playerId: 'estimated', playerName: 'Estimated',
+      skater: { gamesPlayed: metric(4), goals: metric(100, 'estimated'), assists: metric(0), points: metric(100, 'estimated'), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(1, 'estimated'), goalsAgainstAverage: metric(0.1, 'estimated'), championships: metric(0) },
+    });
+    const conflicted = player({
+      playerId: 'conflicted', playerName: 'Conflicted',
+      skater: { gamesPlayed: metric(4), goals: metric(99, 'conflicted'), assists: metric(0), points: metric(99, 'conflicted'), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(1, 'conflicted'), goalsAgainstAverage: metric(0.2, 'conflicted'), championships: metric(0) },
+    });
+
+    assert.deepEqual(buildSkaterRows([estimated, recorded, conflicted]).map((row) => row.playerId), [
+      'recorded', 'conflicted', 'estimated',
+    ]);
+    assert.deepEqual(buildGoalieRows([estimated, recorded, conflicted]).map((row) => row.playerId), [
+      'recorded', 'conflicted', 'estimated',
+    ]);
   });
 
   it('ranks a top five only from known values with deterministic ties and ascending GAA', () => {
@@ -221,11 +265,10 @@ describe('stats presentation model', () => {
     }));
     rows[5].skater!.goals = metric(null, 'conflicted', ['skater_stats']);
 
-    const all = Number.POSITIVE_INFINITY;
-    const goals = (buildLeaderRows as any)(rows, 'goals', [], all);
-    const assists = (buildLeaderRows as any)(rows, 'assists', [], all);
-    const points = (buildLeaderRows as any)(rows, 'points', [], all);
-    const goalies = (buildLeaderRows as any)(rows, 'gaa', [], all);
+    const goals = buildRankedRows(rows, 'goals');
+    const assists = buildRankedRows(rows, 'assists');
+    const points = buildRankedRows(rows, 'points');
+    const goalies = buildRankedRows(rows, 'gaa');
 
     assert.deepEqual(goals.map((row: StatsScopePlayer) => row.playerId), ['player-4', 'player-0', 'player-1', 'player-3', 'player-2']);
     assert.deepEqual(assists.map((row: StatsScopePlayer) => row.playerId), rows.map((row) => row.playerId));

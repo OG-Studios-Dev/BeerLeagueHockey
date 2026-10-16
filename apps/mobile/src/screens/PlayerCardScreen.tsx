@@ -10,7 +10,7 @@ import SeasonPicker from '../components/PlayerProfile/SeasonPicker';
 import SectionHeader from '../components/SectionHeader';
 import { HOCKEY_LIFE_ID, HOCKEY_LIFE_PRIMARY, HOCKEY_LIFE_SLUG } from '../config/hockeyLife';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
-import { createPlayerRequestGate, getPlayerMetricDefinitions } from '../lib/playerPageModel';
+import { createPlayerRequestGate, getPlayerMetricDefinitions, playerMetricAccessibilityLabel } from '../lib/playerPageModel';
 import { loadHockeyLifePlayerPage, type HockeyLifePlayerPage, type PlayerMetricValues } from '../lib/supabase/playerPage';
 import type { PlayerCardParams } from '../navigation/types';
 import { navigateToTeamDetail } from '../navigation/teamDetail';
@@ -123,7 +123,15 @@ export default function PlayerCardScreen({ route, navigation }: Props) {
 
       <ParitySection title={seasonHeading}>
         <SeasonPicker seasons={data.seasons} selectedSeasonId={data.selectedSeasonId} isCareer={data.isCareer} accent={accent} onSelect={chooseSeason} />
-        {data.metrics ? <View style={styles.metricGrid}>{metricDefinitions.map((metric) => <View key={metric.key} style={styles.metricCard}><Text style={[styles.metricValue, { color: metric.key === 'points' || metric.key === 'wins' ? accent : colors.textPrimary }]}>{metricValue(metric.key, data.metrics!)}</Text><Text style={styles.metricLabel}>{metric.label}</Text></View>)}</View> : <EmptySection>No stats available for this selection.</EmptySection>}
+        {data.metrics ? <View style={styles.metricGrid}>{metricDefinitions.map((metric) => {
+          const display = metricValue(metric.key, data.metrics!);
+          return <View
+            key={metric.key}
+            accessible
+            accessibilityLabel={playerMetricAccessibilityLabel(metric.label, display, data.metricProvenance?.[metric.key])}
+            style={styles.metricCard}
+          ><Text style={[styles.metricValue, { color: metric.key === 'points' || metric.key === 'wins' ? accent : colors.textPrimary }]}>{display}</Text><Text style={styles.metricLabel}>{metric.label}</Text></View>;
+        })}</View> : <EmptySection>No stats available for this selection.</EmptySection>}
       </ParitySection>
 
       {data.careerRows.length > 0 ? <ParitySection title="Career Stats"><CareerTrendChart rows={data.careerRows} isGoalie={data.isGoalie} accent={accent} hotFacts={data.hotFacts} /></ParitySection> : null}

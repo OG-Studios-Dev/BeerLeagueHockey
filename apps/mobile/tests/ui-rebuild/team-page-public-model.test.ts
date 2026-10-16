@@ -85,8 +85,8 @@ describe('Team page public snapshot model', () => {
     assert.equal(snapshot.roster[0].photoUrl, 'current.jpg');
     assert.equal(snapshot.roster[0].points, 25);
     assert.equal(snapshot.roster[0].penaltyMinutes, 4);
-    assert.equal(snapshot.roster[1].gamesPlayed, 3);
-    assert.equal(snapshot.roster[1].gamesPlayedProvenance, 'estimated');
+    assert.equal(snapshot.roster[1].gamesPlayed, null);
+    assert.equal(snapshot.roster[1].gamesPlayedProvenance, null);
     assert.equal(snapshot.roster.some((player: any) => player.playerId === 'stats-only'), false);
   });
 
@@ -171,7 +171,7 @@ describe('Team page public snapshot model', () => {
     assert.doesNotMatch(JSON.stringify(snapshot.rivals), /carrier/i);
   });
 
-  it('estimates GP only from public roster and completed-game facts', () => {
+  it('keeps local roster-window GP unavailable instead of exposing an estimated total', () => {
     const model = loadModel();
     const completedGames = Array.from({ length: 11 }, (_, index) => ({
       id: `played-${index + 1}`,
@@ -213,8 +213,8 @@ describe('Team page public snapshot model', () => {
 
     const snapshot = model.buildTeamPageSnapshot(input, new Date('2026-03-20T12:00:00Z'));
     const matt = snapshot.roster.find((player: any) => player.playerId === 'p1');
-    assert.equal(matt.gamesPlayed, 11);
-    assert.equal(matt.gamesPlayedProvenance, 'estimated');
+    assert.equal(matt.gamesPlayed, null);
+    assert.equal(matt.gamesPlayedProvenance, null);
     assert.equal(matt.goals, 15);
     assert.equal(matt.assists, 10);
     assert.equal(matt.points, 25);
@@ -418,7 +418,8 @@ describe('Team page public snapshot model', () => {
     assert.deepEqual([matt.gamesPlayed, matt.goals, matt.assists, matt.points, matt.penaltyMinutes], [null, 15, 10, 25, null]);
     assert.equal(matt.publicMetrics.gamesPlayed.state, 'conflicted');
     assert.equal(snapshot.leaders.penaltyMinutes.some((row: any) => row.playerId === 'p1'), false);
-    assert.equal(ash.gamesPlayed, 11);
+    assert.equal(ash.gamesPlayed, null);
+    assert.equal(ash.gamesPlayedProvenance, null);
     assert.equal(ash.publicMetrics.gamesPlayed.state, 'estimated');
     assert.equal(snapshot.leaders.penaltyMinutes.find((row: any) => row.playerId === 'p2').value, 0);
   });

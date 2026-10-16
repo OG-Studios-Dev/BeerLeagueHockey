@@ -42,7 +42,7 @@ export function rankHomeLeaders(
   const eligible = leaders
     .filter((leader) => {
       const value = leader[metric];
-      return Number.isFinite(value) && value !== null && (isGaa ? leader.is_goalie && value >= 0 : value > 0);
+      return !leader.estimated && Number.isFinite(value) && value !== null && (isGaa ? leader.is_goalie && value >= 0 : value >= 0);
     })
     .map((leader) => ({ ...leader, [metric]: leader[metric] as number }))
     .sort((left, right) => {
