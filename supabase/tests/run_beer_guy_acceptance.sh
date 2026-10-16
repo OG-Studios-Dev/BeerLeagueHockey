@@ -4,17 +4,18 @@ export LC_ALL=C
 export LANG=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PREREQUISITE_MIGRATION="$ROOT/supabase/migrations/20261016010000_leagues_timezone_not_null.sql"
 MIGRATION="$ROOT/supabase/migrations/20261016020000_beer_guy_authority.sql"
 FIXTURE="$ROOT/supabase/tests/beer_guy_fixture.sql"
 TEST_FILES="${BEER_GUY_ACCEPTANCE_FILES:-beer_guy_catalog_acceptance.sql beer_guy_legacy_reconciliation_acceptance.sql beer_guy_assignment_invariant_acceptance.sql beer_guy_substitute_acceptance.sql beer_guy_attendance_lifecycle_acceptance.sql beer_guy_self_claim_acceptance.sql beer_guy_captain_acceptance.sql beer_guy_reply_scope_acceptance.sql beer_guy_reads_history_acceptance.sql beer_guy_new_team_acceptance.sql beer_guy_identity_lifecycle_acceptance.sql beer_guy_security_acceptance.sql beer_guy_cross_league_acceptance.sql beer_guy_checkin_select_acceptance.sql beer_guy_self_contained_invitation_rls_acceptance.sql beer_guy_self_contained_checkin_rls_acceptance.sql beer_guy_realtime_publication_acceptance.sql}"
 PG_ROOT="${TMPDIR:-/tmp}/hockey-life-beer-guy-pg-$$"
 PG_DATA="$PG_ROOT/data"
-PG_SOCKET="$PG_ROOT/socket"
 PG_LOG="$PG_ROOT/postgres.log"
+PG_HOST="127.0.0.1"
 PORT="55439"
 DB_NAME="beer_guy_acceptance"
 
-mkdir -p "$PG_SOCKET"
+mkdir -p "$PG_ROOT"
 cleanup() {
   if [[ -d "$PG_DATA" ]]; then
     pg_ctl -D "$PG_DATA" -m immediate stop >/dev/null 2>&1 || true
@@ -24,18 +25,26 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 initdb -D "$PG_DATA" -A trust -U postgres --no-locale >/dev/null
-if ! pg_ctl -D "$PG_DATA" -l "$PG_LOG" -o "-k $PG_SOCKET -p $PORT -F -c wal_level=logical" start >/dev/null; then
+if ! pg_ctl -D "$PG_DATA" -l "$PG_LOG" -o "-h $PG_HOST -p $PORT -F -c wal_level=logical -c unix_socket_directories=''" start >/dev/null; then
   printf '%s\n' 'PostgreSQL failed to start:' >&2
   while IFS= read -r line; do printf '%s\n' "$line" >&2; done < "$PG_LOG"
   exit 1
 fi
-PSQL=(psql -X -v ON_ERROR_STOP=1 -h "$PG_SOCKET" -p "$PORT" -U postgres -d "$DB_NAME")
+PSQL=(psql -X -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PORT" -U postgres -d "$DB_NAME")
+
+apply_prerequisite_migration() {
+  if [[ ! -f "$PREREQUISITE_MIGRATION" ]]; then
+    printf 'missing prerequisite migration: %s\n' "$PREREQUISITE_MIGRATION" >&2
+    exit 1
+  fi
+  "${PSQL[@]}" -f "$PREREQUISITE_MIGRATION"
+}
 
 prepare_database() {
   local test_file="${1:-}"
   local realtime_baseline="${2:-empty}"
-  dropdb --if-exists -h "$PG_SOCKET" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
-  createdb -h "$PG_SOCKET" -p "$PORT" -U postgres "$DB_NAME"
+  dropdb --if-exists -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
+  createdb -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME"
   "${PSQL[@]}" -f "$FIXTURE"
   if [[ "$test_file" == "beer_guy_self_contained_invitation_rls_acceptance.sql" ]]; then
     "${PSQL[@]}" -c 'DROP POLICY fixture_sub_invitations_all ON public.sub_invitations'
@@ -51,6 +60,7 @@ prepare_database() {
     fi
   fi
   if [[ "${BEER_GUY_SKIP_MIGRATION:-0}" != "1" ]]; then
+    apply_prerequisite_migration
     if [[ ! -f "$MIGRATION" ]]; then
       printf 'missing migration: %s\n' "$MIGRATION" >&2
       exit 1
@@ -120,9 +130,10 @@ run_invalidation_concurrency() {
 }
 
 run_team_provisioning_migration_race() {
-  dropdb --if-exists -h "$PG_SOCKET" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
-  createdb -h "$PG_SOCKET" -p "$PORT" -U postgres "$DB_NAME"
+  dropdb --if-exists -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
+  createdb -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME"
   "${PSQL[@]}" -f "$FIXTURE" >/dev/null
+  apply_prerequisite_migration >/dev/null
 
   set +e
   "${PSQL[@]}" -c "BEGIN; INSERT INTO public.teams(id,league_id,name) VALUES ('30000000-0000-4000-8000-000000000099','10000000-0000-4000-8000-000000000001','Concurrent Expansion'); SELECT pg_catalog.pg_sleep(2) /* beer-guy-team-race-inserter */; COMMIT;" >"$PG_ROOT/team-insert-racer.log" 2>&1 &
@@ -173,9 +184,10 @@ fi
 if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
   PREFLIGHT_CASES="${BEER_GUY_PREFLIGHT_CASES:-missing_column missing_uniqueness missing_checkin_uniqueness missing_sub_column missing_sub_fk missing_sub_status_constraint missing_parent_fk missing_id_default invalid_status_vocabulary rls_disabled function_owner function_collision authenticated_acl_missing service_acl_missing missing_realtime_publication realtime_publication_operations realtime_publication_row_filter realtime_publication_column_list realtime_publication_authority ambiguous_duties}"
   for rejection_case in $PREFLIGHT_CASES; do
-    dropdb --if-exists -h "$PG_SOCKET" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
-    createdb -h "$PG_SOCKET" -p "$PORT" -U postgres "$DB_NAME"
+    dropdb --if-exists -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
+    createdb -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME"
     "${PSQL[@]}" -f "$FIXTURE" >/dev/null
+    apply_prerequisite_migration >/dev/null
     MIGRATION_PSQL=("${PSQL[@]}")
     if [[ "$rejection_case" == "missing_column" ]]; then
       "${PSQL[@]}" -c 'ALTER TABLE public.game_duties DROP COLUMN notes' >/dev/null
@@ -215,7 +227,7 @@ if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
       "${PSQL[@]}" -c 'ALTER PUBLICATION supabase_realtime ADD TABLE public.game_checkins (id, game_id, team_id)' >/dev/null
     elif [[ "$rejection_case" == "realtime_publication_authority" ]]; then
       "${PSQL[@]}" -c 'CREATE ROLE fixture_realtime_migration_owner LOGIN; GRANT USAGE ON SCHEMA auth TO fixture_realtime_migration_owner; GRANT USAGE, CREATE ON SCHEMA public TO fixture_realtime_migration_owner; ALTER TABLE public.leagues OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.teams OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.seasons OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.games OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.profiles OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.team_rosters OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.game_checkins OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.duty_types OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.game_duties OWNER TO fixture_realtime_migration_owner; ALTER TABLE public.sub_invitations OWNER TO fixture_realtime_migration_owner; ALTER FUNCTION public.captain_manage_game_checkin(uuid,uuid,uuid,text,text) OWNER TO fixture_realtime_migration_owner' >/dev/null
-      MIGRATION_PSQL=(psql -X -v ON_ERROR_STOP=1 -h "$PG_SOCKET" -p "$PORT" -U fixture_realtime_migration_owner -d "$DB_NAME")
+      MIGRATION_PSQL=(psql -X -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PORT" -U fixture_realtime_migration_owner -d "$DB_NAME")
     elif [[ "$rejection_case" == "ambiguous_duties" ]]; then
       "${PSQL[@]}" -c "INSERT INTO public.duty_types(id,team_id,name) VALUES ('60000000-0000-4000-8000-000000000099','30000000-0000-4000-8000-000000000002','beer_guy')" >/dev/null
     else

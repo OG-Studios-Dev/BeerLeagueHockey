@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE public.leagues
+  ALTER COLUMN timezone SET NOT NULL;
+
+COMMIT;
