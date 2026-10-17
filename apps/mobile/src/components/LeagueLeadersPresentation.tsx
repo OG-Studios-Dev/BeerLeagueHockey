@@ -48,12 +48,13 @@ export type LeagueLeadersPresentationProps = {
   onMetricChange: (metric: HomeLeaderMetric) => void;
   onRetry: () => void;
   onOpenPlayer: (playerId: string) => void;
-  onOpenAllStats: () => void;
+  onOpenAllStats?: () => void;
   manifestLoader?: (options?: { signal?: AbortSignal }) => Promise<PlayerArtworkManifest | null>;
   manifestRefreshKey?: object | null;
   testIDPrefix?: string;
   focusPrefix?: string;
   showAllStats?: boolean;
+  compactMetricTabs?: boolean;
   visibleLeaderLimit?: number;
   rowVariant?: 'standard' | 'home-inline';
 };
@@ -133,7 +134,7 @@ function LeaderArtworkImage({ artwork, leader, testIDPrefix }: { artwork: Leader
   );
 }
 
-function MetricTabs({ value, onChange, testIDPrefix }: { value: HomeLeaderMetric; onChange: (metric: HomeLeaderMetric) => void; testIDPrefix: string }) {
+function MetricTabs({ value, onChange, testIDPrefix, compact }: { value: HomeLeaderMetric; onChange: (metric: HomeLeaderMetric) => void; testIDPrefix: string; compact: boolean }) {
   return (
     <SelectableControlGroup role="tablist" accessibilityLabel={`${testIDPrefix === 'home' ? 'Home' : 'Team'} League Leader metric`} contentContainerStyle={styles.tabs}>
       {METRICS.map(({ key, label }) => (
@@ -145,7 +146,7 @@ function MetricTabs({ value, onChange, testIDPrefix }: { value: HomeLeaderMetric
           accessibilityLabel={`Show ${label} leaders`}
           selected={value === key}
           onPress={() => onChange(key)}
-          style={styles.tab}
+          style={compact ? styles.tabCompact : styles.tab}
         />
       ))}
     </SelectableControlGroup>
@@ -265,7 +266,7 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
 export default function LeagueLeadersPresentation({
   leagueId, seasonName: _seasonName, metric, leaders, status, errorMessage, width, fontScale,
   onMetricChange, onRetry, onOpenPlayer, onOpenAllStats, manifestLoader = loadPlayerArtworkManifest, manifestRefreshKey,
-  testIDPrefix = 'home', focusPrefix = testIDPrefix, showAllStats = true, visibleLeaderLimit = 3, rowVariant = 'standard',
+  testIDPrefix = 'home', focusPrefix = testIDPrefix, showAllStats = true, compactMetricTabs = false, visibleLeaderLimit = 3, rowVariant = 'standard',
 }: LeagueLeadersPresentationProps) {
   const [manifest, setManifest] = React.useState<PlayerArtworkManifest | null>(null);
   React.useEffect(() => {
@@ -296,7 +297,7 @@ export default function LeagueLeadersPresentation({
           <Text accessibilityRole="header" style={styles.title}>League Leaders</Text>
         </View>
       </View>
-      <MetricTabs value={metric} onChange={onMetricChange} testIDPrefix={testIDPrefix} />
+      <MetricTabs value={metric} onChange={onMetricChange} testIDPrefix={testIDPrefix} compact={compactMetricTabs} />
 
       {status === 'loading' ? (
         <View testID={`${testIDPrefix}-leaders-loading`} style={styles.state} accessibilityLiveRegion="polite">
@@ -362,7 +363,7 @@ export default function LeagueLeadersPresentation({
         </>
       )}
 
-      {showAllStats ? <Pressable testID={`${testIDPrefix}-leaders-all-stats`} accessibilityRole="button" accessibilityLabel="View all league stats" onPress={onOpenAllStats} style={({ pressed }) => [styles.allStats, pressed && styles.pressed]}>
+      {showAllStats && onOpenAllStats ? <Pressable testID={`${testIDPrefix}-leaders-all-stats`} accessibilityRole="button" accessibilityLabel="View all league stats" onPress={onOpenAllStats} style={({ pressed }) => [styles.allStats, pressed && styles.pressed]}>
         <Text style={styles.allStatsText}>View all stats</Text><Ionicons name="arrow-forward" size={16} color={homeTokens.text} />
       </Pressable> : null}
     </View>
@@ -376,6 +377,7 @@ const styles = StyleSheet.create({
   title: { ...SECTION_HEADING_TEXT_STYLE, color: homeTokens.text },
   tabs: { flexDirection: 'row', gap: 6, marginTop: 13, marginBottom: 12 },
   tab: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  tabCompact: { minHeight: 44, flexGrow: 0, flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   layout: { minHeight: 326, flexDirection: 'row', alignItems: 'stretch', gap: 4 },
   layoutCompact: { gap: 0 },
   layoutStacked: { flexDirection: 'column', minHeight: 0 },

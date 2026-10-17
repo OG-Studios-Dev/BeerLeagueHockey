@@ -45,10 +45,11 @@ function teamName(game: HomeWeeklyGame, side: 'away' | 'home') {
 function matchupAccessibilityLabel(game: HomeWeeklyGame, timezone: string | null) {
   const facts = buildHomeMatchupFacts(game, timezone);
   const factLabels = [facts.dateLabel, facts.timeLabel, facts.locationLabel].filter(Boolean);
+  const status = facts.statusLabel === 'Scheduled' ? '' : `${facts.statusLabel}. `;
   const score = facts.showScore
     ? `${teamName(game, 'away')} ${facts.awayScoreLabel ?? 'score unavailable'}. ${teamName(game, 'home')} ${facts.homeScoreLabel ?? 'score unavailable'}.`
     : `${teamName(game, 'away')} at ${teamName(game, 'home')}.`;
-  return `${facts.statusLabel}. ${score}${factLabels.length ? ` ${factLabels.join('. ')}.` : ''}`;
+  return `${status}${score}${factLabels.length ? ` ${factLabels.join('. ')}.` : ''}`;
 }
 
 export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueColor, width, reduceMotion, onOpenGame }: Props) {
@@ -133,7 +134,7 @@ export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueC
                 <View testID="home-matchup-fact-row" style={styles.factRow}>
                   <Text testID="home-matchup-date" style={[styles.fact, styles.dateFact]}>{facts.dateLabel}</Text>
                   <Text testID="home-matchup-location" style={[styles.fact, styles.locationFact]}>{facts.locationLabel}</Text>
-                  <Text testID="home-matchup-time" style={[styles.fact, styles.timeFact]}>{facts.timeLabel}</Text>
+                  <Text testID="home-matchup-time" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.8} style={[styles.fact, styles.timeFact]}>{facts.timeLabel}</Text>
                 </View>
                 <View testID="home-matchup-scene" style={{ width: cardWidth, height: sceneHeight }}>
                   <Image testID="home-matchup-arena-base" source={arenaBase} accessible={false} resizeMode="cover" style={{ position: 'absolute', top: ceilingHeight, width: cardWidth, height: artHeight }} />
@@ -153,7 +154,7 @@ export default function HomeMatchupCarousel({ games, scopeKey, timezone, leagueC
                       {facts.showScore ? <Text style={styles.score}>{facts.awayScoreLabel ?? '—'}</Text> : null}
                     </View>
                     <View style={[styles.centerFacts, { height: plinthTop }]}>
-                      <Text style={[styles.status, facts.statusLabel === 'Live' && styles.live]}>{facts.statusLabel}</Text>
+                      {facts.statusLabel === 'Scheduled' ? null : <Text style={[styles.status, facts.statusLabel === 'Live' && styles.live]}>{facts.statusLabel}</Text>}
                       <Text style={styles.versus}>VS</Text>
                     </View>
                     <View testID="home-matchup-home-stage" style={[styles.teamSide, { height: plinthTop }]}>
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
   fact: { color: homeTokens.text, fontSize: 13, lineHeight: 18, fontWeight: '800' },
   dateFact: { width: 70, flexShrink: 0 },
   locationFact: { flex: 1, minWidth: 0, textAlign: 'center' },
-  timeFact: { width: 70, flexShrink: 0, textAlign: 'right' },
+  timeFact: { width: 84, flexShrink: 0, textAlign: 'right' },
   sceneLayer: { position: 'absolute', left: 0 },
   crestStage: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 7 },
   teamSide: { position: 'relative', flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'flex-end' },

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { pathToFileURL } from 'node:url';
+
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { HomeWeeklyGame } from '../../src/lib/supabase/home';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
@@ -11,6 +19,51 @@ const homeModel = compileCommonJs<Record<string, any>>(
 );
 
 const componentUrl = new URL('../../src/components/HomeMatchupCarousel.tsx', import.meta.url);
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const LINUX_CHROME_CANDIDATES = [
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+] as const;
+
+type ChromeExecutableResolverOptions = {
+  platform: NodeJS.Platform;
+  chromeBin: string | undefined;
+  isExecutableFile?: (candidate: string) => boolean;
+};
+
+function isExecutableRegularFile(candidate: string) {
+  try {
+    if (!statSync(candidate).isFile()) return false;
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveChromeExecutable({
+  platform,
+  chromeBin,
+  isExecutableFile = isExecutableRegularFile,
+}: ChromeExecutableResolverOptions) {
+  const platformCandidates = platform === 'darwin'
+    ? [CHROME]
+    : platform === 'linux'
+      ? LINUX_CHROME_CANDIDATES
+      : [];
+  const candidates = chromeBin ? [chromeBin, ...platformCandidates] : platformCandidates;
+  const executable = candidates.find(isExecutableFile);
+  if (!executable) {
+    throw new Error(
+      'No executable Chrome or Chromium browser was found for the geometry regression. '
+      + 'Set CHROME_BIN to an executable browser file or install Chrome/Chromium in a standard location.',
+    );
+  }
+  return executable;
+}
+
 const baseGame = (id: string, overrides: Record<string, unknown> = {}) => ({
   id, scheduled_at: '2026-10-08T02:15:00.000Z', location: 'Chick-Fil-A Community Ice Centre — Championship Rink',
   home_score: null, away_score: null, status: 'scheduled', home_team_id: `home-${id}`, away_team_id: `away-${id}`,
@@ -36,7 +89,251 @@ function load(harness: ReturnType<typeof createHookHarness>) {
   }).default;
 }
 
+type NativeWeb = Record<string, unknown> & {
+  Text: React.ElementType;
+  StyleSheet: { getSheet(): { textContent: string } };
+};
+type GeometryRect = { top: number; right: number; bottom: number; left: number; width: number; height: number };
+type RenderedTimeGeometry = {
+  requestedWidth: number;
+  requestedFontScale: number;
+  effectiveFontScale: number;
+  maximumFontSizeMultiplier: number | null;
+  minimumFontScale: number;
+  fitScale: number;
+  text: string;
+  accessibilityLabel: string;
+  lane: GeometryRect;
+  naturalInk: GeometryRect;
+  finalInk: GeometryRect;
+  lines: GeometryRect[];
+};
+type MetadataTextProps = Record<string, unknown> & {
+  maxFontSizeMultiplier?: number;
+  minimumFontScale?: number;
+  adjustsFontSizeToFit?: boolean;
+  dataSet?: Record<string, string>;
+};
+
+function renderedEnlargedTimeGeometry(
+  browserOptions: ChromeExecutableResolverOptions = {
+    platform: process.platform,
+    chromeBin: process.env.CHROME_BIN,
+  },
+) {
+  const chrome = resolveChromeExecutable(browserOptions);
+  const nativeWeb = createRequire(import.meta.url)('react-native-web') as NativeWeb;
+  const MetadataText = ({
+    maxFontSizeMultiplier,
+    minimumFontScale,
+    adjustsFontSizeToFit,
+    ...props
+  }: MetadataTextProps) => React.createElement(nativeWeb.Text, {
+    ...props,
+    dataSet: {
+      ...props.dataSet,
+      maxFontSizeMultiplier: maxFontSizeMultiplier === undefined ? '' : String(maxFontSizeMultiplier),
+      minimumFontScale: minimumFontScale === undefined ? '' : String(minimumFontScale),
+      adjustsFontSizeToFit: adjustsFontSizeToFit ? 'true' : 'false',
+    },
+  });
+  const Component = compileCommonJs<{ default: React.ComponentType<Record<string, unknown>> }>(componentUrl, {
+    react: React,
+    'react-native': { ...nativeWeb, Text: MetadataText },
+    '@expo/vector-icons': { Ionicons: () => null },
+    '../lib/supabase/home': homeModel,
+    '../theme/home': { HOME_VISUAL_TOKENS: { text: '#F8FBFF', textSecondary: '#A9B8CC', stroke: 'rgba(125,190,255,.22)', minTouchTarget: 44 } },
+    './CarouselPager': () => null,
+    './TeamLogo': () => null,
+    '../../assets/matchup/arena-base.png': { uri: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' },
+    '../../assets/matchup/arena-left-mask.png': { uri: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' },
+    '../../assets/matchup/arena-right-mask.png': { uri: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' },
+  }).default;
+  const markup = renderToStaticMarkup(React.createElement(Component, {
+    games: [baseGame('geometry')],
+    scopeKey: 'league:week',
+    timezone: 'America/Toronto',
+    leagueColor: '#22D3EE',
+    width: 320,
+    reduceMotion: true,
+    onOpenGame() {},
+  }));
+  const probe = `(() => {
+    const requestedFontScale = 1.8;
+    const time = document.querySelector('[data-testid="home-matchup-time"]');
+    const card = document.querySelector('[data-testid="home-matchup-card-geometry"]');
+    const computed = getComputedStyle(time);
+    const baseFontSize = Number.parseFloat(computed.fontSize);
+    const baseLineHeight = Number.parseFloat(computed.lineHeight);
+    const maximum = Number.parseFloat(time.dataset.maxFontSizeMultiplier);
+    const effectiveFontScale = Number.isFinite(maximum) ? Math.min(requestedFontScale, maximum) : requestedFontScale;
+    const minimumFontScale = Number.parseFloat(time.dataset.minimumFontScale);
+    const range = document.createRange();
+    range.selectNodeContents(time);
+    const rect = (value) => ({ top: value.top, right: value.right, bottom: value.bottom, left: value.left, width: value.width, height: value.height });
+    const measureInk = () => rect(range.getBoundingClientRect());
+    time.style.setProperty('font-size', (baseFontSize * effectiveFontScale) + 'px', 'important');
+    time.style.setProperty('line-height', (baseLineHeight * effectiveFontScale) + 'px', 'important');
+    void time.offsetWidth;
+    const lane = rect(time.getBoundingClientRect());
+    const naturalInk = measureInk();
+    const fitScale = time.dataset.adjustsFontSizeToFit === 'true' && naturalInk.width > lane.width
+      ? minimumFontScale
+      : 1;
+    time.style.setProperty('font-size', (baseFontSize * effectiveFontScale * fitScale) + 'px', 'important');
+    time.style.setProperty('line-height', (baseLineHeight * effectiveFontScale * fitScale) + 'px', 'important');
+    void time.offsetWidth;
+    const finalLane = rect(time.getBoundingClientRect());
+    const finalInk = measureInk();
+    const lines = Array.from(range.getClientRects()).map(rect).filter((line, index, values) => (
+      values.findIndex((candidate) => Math.abs(candidate.top - line.top) < 0.01 && Math.abs(candidate.bottom - line.bottom) < 0.01) === index
+    ));
+    const result = {
+      requestedWidth: 320,
+      requestedFontScale,
+      effectiveFontScale,
+      maximumFontSizeMultiplier: Number.isFinite(maximum) ? maximum : null,
+      minimumFontScale,
+      fitScale,
+      text: time.textContent,
+      accessibilityLabel: card.getAttribute('aria-label'),
+      lane: finalLane,
+      naturalInk,
+      finalInk,
+      lines,
+    };
+    document.documentElement.setAttribute('data-geometry-result', btoa(unescape(encodeURIComponent(JSON.stringify(result)))));
+  })();`;
+  const css = nativeWeb.StyleSheet.getSheet().textContent;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}\nhtml,body,#root{margin:0;padding:0;}*{box-sizing:border-box;}</style></head><body><div id="root">${markup}</div><script>${probe}</script></body></html>`;
+  const scratch = mkdtempSync(join(tmpdir(), 'home-matchup-time-geometry-'));
+  try {
+    const htmlPath = join(scratch, 'probe.html');
+    writeFileSync(htmlPath, html);
+    const browser = spawnSync(chrome, [
+      '--headless=new',
+      '--disable-background-networking',
+      '--disable-component-update',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-extensions',
+      '--metrics-recording-only',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--force-color-profile=srgb',
+      '--virtual-time-budget=1000',
+      `--user-data-dir=${join(scratch, 'chrome-profile')}`,
+      '--dump-dom',
+      pathToFileURL(htmlPath).href,
+    ], { encoding: 'utf8', timeout: 20_000, maxBuffer: 10 * 1024 * 1024 });
+    assert.equal(browser.status, 0, `Chrome geometry probe failed: ${browser.stderr}`);
+    const encoded = browser.stdout.match(/data-geometry-result="([A-Za-z0-9+/=]+)"/)?.[1];
+    assert.ok(encoded, `Chrome geometry probe did not return measurements: ${browser.stdout.slice(-1000)}`);
+    return JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')) as RenderedTimeGeometry;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 describe('Home matchup carousel component', () => {
+  it('selects a validated Linux Chrome executable for the geometry regression', () => {
+    const executable = resolveChromeExecutable({
+      platform: 'linux',
+      chromeBin: undefined,
+      isExecutableFile: (candidate) => candidate === '/usr/bin/google-chrome-stable',
+    });
+
+    assert.equal(executable, '/usr/bin/google-chrome-stable');
+  });
+
+  it('selects the validated macOS Chrome executable for the geometry regression', () => {
+    const executable = resolveChromeExecutable({
+      platform: 'darwin',
+      chromeBin: undefined,
+      isExecutableFile: (candidate) => candidate === CHROME,
+    });
+
+    assert.equal(executable, CHROME);
+  });
+
+  it('prefers a validated CHROME_BIN override for the geometry regression', () => {
+    const checked: string[] = [];
+    const executable = resolveChromeExecutable({
+      platform: 'linux',
+      chromeBin: '/controlled/chrome',
+      isExecutableFile: (candidate) => {
+        checked.push(candidate);
+        return candidate === '/controlled/chrome';
+      },
+    });
+
+    assert.equal(executable, '/controlled/chrome');
+    assert.deepEqual(checked, ['/controlled/chrome']);
+  });
+
+  it('validates CHROME_BIN as an executable regular file by default', () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'home-matchup-browser-resolver-'));
+    try {
+      const executableFile = join(scratch, 'chrome');
+      const nonExecutableFile = join(scratch, 'chrome-no-execute');
+      const directory = join(scratch, 'chrome-directory');
+      writeFileSync(executableFile, 'browser');
+      chmodSync(executableFile, 0o755);
+      writeFileSync(nonExecutableFile, 'browser');
+      chmodSync(nonExecutableFile, 0o644);
+      mkdirSync(directory);
+
+      assert.equal(resolveChromeExecutable({ platform: 'win32', chromeBin: executableFile }), executableFile);
+      assert.throws(
+        () => resolveChromeExecutable({ platform: 'win32', chromeBin: nonExecutableFile }),
+        /No executable Chrome or Chromium browser was found/,
+      );
+      assert.throws(
+        () => resolveChromeExecutable({ platform: 'win32', chromeBin: directory }),
+        /No executable Chrome or Chromium browser was found/,
+      );
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('launches the geometry probe with the resolved browser executable', () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'home-matchup-browser-launch-'));
+    try {
+      const executableFile = join(scratch, 'controlled-browser');
+      const encoded = Buffer.from(JSON.stringify({ requestedWidth: 777 }), 'utf8').toString('base64');
+      writeFileSync(
+        executableFile,
+        `#!/bin/sh\nprintf '%s\\n' '<html data-geometry-result="${encoded}"></html>'\n`,
+      );
+      chmodSync(executableFile, 0o755);
+
+      const geometry = renderedEnlargedTimeGeometry({
+        platform: 'linux',
+        chromeBin: executableFile,
+      });
+
+      assert.equal(geometry.requestedWidth, 777);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the complete game time inside its rendered lane at 320pt and requested 1.8x text', () => {
+    const geometry = renderedEnlargedTimeGeometry();
+    assert.equal(geometry.requestedWidth, 320);
+    assert.equal(geometry.requestedFontScale, 1.8);
+    assert.equal(geometry.text, '10:15 PM');
+    assert.match(geometry.accessibilityLabel, /10:15 PM/);
+    assert.equal(geometry.lines.length, 1, `time must occupy one rendered line: ${JSON.stringify(geometry)}`);
+    assert.ok(
+      geometry.finalInk.left >= geometry.lane.left - 0.01 && geometry.finalInk.right <= geometry.lane.right + 0.01,
+      `complete rendered time must fit its visible lane: ${JSON.stringify(geometry)}`,
+    );
+    assert.equal(geometry.maximumFontSizeMultiplier, 1.8, 'time scaling is explicitly bounded to the supported 1.8x contract');
+    assert.ok(geometry.minimumFontScale >= 0.8, 'fit adjustment must retain the readable 0.8 floor');
+  });
+
   it('renders one cinematic card with league-local facts, enlarged crests, color masks and no visible team captions', () => {
     assert.ok(existsSync(componentUrl.pathname), 'HomeMatchupCarousel must exist');
     const harness = createHookHarness();
@@ -62,7 +359,7 @@ describe('Home matchup carousel component', () => {
     const date = findNode(card, (node) => node.props.testID === 'home-matchup-date')!;
     const location = findNode(card, (node) => node.props.testID === 'home-matchup-location')!;
     const time = findNode(card, (node) => node.props.testID === 'home-matchup-time')!;
-    assert.equal(flattenStyle(date.props.style).width, flattenStyle(time.props.style).width);
+    assert.ok(flattenStyle(time.props.style).width > flattenStyle(date.props.style).width);
     assert.equal(flattenStyle(location.props.style).fontSize, 13);
 
     const away = findNode(card, (node) => node.type === 'TeamLogo' && node.props.teamId === 'away-a')!;
@@ -200,12 +497,12 @@ describe('Home matchup carousel component', () => {
     assert.equal(readControls().position.props.accessibilityValue.text, '2 of 3');
   });
 
-  it('renders truthful visible and accessibility facts for every supported status, including zero and null scores', () => {
+  it('keeps time on one line, omits Scheduled, and preserves every meaningful game status and score', () => {
     assert.ok(existsSync(componentUrl.pathname), 'HomeMatchupCarousel must exist');
     const harness = createHookHarness();
     const Component = load(harness);
     const cases = [
-      { name: 'Scheduled', id: 'scheduled', status: 'scheduled', awayScore: 0, homeScore: null, visibleStatus: 'Scheduled', visibleScores: [] },
+      { name: 'Scheduled', id: 'scheduled', status: 'scheduled', awayScore: 0, homeScore: null, visibleStatus: null, visibleScores: [] },
       { name: 'Live', id: 'live', status: 'in_progress', awayScore: 0, homeScore: null, visibleStatus: 'Live', visibleScores: ['0', '—'] },
       { name: 'Final', id: 'final', status: 'completed', awayScore: null, homeScore: 0, visibleStatus: 'Final', visibleScores: ['—', '0'] },
       { name: 'Postponed', id: 'postponed', status: 'postponed', awayScore: 0, homeScore: null, visibleStatus: 'Postponed', visibleScores: [] },
@@ -224,12 +521,24 @@ describe('Home matchup carousel component', () => {
       const card = findNode(harness.output, (node) => node.props.testID === `home-matchup-card-${entry.id}`)!;
       assert.ok(card, `${entry.name} card must render`);
       const visible = nodeText(card);
-      assert.match(visible, new RegExp(entry.visibleStatus), `${entry.name} must show its truthful status`);
+      if (entry.visibleStatus) {
+        assert.match(visible, new RegExp(entry.visibleStatus), `${entry.name} must show its truthful status`);
+        assert.match(card.props.accessibilityLabel, new RegExp(`^${entry.visibleStatus}\\.`));
+      } else {
+        assert.doesNotMatch(visible, /\bScheduled\b/, 'scheduled cards rely on their date and time instead of a redundant status');
+        assert.doesNotMatch(card.props.accessibilityLabel, /\bScheduled\b/);
+        assert.match(card.props.accessibilityLabel, /^Away scheduled at Home scheduled\./);
+      }
       assert.match(visible, /Oct 7/);
       assert.match(visible, /Chick-Fil-A Community Ice Centre — Championship Rink/);
       assert.match(visible, /10:15 PM/);
-      assert.match(card.props.accessibilityLabel, new RegExp(`^${entry.visibleStatus}\\.`));
       assert.match(card.props.accessibilityLabel, /Oct 7.*10:15 PM.*Chick-Fil-A Community Ice Centre/);
+
+      const time = findNode(card, (node) => node.props.testID === 'home-matchup-time')!;
+      assert.equal(time.props.numberOfLines, 1);
+      assert.equal(time.props.adjustsFontSizeToFit, true);
+      assert.equal(time.props.minimumFontScale, 0.8);
+      assert.equal(time.props.maxFontSizeMultiplier, 1.8);
 
       if (entry.visibleScores.length) {
         for (const score of entry.visibleScores) {

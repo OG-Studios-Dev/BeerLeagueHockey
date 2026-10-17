@@ -29,7 +29,7 @@ describe('unified Stats navigation', () => {
     const manifest = JSON.parse(source('src/rebuild/screen-manifest.json')) as { routes: Array<{ name: string; component: string }> };
     assert.ok(manifest.routes.every((route) => route.name !== 'Leaderboards' && route.component !== 'LeaderboardsScreen'));
 
-    assert.match(source('src/screens/HomeScreen.tsx'), /navigate\?\.\(['"]Stats['"], \{ screen: ['"]StatsMain['"] \}\)/);
+    assert.doesNotMatch(source('src/screens/HomeScreen.tsx'), /navigate\?\.\(['"]Stats['"], \{ screen: ['"]StatsMain['"] \}\)/);
     assert.match(source('src/navigation/index.tsx'), /<StatsStack\.Screen name="StatsMain" component=\{StatsScreen\}/);
     assert.match(source('src/navigation/index.tsx'), /<StatsStack\.Screen name="CareerStats" component=\{CareerStatsScreen\}/);
   });
@@ -58,12 +58,11 @@ describe('unified Stats navigation', () => {
       'League Leaders top five',
       'complete ranked Player Stats and Goalie Stats table',
       'standalone Leaderboards route, file, registry, title, and callers are absent',
-      'Home all-stats CTA opens StatsMain',
       'truthful accessible names, mutual state, and 44pt targets',
       'opaque at opacity 1',
       'adaptive rows at 320/390/430',
     ]) assert.match(semantics, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), required);
-    assert.doesNotMatch(semantics, /get_team_standings|get_stats_leaders|get_goalie_season_stats|leaderboard and career routes resolve|Do not change stats contracts/i);
+    assert.doesNotMatch(semantics, /get_team_standings|get_stats_leaders|get_goalie_season_stats|leaderboard and career routes resolve|Do not change stats contracts|Home all-stats/i);
 
     const checklistLine = source('../../docs/MOBILE-UI-REBUILD-CHECKLIST.md')
       .split('\n')
@@ -73,7 +72,7 @@ describe('unified Stats navigation', () => {
     assert.match(checklistLine, /Goals\/Assists\/Points and goalie GAA/i);
     assert.match(checklistLine, /top-five League Leaders plus complete Player\/Goalie Stats tables/i);
     assert.match(checklistLine, /Leaderboards route\/file\/callers removed/i);
-    assert.match(checklistLine, /Home All Stats opens StatsMain/i);
+    assert.doesNotMatch(checklistLine, /Home All Stats|Home all-stats/i);
     assert.match(checklistLine, /44pt truthful controls, opaque Reduced Transparency states, and lossless adaptive-height Dynamic Type at 320\/390\/430/i);
     assert.doesNotMatch(checklistLine, /source:no|Do not change stats contracts/i);
   });

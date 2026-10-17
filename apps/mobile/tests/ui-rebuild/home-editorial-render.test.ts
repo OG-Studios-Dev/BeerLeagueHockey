@@ -240,10 +240,11 @@ describe('Home editorial native render', () => {
     assert.equal(marketplaceCalls.length, 0);
   });
 
-  it('opens the unified Stats main page from the mounted Home All stats action', () => {
+  it('does not pass a dead Stats navigation callback to the mounted Home leaders module', () => {
     const { output, navigationCalls } = makeScreen();
     const leaders = findNode(output, (node) => node.type === 'HomeLeagueLeaders');
-    leaders?.props.onOpenAllStats();
-    assert.deepEqual(navigationCalls, [['Stats', { screen: 'StatsMain' }]]);
+    assert.ok(leaders);
+    assert.equal(leaders.props.onOpenAllStats, undefined);
+    assert.deepEqual(navigationCalls, []);
   });
 });

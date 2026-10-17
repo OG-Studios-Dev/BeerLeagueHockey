@@ -382,12 +382,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             onMetricChange={setLeaderMetric}
             onRetry={retry}
             onOpenPlayer={(playerId) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id })}
-            onOpenAllStats={() => navigation?.navigate?.('Stats', { screen: 'StatsMain' })}
           />
         </View>
 
         <View testID="home-standings-section">
-          <SectionHeading title="Standings" fontScale={fontScale} action={<Pressable style={headingActionStyle} accessibilityRole="button" accessibilityLabel="Open standings" onPress={() => navigation?.navigate?.('Standings')}><Text allowFontScaling style={[styles.textLink, headingActionTextStyle, { color: accent }]}>All standings</Text></Pressable>} />
+          <SectionHeading title="Standings" fontScale={fontScale} />
           {divisions.length > 1 ? <SelectableControlGroup role="radiogroup" accessibilityLabel="Home standings division" contentContainerStyle={styles.divisionTabs}>{divisions.map((division) => <SelectableControl key={division.id} role="radio" label={division.name} selected={division.id === selectedDivision} onPress={() => setDivisionId(division.id)} />)}</SelectableControlGroup> : null}
           {!renderedPublicHome ? <SectionState loading onRetry={retry} /> : renderedPublicHome.standings.status === 'error' && shownStandings.length === 0 ? <SectionState message={renderedPublicHome.standings.message} onRetry={retry} /> : shownStandings.length === 0 ? <View style={[sectionCard, styles.emptyCard]}><Text style={styles.emptyTitle}>No standings available yet</Text></View> : (
             <FocusCard focusId={`home:standings:${selectedDivision ?? 'all'}`} accentColor={accent} style={standingsPanel}>

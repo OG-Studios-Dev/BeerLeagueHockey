@@ -206,7 +206,6 @@ async function refresh(runtime: ReturnType<typeof createRuntime>) {
 describe('Home web-structure runtime', () => {
   const headingActions = [
     { headingText: 'This Week’s GamesFull schedule', title: 'This Week’s Games', actionText: 'Full schedule' },
-    { headingText: 'StandingsAll standings', title: 'Standings', actionText: 'All standings' },
   ];
 
   function findHeading(output: unknown, text: string) {
@@ -253,6 +252,17 @@ describe('Home web-structure runtime', () => {
     assert.equal(nodeText(heading), 'League Photos');
     assert.equal(findNode(heading, (node) => node.type === 'Pressable'), undefined);
     assert.equal(findNode(heading, (node) => node.props.accessibilityRole === 'link'), undefined);
+  });
+
+  it('renders Standings as a heading only with no visible or semantic all-standings action', async () => {
+    const output = await settle(createRuntime());
+    const section = findNode(output, (node) => node.props.testID === 'home-standings-section');
+    const heading = findHeading(section, 'Standings');
+    assert.ok(heading);
+    assert.equal(nodeText(heading), 'Standings');
+    assert.equal(findNode(heading, (node) => node.type === 'Pressable'), undefined);
+    assert.equal(findNode(section, (node) => node.props.accessibilityLabel === 'Open standings'), undefined);
+    assert.doesNotMatch(nodeText(section), /All standings/);
   });
 
   it('gives every stacked accessibility-large action full width and scale-derived intrinsic-safe height', async () => {
@@ -568,8 +578,8 @@ describe('Home web-structure runtime', () => {
       assert.equal(label.props.maxFontSizeMultiplier, 1.3);
       assert.equal(logo.props.size, 58);
 
-      const heading = findHeading(output, 'StandingsAll standings');
-      assert.equal(flattenStyle(heading?.props.style).flexDirection, 'column');
+      const heading = findHeading(output, 'Standings');
+      assert.equal(flattenStyle(heading?.props.style).flexDirection, 'row');
       const standingsIndex = nodes.findIndex((node) => node.props.testID === 'home-standings-section');
       const photosIndex = nodes.findIndex((node) => node.props.testID === 'home-photos-section');
       assert.ok(standingsIndex >= 0 && photosIndex > standingsIndex, `next Home section remains after standings at ${width}`);
@@ -706,8 +716,6 @@ describe('Home web-structure runtime', () => {
 
     row.props.onPress();
     assert.deepEqual(runtime.navigationCalls.at(-1), ['Team', { screen: 'TeamDetail', params: { teamId: 'team-b', leagueId: league.id } }]);
-    findNode(standingsSection, (node) => node.props.accessibilityLabel === 'Open standings')?.props.onPress();
-    assert.deepEqual(runtime.navigationCalls.at(-1), ['Standings']);
 
     chips[1].props.onPress();
     runtime.harness.render();

@@ -466,21 +466,30 @@ describe('Home League Leaders component', () => {
     assert.equal(nodeText(error), 'Current-season goalie GAA is temporarily unavailable.Retry');
   });
 
-  it('keeps tabs at least 44px and supplies loading, error, empty and all-stats actions', () => {
+  it('uses compact intrinsic Home tabs with 44px targets and removes the all-stats action', () => {
     const harness = createHookHarness();
     const Component = loadComponent(harness);
     let retried = 0;
-    let openedAll = 0;
     const props: Record<string, unknown> = {
       leagueId, seasonName: null, metric: 'points', leaders: [], status: 'loading', width: 390, fontScale: 1,
       reduceTransparency: false, onMetricChange: () => {}, onRetry: () => { retried += 1; },
-      onOpenPlayer: () => {}, onOpenAllStats: () => { openedAll += 1; },
+      onOpenPlayer: () => {},
     };
     harness.mount(() => Component(props));
-    const tab = findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-points')!;
-    assert.equal(flattenStyle(tab.props.style({ pressed: false })).minHeight, 44);
-    assert.deepEqual(tab.props.accessibilityState, { selected: true, disabled: false });
+    for (const metric of ['goals', 'assists', 'points', 'gaa']) {
+      const tab = findNode(harness.output, (node) => node.props.testID === `home-leaders-tab-${metric}`)!;
+      const style = flattenStyle(tab.props.style({ pressed: false }));
+      assert.ok(style.minHeight >= 44);
+      assert.equal(style.flex, undefined, 'Home pills must size to their labels instead of filling the row');
+      assert.equal(style.flexGrow, 0);
+      assert.equal(style.flexShrink, 0);
+      assert.equal(style.paddingHorizontal, 10);
+      assert.match(tab.props.accessibilityLabel, /^Show (Goals|Assists|Points|GAA) leaders$/);
+    }
+    const pointsTab = findNode(harness.output, (node) => node.props.testID === 'home-leaders-tab-points')!;
+    assert.deepEqual(pointsTab.props.accessibilityState, { selected: true, disabled: false });
     assert.ok(findNode(harness.output, (node) => node.props.testID === 'home-leaders-loading'));
+    assert.equal(findNode(harness.output, (node) => node.props.testID === 'home-leaders-all-stats'), undefined);
 
     props.status = 'error';
     harness.render();
@@ -494,8 +503,7 @@ describe('Home League Leaders component', () => {
     assert.ok(empty);
     assert.match(nodeText(empty), /goalie GAA/i);
     assert.doesNotMatch(nodeText(empty), /skater totals/i);
-    findNode(harness.output, (node) => node.props.testID === 'home-leaders-all-stats')!.props.onPress();
-    assert.equal(openedAll, 1);
+    assert.equal(findNode(harness.output, (node) => node.props.testID === 'home-leaders-all-stats'), undefined);
   });
 
   it('keeps the shared Team defaults at three leaders with the existing standard row layout', () => {
@@ -524,6 +532,8 @@ describe('Home League Leaders component', () => {
     assert.equal(logo.props.size, 36);
     assert.equal(logo.props.transparentBacking, true);
     assert.equal(findNode(harness.output, (node) => node.props.testID === 'team-leaders-all-stats'), undefined);
+    const teamTab = findNode(harness.output, (node) => node.props.testID === 'team-leaders-tab-points')!;
+    assert.equal(flattenStyle(teamTab.props.style({ pressed: false })).flex, 1, 'Team pills keep their shared full-row layout');
   });
 
   it('keys artwork and crest lifetimes to exact changing identities', () => {
