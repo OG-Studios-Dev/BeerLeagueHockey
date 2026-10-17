@@ -6,7 +6,7 @@ import jackFooteArt from '../../assets/league-leaders/jack-foote.png';
 import neutralGoalieArt from '../../assets/league-leaders/neutral-goalie.png';
 import neutralHelmetArt from '../../assets/league-leaders/neutral-helmet-player.png';
 import type { HomeLeader } from '../lib/supabase/home';
-import { fitLeagueLeaderNameLine, formatLeagueLeaderGaa, splitLeagueLeaderName } from '../lib/leaderPresentation';
+import { fitLeagueLeaderNameLine, formatLeagueLeaderGaa, splitLeagueLeaderLineLosslessly, splitLeagueLeaderName } from '../lib/leaderPresentation';
 import { loadPlayerArtworkManifest, type PlayerArtworkManifest } from '../lib/playerArtworkManifest';
 import {
   type HomeLeaderMetric,
@@ -59,6 +59,9 @@ export type LeagueLeadersPresentationProps = {
   rowVariant?: 'standard' | 'home-inline';
   sectionTitle?: string;
   showTeamCrests?: boolean;
+  headingAccessory?: React.ReactNode;
+  metricTabsAccessibilityLabel?: string;
+  metricOptions?: readonly { key: HomeLeaderMetric; label: string }[];
 };
 
 type ArtworkStage = 'remote' | 'generated' | 'photo' | 'neutral';
@@ -136,10 +139,10 @@ function LeaderArtworkImage({ artwork, leader, testIDPrefix }: { artwork: Leader
   );
 }
 
-function MetricTabs({ value, onChange, testIDPrefix, compact }: { value: HomeLeaderMetric; onChange: (metric: HomeLeaderMetric) => void; testIDPrefix: string; compact: boolean }) {
+function MetricTabs({ value, onChange, testIDPrefix, compact, accessibilityLabel, options, reduceTransparency }: { value: HomeLeaderMetric; onChange: (metric: HomeLeaderMetric) => void; testIDPrefix: string; compact: boolean; accessibilityLabel: string; options: readonly { key: HomeLeaderMetric; label: string }[]; reduceTransparency: boolean }) {
   return (
-    <SelectableControlGroup role="tablist" accessibilityLabel={`${testIDPrefix === 'home' ? 'Home' : 'Team'} League Leader metric`} contentContainerStyle={styles.tabs}>
-      {METRICS.map(({ key, label }) => (
+    <SelectableControlGroup role="tablist" accessibilityLabel={accessibilityLabel} contentContainerStyle={styles.tabs}>
+      {options.map(({ key, label }) => (
         <SelectableControl
           key={key}
           testID={`${testIDPrefix}-leaders-tab-${key}`}
@@ -149,6 +152,9 @@ function MetricTabs({ value, onChange, testIDPrefix, compact }: { value: HomeLea
           selected={value === key}
           onPress={() => onChange(key)}
           style={compact ? styles.tabCompact : styles.tab}
+          selectedStyle={reduceTransparency ? styles.tabSelectedOpaque : undefined}
+          inactiveStyle={reduceTransparency ? styles.tabInactiveOpaque : undefined}
+          pressedStyle={reduceTransparency ? styles.tabPressedOpaque : undefined}
         />
       ))}
     </SelectableControlGroup>
@@ -160,8 +166,18 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
   const name = splitLeagueLeaderName(leader.player_name);
   const [measuredNameWidth, setMeasuredNameWidth] = React.useState(0);
   const availableNameWidth = measuredNameWidth > 0 ? measuredNameWidth : estimatedNameWidth;
+  const surname = name.secondLine || '\u00A0';
+  const surnameFitWidth = availableNameWidth * 0.92;
+  const surnameLines = variant === 'home-inline'
+    ? splitLeagueLeaderLineLosslessly(surname, { availableWidth: availableNameWidth, fontSize: 9.5 * fontScale })
+    : [surname];
   const firstLineFit = fitLeagueLeaderNameLine(name.firstLine, { availableWidth: availableNameWidth, baseFontSize: 13, minimumFontSize: 10 });
-  const secondLineFit = fitLeagueLeaderNameLine(name.secondLine || '\u00A0', { availableWidth: availableNameWidth, baseFontSize: compact ? 14 : 17, minimumFontSize: 9.5 });
+  const surnameBaseFontSize = surnameLines.length > 1 ? 11 : compact ? 14 : 17;
+  const surnameFits = surnameLines.map((line) => fitLeagueLeaderNameLine(line, {
+    availableWidth: surnameFitWidth / fontScale,
+    baseFontSize: surnameBaseFontSize,
+    minimumFontSize: 9.5,
+  }));
   const metricLabel = leader.metric.toUpperCase();
   const metricValue = leader.metric === 'gaa'
     ? formatLeagueLeaderGaa(leader.metricValue)
@@ -169,8 +185,8 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
   const accessibleMetric = leader.metric === 'gaa'
     ? `${leader.estimated ? 'estimated ' : ''}goals against average ${formatLeagueLeaderGaa(leader.metricValue)}`
     : `${leader.metricValue} ${leader.metric}`;
-  const wrapsSecondNameLine = variant === 'home-inline' && (compact || stacked);
-  const wrappedNameBlockMinHeight = stacked ? Math.ceil(62 * fontScale) : compact ? 54 : undefined;
+  const wrapsSecondNameLine = variant === 'home-inline' && (compact || stacked || surnameLines.length > 1);
+  const wrappedNameBlockMinHeight = stacked ? Math.ceil(62 * fontScale) : compact || surnameLines.length > 1 ? 54 : undefined;
   const stackedRowMinHeight = Math.ceil(62 * fontScale) + 16;
   const nameBlock = (
     <View
@@ -186,7 +202,19 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
       }}
     >
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.nameFirstLine, firstLineFit]}>{name.firstLine}</Text>
-      <Text numberOfLines={variant === 'home-inline' ? 2 : 1} adjustsFontSizeToFit minimumFontScale={compact ? 0.68 : 0.56} style={[styles.name, variant === 'home-inline' && compact && styles.nameCompact, secondLineFit]}>{name.secondLine || '\u00A0'}</Text>
+      {variant === 'home-inline'
+        ? surnameLines.map((line, index) => (
+          <Text
+            key={`${index}:${line}`}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={Math.min(1, 9.5 / surnameFits[index].fontSize)}
+            style={[styles.name, compact && styles.nameCompact, surnameFits[index]]}
+          >
+            {line}
+          </Text>
+        ))
+        : <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={compact ? 0.68 : 0.56} style={[styles.name, surnameFits[0]]}>{surname}</Text>}
     </View>
   );
 
@@ -266,10 +294,10 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
 }
 
 export default function LeagueLeadersPresentation({
-  leagueId, seasonName: _seasonName, metric, leaders, status, errorMessage, width, fontScale,
+  leagueId, seasonName: _seasonName, metric, leaders, status, errorMessage, width, fontScale, reduceTransparency,
   onMetricChange, onRetry, onOpenPlayer, onOpenAllStats, manifestLoader = loadPlayerArtworkManifest, manifestRefreshKey,
   testIDPrefix = 'home', focusPrefix = testIDPrefix, showAllStats = true, compactMetricTabs = false, visibleLeaderLimit = 3, rowVariant = 'standard',
-  sectionTitle = 'League Leaders', showTeamCrests = true,
+  sectionTitle = 'League Leaders', showTeamCrests = true, headingAccessory, metricTabsAccessibilityLabel = 'League Leader metric', metricOptions = METRICS,
 }: LeagueLeadersPresentationProps) {
   const [manifest, setManifest] = React.useState<PlayerArtworkManifest | null>(null);
   React.useEffect(() => {
@@ -295,12 +323,13 @@ export default function LeagueLeadersPresentation({
 
   return (
     <View testID={`${testIDPrefix}-league-leaders`} style={styles.module}>
-      <View style={styles.heading}>
+      <View testID={`${testIDPrefix}-leaders-heading`} style={[styles.heading, headingAccessory ? styles.headingWithAccessory : undefined]}>
         <View style={styles.headingCopy}>
           <Text accessibilityRole="header" style={styles.title}>{sectionTitle}</Text>
         </View>
+        {headingAccessory ? <View style={styles.headingAccessory}>{headingAccessory}</View> : null}
       </View>
-      <MetricTabs value={metric} onChange={onMetricChange} testIDPrefix={testIDPrefix} compact={compactMetricTabs} />
+      <MetricTabs value={metric} onChange={onMetricChange} testIDPrefix={testIDPrefix} compact={compactMetricTabs} accessibilityLabel={metricTabsAccessibilityLabel} options={metricOptions} reduceTransparency={reduceTransparency} />
 
       {status === 'loading' ? (
         <View testID={`${testIDPrefix}-leaders-loading`} style={styles.state} accessibilityLiveRegion="polite">
@@ -376,12 +405,17 @@ export default function LeagueLeadersPresentation({
 
 const styles = StyleSheet.create({
   module: { width: '100%', overflow: 'hidden', paddingVertical: 4 },
-  heading: { minHeight: 58, flexDirection: 'row', alignItems: 'flex-end' },
+  heading: { minHeight: 58, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  headingWithAccessory: { alignItems: 'center' },
   headingCopy: { flex: 1, minWidth: 0 },
+  headingAccessory: { flexShrink: 0 },
   title: { ...SECTION_HEADING_TEXT_STYLE, color: homeTokens.text },
   tabs: { flexDirection: 'row', gap: 6, marginTop: 13, marginBottom: 12 },
   tab: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   tabCompact: { minHeight: 44, flexGrow: 0, flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  tabSelectedOpaque: { backgroundColor: homeTokens.elevatedOpaque, borderColor: '#A78BFA' },
+  tabInactiveOpaque: { backgroundColor: homeTokens.surfaceOpaque, borderColor: homeTokens.strokeOpaque },
+  tabPressedOpaque: { opacity: 1, backgroundColor: '#22344A', borderColor: '#D8E7F5' },
   layout: { minHeight: 326, flexDirection: 'row', alignItems: 'stretch', gap: 4 },
   layoutCompact: { gap: 0 },
   layoutStacked: { flexDirection: 'column', minHeight: 0 },

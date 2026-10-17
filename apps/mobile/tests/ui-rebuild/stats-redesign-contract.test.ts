@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 const screen = readFileSync(new URL('../../src/screens/StatsScreen.tsx', import.meta.url).pathname, 'utf8');
-const leaders = readFileSync(new URL('../../src/components/StatsLeadersCard.tsx', import.meta.url).pathname, 'utf8');
+const sharedLeaders = readFileSync(new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url).pathname, 'utf8');
+const homeLeaders = readFileSync(new URL('../../src/components/HomeLeagueLeaders.tsx', import.meta.url).pathname, 'utf8');
 const rankedRow = readFileSync(new URL('../../src/components/StatsRankedRow.tsx', import.meta.url).pathname, 'utf8');
 const role = readFileSync(new URL('../../src/components/StatsRoleToggle.tsx', import.meta.url).pathname, 'utf8');
 const timeline = readFileSync(new URL('../../src/components/StatsTimelineFilter.tsx', import.meta.url).pathname, 'utf8');
@@ -12,36 +13,64 @@ function occurrences(value: string, pattern: RegExp) {
   return value.match(pattern)?.length ?? 0;
 }
 
-describe('approved unified stats redesign source contract', () => {
-  it('owns one adaptive page-level metric selector and keeps the League Leaders card presentational', () => {
-    for (const metric of ['goals', 'assists', 'points', 'gaa']) assert.match(screen, new RegExp(`key: ['"]${metric}['"]`));
-    assert.equal(occurrences(screen, /testID="stats-metric-selector"/g), 1);
-    assert.doesNotMatch(leaders, /SelectableControl|stats-leaders-tab/);
-    assert.match(leaders, /League Leaders/);
+describe('approved Stats redesign source contract', () => {
+  it('uses the shared Home presentation with explicit Stats defaults and an explicit heading API', () => {
+    assert.match(screen, /import LeagueLeadersPresentation from ['"]\.\.\/components\/LeagueLeadersPresentation['"]/);
+    assert.match(screen, /<LeagueLeadersPresentation/);
+    assert.doesNotMatch(screen, /StatsLeadersCard|stats-metric-selector/);
+    assert.match(screen, /testIDPrefix="stats"/);
+    assert.match(screen, /focusPrefix="stats"/);
+    assert.match(screen, /showAllStats=\{false\}/);
+    assert.match(screen, /compactMetricTabs/);
+    assert.match(screen, /visibleLeaderLimit=\{5\}/);
+    assert.match(screen, /rowVariant="home-inline"/);
+    assert.match(screen, /headingAccessory=\{roleToggle\}/);
+    assert.match(screen, /metricTabsAccessibilityLabel="Stats League Leader metric"/);
+    assert.match(sharedLeaders, /headingAccessory\?: React\.ReactNode/);
+    assert.match(sharedLeaders, /metricTabsAccessibilityLabel\?: string/);
+    assert.doesNotMatch(sharedLeaders, /testIDPrefix === ['"]home['"]/);
   });
 
-  it('renders accessible clock and hockey-role icon controls without visible role or timeline labels', () => {
+  it('preserves the Home wrapper compact top-five defaults explicitly', () => {
+    assert.match(homeLeaders, /testIDPrefix="home"/);
+    assert.match(homeLeaders, /focusPrefix="home"/);
+    assert.match(homeLeaders, /showAllStats=\{false\}/);
+    assert.match(homeLeaders, /compactMetricTabs/);
+    assert.match(homeLeaders, /visibleLeaderLimit=\{5\}/);
+    assert.match(homeLeaders, /rowVariant="home-inline"/);
+    assert.match(homeLeaders, /metricTabsAccessibilityLabel="Home League Leader metric"/);
+  });
+
+  it('uses approved image artwork for truthful role tabs without visible role labels', () => {
     assert.match(timeline, /name="time-outline"/);
     assert.match(timeline, /accessibilityLabel=\{`Open timeline filter\. \$\{label\}`\}/);
     assert.doesNotMatch(timeline, /<Text[^>]*>Timeline<\/Text>/);
-    assert.match(role, /accessibilityRole=\{'tablist' as AccessibilityRole\}/);
+    assert.match(role, /import playerRoleArt from ['"]\.\.\/\.\.\/assets\/stats-role\/player-a\.png['"]/);
+    assert.match(role, /import goalieRoleArt from ['"]\.\.\/\.\.\/assets\/stats-role\/goalie-c\.png['"]/);
+    assert.equal(occurrences(role, /<Image/g), 2);
     assert.equal(occurrences(role, /accessibilityRole="tab"/g), 2);
     assert.match(role, /accessibilityState=\{\{ selected: role === 'player' \}\}/);
     assert.match(role, /accessibilityState=\{\{ selected: role === 'goalie' \}\}/);
-    assert.match(role, /aria-selected=\{role === 'player'\}/);
-    assert.match(role, /aria-selected=\{role === 'goalie'\}/);
-    assert.match(role, /onSelectRole\('player'\)/);
-    assert.match(role, /onSelectRole\('goalie'\)/);
-    assert.match(role, /stats-role-icon-player/);
-    assert.match(role, /stats-role-icon-goalie/);
     assert.doesNotMatch(role, />Player<|>Goalie</);
   });
 
-  it('renders one complete metric-ranked list with exact role headings and no horizontal stats table or Leaderboards action', () => {
+  it('keeps the timeline separate and right-aligned while both headings receive the synchronized role toggle', () => {
+    assert.match(screen, /testID="stats-timeline-control-row"/);
+    assert.match(screen, /timelineControlRow: \{[^}]*justifyContent: 'flex-end'/);
+    assert.match(screen, /headingAccessory=\{roleToggle\}/);
+    assert.match(screen, /testID="stats-complete-heading"[^>]*>.*\{roleToggle\}/s);
+    assert.doesNotMatch(screen, /stats-role-controls/);
+  });
+
+  it('renders one complete metric-ranked list with complete truthful metrics and player-card navigation', () => {
     assert.match(screen, /buildRankedRows/);
     assert.match(screen, /<StatsRankedRow/);
+    assert.match(screen, /showChampionships=\{showChampionships\}/);
     assert.match(screen, /'Goalie Stats' : 'Player Stats'/);
     assert.doesNotMatch(screen, /StatsTable|stats-leaderboards-action|Leaderboards|<PillToggle/);
+    assert.match(rankedRow, /buildSkaterRows/);
+    assert.match(rankedRow, /buildGoalieRows/);
+    assert.match(rankedRow, /'Champs'/);
     assert.match(rankedRow, /stats-ranked-row-/);
     assert.match(rankedRow, /Open player card/);
     assert.match(screen, /Unavailable selected values are excluded/);

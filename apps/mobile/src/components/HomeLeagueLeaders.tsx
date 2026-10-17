@@ -4,7 +4,7 @@ import LeagueLeadersPresentation, { type LeagueLeadersPresentationProps } from '
 
 export type HomeLeagueLeadersProps = Omit<
   LeagueLeadersPresentationProps,
-  'testIDPrefix' | 'focusPrefix' | 'showAllStats' | 'onOpenAllStats' | 'compactMetricTabs' | 'visibleLeaderLimit' | 'rowVariant' | 'sectionTitle' | 'showTeamCrests'
+  'testIDPrefix' | 'focusPrefix' | 'showAllStats' | 'onOpenAllStats' | 'compactMetricTabs' | 'visibleLeaderLimit' | 'rowVariant' | 'sectionTitle' | 'showTeamCrests' | 'headingAccessory' | 'metricTabsAccessibilityLabel' | 'metricOptions'
 >;
 
 export default function HomeLeagueLeaders(props: HomeLeagueLeadersProps) {
@@ -17,6 +17,7 @@ export default function HomeLeagueLeaders(props: HomeLeagueLeadersProps) {
       compactMetricTabs
       visibleLeaderLimit={5}
       rowVariant="home-inline"
+      metricTabsAccessibilityLabel="Home League Leader metric"
     />
   );
 }

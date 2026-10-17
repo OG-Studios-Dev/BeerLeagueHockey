@@ -1,5 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, type AccessibilityRole } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type AccessibilityRole } from 'react-native';
+
+import goalieRoleArt from '../../assets/stats-role/goalie-c.png';
+import playerRoleArt from '../../assets/stats-role/player-a.png';
 
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { getSurfacePalette } from '../theme/ui';
@@ -12,25 +15,11 @@ type Props = {
 };
 
 function HockeyPlayerIcon() {
-  return (
-    <View testID="stats-role-icon-player" accessible={false} style={styles.iconFrame}>
-      <View style={styles.stickShaft} />
-      <View style={styles.stickBlade} />
-      <View style={styles.puck} />
-    </View>
-  );
+  return <Image testID="stats-role-icon-player" accessible={false} alt="" source={playerRoleArt} resizeMode="contain" style={styles.roleArtwork} />;
 }
 
 function GoalieMaskIcon() {
-  return (
-    <View testID="stats-role-icon-goalie" accessible={false} style={styles.mask}>
-      <View style={styles.maskBrow} />
-      <View style={[styles.maskVent, styles.maskVentLeft]} />
-      <View style={[styles.maskVent, styles.maskVentRight]} />
-      <View style={styles.maskNose} />
-      <View style={styles.maskCage} />
-    </View>
-  );
+  return <Image testID="stats-role-icon-goalie" accessible={false} alt="" source={goalieRoleArt} resizeMode="contain" style={styles.roleArtwork} />;
 }
 
 export default function StatsRoleToggle({ role, onSelectRole }: Props) {
@@ -116,78 +105,5 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(142,127,255,0.24)',
   },
   pressed: { opacity: 0.7 },
-  iconFrame: { width: 25, height: 25 },
-  stickShaft: {
-    position: 'absolute',
-    left: 10,
-    top: 0,
-    width: 3,
-    height: 22,
-    borderRadius: 2,
-    backgroundColor: '#61E2E8',
-    transform: [{ rotate: '-32deg' }],
-  },
-  stickBlade: {
-    position: 'absolute',
-    left: 13,
-    bottom: 3,
-    width: 10,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#61E2E8',
-    transform: [{ rotate: '10deg' }],
-  },
-  puck: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 7,
-    height: 4,
-    borderRadius: 3,
-    backgroundColor: '#F4F8FB',
-  },
-  mask: {
-    width: 23,
-    height: 25,
-    borderWidth: 2,
-    borderColor: '#C8B8FF',
-    borderRadius: 10,
-  },
-  maskBrow: {
-    position: 'absolute',
-    left: 3,
-    right: 3,
-    top: 6,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: '#C8B8FF',
-  },
-  maskVent: {
-    position: 'absolute',
-    top: 10,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#C8B8FF',
-  },
-  maskVentLeft: { left: 4 },
-  maskVentRight: { right: 4 },
-  maskNose: {
-    position: 'absolute',
-    left: 9,
-    top: 13,
-    width: 2,
-    height: 4,
-    backgroundColor: '#C8B8FF',
-  },
-  maskCage: {
-    position: 'absolute',
-    left: 5,
-    right: 5,
-    bottom: 4,
-    height: 3,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#C8B8FF',
-  },
+  roleArtwork: { width: 36, height: 36 },
 });

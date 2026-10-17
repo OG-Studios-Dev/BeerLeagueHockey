@@ -272,7 +272,8 @@ describe('canonical selectable-control foundation', () => {
     assert.doesNotMatch(src('components/StatsLeadersCard.tsx'), /toggleSelected:\s*\{\s*backgroundColor:\s*'#61DDE2'/);
     assert.match(src('screens/TeamScreen/TeamPublicPage.tsx'), /<SelectableControl[^>]+testID="team-roster-jersey-toggle"/);
     assert.match(src('screens/TeamScreen/TeamPublicPage.tsx'), /<SelectableControl[^>]+testID="team-roster-list-toggle"/);
-    assert.match(src('screens/StatsScreen.tsx'), /<SelectableControlGroup[^>]*testID="stats-metric-selector"[^>]*role="tablist"/);
+    assert.match(src('screens/StatsScreen.tsx'), /<LeagueLeadersPresentation/);
+    assert.match(src('components/LeagueLeadersPresentation.tsx'), /<SelectableControlGroup[^>]*role="tablist"/);
     assert.match(src('screens/EditProfileScreen.tsx'), /<SelectableControlGroup[^>]*role="radiogroup"[^>]*accessibilityLabel="Position options"/);
     assert.match(src('screens/EditProfileScreen.tsx'), /<SelectableControlGroup[^>]*role="radiogroup"[^>]*accessibilityLabel="League Match Level options"/);
   });

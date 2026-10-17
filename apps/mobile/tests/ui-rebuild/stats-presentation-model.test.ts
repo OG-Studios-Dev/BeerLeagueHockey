@@ -3,14 +3,17 @@ import { describe, it } from 'node:test';
 import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 
 import {
+  adaptStatsScopePlayersToHomeLeaders,
   buildGoalieRows,
   buildLeaderRows,
   buildRankedRows,
   buildSkaterRows,
   normalizeStatsScope,
+  shouldShowChampionships,
   splitPlayerName,
   type StatsScopePlayer,
 } from '../../src/lib/statsPresentationModel';
+import { rankHomeLeaders } from '../../src/lib/homeLeagueLeaders';
 
 const metric = (value: number | null, state: PublicStatMetric['state'] = value === null ? 'unknown' : 'recorded', sources: PublicStatMetric['sources'] = value === null ? [] : ['skater_stats']): PublicStatMetric => ({
   value,
@@ -45,6 +48,16 @@ describe('stats presentation model', () => {
     assert.deepEqual(normalizeStatsScope({ kind: 'all' }, seasons).seasonIds, ['season-current', 'season-playoffs', 'season-old']);
     assert.throws(() => normalizeStatsScope({ kind: 'multiple', seasonIds: [] }, seasons), /season/i);
     assert.throws(() => normalizeStatsScope({ kind: 'single', seasonIds: ['missing'] }, seasons), /season/i);
+  });
+
+  it('derives Champs visibility only from the returned applied scope', () => {
+    assert.equal(shouldShowChampionships({ kind: 'current', seasonIds: ['current'] }), false);
+    assert.equal(shouldShowChampionships({ kind: 'single', seasonIds: ['one'] }), false);
+    assert.equal(shouldShowChampionships({ kind: 'multiple', seasonIds: ['one'] }), false);
+    assert.equal(shouldShowChampionships({ kind: 'multiple', seasonIds: ['one', 'two'] }), true);
+    assert.equal(shouldShowChampionships({ kind: 'current', seasonIds: ['one', 'two'] }), true);
+    assert.equal(shouldShowChampionships({ kind: 'all', seasonIds: ['one'] }), true);
+    assert.equal(shouldShowChampionships(null), false);
   });
 
   it('stacks given names above surnames without losing particles or mononyms', () => {
@@ -176,6 +189,55 @@ describe('stats presentation model', () => {
     }
     const estimatedRates = buildSkaterRows([estimated])[0].columns.filter((column) => column.key === 'gpg' || column.key === 'ppg');
     assert.deepEqual(estimatedRates.map((column) => [column.display, column.state]), [['—', 'estimated'], ['—', 'estimated']]);
+  });
+
+  it('adapts authoritative dual-role scope rows for the shared leader presentation without publishing unavailable candidates', () => {
+    const dualRole = player({
+      playerId: 'dual-role', playerName: 'Dual Role', avatarUrl: 'https://example.test/dual.png',
+      displayTeam: { id: 'team-a', name: 'Owls', logoUrl: 'https://example.test/owls.png' },
+      skater: {
+        gamesPlayed: metric(4), goals: metric(8, 'estimated', ['roster_window']),
+        assists: { value: null, state: 'conflicted', sources: ['skater_stats'], candidates: { recorded: 7 } },
+        points: metric(5, 'verified', ['override']), championships: metric(1, 'verified', ['player_badges']),
+      },
+      goalie: {
+        gamesPlayed: metric(2, 'reported', ['goalie_stats']), goalsAgainst: metric(3, 'recorded', ['goalie_stats']),
+        goalsAgainstAverage: metric(1.5, 'reported', ['goalie_stats']), championships: metric(1, 'verified', ['player_badges']),
+      },
+    });
+    const tied = player({
+      playerId: 'tied', playerName: 'Tied Player',
+      skater: { gamesPlayed: metric(4), goals: metric(1), assists: metric(1), points: metric(5), championships: metric(0) },
+    });
+    const unavailable = player({
+      playerId: 'unavailable', playerName: 'Unavailable Player',
+      skater: {
+        gamesPlayed: metric(9, 'estimated'), goals: metric(6, 'estimated'),
+        assists: metric(null, 'unknown'), points: metric(null, 'conflicted'), championships: metric(0),
+      },
+      goalie: {
+        gamesPlayed: metric(4, 'verified'), goalsAgainst: metric(5, 'verified'),
+        goalsAgainstAverage: metric(1.25, 'estimated'), championships: metric(0),
+      },
+    });
+
+    const adapted = adaptStatsScopePlayersToHomeLeaders([dualRole, tied, unavailable]);
+    assert.equal(adapted.length, 3);
+    assert.deepEqual(adapted[0], {
+      player_id: 'dual-role', player_name: 'Dual Role', avatar_url: 'https://example.test/dual.png',
+      team_id: 'team-a', team_name: 'Owls', display_team_name: 'Owls', display_team_logo_url: 'https://example.test/owls.png',
+      position: 'Goalie', goals: null, assists: null, points: 5, gaa: 1.5, is_goalie: true, estimated: false,
+    });
+    assert.doesNotMatch(JSON.stringify(adapted[0]), /\b8\b|\b7\b|candidates|estimated.*true/);
+    assert.deepEqual(adapted[2], {
+      player_id: 'unavailable', player_name: 'Unavailable Player', avatar_url: null,
+      team_id: null, team_name: 'Free agent', display_team_name: null, display_team_logo_url: null,
+      position: 'Goalie', goals: null, assists: null, points: null, gaa: null, is_goalie: true, estimated: false,
+    });
+    assert.deepEqual(rankHomeLeaders(adapted, 'points', { visibleLimit: 5 }).map((row) => [row.player_id, row.rankLabel]), [
+      ['dual-role', 'T1'], ['tied', 'T1'],
+    ]);
+    assert.deepEqual(rankHomeLeaders(adapted, 'gaa', { visibleLimit: 5 }).map((row) => row.player_id), ['dual-role']);
   });
 
   it('sorts exported table rows only by publishable metrics before blank estimated or conflicted candidates', () => {

@@ -4,7 +4,8 @@ import { describe, it } from 'node:test';
 
 import type { HomeLeader } from '../../src/lib/supabase/home';
 import * as leaderModel from '../../src/lib/homeLeagueLeaders';
-import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
+import { estimateLeagueLeaderLineWidth } from '../../src/lib/leaderPresentation';
+import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText, type TestNode } from './component-harness';
 
 const leagueId = leaderModel.JACK_FOOTE_ART_IDENTITY.leagueId;
 const jack: HomeLeader = {
@@ -74,6 +75,13 @@ function loadComponent(
       '../../assets/league-leaders/neutral-goalie.png': { asset: 'goalie' },
     },
   ).default;
+}
+
+function findNodes(root: unknown, predicate: (node: TestNode) => boolean): TestNode[] {
+  if (Array.isArray(root)) return root.flatMap((child) => findNodes(child, predicate));
+  if (!root || typeof root !== 'object' || !('props' in root)) return [];
+  const node = root as TestNode;
+  return [...(predicate(node) ? [node] : []), ...findNodes(node.props.children, predicate)];
 }
 
 describe('Home League Leaders component', () => {
@@ -275,13 +283,18 @@ describe('Home League Leaders component', () => {
       const row = findNode(harness.output, (node) => node.props.testID === 'home-leader-row-maximilian')!;
       const nameBlock = findNode(row, (node) => node.props.testID === 'home-leader-name-block-maximilian')!;
       const first = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'Maximilian')!;
-      const second = findNode(row, (node) => node.type === 'Text' && nodeText(node) === 'de la Cruz-Santamaría')!;
+      const surnameLines = findNodes(nameBlock, (node) => node.type === 'Text' && node !== first);
       assert.equal(first.props.numberOfLines, 1);
-      assert.equal(second.props.numberOfLines, 2, `${width}px/fontScale ${fontScale} must wrap instead of one-line ellipsis`);
       assert.equal(first.props.adjustsFontSizeToFit, true);
-      assert.equal(second.props.adjustsFontSizeToFit, true);
-      assert.equal(nodeText(second), 'de la Cruz-Santamaría');
-      assert.ok(Number(flattenStyle(second.props.style).fontSize) >= 9.5);
+      assert.ok(surnameLines.length >= 1 && surnameLines.length <= 2, `${width}px/fontScale ${fontScale} uses at most two explicit surname lines`);
+      assert.equal(surnameLines.map(nodeText).join(''), 'de la Cruz-Santamaría');
+      for (const line of surnameLines) {
+        assert.equal(line.props.numberOfLines, 1, 'every explicit Home surname child stays on one rendered line');
+        assert.equal(line.props.adjustsFontSizeToFit, true, 'every explicit Home surname child can fit without wrapping');
+        assert.equal(line.props.ellipsizeMode, undefined, 'explicit Home surname lines cannot request ellipsis');
+        const lineStyle = flattenStyle(line.props.style);
+        assert.ok(Number(lineStyle.fontSize) * Number(line.props.minimumFontScale) >= 9.5);
+      }
       if (width === 320) {
         assert.ok(
           Number(flattenStyle(nameBlock.props.style).minHeight) >= (fontScale === 1 ? 54 : Math.ceil(62 * fontScale)),
@@ -308,6 +321,84 @@ describe('Home League Leaders component', () => {
     const teamSecond = findNode(teamRow, (node) => node.type === 'Text' && nodeText(node) === 'de la Cruz-Santamaría')!;
     assert.equal(teamSecond.props.numberOfLines, 1);
     assert.equal(nodeText(teamSecond), 'de la Cruz-Santamaría');
+  });
+
+  it('renders the exact 320px Stats identity losslessly in at most two surname lines inside its 65px row', () => {
+    const harness = createHookHarness();
+    const Presentation = loadComponent(
+      harness,
+      new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url),
+    );
+    const exactName = 'Alexandria-Mae Fixture-Sutherland-Winterbourne';
+    const leaders: HomeLeader[] = [
+      { ...fiveRowLeaders[0], player_id: 'alexandria-mae', player_name: exactName, points: 99 },
+      ...fiveRowLeaders.slice(1, 5),
+    ];
+    harness.mount(() => Presentation({
+      leagueId, seasonName: 'Fall 2026', metric: 'points', leaders, status: 'ready',
+      width: 320, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {},
+      onOpenPlayer: () => {}, testIDPrefix: 'stats', focusPrefix: 'stats', showAllStats: false,
+      compactMetricTabs: true, visibleLeaderLimit: 5, rowVariant: 'home-inline',
+      metricTabsAccessibilityLabel: 'Stats League Leader metric',
+    }));
+
+    const renderedRows = findNodes(
+      harness.output,
+      (node) => typeof node.props.testID === 'string' && node.props.testID.startsWith('stats-leader-row-'),
+    );
+    assert.equal(renderedRows.length, 5, 'the Stats presentation keeps its five-row layout');
+    let row = findNode(harness.output, (node) => node.props.testID === 'stats-leader-row-alexandria-mae')!;
+    const ranking = findNode(harness.output, (node) => node.props.testID === 'stats-leaders-ranking')!;
+    const rankingStyle = flattenStyle(ranking.props.style);
+    const rankingWidth = (320 - 32) * Number.parseFloat(String(rankingStyle.width)) / 100;
+    const cluster = findNode(row, (node) => node.props.testID === 'stats-leader-crest-cluster-alexandria-mae')!;
+    const value = findNode(row, (node) => node.props.testID === 'stats-leader-value-alexandria-mae')!;
+    const clusterStyle = flattenStyle(cluster.props.style);
+    const valueStyle = flattenStyle(value.props.style);
+    const measuredNameWidth = Math.floor(
+      rankingWidth
+      - Number(clusterStyle.width)
+      - Number(clusterStyle.marginRight)
+      - Number(valueStyle.minWidth)
+      - Number(valueStyle.marginLeft),
+    );
+    assert.equal(measuredNameWidth, 94, 'the mounted 320px Stats row exercises its real narrow name lane');
+    findNode(row, (node) => node.props.testID === 'stats-leader-name-block-alexandria-mae')!
+      .props.onLayout({ nativeEvent: { layout: { width: measuredNameWidth } } });
+    harness.render();
+
+    row = findNode(harness.output, (node) => node.props.testID === 'stats-leader-row-alexandria-mae')!;
+    const nameBlock = findNode(row, (node) => node.props.testID === 'stats-leader-name-block-alexandria-mae')!;
+    const givenName = findNode(nameBlock, (node) => node.type === 'Text' && nodeText(node) === 'Alexandria-Mae')!;
+    const surnameLines = findNodes(nameBlock, (node) => node.type === 'Text' && node !== givenName);
+    assert.ok(surnameLines.length >= 1 && surnameLines.length <= 2, 'surname uses one or two explicit lines');
+    assert.equal(surnameLines.map(nodeText).join(''), 'Fixture-Sutherland-Winterbourne');
+    for (const line of surnameLines) {
+      assert.equal(line.props.numberOfLines, 1, 'every pre-split surname line is explicitly constrained to one rendered line');
+      assert.equal(line.props.adjustsFontSizeToFit, true, 'every pre-split surname line can fit without wrapping');
+      assert.equal(line.props.ellipsizeMode, undefined, 'lossless surname lines never request ellipsis');
+      const lineStyle = flattenStyle(line.props.style);
+      const minimumFontScale = Number(line.props.minimumFontScale);
+      assert.ok(minimumFontScale > 0 && minimumFontScale <= 1, 'surname autosizing has an explicit reachable scale');
+      assert.ok(
+        Number(lineStyle.fontSize) * minimumFontScale >= 9.5,
+        `${nodeText(line)} keeps the 9.5px readable font floor`,
+      );
+      assert.ok(
+        estimateLeagueLeaderLineWidth(nodeText(line), { fontSize: Number(lineStyle.fontSize) }) <= measuredNameWidth,
+        `${nodeText(line)} fits the measured ${measuredNameWidth}px name lane`,
+      );
+    }
+
+    const rowStyle = flattenStyle(row.props.style({ pressed: false }));
+    const nameBlockStyle = flattenStyle(nameBlock.props.style);
+    const availableRowHeight = Number(rowStyle.height) - Number(rowStyle.paddingVertical) * 2;
+    const nameStackHeight = Number(flattenStyle(givenName.props.style).lineHeight)
+      + surnameLines.reduce((height, line) => height + Number(flattenStyle(line.props.style).lineHeight), 0);
+    assert.equal(rowStyle.height, 65);
+    assert.ok(nameStackHeight <= availableRowHeight, `the ${nameStackHeight}px name stack stays inside the ${availableRowHeight}px row interior`);
+    assert.ok(Number(nameBlockStyle.minHeight) <= availableRowHeight, 'the name block cannot intrude into the next row');
+    assert.match(row.props.accessibilityLabel, new RegExp(exactName));
   });
 
   it('owns generated, photo and neutral attempts and ignores saved stale callbacks', () => {
@@ -506,6 +597,31 @@ describe('Home League Leaders component', () => {
     assert.equal(findNode(harness.output, (node) => node.props.testID === 'home-leaders-all-stats'), undefined);
   });
 
+  it('renders an explicit heading accessory and metric-label contract without inferring either from test IDs', () => {
+    const harness = createHookHarness();
+    const Presentation = loadComponent(
+      harness,
+      new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url),
+    );
+    const accessory = createElement('HeadingAccessory', { testID: 'stats-heading-role-toggle' });
+    harness.mount(() => Presentation({
+      leagueId, seasonName: 'Fall 2026', metric: 'points', leaders: fiveRowLeaders, status: 'ready',
+      width: 320, fontScale: 1.8, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {},
+      onOpenPlayer: () => {}, testIDPrefix: 'arbitrary-prefix', focusPrefix: 'stats', showAllStats: false,
+      compactMetricTabs: true, visibleLeaderLimit: 5, rowVariant: 'home-inline',
+      headingAccessory: accessory, metricTabsAccessibilityLabel: 'Stats League Leader metric',
+    }));
+
+    const presentationRoot = findNode(harness.output, (node) => node.props.testID === 'arbitrary-prefix-league-leaders')!;
+    assert.ok(findNode(presentationRoot, (node) => node.props.testID === 'stats-heading-role-toggle'));
+    const heading = findNode(presentationRoot, (node) => node.props.testID === 'arbitrary-prefix-leaders-heading')!;
+    assert.equal(flattenStyle(heading.props.style).flexDirection, 'row');
+    assert.equal(flattenStyle(heading.props.style).alignItems, 'center');
+    assert.equal(flattenStyle(heading.props.children[0].props.style).minWidth, 0);
+    assert.equal(flattenStyle(heading.props.children[1].props.style).flexShrink, 0);
+    assert.equal(findNode(presentationRoot, (node) => node.props.accessibilityRole === 'tablist')?.props.accessibilityLabel, 'Stats League Leader metric');
+  });
+
   it('keeps the shared Team defaults at three leaders with the existing standard row layout', () => {
     const harness = createHookHarness();
     const Presentation = loadComponent(
@@ -532,6 +648,8 @@ describe('Home League Leaders component', () => {
     assert.equal(logo.props.size, 36);
     assert.equal(logo.props.transparentBacking, true);
     assert.equal(findNode(harness.output, (node) => node.props.testID === 'team-leaders-all-stats'), undefined);
+    const teamHeading = findNode(harness.output, (node) => node.props.testID === 'team-leaders-heading')!;
+    assert.equal(flattenStyle(teamHeading.props.style).alignItems, 'flex-end', 'Team keeps the prior bottom-aligned heading when no accessory is present');
     const teamTab = findNode(harness.output, (node) => node.props.testID === 'team-leaders-tab-points')!;
     assert.equal(flattenStyle(teamTab.props.style({ pressed: false })).flex, 1, 'Team pills keep their shared full-row layout');
   });

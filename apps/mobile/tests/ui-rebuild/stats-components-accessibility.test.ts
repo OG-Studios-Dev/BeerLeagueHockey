@@ -295,6 +295,40 @@ describe('Stats table responsive accessibility', () => {
   });
 });
 
+describe('Stats role artwork accessibility', () => {
+  it('renders the approved realistic player and goalie images inside truthful 44pt tabs at phone widths', () => {
+    for (const width of [320, 390]) {
+      const h = createHookHarness();
+      const playerArt = { asset: 'approved-player-a' };
+      const goalieArt = { asset: 'approved-goalie-c' };
+      const RoleToggle = compileCommonJs<any>(new URL('../../src/components/StatsRoleToggle.tsx', import.meta.url), {
+        react: h.react,
+        'react-native': { ...native(width), Image: 'Image' },
+        '../../assets/stats-role/player-a.png': playerArt,
+        '../../assets/stats-role/goalie-c.png': goalieArt,
+        '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
+        '../theme/ui': { getSurfacePalette: () => ({ surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }) },
+      }).default;
+      h.mount(() => RoleToggle({ role: 'player', onSelectRole() {} }));
+
+      const player = findNode(h.output, (node) => node.props.testID === 'stats-role-option-player')!;
+      const goalie = findNode(h.output, (node) => node.props.testID === 'stats-role-option-goalie')!;
+      assert.equal(player.props.accessibilityLabel, 'Player stats');
+      assert.equal(goalie.props.accessibilityLabel, 'Goalie stats');
+      assert.equal(player.props.accessibilityState.selected, true);
+      assert.equal(goalie.props.accessibilityState.selected, false);
+      for (const tab of [player, goalie]) {
+        const style = flattenStyle(tab.props.style({ pressed: false }));
+        assert.ok(Number(style.width) >= 44, `${width}px role tab width`);
+        assert.ok(Number(style.minHeight) >= 44, `${width}px role tab height`);
+      }
+      assert.deepEqual(findNode(player, (node) => node.type === 'Image')?.props.source, playerArt);
+      assert.deepEqual(findNode(goalie, (node) => node.type === 'Image')?.props.source, goalieArt);
+      assert.doesNotMatch(nodeText(h.output), /Player|Goalie/);
+    }
+  });
+});
+
 describe('Stats timeline modal behavior', () => {
   it('opens as a modal, explains league-wide All time, and applies that selection', () => {
     const h = createHookHarness();

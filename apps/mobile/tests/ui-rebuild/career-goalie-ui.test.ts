@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { adaptStatsScopePlayersToHomeLeaders, buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, shouldShowChampionships, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
 import { formatPublicMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
-function native() {
+function native(width = 320, fontScale = 1.8) {
   return {
     ActivityIndicator: 'ActivityIndicator', Text: 'Text', View: 'View', Pressable: 'Pressable', ScrollView: 'ScrollView', RefreshControl: 'RefreshControl',
-    useWindowDimensions: () => ({ width: 320, height: 740, scale: 1, fontScale: 1.8 }),
+    useWindowDimensions: () => ({ width, height: 740, scale: 1, fontScale }),
     StyleSheet: { create: (styles: any) => styles, absoluteFill: {}, absoluteFillObject: {}, hairlineWidth: 1 },
     FlatList: (props: any) => createElement('FlatList', props, props.ListHeaderComponent,
       ...(props.data ?? []).map((item: any, index: number) => props.renderItem({ item, index })),
@@ -17,6 +17,11 @@ function native() {
 }
 const colors = { __esModule: true, default: { primary: '#0ff', bgBase: '#000', bgSurface: '#111', textPrimary: '#fff', textSecondary: '#aaa', brandGold: '#fc0', borderCard: '#333', glassStroke: '#333', glassStrokeStrong: '#444', brandRink: '#0ff' } };
 async function settle(h: ReturnType<typeof createHookHarness>) { for (let index = 0; index < 10; index += 1) { await new Promise<void>((resolve) => setImmediate(resolve)); h.render(); } return h.output; }
+function allNodes(root: any, predicate: (node: any) => boolean): any[] {
+  if (Array.isArray(root)) return root.flatMap((node) => allNodes(node, predicate));
+  if (!root?.props) return [];
+  return [...(predicate(root) ? [root] : []), ...allNodes(root.props.children, predicate)];
+}
 const metric = (value: number | null, state = value === null ? 'unknown' : 'recorded', sources: string[] = value === null ? [] : ['skater_stats']) => ({ value, state, sources });
 const team = { id: '44444444-4444-4444-8444-444444444444', name: 'Owls', logoUrl: null };
 function statsPlayer(name = 'Goalie', id = '22222222-2222-4222-8222-222222222222'): StatsScopePlayer {
@@ -46,22 +51,24 @@ function compileStats(
   load: (...args: any[]) => Promise<any>,
   navigationCalls: any[][] = [],
   loadGoalies: (...args: any[]) => Promise<any> = async () => ({ goalies: [] }),
+  viewport: { width: number; fontScale: number } = { width: 320, fontScale: 1.8 },
 ) {
   return compileCommonJs<any>(new URL('../../src/screens/StatsScreen.tsx', import.meta.url), {
-    react: h.react, 'react-native': native(), '@react-navigation/native': { useNavigation: () => ({}) }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    react: h.react, 'react-native': native(viewport.width, viewport.fontScale), '@react-navigation/native': { useNavigation: () => ({}) }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     '../components/DivisionFilter': (props: any) => createElement('DivisionFilter', props),
     '../components/SelectableControl': {
       SelectableControl: (props: any) => createElement('SelectableControl', props, props.children),
       SelectableControlGroup: (props: any) => createElement('SelectableControlGroup', props, props.children),
     },
     '../components/StatsLeadersCard': { __esModule: true, default: (props: any) => createElement('StatsLeadersCard', props) },
+    '../components/LeagueLeadersPresentation': { __esModule: true, default: (props: any) => createElement('LeagueLeadersPresentation', props, props.headingAccessory) },
     '../components/StatsRankedRow': { __esModule: true, default: (props: any) => createElement('StatsRankedRow', { ...props, testID: `stats-row-${props.row.playerId}`, onPress: () => props.onOpenPlayer(props.row.playerId) }, props.row.playerName, `${props.row.display} ${props.metric}`) },
     '../components/StatsRoleToggle': { __esModule: true, default: (props: any) => createElement('StatsRoleToggle', props) },
     '../components/StatsTimelineFilter': (props: any) => createElement('StatsTimelineFilter', props, props.label),
     '../context/LeagueContext': { useLeague: () => league },
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(args) },
-    '../lib/statsPresentationModel': { buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows },
+    '../lib/statsPresentationModel': { adaptStatsScopePlayersToHomeLeaders, buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows, shouldShowChampionships },
     '../lib/supabase/publicStats': { getPublicStatsScope: load, getPublicGoalies: loadGoalies, formatPublicMetric },
     '../theme/colors': colors,
     '../theme/ui': { getSurfacePalette: () => ({ surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }) },
@@ -78,6 +85,118 @@ function compileCareer(h: ReturnType<typeof createHookHarness>, auth: any, leagu
 }
 
 describe('career and scoped Stats screen behavior', () => {
+  it('shares one role and metric state across both heading toggles while keeping the timeline right-aligned', async () => {
+    const h = createHookHarness();
+    const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
+    const payload = scopePayload('Synchronized Player');
+    const unavailable = statsPlayer('Unavailable Player', '55555555-5555-4555-8555-555555555555');
+    unavailable.skater!.goals = metric(11, 'estimated') as any;
+    unavailable.skater!.assists = metric(null, 'unknown') as any;
+    unavailable.skater!.points = metric(null, 'conflicted') as any;
+    unavailable.goalie!.goalsAgainstAverage = metric(0.1, 'estimated') as any;
+    payload.players.push(unavailable);
+    const Stats = compileStats(h, league, async () => payload);
+    h.mount(() => Stats()); await settle(h);
+
+    let presentation = findNode(h.output, (node) => node.type === 'LeagueLeadersPresentation')!;
+    assert.ok(presentation, 'Stats must mount the shared League Leaders presentation');
+    assert.equal(presentation.props.testIDPrefix, 'stats');
+    assert.equal(presentation.props.focusPrefix, 'stats');
+    assert.equal(presentation.props.showAllStats, false);
+    assert.equal(presentation.props.compactMetricTabs, true);
+    assert.equal(presentation.props.visibleLeaderLimit, 5);
+    assert.equal(presentation.props.rowVariant, 'home-inline');
+    assert.equal(presentation.props.metricTabsAccessibilityLabel, 'Stats League Leader metric');
+    assert.deepEqual(presentation.props.metricOptions.map((option: any) => option.key), ['goals', 'assists', 'points']);
+    assert.equal(presentation.props.leaders[0].player_id, '22222222-2222-4222-8222-222222222222');
+    assert.equal(presentation.props.leaders.length, payload.players.length, 'the shared presentation receives the full scope population before it applies its five-row limit');
+    assert.deepEqual(
+      { goals: presentation.props.leaders[1].goals, assists: presentation.props.leaders[1].assists, points: presentation.props.leaders[1].points, gaa: presentation.props.leaders[1].gaa, estimated: presentation.props.leaders[1].estimated },
+      { goals: null, assists: null, points: null, gaa: null, estimated: false },
+    );
+
+    let toggles = allNodes(h.output, (node) => node.type === 'StatsRoleToggle');
+    assert.equal(toggles.length, 2, 'League Leaders and complete-stats headings each render the same toggle');
+    assert.ok(toggles.every((toggle) => toggle.props.role === 'player'));
+    const timelineRow = findNode(h.output, (node) => node.props.testID === 'stats-timeline-control-row')!;
+    assert.equal(flattenStyle(timelineRow.props.style).justifyContent, 'flex-end');
+    assert.ok(findNode(timelineRow, (node) => node.type === 'StatsTimelineFilter'));
+    assert.equal(findNode(timelineRow, (node) => node.type === 'StatsRoleToggle'), undefined);
+
+    const stalePlayerMetricChange = presentation.props.onMetricChange;
+    toggles[0].props.onSelectRole('goalie'); h.render();
+    presentation = findNode(h.output, (node) => node.type === 'LeagueLeadersPresentation')!;
+    toggles = allNodes(h.output, (node) => node.type === 'StatsRoleToggle');
+    assert.equal(presentation.props.metric, 'gaa');
+    assert.deepEqual(presentation.props.metricOptions.map((option: any) => option.key), ['gaa']);
+    assert.ok(toggles.every((toggle) => toggle.props.role === 'goalie'));
+    assert.match(nodeText(h.output), /Goalie Stats/);
+
+    stalePlayerMetricChange('goals'); h.render();
+    presentation = findNode(h.output, (node) => node.type === 'LeagueLeadersPresentation')!;
+    assert.equal(presentation.props.metric, 'gaa', 'a retained player-metric callback is a no-op after goalie selection');
+
+    toggles[1].props.onSelectRole('player'); h.render();
+    presentation = findNode(h.output, (node) => node.type === 'LeagueLeadersPresentation')!;
+    assert.equal(presentation.props.metric, 'points');
+    assert.ok(allNodes(h.output, (node) => node.type === 'StatsRoleToggle').every((toggle) => toggle.props.role === 'player'));
+  });
+
+  it('keeps both enlarged-text heading titles shrinkable beside fixed 44pt role controls at 320 and 390 widths', async () => {
+    for (const width of [320, 390]) {
+      const h = createHookHarness();
+      const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
+      const Stats = compileStats(h, league, async () => scopePayload('Long Player Name'), [], undefined, { width, fontScale: 1.8 });
+      h.mount(() => Stats()); await settle(h);
+
+      const completeHeading = findNode(h.output, (node) => node.props.testID === 'stats-complete-heading')!;
+      const headingStyle = flattenStyle(completeHeading.props.style);
+      const title = findNode(completeHeading, (node) => node.props.accessibilityRole === 'header')!;
+      const titleStyle = flattenStyle(title.props.style);
+      assert.equal(headingStyle.flexDirection, 'row');
+      assert.equal(headingStyle.gap, 8);
+      assert.equal(titleStyle.flex, 1);
+      assert.equal(titleStyle.minWidth, 0);
+      assert.equal(titleStyle.flexShrink, 1);
+      assert.ok((width - 32 - 92 - Number(headingStyle.gap)) > 0, `${width}px retains a positive title lane beside the 92pt toggle`);
+
+      const presentation = findNode(h.output, (node) => node.type === 'LeagueLeadersPresentation')!;
+      assert.equal(presentation.props.width, width);
+      assert.equal(presentation.props.fontScale, 1.8);
+      assert.ok(presentation.props.headingAccessory);
+    }
+  });
+
+  it('uses the applied payload scope, not the selection draft, to show Champs on complete rows', async () => {
+    const h = createHookHarness();
+    const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
+    let appliedScope: any = { kind: 'current', label: 'Current', seasonIds: ['33333333-3333-4333-8333-333333333333'], currentSeasonId: '33333333-3333-4333-8333-333333333333' };
+    const Stats = compileStats(h, league, async () => {
+      const payload = scopePayload('Scoped Player');
+      payload.scope = { ...appliedScope };
+      payload.seasons.push({ id: '66666666-6666-4666-8666-666666666666', name: 'Past', status: 'completed', startDate: '2025-06-01' });
+      return payload;
+    });
+    h.mount(() => Stats()); await settle(h);
+    const row = () => findNode(h.output, (node) => node.type === 'StatsRankedRow')!;
+    assert.equal(row().props.showChampionships, false);
+
+    appliedScope = { ...appliedScope, kind: 'multiple', label: '1 season' };
+    findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'multiple', seasonIds: ['33333333-3333-4333-8333-333333333333'] });
+    await settle(h);
+    assert.equal(row().props.showChampionships, false, 'multiple mode with one returned season is still one-season scope');
+
+    appliedScope = { ...appliedScope, kind: 'multiple', label: '2 seasons', seasonIds: ['33333333-3333-4333-8333-333333333333', '66666666-6666-4666-8666-666666666666'] };
+    findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'multiple', seasonIds: appliedScope.seasonIds });
+    await settle(h);
+    assert.equal(row().props.showChampionships, true);
+
+    appliedScope = { ...appliedScope, kind: 'all', label: 'All time', seasonIds: ['33333333-3333-4333-8333-333333333333'] };
+    findNode(h.output, (node) => node.type === 'StatsTimelineFilter')!.props.onApply({ kind: 'all' });
+    await settle(h);
+    assert.equal(row().props.showChampionships, true);
+  });
+
   it('uses the server-owned scope, displays truthful goalie values, retries, and navigates by real id', async () => {
     const h = createHookHarness(); const calls: any[][] = []; const navigationCalls: any[][] = []; let fail = true;
     const league: any = { activeLeague: { id: '11111111-1111-4111-8111-111111111111', slug: 'harbour', name: 'Harbour' }, activeDivision: null, divisions: [], activeTheme: { backgroundColor: '#000', primaryColor: '#0ff' }, setActiveDivision() {} };
@@ -113,8 +232,8 @@ describe('career and scoped Stats screen behavior', () => {
 
     h.mount(() => Stats()); await settle(h);
     findNode(h.output, (node) => node.type === 'StatsRoleToggle')!.props.onSelectRole('goalie'); h.render();
-    const card = findNode(h.output, (node) => node.type === 'StatsLeadersCard')!;
-    assert.deepEqual(card.props.leaders, []);
+    const presentation = findNode(h.output, (node) => node.type === 'LeagueLeadersPresentation')!;
+    assert.equal(presentation.props.leaders[0].gaa, null);
     assert.equal(goalieCalls.length, 0);
   });
 

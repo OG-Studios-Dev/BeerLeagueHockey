@@ -256,6 +256,7 @@ function Leaders({ snapshot, width, fontScale, reduceTransparency, onOpenPlayer 
         visibleLeaderLimit={5}
         rowVariant="home-inline"
         showTeamCrests={false}
+        metricTabsAccessibilityLabel="Team League Leader metric"
       />
     </View>
   );

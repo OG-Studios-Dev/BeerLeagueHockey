@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { adaptStatsScopePlayersToHomeLeaders, buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, shouldShowChampionships, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import * as leaderModel from '../../src/lib/homeLeagueLeaders';
 import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
@@ -49,6 +50,7 @@ function payloadWith(players: StatsScopePlayer[], label = 'Current season') {
 function native(width = 390, fontScale = 1) {
   return {
     ActivityIndicator: 'ActivityIndicator',
+    Image: 'Image',
     Modal: (props: any) => createElement('Modal', props, props.children),
     Pressable: 'Pressable',
     ScrollView: (props: any) => createElement('ScrollView', props, props.children),
@@ -103,7 +105,9 @@ function runtime(width = 390, fontScale = 1, options: {
     '../context/LeagueContext': { useLeague: () => league },
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: options.reduceTransparency ?? false }) },
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(['player-card', ...args]) },
-    '../lib/statsPresentationModel': { buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows },
+    '../lib/statsPresentationModel': { adaptStatsScopePlayersToHomeLeaders, buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows, shouldShowChampionships },
+    '../lib/homeLeagueLeaders': { ...leaderModel, resolveLeaderArtwork: () => null },
+    '../lib/playerArtworkManifest': { loadPlayerArtworkManifest: async () => null, findApprovedPlayerArtwork: () => null },
     '../lib/supabase/publicStats': {
       getPublicStatsScope: async (...args: any[]) => {
         scopeCalls.push(args);
@@ -118,7 +122,13 @@ function runtime(width = 390, fontScale = 1, options: {
     '../theme/ui': { getSurfacePalette: (reduced: boolean) => reduced
       ? { surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }
       : { surface: 'rgba(16,32,48,0.3)', elevated: 'rgba(24,40,56,0.4)', interactive: 'rgba(32,48,64,0.7)', stroke: 'rgba(64,96,128,0.4)' } },
+    '../theme/home': { HOME_VISUAL_TOKENS: { text: '#fff', textSecondary: '#aaa', stroke: 'rgba(64,96,128,0.4)', strokeOpaque: '#406080', surfaceOpaque: '#102030', elevatedOpaque: '#182838' } },
     '../theme/colors': { __esModule: true, default: { textPrimary: '#fff', textSecondary: '#aaa', primary: '#0ff', bgInteractive: '#1C2A42', glassStrokeStrong: 'rgba(64,96,128,0.4)' } },
+    '../../assets/league-leaders/jack-foote.png': { asset: 'jack' },
+    '../../assets/league-leaders/neutral-helmet-player.png': { asset: 'neutral-player' },
+    '../../assets/league-leaders/neutral-goalie.png': { asset: 'neutral-goalie' },
+    '../../assets/stats-role/player-a.png': { asset: 'role-player' },
+    '../../assets/stats-role/goalie-c.png': { asset: 'role-goalie' },
   }).default;
   h.mount(() => Screen());
   return { h, navigationCalls, scopeCalls };
@@ -158,51 +168,50 @@ describe('unified Stats page controls', () => {
     assert.equal(findNode(timeline, (node) => node.type === 'Ionicons')?.props.name, 'time-outline');
   });
 
-  it('places a compact two-option icon role selector immediately beside the timeline with truthful mutually-exclusive state', async () => {
-    const result = runtime(320);
+  it('renders synchronized role toggles in both headings while the timeline remains independently right-aligned', async () => {
+    const result = runtime(320, 1.8);
     let output = await settle(result);
-    const controls = findNode(output, (node) => node.props.testID === 'stats-role-controls');
-    let group = findNode(controls, (node) => node.props.testID === 'stats-role-toggle');
-    let player = findNode(group, (node) => node.props.testID === 'stats-role-option-player');
-    let goalie = findNode(group, (node) => node.props.testID === 'stats-role-option-goalie');
+    const timelineRow = findNode(output, (node) => node.props.testID === 'stats-timeline-control-row')!;
+    assert.equal(flattenStyle(timelineRow.props.style).justifyContent, 'flex-end');
+    assert.ok(findNode(timelineRow, (node) => node.props.testID === 'stats-timeline-open'));
+    assert.equal(findNode(timelineRow, (node) => node.props.testID === 'stats-role-toggle'), undefined);
 
-    assert.equal(group?.props.accessibilityRole, 'tablist');
-    assert.equal(group?.props.accessibilityLabel, 'Stats role');
-    assert.equal(player?.props.accessibilityRole, 'tab');
-    assert.equal(player?.props.accessibilityLabel, 'Player stats');
-    assert.deepEqual(player?.props.accessibilityState, { selected: true });
-    assert.equal(player?.props['aria-selected'], true);
-    assert.equal(goalie?.props.accessibilityRole, 'tab');
-    assert.equal(goalie?.props.accessibilityLabel, 'Goalie stats');
-    assert.deepEqual(goalie?.props.accessibilityState, { selected: false });
-    assert.equal(goalie?.props['aria-selected'], false);
-    for (const option of [player, goalie]) {
-      const style = flattenStyle(option?.props.style({ pressed: false }));
-      assert.ok(style.minWidth >= 44);
-      assert.ok(style.minHeight >= 44);
+    let groups = findNodes(output, (node) => node.props.testID === 'stats-role-toggle');
+    assert.equal(groups.length, 2);
+    for (const group of groups) {
+      const player = findNode(group, (node) => node.props.testID === 'stats-role-option-player')!;
+      const goalie = findNode(group, (node) => node.props.testID === 'stats-role-option-goalie')!;
+      assert.equal(group.props.accessibilityRole, 'tablist');
+      assert.equal(group.props.accessibilityLabel, 'Stats role');
+      assert.equal(player.props.accessibilityLabel, 'Player stats');
+      assert.deepEqual(player.props.accessibilityState, { selected: true });
+      assert.equal(goalie.props.accessibilityLabel, 'Goalie stats');
+      assert.deepEqual(goalie.props.accessibilityState, { selected: false });
+      for (const option of [player, goalie]) {
+        const style = flattenStyle(option.props.style({ pressed: false }));
+        assert.ok(style.minWidth >= 44);
+        assert.ok(style.minHeight >= 44);
+      }
+      assert.equal(nodeText(group), '');
+      assert.deepEqual(findNode(group, (node) => node.props.testID === 'stats-role-icon-player')?.props.source, { asset: 'role-player' });
+      assert.deepEqual(findNode(group, (node) => node.props.testID === 'stats-role-icon-goalie')?.props.source, { asset: 'role-goalie' });
+      assert.ok(Number(flattenStyle(group.props.style).maxWidth) <= 92);
     }
-    assert.equal(nodeText(group), '');
-    assert.ok(findNode(group, (node) => node.props.testID === 'stats-role-icon-player'));
-    assert.ok(findNode(group, (node) => node.props.testID === 'stats-role-icon-goalie'));
-    assert.ok(Number(flattenStyle(group?.props.style).maxWidth) <= 92, 'two targets stay compact beside the timeline at 320pt');
 
-    goalie?.props.onPress();
+    findNode(groups[0], (node) => node.props.testID === 'stats-role-option-goalie')!.props.onPress();
     output = result.h.render();
-    group = findNode(output, (node) => node.props.testID === 'stats-role-toggle');
-    player = findNode(group, (node) => node.props.testID === 'stats-role-option-player');
-    goalie = findNode(group, (node) => node.props.testID === 'stats-role-option-goalie');
-    assert.deepEqual(player?.props.accessibilityState, { selected: false });
-    assert.equal(player?.props['aria-selected'], false);
-    assert.deepEqual(goalie?.props.accessibilityState, { selected: true });
-    assert.equal(goalie?.props['aria-selected'], true);
-    assert.ok(findNode(group, (node) => node.props.testID === 'stats-role-icon-player'));
-    assert.ok(findNode(group, (node) => node.props.testID === 'stats-role-icon-goalie'));
+    groups = findNodes(output, (node) => node.props.testID === 'stats-role-toggle');
+    assert.equal(groups.length, 2);
+    for (const group of groups) {
+      assert.deepEqual(findNode(group, (node) => node.props.testID === 'stats-role-option-player')?.props.accessibilityState, { selected: false });
+      assert.deepEqual(findNode(group, (node) => node.props.testID === 'stats-role-option-goalie')?.props.accessibilityState, { selected: true });
+    }
   });
 
   it('ignores a retained player metric callback after goalie selection commits', async () => {
     const result = runtime(390, 1, { payload: payloadWith(rankedPlayers()) });
     let output = await settle(result);
-    const retainedGoalsCallback = findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals')?.props.onPress;
+    const retainedGoalsCallback = findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')?.props.onPress;
     assert.equal(typeof retainedGoalsCallback, 'function');
 
     findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')?.props.onPress();
@@ -210,9 +219,11 @@ describe('unified Stats page controls', () => {
     const goalieState = () => ({
       playerSelected: findNode(output, (node) => node.props.testID === 'stats-role-option-player')?.props.accessibilityState.selected,
       goalieSelected: findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')?.props.accessibilityState.selected,
-      metricSelected: findNode(output, (node) => node.props.testID === 'stats-metric-tab-gaa')?.props.accessibilityState.selected,
-      metric: findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.metric,
-      leaderIDs: (findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.leaders ?? []).map((row: any) => row.playerId),
+      metricSelected: findNode(output, (node) => node.props.testID === 'stats-leaders-tab-gaa')?.props.accessibilityState.selected,
+      metric: findNodes(output, (node) => /^stats-leaders-tab-/.test(String(node.props.testID ?? '')) && node.props.accessibilityState?.selected)
+        .map((node) => String(node.props.testID).replace('stats-leaders-tab-', ''))[0],
+      leaderIDs: findNodes(output, (node) => /^stats-leader-row-/.test(String(node.props.testID ?? '')))
+        .map((node) => String(node.props.testID).replace('stats-leader-row-', '')),
       tableIDs: (findNode(output, (node) => node.type === 'FlatList')?.props.data ?? []).map((row: any) => row.playerId),
       heading: findNodes(output, (node) => node.props.accessibilityRole === 'header').map(nodeText),
       pageText: nodeText(output),
@@ -228,7 +239,7 @@ describe('unified Stats page controls', () => {
     retainedGoalsCallback();
     output = result.h.render();
     assert.deepEqual(goalieState(), before);
-    assert.equal(findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals'), undefined);
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals'), undefined);
   });
 
   it('keeps normal Stats surfaces translucent and makes every control and ranked-row surface opaque under Reduced Transparency', async () => {
@@ -237,7 +248,7 @@ describe('unified Stats page controls', () => {
     const normalOutput = await settle(normal);
     const normalTimeline = findNode(normalOutput, (node) => node.props.testID === 'stats-timeline-open')!;
     const normalRoleGroup = findNode(normalOutput, (node) => node.props.testID === 'stats-role-toggle')!;
-    const normalSelectedMetric = findNode(normalOutput, (node) => node.props.testID === 'stats-metric-tab-points')!;
+    const normalSelectedMetric = findNode(normalOutput, (node) => node.props.testID === 'stats-leaders-tab-points')!;
     const normalTopRow = findNode(normalOutput, (node) => node.props.testID === 'stats-ranked-row-d')!;
     assert.equal(flattenStyle(normalTimeline.props.style({ pressed: false })).backgroundColor, '#1C2A42');
     assert.ok(alpha(flattenStyle(normalRoleGroup.props.style).backgroundColor) < 1);
@@ -264,8 +275,8 @@ describe('unified Stats page controls', () => {
       ['timeline opener', findNode(output, (node) => node.props.testID === 'stats-timeline-open')!],
       ['selected role', findNode(output, (node) => node.props.testID === 'stats-role-option-player')!],
       ['inactive role', findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')!],
-      ['selected metric', findNode(output, (node) => node.props.testID === 'stats-metric-tab-points')!],
-      ['inactive metric', findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals')!],
+      ['selected metric', findNode(output, (node) => node.props.testID === 'stats-leaders-tab-points')!],
+      ['inactive metric', findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')!],
       ['selected timeline mode', findNode(output, (node) => node.props.testID === 'stats-timeline-mode-multiple')!],
       ['inactive timeline mode', findNode(output, (node) => node.props.testID === 'stats-timeline-mode-current')!],
       ['selected season', findNode(output, (node) => node.props.accessibilityLabel === 'Fall 2026, current season')!],
@@ -290,8 +301,8 @@ describe('unified Stats page controls', () => {
       'selected and inactive role options remain visibly distinct in opaque mode',
     );
     assert.notEqual(
-      flattenStyle(findNode(output, (node) => node.props.testID === 'stats-metric-tab-points')!.props.style({ pressed: false })).backgroundColor,
-      flattenStyle(findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals')!.props.style({ pressed: false })).backgroundColor,
+      flattenStyle(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-points')!.props.style({ pressed: false })).backgroundColor,
+      flattenStyle(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')!.props.style({ pressed: false })).backgroundColor,
       'selected and inactive metric options remain visibly distinct in opaque mode',
     );
   });
@@ -364,28 +375,25 @@ describe('unified Stats page controls', () => {
   it('offers only valid role metrics and applies one authoritative selection to League Leaders', async () => {
     const result = runtime();
     let output = await settle(result);
-    const metricIDs = () => findNodes(output, (node) => /^stats-metric-tab-(goals|assists|points|gaa)$/.test(String(node.props.testID ?? '')))
+    const metricIDs = () => findNodes(output, (node) => /^stats-leaders-tab-(goals|assists|points|gaa)$/.test(String(node.props.testID ?? '')))
       .map((node) => node.props.testID);
 
-    assert.deepEqual(metricIDs(), ['stats-metric-tab-goals', 'stats-metric-tab-assists', 'stats-metric-tab-points']);
-    assert.equal(findNode(output, (node) => node.props.testID === 'stats-metric-tab-points')?.props.accessibilityState.selected, true);
-    assert.equal(findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.metric, 'points');
+    assert.deepEqual(metricIDs(), ['stats-leaders-tab-goals', 'stats-leaders-tab-assists', 'stats-leaders-tab-points']);
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-points')?.props.accessibilityState.selected, true);
 
-    findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals')?.props.onPress();
+    findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')?.props.onPress();
     output = result.h.render();
-    assert.equal(findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.metric, 'goals');
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')?.props.accessibilityState.selected, true);
 
     findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')?.props.onPress();
     output = result.h.render();
-    assert.deepEqual(metricIDs(), ['stats-metric-tab-gaa']);
-    assert.equal(findNode(output, (node) => node.props.testID === 'stats-metric-tab-gaa')?.props.accessibilityState.selected, true);
-    assert.equal(findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.metric, 'gaa');
+    assert.deepEqual(metricIDs(), ['stats-leaders-tab-gaa']);
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-gaa')?.props.accessibilityState.selected, true);
 
     findNode(output, (node) => node.props.testID === 'stats-role-option-player')?.props.onPress();
     output = result.h.render();
-    assert.deepEqual(metricIDs(), ['stats-metric-tab-goals', 'stats-metric-tab-assists', 'stats-metric-tab-points']);
-    assert.equal(findNode(output, (node) => node.props.testID === 'stats-metric-tab-points')?.props.accessibilityState.selected, true);
-    assert.equal(findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.metric, 'points');
+    assert.deepEqual(metricIDs(), ['stats-leaders-tab-goals', 'stats-leaders-tab-assists', 'stats-leaders-tab-points']);
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-points')?.props.accessibilityState.selected, true);
   });
 });
 
@@ -408,7 +416,8 @@ describe('unified Stats ranked section', () => {
     const result = runtime(390, 1, { payload: payloadWith(players) });
     let output = await settle(result);
     const dataIDs = () => (findNode(output, (node) => node.type === 'FlatList')?.props.data ?? []).map((row: any) => row.playerId);
-    const leaderIDs = () => (findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.leaders ?? []).map((row: any) => row.playerId);
+    const leaderIDs = () => findNodes(output, (node) => /^stats-leader-row-/.test(String(node.props.testID ?? '')))
+      .map((node) => String(node.props.testID).replace('stats-leader-row-', ''));
 
     assert.ok(findNodes(output, (node) => node.props.accessibilityRole === 'header').some((node) => nodeText(node) === 'Player Stats'));
     assert.deepEqual(dataIDs(), ['d', 'c', 'a', 'g', 'b', 'e', 'f']);
@@ -416,12 +425,12 @@ describe('unified Stats ranked section', () => {
     assert.equal(findNode(output, (node) => node.type === 'StatsTableHeader'), undefined);
     assert.doesNotMatch(nodeText(output), /Swipe metrics/i);
 
-    findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals')?.props.onPress();
+    findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')?.props.onPress();
     output = result.h.render();
     assert.deepEqual(dataIDs(), ['b', 'd', 'e', 'c', 'f', 'a']);
     assert.deepEqual(leaderIDs(), dataIDs().slice(0, 5));
     const playerRow = findNode(output, (node) => node.props.testID === 'stats-ranked-row-b');
-    assert.match(playerRow?.props.accessibilityLabel ?? '', /Rank 1.*Beta Blue.*Team B.*8 goals.*Open player card/i);
+    assert.match(playerRow?.props.accessibilityLabel ?? '', /Rank 1.*Beta Blue.*Team B.*G 8.*Open player card/i);
     playerRow?.props.onPress();
     assert.deepEqual(result.navigationCalls.at(-1)?.[2], { playerId: 'b', leagueId: 'league-a' });
 
@@ -430,9 +439,9 @@ describe('unified Stats ranked section', () => {
     assert.ok(findNodes(output, (node) => node.props.accessibilityRole === 'header').some((node) => nodeText(node) === 'Goalie Stats'));
     assert.deepEqual(dataIDs(), ['g', 'c', 'b', 'a', 'd', 'e', 'f']);
     assert.deepEqual(leaderIDs(), dataIDs().slice(0, 5));
-    assert.equal(findNode(output, (node) => node.props.testID === 'stats-metric-tab-goals'), undefined);
-    assert.equal(findNode(output, (node) => node.props.testID === 'stats-metric-tab-gaa')?.props.accessibilityState.selected, true);
-    assert.match(findNode(output, (node) => node.props.testID === 'stats-ranked-row-g')?.props.accessibilityLabel ?? '', /0\.5 GAA/i);
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals'), undefined);
+    assert.equal(findNode(output, (node) => node.props.testID === 'stats-leaders-tab-gaa')?.props.accessibilityState.selected, true);
+    assert.match(findNode(output, (node) => node.props.testID === 'stats-ranked-row-g')?.props.accessibilityLabel ?? '', /GAA 0\.5/i);
   });
 
   it('applies timeline and division scope to both League Leaders and the complete ranked population', async () => {
@@ -448,7 +457,8 @@ describe('unified Stats ranked section', () => {
     let output = await settle(result);
 
     assert.deepEqual(result.scopeCalls[0].slice(2, 4), [{ kind: 'current' }, division.id]);
-    assert.deepEqual((findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.leaders ?? []).map((row: any) => row.playerId), ['a', 'b']);
+    assert.deepEqual(findNodes(output, (node) => /^stats-leader-row-/.test(String(node.props.testID ?? '')))
+      .map((node) => String(node.props.testID).replace('stats-leader-row-', '')), ['a', 'b']);
     assert.deepEqual((findNode(output, (node) => node.type === 'FlatList')?.props.data ?? []).map((row: any) => row.playerId), ['a', 'b']);
     assert.ok(findNode(output, (node) => node.props.accessibilityLabel === 'Division filter'));
 
@@ -463,7 +473,8 @@ describe('unified Stats ranked section', () => {
     const allRankedIDs = (findNode(output, (node) => node.type === 'FlatList')?.props.data ?? []).map((row: any) => row.playerId);
     assert.equal(allRankedIDs.length, allPlayers.length);
     assert.ok(allRankedIDs.every((id: string) => id.startsWith('all-')));
-    assert.deepEqual((findNode(output, (node) => node.type === 'StatsLeadersCard')?.props.leaders ?? []).map((row: any) => row.playerId), allRankedIDs.slice(0, 5));
+    assert.deepEqual(findNodes(output, (node) => /^stats-leader-row-/.test(String(node.props.testID ?? '')))
+      .map((node) => String(node.props.testID).replace('stats-leader-row-', '')), allRankedIDs.slice(0, 5));
     assert.equal(findNode(output, (node) => node.props.testID === 'stats-timeline-open')?.props.accessibilityLabel, 'Open timeline filter. All time');
     assert.equal(findNode(output, (node) => node.props.accessibilityLabel === 'Division filter'), undefined);
     assert.ok(findNode(output, (node) => node.props.testID === 'stats-all-time-league-wide'));

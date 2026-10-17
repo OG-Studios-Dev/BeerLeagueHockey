@@ -1,4 +1,5 @@
 import { formatPublicMetric, type PublicMetricSource, type PublicStatMetric, type PublicTeamRef } from './supabase/publicStats';
+import type { HomeLeader } from './supabase/home';
 import { formatLeagueLeaderGaa, splitLeagueLeaderName } from './leaderPresentation';
 
 export type StatsScopeKind = 'current' | 'single' | 'multiple' | 'all';
@@ -113,6 +114,10 @@ export function normalizeStatsScope(
   return { kind: selection.kind, seasonIds, label, currentSeasonId: current.id };
 }
 
+export function shouldShowChampionships(scope: Pick<NormalizedStatsScope, 'kind' | 'seasonIds'> | null | undefined): boolean {
+  return scope?.kind === 'all' || (scope?.seasonIds.length ?? 0) > 1;
+}
+
 export function splitPlayerName(value: string): { givenName: string; surname: string } {
   const name = splitLeagueLeaderName(value);
   return { givenName: name.firstLine, surname: name.secondLine };
@@ -208,6 +213,29 @@ function publishableRankValue(metric: PublicStatMetric): number | null {
   return metric.value !== null && Number.isFinite(metric.value) && PUBLISHABLE_RANK_STATES.has(metric.state)
     ? metric.value
     : null;
+}
+
+export function adaptStatsScopePlayersToHomeLeaders(players: readonly StatsScopePlayer[]): HomeLeader[] {
+  return players.map((player) => {
+    const teamName = player.displayTeam?.name ?? 'Free agent';
+    const goalie = player.goalie;
+    return {
+      player_id: player.playerId,
+      player_name: player.playerName,
+      avatar_url: player.avatarUrl,
+      team_id: player.displayTeam?.id ?? null,
+      team_name: teamName,
+      display_team_name: player.displayTeam?.name ?? null,
+      display_team_logo_url: player.displayTeam?.logoUrl ?? null,
+      position: goalie ? 'Goalie' : player.skater ? 'Skater' : null,
+      goals: player.skater ? publishableRankValue(player.skater.goals) : null,
+      assists: player.skater ? publishableRankValue(player.skater.assists) : null,
+      points: player.skater ? publishableRankValue(player.skater.points) : null,
+      gaa: goalie ? publishableRankValue(goalie.goalsAgainstAverage) : null,
+      is_goalie: goalie !== null,
+      estimated: false,
+    };
+  });
 }
 
 export function buildSkaterRows(players: readonly StatsScopePlayer[]): StatsTableRow[] {

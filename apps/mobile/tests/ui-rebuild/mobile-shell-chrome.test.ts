@@ -100,7 +100,8 @@ describe('mobile shell chrome contract', () => {
 
     const stats = source('src/screens/StatsScreen.tsx');
     assert.doesNotMatch(stats, /SectionHeader title="(?:Stats|League Leaders)"/);
-    assert.match(stats, /testID="stats-metric-selector"/);
+    assert.match(stats, /<LeagueLeadersPresentation/);
+    assert.match(stats, /metricTabsAccessibilityLabel="Stats League Leader metric"/);
 
     const team = source('src/screens/TeamScreen.tsx');
     assert.doesNotMatch(team, /<SectionHeader title=\{?(?:"My Team"|"My Teams"|teamName)\}?/);

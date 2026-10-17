@@ -6,15 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import DivisionFilter from '../components/DivisionFilter';
 import { FocusFlatList } from '../components/CardFocus';
-import { SelectableControl, SelectableControlGroup } from '../components/SelectableControl';
+import LeagueLeadersPresentation from '../components/LeagueLeadersPresentation';
 import { SECTION_HEADING_TEXT_STYLE } from '../components/SectionHeader';
-import StatsLeadersCard, { type StatsLeaderMetric } from '../components/StatsLeadersCard';
 import StatsRankedRow from '../components/StatsRankedRow';
 import StatsRoleToggle from '../components/StatsRoleToggle';
 import StatsTimelineFilter from '../components/StatsTimelineFilter';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
-import { buildRankedRows } from '../lib/statsPresentationModel';
+import { adaptStatsScopePlayersToHomeLeaders, buildRankedRows, shouldShowChampionships, type StatsLeaderMetric } from '../lib/statsPresentationModel';
 import { getPublicStatsScope, type PublicStatsScope, type PublicStatsScopeSelection } from '../lib/supabase/publicStats';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { navigateToPlayerCard } from '../navigation/playerCard';
@@ -54,7 +53,7 @@ export default function StatsScreen() {
   const [statsView, setStatsView] = React.useState<StatsView>({ role: 'player', metric: 'points' });
   const [selection, setSelection] = React.useState<PublicStatsScopeSelection>({ kind: 'current' });
   const [retry, setRetry] = React.useState(0);
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
   const [snapshot, setSnapshot] = React.useState<Snapshot>(() => emptySnapshot());
   const leagueId = activeLeague?.id ?? '';
   const leagueSlug = activeLeague?.slug ?? '';
@@ -87,7 +86,8 @@ export default function StatsScreen() {
   const selectedTab = statsView.role === 'goalie' ? 'Goalies' : 'Skaters';
   const leaderMetric = statsView.metric;
   const rankedRows = buildRankedRows(players, leaderMetric);
-  const leaders = rankedRows.slice(0, 5);
+  const homeLeaders = adaptStatsScopePlayersToHomeLeaders(players);
+  const showChampionships = shouldShowChampionships(view.payload?.scope);
   const scopeLabel = view.payload?.scope.label ?? (selection.kind === 'current' ? 'Current season' : selection.kind === 'all' ? 'All time' : selection.kind === 'single' ? 'One season' : `${selection.seasonIds?.length ?? 0} seasons`);
   const openPlayer = (playerId: string) => navigateToPlayerCard(navigation, { playerId, leagueId: activeLeague.id });
   const timeline = <StatsTimelineFilter label={scopeLabel} currentSeasonId={view.payload?.scope.currentSeasonId ?? null} seasons={view.payload?.seasons ?? []} selection={selection} onApply={setSelection} />;
@@ -99,10 +99,7 @@ export default function StatsScreen() {
   const selectMetric = (metric: StatsLeaderMetric) => setStatsView((current) => (
     current.role === 'player' && metric !== 'gaa' ? { role: 'player', metric } : current
   ));
-  const roleControls = <View testID="stats-role-controls" style={styles.roleControls}>
-    {timeline}
-    <StatsRoleToggle role={selectedTab === 'Goalies' ? 'goalie' : 'player'} onSelectRole={selectRole} />
-  </View>;
+  const roleToggle = <StatsRoleToggle role={selectedTab === 'Goalies' ? 'goalie' : 'player'} onSelectRole={selectRole} />;
   const availableMetrics: ReadonlyArray<{ key: StatsLeaderMetric; label: string }> = selectedTab === 'Goalies'
     ? [{ key: 'gaa', label: 'GAA' }]
     : PLAYER_METRICS;
@@ -117,26 +114,40 @@ export default function StatsScreen() {
         data={view.status === 'ready' ? rankedRows : []}
         keyExtractor={(row) => row.playerId}
         ListHeaderComponent={<>
-          <View testID="stats-page-controls" style={styles.pageControls}>
-            {roleControls}
-            <SelectableControlGroup testID="stats-metric-selector" role="tablist" horizontal={false} accessibilityLabel={`${selectedTab === 'Goalies' ? 'Goalie' : 'Player'} stat metric`} contentContainerStyle={styles.metricSelector}>
-              {availableMetrics.map(({ key, label }) => {
-                const isSelected = leaderMetric === key;
-                return <SelectableControl key={key} testID={`stats-metric-tab-${key}`} role="tab" label={label} accessibilityLabel={`Show ${label} stats`} selected={isSelected} onPress={() => selectMetric(key)} style={styles.metricOption} selectedStyle={selectedControlStyle} inactiveStyle={inactiveControlStyle} pressedStyle={isSelected ? selectedPressedControlStyle : inactivePressedControlStyle} />;
-              })}
-            </SelectableControlGroup>
-          </View>
+          <View testID="stats-timeline-control-row" style={styles.timelineControlRow}>{timeline}</View>
           {selection.kind === 'all'
             ? <View testID="stats-all-time-league-wide" accessible accessibilityRole="text" accessibilityLabel="All time is league-wide. Division filters are unavailable for All time." style={[styles.leagueWideNotice, reduceTransparency && { backgroundColor: surfaces.surface, borderColor: surfaces.stroke }]}><Text style={styles.leagueWideNoticeText}>All time is league-wide. Division filters are unavailable.</Text></View>
             : <DivisionFilter divisions={divisions} activeDivision={activeDivision} primaryColor={activeTheme.primaryColor} onSelect={setActiveDivision} controlStyles={divisionControlStyles} />}
-          <StatsLeadersCard leagueId={activeLeague.id} width={width} metric={leaderMetric} leaders={leaders} status={view.status} onRetry={() => setRetry((value) => value + 1)} onOpenPlayer={openPlayer} />
-          <View style={styles.tableHeading}><Text accessibilityRole="header" style={styles.tableTitle}>{selectedTab === 'Goalies' ? 'Goalie Stats' : 'Player Stats'}</Text></View>
+          <LeagueLeadersPresentation
+            leagueId={activeLeague.id}
+            seasonName={scopeLabel}
+            metric={leaderMetric}
+            metricOptions={availableMetrics}
+            leaders={homeLeaders}
+            status={view.status}
+            errorMessage="Complete authoritative stats are unavailable for this timeline."
+            width={width}
+            fontScale={fontScale}
+            reduceTransparency={reduceTransparency}
+            onMetricChange={selectMetric}
+            onRetry={() => setRetry((value) => value + 1)}
+            onOpenPlayer={openPlayer}
+            testIDPrefix="stats"
+            focusPrefix="stats"
+            showAllStats={false}
+            compactMetricTabs
+            visibleLeaderLimit={5}
+            rowVariant="home-inline"
+            headingAccessory={roleToggle}
+            metricTabsAccessibilityLabel="Stats League Leader metric"
+          />
+          <View testID="stats-complete-heading" style={styles.tableHeading}><Text accessibilityRole="header" style={styles.tableTitle}>{selectedTab === 'Goalies' ? 'Goalie Stats' : 'Player Stats'}</Text>{roleToggle}</View>
           <Text style={styles.scopeCopy}>{scopeLabel} · ranked by {leaderMetric === 'gaa' ? 'GAA (lowest first)' : leaderMetric}</Text>
         </>}
         ListEmptyComponent={view.status === 'loading' ? <View style={styles.tableState}><ActivityIndicator color={activeTheme.primaryColor} /></View>
           : view.status === 'error' ? <View style={styles.tableState}><Text style={styles.emptyTitle}>Complete authoritative stats are unavailable for this timeline.</Text><Pressable testID="stats-scope-retry" accessibilityRole="button" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></Pressable></View>
             : <View style={styles.tableState}><Text style={styles.emptyTitle}>No eligible {selectedTab === 'Goalies' ? 'goalie' : 'player'} stats yet</Text></View>}
-        renderItem={({ item }) => <StatsRankedRow row={item} metric={leaderMetric} onOpenPlayer={openPlayer} />}
+        renderItem={({ item }) => <StatsRankedRow row={item} metric={leaderMetric} showChampionships={showChampionships} onOpenPlayer={openPlayer} />}
         ListFooterComponent={<View style={styles.foot}><View style={styles.footDot} /><Text style={styles.footText}>{selectedTab === 'Skaters' ? 'Rankings include every player with a known selected metric. Unavailable selected values are excluded; other unavailable values remain —.' : 'GAA ranks every eligible goalie from lowest to highest. Unavailable GAA values are excluded.'}</Text></View>}
       />
     </SafeAreaView>
@@ -145,11 +156,8 @@ export default function StatsScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 }, horizontalOverflow: { width: '100%', overflow: 'hidden' }, content: { width: '100%', paddingHorizontal: 16, paddingBottom: 40 },
-  pageControls: { width: '100%', gap: 10, paddingTop: 8, paddingBottom: 12 },
-  roleControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  metricSelector: { width: '100%', minWidth: 0, flexDirection: 'row', gap: 8, paddingVertical: 0 },
-  metricOption: { flex: 1, minWidth: 0, minHeight: 44, paddingHorizontal: 4 },
-  tableHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, tableTitle: { ...SECTION_HEADING_TEXT_STYLE, flex: 1, color: colors.textPrimary },
+  timelineControlRow: { width: '100%', minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingTop: 8 },
+  tableHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, tableTitle: { ...SECTION_HEADING_TEXT_STYLE, flex: 1, minWidth: 0, flexShrink: 1, color: colors.textPrimary },
   leagueWideNotice: { minHeight: 44, justifyContent: 'center', marginBottom: 8, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(97,226,232,0.26)', borderRadius: 12, backgroundColor: 'rgba(5,20,33,0.24)' }, leagueWideNoticeText: { color: '#A9C4D2', fontSize: 12, lineHeight: 17, fontWeight: '700' },
   scopeCopy: { flex: 1, minWidth: 0, color: '#849AAE', fontSize: 9 },
   tableState: { minHeight: 180, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 }, emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }, emptyTitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, fontWeight: '800', textAlign: 'center' }, emptyBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' }, retryText: { color: colors.primary, fontSize: 14, fontWeight: '900', marginTop: 12 },
