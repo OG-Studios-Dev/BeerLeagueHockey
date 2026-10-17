@@ -30,6 +30,35 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 type LeagueIdentity = { id: string; slug: string; status?: string };
 type Matchup = { id: string; name: string; gamesPlayed: number; goals: number; assists: number; points: number; shots: number; shootingPct: number | null };
+type DependencyStage = 'league' | 'player' | 'seasons' | 'current_season' | 'health' | 'stats' | 'timeline'
+  | 'badges' | 'achievements' | 'articles' | 'games' | 'matchups' | 'hot_facts' | 'handler';
+
+class MobilePlayerProfileDependencyError extends Error {
+  constructor(readonly stage: DependencyStage, readonly providerCode: '57014' | 'UNKNOWN') {
+    super('Mobile player profile dependency failed');
+  }
+}
+
+function allowlistedProviderCode(error: unknown): '57014' | 'UNKNOWN' {
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; current && depth < 6 && !seen.has(current); depth += 1) {
+    seen.add(current);
+    const record = typeof current === 'object' ? current as Record<string, unknown> : null;
+    if (record?.code === '57014' || record?.providerCode === '57014') return '57014';
+    if (current instanceof Error && /^57014(?:\s*:|\b)/.test(current.message)) return '57014';
+    current = record?.cause;
+  }
+  return 'UNKNOWN';
+}
+
+async function atDependencyStage<T>(stage: DependencyStage, read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw new MobilePlayerProfileDependencyError(stage, allowlistedProviderCode(error));
+  }
+}
 
 export interface MobilePlayerProfileDependencies {
   getLeague(): Promise<LeagueIdentity | null>;
@@ -171,13 +200,16 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
   if (requestedSeason !== null && requestedSeason !== 'all' && !UUID.test(requestedSeason)) return error(400, 'INVALID_SEASON', 'season must be a UUID or all.');
 
   try {
-    const league = await deps.getLeague();
+    const league = await atDependencyStage('league', () => deps.getLeague());
     if (!league || league.id !== HOCKEY_LIFE_ID || league.slug !== HOCKEY_LIFE_SLUG || league.status !== 'active') return error(404, 'LEAGUE_NOT_FOUND', 'League not found.');
-    const player = await deps.resolvePlayer(requestedId, league.id);
+    const player = await atDependencyStage('player', () => deps.resolvePlayer(requestedId, league.id));
     if (!player || player.team?.league_id !== league.id) return error(404, 'PLAYER_NOT_FOUND', 'Player not found.');
 
     const profileId = player.player_id;
-    const [seasons, currentSeason] = await Promise.all([deps.getSeasons(league.id), deps.getCurrentSeason(league.id)]);
+    const [seasons, currentSeason] = await Promise.all([
+      atDependencyStage('seasons', () => deps.getSeasons(league.id)),
+      atDependencyStage('current_season', () => deps.getCurrentSeason(league.id)),
+    ]);
     const season = requestedSeason && requestedSeason !== 'all'
       ? seasons.find((candidate) => candidate.id === requestedSeason) ?? null
       : requestedSeason === 'all' ? null : currentSeason;
@@ -187,23 +219,33 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
     const selectedSeasonName = isCareer ? 'Career Stats' : season?.name ?? null;
     const aggregateOnly = isCareer || isAggregateOnlySeasonView(selectedSeasonId ?? undefined, selectedSeasonName);
     const isGoalie = player.is_goalie === true || ['g', 'goalie', 'goaltender'].includes(player.position?.trim().toLowerCase() ?? '');
-    await deps.assertHealthy?.(league.id, profileId, selectedSeasonId);
+    if (deps.assertHealthy) {
+      await atDependencyStage('health', () => deps.assertHealthy!(league.id, profileId, selectedSeasonId));
+    }
 
-    const [stats, timeline, timelineWithBaseline, badges, achievements, articles, games, matchups] = await Promise.all([
-      deps.getStats(profileId, selectedSeasonId, league.id, isGoalie),
-      deps.getTimeline(league.id, profileId, isGoalie, false),
-      deps.getTimeline(league.id, profileId, isGoalie, true),
-      deps.getBadges(profileId), deps.getImportedAchievements(profileId, league.id), deps.getArticles(profileId),
-      !aggregateOnly && selectedSeasonId ? deps.getGames(profileId, selectedSeasonId) : Promise.resolve([]),
-      !aggregateOnly && selectedSeasonId ? deps.getMatchups(profileId, selectedSeasonId, isGoalie) : Promise.resolve([]),
+    const timelineWithBaseline = await atDependencyStage(
+      'timeline',
+      () => deps.getTimeline(league.id, profileId, isGoalie, true),
+    );
+    const [stats, badges, achievements, articles, games, matchups] = await Promise.all([
+      atDependencyStage('stats', () => deps.getStats(profileId, selectedSeasonId, league.id, isGoalie)),
+      atDependencyStage('badges', () => deps.getBadges(profileId)),
+      atDependencyStage('achievements', () => deps.getImportedAchievements(profileId, league.id)),
+      atDependencyStage('articles', () => deps.getArticles(profileId)),
+      !aggregateOnly && selectedSeasonId
+        ? atDependencyStage('games', () => deps.getGames(profileId, selectedSeasonId))
+        : Promise.resolve([]),
+      !aggregateOnly && selectedSeasonId
+        ? atDependencyStage('matchups', () => deps.getMatchups(profileId, selectedSeasonId, isGoalie))
+        : Promise.resolve([]),
     ]);
     const leagueSeasonIds = new Set(seasons.map((item) => item.id));
-    const visibleTimeline = filterVisiblePlayerCareerTimelineRows(timeline).filter((row) => leagueSeasonIds.has(row.season_id));
+    const visibleTimeline = filterVisiblePlayerCareerTimelineRows(timelineWithBaseline).filter((row) => leagueSeasonIds.has(row.season_id));
     const totalsTimeline = filterVisiblePlayerCareerTimelineRows(timelineWithBaseline, { includeHistoricalBaseline: true });
     const safeBadges = badges.filter((badge) => badge.league_id === league.id && leagueSeasonIds.has(badge.season_id));
     const safeArticles = articles.filter((article) => article.league_id === league.id);
     const achievementSummary = summarizePlayerCareerAchievements({ importedChampionships: achievements.championships, nativeChampionships: countChampionshipBadges(safeBadges) });
-    const hotFacts = await deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie, distinctSeasonComparisons: true });
+    const hotFacts = await atDependencyStage('hot_facts', () => deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie, distinctSeasonComparisons: true }));
     const ordinaryRatio = isCareer || !isImportedAggregateSeasonId(selectedSeasonId ?? undefined);
 
     const data = {
@@ -221,7 +263,14 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       heroAwards: buildHeroAwards(safeBadges, achievementSummary.championships), aggregateOnly, hotFacts,
     };
     return NextResponse.json({ version: 1, league: { id: league.id, slug: league.slug }, data }, { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300', 'X-Content-Type-Options': 'nosniff' } });
-  } catch {
+  } catch (caught) {
+    const failure = caught instanceof MobilePlayerProfileDependencyError
+      ? caught
+      : new MobilePlayerProfileDependencyError('handler', allowlistedProviderCode(caught));
+    console.error('mobile_player_profile_dependency_failure', {
+      stage: failure.stage,
+      providerCode: failure.providerCode,
+    });
     return error(502, 'UPSTREAM_FAILURE', 'Player profile data is temporarily unavailable.');
   }
 }
