@@ -60,6 +60,16 @@ BEGIN
     RAISE EXCEPTION 'migration did not preserve/adopt legacy duty data';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS p
+    WHERE p.oid = 'public.captain_manage_game_checkin(uuid,uuid,uuid,text,text)'::pg_catalog.regprocedure
+      AND p.pronargdefaults = 1
+      AND pg_catalog.pg_get_expr(p.proargdefaults, 0) = 'NULL::text'
+  ) THEN
+    RAISE EXCEPTION 'captain check-in RPC did not preserve its exact trailing NULL default';
+  END IF;
+
   FOR v_function IN
     SELECT p.proname, p.prosecdef, p.proconfig
     FROM pg_catalog.pg_proc AS p

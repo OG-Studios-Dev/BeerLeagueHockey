@@ -179,7 +179,7 @@ CREATE FUNCTION public.captain_manage_game_checkin(
   p_team_id uuid,
   p_player_id uuid,
   p_operation text,
-  p_status text
+  p_status text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql

@@ -193,7 +193,24 @@ if [[ "${BEER_GUY_RUN_TEAM_PROVISIONING_RACE_ONLY:-0}" == "1" ]]; then
 fi
 
 if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
-  PREFLIGHT_CASES="${BEER_GUY_PREFLIGHT_CASES:-missing_column missing_uniqueness missing_checkin_uniqueness missing_sub_column missing_sub_fk missing_sub_status_constraint missing_parent_fk wrong_hierarchy_delete_action wrong_duty_type_delete_action wrong_assigned_player_delete_action missing_id_default invalid_status_vocabulary rls_disabled function_owner function_collision authenticated_acl_missing service_acl_missing missing_realtime_publication realtime_publication_operations realtime_publication_row_filter realtime_publication_column_list realtime_publication_authority ambiguous_duties}"
+  PREFLIGHT_CASES="${BEER_GUY_PREFLIGHT_CASES:-missing_column missing_uniqueness missing_checkin_uniqueness missing_sub_column missing_sub_fk missing_sub_status_constraint missing_parent_fk wrong_hierarchy_delete_action wrong_duty_type_delete_action wrong_assigned_player_delete_action missing_id_default invalid_status_vocabulary rls_disabled function_owner function_default_missing function_default_non_null function_default_expression_null function_default_multiple function_collision authenticated_acl_missing service_acl_missing missing_realtime_publication realtime_publication_operations realtime_publication_row_filter realtime_publication_column_list realtime_publication_authority ambiguous_duties}"
+  rebuild_captain_fixture_function() {
+    local operation_and_status_arguments="$1"
+    "${PSQL[@]}" -c "
+      DROP FUNCTION public.captain_manage_game_checkin(uuid,uuid,uuid,text,text);
+      CREATE FUNCTION public.captain_manage_game_checkin(
+        p_game_id uuid,
+        p_team_id uuid,
+        p_player_id uuid,
+        $operation_and_status_arguments
+      ) RETURNS jsonb
+      LANGUAGE sql
+      SECURITY DEFINER
+      SET search_path = ''
+      AS 'SELECT pg_catalog.jsonb_build_object(''fixture'', true)';
+      GRANT EXECUTE ON FUNCTION public.captain_manage_game_checkin(uuid,uuid,uuid,text,text) TO authenticated;
+    " >/dev/null
+  }
   for rejection_case in $PREFLIGHT_CASES; do
     dropdb --if-exists -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
     createdb -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME"
@@ -229,6 +246,14 @@ if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
       "${PSQL[@]}" -c 'ALTER TABLE public.sub_invitations DISABLE ROW LEVEL SECURITY' >/dev/null
     elif [[ "$rejection_case" == "function_owner" ]]; then
       "${PSQL[@]}" -c 'CREATE ROLE fixture_other_owner NOLOGIN; ALTER FUNCTION public.captain_manage_game_checkin(uuid,uuid,uuid,text,text) OWNER TO fixture_other_owner' >/dev/null
+    elif [[ "$rejection_case" == "function_default_missing" ]]; then
+      rebuild_captain_fixture_function 'p_operation text, p_status text'
+    elif [[ "$rejection_case" == "function_default_non_null" ]]; then
+      rebuild_captain_fixture_function "p_operation text, p_status text DEFAULT 'confirmed'"
+    elif [[ "$rejection_case" == "function_default_expression_null" ]]; then
+      rebuild_captain_fixture_function "p_operation text, p_status text DEFAULT NULLIF('x'::text, 'x'::text)"
+    elif [[ "$rejection_case" == "function_default_multiple" ]]; then
+      rebuild_captain_fixture_function "p_operation text DEFAULT 'set', p_status text DEFAULT NULL"
     elif [[ "$rejection_case" == "function_collision" ]]; then
       "${PSQL[@]}" -c "CREATE FUNCTION public.beer_guy_claim(uuid,uuid) RETURNS jsonb LANGUAGE sql AS 'SELECT pg_catalog.jsonb_build_object(''unexpected'', true)'" >/dev/null
     elif [[ "$rejection_case" == "authenticated_acl_missing" ]]; then

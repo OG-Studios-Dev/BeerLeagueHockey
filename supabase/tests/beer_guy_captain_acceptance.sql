@@ -164,6 +164,26 @@ BEGIN
     RAISE EXCEPTION 'captain set response/Beer clear compatibility failed: %', v_result;
   END IF;
 
+  -- The deployed trailing default keeps legacy four-argument reset calls valid;
+  -- five-argument set calls above and below remain the explicit client contract.
+  v_result := public.captain_manage_game_checkin(
+    '50000000-0000-4000-8000-000000000003',
+    '30000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000011',
+    'reset'
+  );
+  IF v_result <> pg_catalog.jsonb_build_object(
+       'outcome', 'reset', 'operation', 'reset', 'status', NULL,
+       'affected_rows', 1, 'checkin_id', v_result -> 'checkin_id'
+     ) OR EXISTS (
+       SELECT 1 FROM public.game_checkins
+       WHERE game_id = '50000000-0000-4000-8000-000000000003'
+         AND team_id = '30000000-0000-4000-8000-000000000001'
+         AND player_id = '40000000-0000-4000-8000-000000000011'
+     ) THEN
+    RAISE EXCEPTION 'four-argument captain reset compatibility failed: %', v_result;
+  END IF;
+
   -- The same authenticated database authority covers active game-day edits.
   v_result := public.captain_manage_game_checkin(
     '50000000-0000-4000-8000-000000000015',

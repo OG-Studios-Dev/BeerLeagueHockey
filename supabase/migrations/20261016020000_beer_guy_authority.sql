@@ -11,6 +11,8 @@ DECLARE
   v_captain_return regtype;
   v_captain_owner name;
   v_captain_security_definer boolean;
+  v_captain_default_count integer;
+  v_captain_default_expression text;
   v_realtime_publication pg_catalog.pg_publication%ROWTYPE;
   v_current_role_oid oid;
   v_current_role_superuser boolean;
@@ -519,8 +521,10 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  SELECT p.proargnames, p.prorettype::pg_catalog.regtype, owner.rolname, p.prosecdef
-  INTO v_captain_arg_names, v_captain_return, v_captain_owner, v_captain_security_definer
+  SELECT p.proargnames, p.prorettype::pg_catalog.regtype, owner.rolname, p.prosecdef,
+         p.pronargdefaults, pg_catalog.pg_get_expr(p.proargdefaults, 0)
+  INTO v_captain_arg_names, v_captain_return, v_captain_owner, v_captain_security_definer,
+       v_captain_default_count, v_captain_default_expression
   FROM pg_catalog.pg_proc AS p
   JOIN pg_catalog.pg_roles AS owner ON owner.oid = p.proowner
   WHERE p.oid = v_captain_proc;
@@ -530,6 +534,14 @@ BEGIN
      OR v_captain_security_definer IS NOT TRUE
      OR NOT pg_catalog.has_function_privilege('authenticated', v_captain_proc, 'EXECUTE') THEN
     RAISE EXCEPTION 'Beer Guy baseline is incompatible; captain check-in RPC names/return/owner/security/ACL differ'
+      USING ERRCODE = '55000';
+  END IF;
+  IF v_captain_default_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'Beer Guy baseline is incompatible; captain check-in RPC must have exactly one trailing default'
+      USING ERRCODE = '55000';
+  END IF;
+  IF v_captain_default_expression IS DISTINCT FROM 'NULL::text' THEN
+    RAISE EXCEPTION 'Beer Guy baseline is incompatible; captain check-in RPC trailing default must be exactly NULL::text'
       USING ERRCODE = '55000';
   END IF;
 
@@ -1273,7 +1285,7 @@ CREATE OR REPLACE FUNCTION public.captain_manage_game_checkin(
   p_team_id uuid,
   p_player_id uuid,
   p_operation text,
-  p_status text
+  p_status text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
