@@ -449,6 +449,9 @@ const CANONICAL_BATCH_CONCURRENCY = 4;
 type CanonicalBatchQuery = {
   range(from: number, to: number): PromiseLike<{ data: unknown; error: unknown }>;
 };
+type CanonicalExactBatchQuery = {
+  range(from: number, to: number): PromiseLike<{ data: unknown; error: unknown; count: number | null }>;
+};
 
 function chunkCanonicalValues<T>(values: T[], size = CANONICAL_ID_BATCH_SIZE): T[][] {
   const chunks: T[][] = [];
@@ -487,6 +490,42 @@ async function readCanonicalBatchedRows<T>(
   };
   await Promise.all(Array.from({ length: Math.min(CANONICAL_BATCH_CONCURRENCY, batches.length) }, worker));
   return results.some((result) => result === null) ? null : results.flatMap((result) => result || []);
+}
+
+async function readStrictExactBatchedRows<T>(
+  values: string[],
+  context: string,
+  buildQuery: (batch: string[]) => CanonicalExactBatchQuery,
+): Promise<T[]> {
+  const batches = chunkCanonicalValues(values);
+  const results: T[][] = new Array(batches.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      const index = next++;
+      const first = await buildQuery(batches[index]).range(0, CANONICAL_PAGE_SIZE - 1);
+      if (first.error) throwCanonicalReadError(first.error, `${context} batch ${index + 1} page 0`);
+      if (!Number.isSafeInteger(first.count) || (first.count ?? -1) < 0) {
+        throwCanonicalReadError(new Error('provider count missing'), `${context} completeness`);
+      }
+      const expectedCount = first.count as number;
+      const rows = [...((first.data || []) as T[])];
+      if (rows.length !== Math.min(CANONICAL_PAGE_SIZE, expectedCount)) {
+        throwCanonicalReadError(new Error('provider page was incomplete'), `${context} completeness`);
+      }
+      for (let offset = CANONICAL_PAGE_SIZE; offset < expectedCount; offset += CANONICAL_PAGE_SIZE) {
+        const page = await buildQuery(batches[index]).range(offset, offset + CANONICAL_PAGE_SIZE - 1);
+        if (page.error) throwCanonicalReadError(page.error, `${context} batch ${index + 1} page ${offset}`);
+        if (page.count !== expectedCount || ((page.data || []) as T[]).length !== Math.min(CANONICAL_PAGE_SIZE, expectedCount - offset)) {
+          throwCanonicalReadError(new Error('provider page was incomplete'), `${context} completeness`);
+        }
+        rows.push(...((page.data || []) as T[]));
+      }
+      results[index] = rows;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CANONICAL_BATCH_CONCURRENCY, batches.length) }, worker));
+  return results.flat();
 }
 
 function isLikelyUuid(value: string | null | undefined) {
@@ -1270,6 +1309,7 @@ export async function getConfirmedCheckinAppearanceRows(
   options: {
     leagueId?: string;
     seasonId?: string;
+    seasonIds?: string[];
     teamId?: string;
     teamIds?: string[];
     playerIds?: string[];
@@ -1279,9 +1319,164 @@ export async function getConfirmedCheckinAppearanceRows(
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   const gameStatuses = options.gameStatuses ?? PLAYED_GAME_STATUSES;
 
+  if (options.strict) {
+    const playerIds = [...new Set(options.playerIds || [])];
+    const requestedSeasonIds = new Set([
+      ...(options.seasonIds || []),
+      ...(options.seasonId ? [options.seasonId] : []),
+    ]);
+    if (playerIds.length === 0) {
+      throwCanonicalReadError(new Error('strict confirmed check-ins require player scope'), 'confirmed check-in appearances scope');
+    }
+
+    const buildCheckinQuery = () => {
+      let directQuery = supabase
+        .from('game_checkins')
+        .select('player_id, team_id, game_id', { count: 'exact' })
+        .eq('status', 'confirmed')
+        .in('player_id', playerIds);
+      if (options.teamId) {
+        directQuery = directQuery.eq('team_id', options.teamId);
+      } else if (options.teamIds && options.teamIds.length > 0) {
+        directQuery = directQuery.in('team_id', options.teamIds);
+      }
+      return directQuery
+        .order('game_id', { ascending: true })
+        .order('team_id', { ascending: true })
+        .order('player_id', { ascending: true });
+    };
+
+    const firstPage = await buildCheckinQuery().range(0, CANONICAL_PAGE_SIZE - 1);
+    if (firstPage.error) throwCanonicalReadError(firstPage.error, 'confirmed check-in appearances page 0');
+    if (!Number.isSafeInteger(firstPage.count) || (firstPage.count ?? -1) < 0) {
+      throwCanonicalReadError(new Error('provider count missing'), 'confirmed check-in appearances completeness');
+    }
+    const expectedCount = firstPage.count as number;
+    const checkinRows = [...(firstPage.data || [])] as Array<{ player_id?: unknown; team_id?: unknown; game_id?: unknown }>;
+    if (checkinRows.length !== Math.min(CANONICAL_PAGE_SIZE, expectedCount)) {
+      throwCanonicalReadError(new Error('provider page was incomplete'), 'confirmed check-in appearances completeness');
+    }
+    for (let offset = CANONICAL_PAGE_SIZE; offset < expectedCount; offset += CANONICAL_PAGE_SIZE) {
+      const page = await buildCheckinQuery().range(offset, offset + CANONICAL_PAGE_SIZE - 1);
+      if (page.error) throwCanonicalReadError(page.error, `confirmed check-in appearances page ${offset}`);
+      if (page.count !== expectedCount || (page.data || []).length !== Math.min(CANONICAL_PAGE_SIZE, expectedCount - offset)) {
+        throwCanonicalReadError(new Error('provider page was incomplete'), 'confirmed check-in appearances completeness');
+      }
+      checkinRows.push(...(page.data || []));
+    }
+
+    const playerIdSet = new Set(playerIds);
+    const teamIdSet = new Set(options.teamIds || []);
+    const seenCheckins = new Set<string>();
+    const checkinsByGameId = new Map<string, Array<{ player_id: string; team_id: string; game_id: string }>>();
+    for (const rawRow of checkinRows) {
+      if (typeof rawRow.player_id !== 'string' || !rawRow.player_id
+        || typeof rawRow.team_id !== 'string' || !rawRow.team_id
+        || typeof rawRow.game_id !== 'string' || !rawRow.game_id
+        || !playerIdSet.has(rawRow.player_id)
+        || (options.teamId ? rawRow.team_id !== options.teamId : teamIdSet.size > 0 && !teamIdSet.has(rawRow.team_id))) {
+        throwCanonicalReadError(new Error('invalid provider row'), 'confirmed check-in appearances validation');
+      }
+      const duplicateKey = `${rawRow.game_id}:${rawRow.player_id}`;
+      if (seenCheckins.has(duplicateKey)) {
+        throwCanonicalReadError(new Error('duplicate provider row'), 'confirmed check-in appearances validation');
+      }
+      seenCheckins.add(duplicateKey);
+      const rows = checkinsByGameId.get(rawRow.game_id) || [];
+      rows.push(rawRow as { player_id: string; team_id: string; game_id: string });
+      checkinsByGameId.set(rawRow.game_id, rows);
+    }
+    if (checkinRows.length !== expectedCount) {
+      throwCanonicalReadError(new Error('provider result was incomplete'), 'confirmed check-in appearances completeness');
+    }
+
+    type ValidationGame = {
+      id?: unknown;
+      league_id?: unknown;
+      season_id?: unknown;
+      scheduled_at?: string | null;
+      status?: unknown;
+      home_team_id?: unknown;
+      away_team_id?: unknown;
+      home_score?: number | null;
+      away_score?: number | null;
+    };
+    const validatedGames = new Map<string, ValidationGame>();
+    const inScopeGameIds = new Set<string>();
+    const gameIdBatches = chunkCanonicalValues([...checkinsByGameId.keys()]);
+    const hydratedGameBatches: ValidationGame[][] = new Array(gameIdBatches.length);
+    let nextGameBatchIndex = 0;
+    const hydrateGameBatch = async () => {
+      while (nextGameBatchIndex < gameIdBatches.length) {
+        const batchIndex = nextGameBatchIndex++;
+        const gameIds = gameIdBatches[batchIndex];
+        const result = await supabase
+          .from('games')
+          .select('id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score', { count: 'exact' })
+          .in('id', gameIds)
+          .order('id', { ascending: true });
+        assertStrictCompleteResult(result.data, result.count, result.error, true, `confirmed check-in game validation batch ${batchIndex + 1}`);
+        if ((result.count ?? -1) !== gameIds.length) {
+          throwCanonicalReadError(new Error('game validation was incomplete'), 'confirmed check-in game validation completeness');
+        }
+        const requestedGameIds = new Set(gameIds);
+        const hydratedGameIds = new Set<string>();
+        const hydratedGames: ValidationGame[] = [];
+        for (const rawGame of (result.data || []) as ValidationGame[]) {
+          if (typeof rawGame.id !== 'string' || !requestedGameIds.has(rawGame.id) || hydratedGameIds.has(rawGame.id)
+            || typeof rawGame.league_id !== 'string' || !rawGame.league_id
+            || typeof rawGame.season_id !== 'string' || !rawGame.season_id
+            || typeof rawGame.status !== 'string' || !rawGame.status
+            || rawGame.scheduled_at !== null && typeof rawGame.scheduled_at !== 'string'
+            || rawGame.home_team_id !== null && (typeof rawGame.home_team_id !== 'string' || !rawGame.home_team_id)
+            || rawGame.away_team_id !== null && (typeof rawGame.away_team_id !== 'string' || !rawGame.away_team_id)
+            || rawGame.home_team_id === null && rawGame.away_team_id === null
+            || rawGame.home_score !== null && (typeof rawGame.home_score !== 'number' || !Number.isFinite(rawGame.home_score))
+            || rawGame.away_score !== null && (typeof rawGame.away_score !== 'number' || !Number.isFinite(rawGame.away_score))) {
+            throwCanonicalReadError(new Error('invalid provider row'), 'confirmed check-in game validation');
+          }
+          hydratedGameIds.add(rawGame.id);
+          hydratedGames.push(rawGame);
+        }
+        hydratedGameBatches[batchIndex] = hydratedGames;
+      }
+    };
+    await Promise.all(Array.from(
+      { length: Math.min(CANONICAL_BATCH_CONCURRENCY, gameIdBatches.length) },
+      hydrateGameBatch,
+    ));
+    for (const hydratedGames of hydratedGameBatches) {
+      for (const rawGame of hydratedGames) {
+        const gameId = rawGame.id as string;
+        if (validatedGames.has(gameId)) {
+          throwCanonicalReadError(new Error('invalid provider row'), 'confirmed check-in game validation');
+        }
+        const inRequestedScope = (!options.leagueId || rawGame.league_id === options.leagueId)
+          && (requestedSeasonIds.size === 0 || requestedSeasonIds.has(rawGame.season_id as string))
+          && gameStatuses.includes(rawGame.status as string);
+        if (inRequestedScope) {
+          const appearances = checkinsByGameId.get(gameId) || [];
+          if (appearances.some((appearance) => rawGame.home_team_id !== appearance.team_id && rawGame.away_team_id !== appearance.team_id)) {
+            throwCanonicalReadError(new Error('game team mismatch'), 'confirmed check-in game validation');
+          }
+          inScopeGameIds.add(gameId);
+        }
+        validatedGames.set(gameId, rawGame);
+      }
+    }
+    if (validatedGames.size !== checkinsByGameId.size) {
+      throwCanonicalReadError(new Error('game validation was incomplete'), 'confirmed check-in game validation completeness');
+    }
+
+    return checkinRows
+      .map((rawRow) => rawRow as { player_id: string; team_id: string; game_id: string })
+      .filter((row) => inScopeGameIds.has(row.game_id))
+      .map((row) => ({ ...row, game: validatedGames.get(row.game_id) as ConfirmedCheckinAppearanceRow['game'] }));
+  }
+
   let query = supabase
     .from('game_checkins')
-    .select('player_id, team_id, game_id, game:games!inner(id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score)', options.strict ? { count: 'exact' } : undefined)
+    .select('player_id, team_id, game_id, game:games!inner(id, season_id, scheduled_at, league_id, status, home_team_id, away_team_id, home_score, away_score)', undefined)
     .eq('status', 'confirmed')
     .in('game.status', [...gameStatuses]);
 
@@ -1304,9 +1499,8 @@ export async function getConfirmedCheckinAppearanceRows(
   }
 
   const { data, error, count } = await query;
-  assertStrictCompleteResult(data, count, error, options.strict, 'confirmed check-in appearances');
+  assertStrictCompleteResult(data, count, error, false, 'confirmed check-in appearances');
   if (error || !data) {
-    if (error && options.strict) throwCanonicalReadError(error, 'confirmed check-in appearances');
     return [];
   }
 
@@ -1362,6 +1556,35 @@ export async function getFallbackRosterAppearanceRows(
     .map((teamId) => `home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
     .join(',');
 
+  const scopedPlayerIds = [...new Set(rosterRows.map((row) => row.player_id).filter(Boolean))];
+  let outCheckinsQuery = supabase
+    .from('game_checkins')
+    .select('game_id, team_id, player_id', options.strict ? { count: 'exact' } : undefined)
+    .eq('status', 'out')
+    .in('team_id', teamIds);
+  let outAvailabilityQuery = supabase
+    .from('player_availability')
+    .select('game_id, team_id, player_id', options.strict ? { count: 'exact' } : undefined)
+    .eq('season_id', options.seasonId)
+    .eq('status', 'out')
+    .in('team_id', teamIds);
+  let skaterSignalQuery = supabase
+    .from('player_stats')
+    .select('game_id, team_id', options.strict ? { count: 'exact' } : undefined)
+    .eq('season_id', options.seasonId)
+    .in('team_id', teamIds);
+  let goalieSignalQuery = supabase
+    .from('goalie_stats')
+    .select('game_id, team_id', options.strict ? { count: 'exact' } : undefined)
+    .eq('season_id', options.seasonId)
+    .in('team_id', teamIds);
+  if (options.strict) {
+    outCheckinsQuery = outCheckinsQuery.in('player_id', scopedPlayerIds);
+    outAvailabilityQuery = outAvailabilityQuery.in('player_id', scopedPlayerIds);
+    skaterSignalQuery = skaterSignalQuery.in('player_id', scopedPlayerIds);
+    goalieSignalQuery = goalieSignalQuery.in('player_id', scopedPlayerIds);
+  }
+
   const [gamesResult, outCheckinsResult, outAvailabilityResult, skaterResult, goalieResult] = await Promise.all([
     supabase
       .from('games')
@@ -1369,27 +1592,10 @@ export async function getFallbackRosterAppearanceRows(
       .eq('season_id', options.seasonId)
       .in('status', [...gameStatuses])
       .or(teamFilter),
-    supabase
-      .from('game_checkins')
-      .select('game_id, team_id, player_id', options.strict ? { count: 'exact' } : undefined)
-      .eq('status', 'out')
-      .in('team_id', teamIds),
-    supabase
-      .from('player_availability')
-      .select('game_id, team_id, player_id', options.strict ? { count: 'exact' } : undefined)
-      .eq('season_id', options.seasonId)
-      .eq('status', 'out')
-      .in('team_id', teamIds),
-    supabase
-      .from('player_stats')
-      .select('game_id, team_id', options.strict ? { count: 'exact' } : undefined)
-      .eq('season_id', options.seasonId)
-      .in('team_id', teamIds),
-    supabase
-      .from('goalie_stats')
-      .select('game_id, team_id', options.strict ? { count: 'exact' } : undefined)
-      .eq('season_id', options.seasonId)
-      .in('team_id', teamIds),
+    outCheckinsQuery,
+    outAvailabilityQuery,
+    skaterSignalQuery,
+    goalieSignalQuery,
   ]);
 
   const { data: gameRows, error: gamesError } = gamesResult;
@@ -1410,6 +1616,51 @@ export async function getFallbackRosterAppearanceRows(
     return [];
   }
 
+  let gameLevelSkaterRows: Array<{ id?: string | null; game_id: string | null; team_id: string | null }> = [];
+  let gameLevelGoalieRows: Array<{ id?: string | null; game_id: string | null; team_id: string | null }> = [];
+  if (options.strict) {
+    const gameIds = [...new Set(gameRows
+      .filter((game) => game.home_score == null && game.away_score == null)
+      .map((game) => game.id)
+      .filter((id): id is string => Boolean(id)))];
+    [gameLevelSkaterRows, gameLevelGoalieRows] = await Promise.all([
+      readStrictExactBatchedRows<{ id?: string | null; game_id: string | null; team_id: string | null }>(
+        gameIds,
+        'fallback game skater signals',
+        (batch) => supabase
+          .from('player_stats')
+          .select('id, game_id, team_id', { count: 'exact' })
+          .in('game_id', batch)
+          .in('team_id', teamIds)
+          .order('game_id', { ascending: true })
+          .order('team_id', { ascending: true })
+          .order('id', { ascending: true })),
+      readStrictExactBatchedRows<{ id?: string | null; game_id: string | null; team_id: string | null }>(
+        gameIds,
+        'fallback game goalie signals',
+        (batch) => supabase
+          .from('goalie_stats')
+          .select('id, game_id, team_id', { count: 'exact' })
+          .in('game_id', batch)
+          .in('team_id', teamIds)
+          .order('game_id', { ascending: true })
+          .order('team_id', { ascending: true })
+          .order('id', { ascending: true })),
+    ]);
+    const gameIdSet = new Set(gameIds);
+    const teamIdSet = new Set(teamIds);
+    for (const rows of [gameLevelSkaterRows, gameLevelGoalieRows]) {
+      const seenSignalIds = new Set<string>();
+      for (const row of rows) {
+        if (!row.id || !row.game_id || !row.team_id || seenSignalIds.has(row.id)
+          || !gameIdSet.has(row.game_id) || !teamIdSet.has(row.team_id)) {
+          throwCanonicalReadError(new Error('invalid provider row'), 'fallback game stat signals validation');
+        }
+        seenSignalIds.add(row.id);
+      }
+    }
+  }
+
   const explicitOutSignals = new Set<string>();
   for (const row of outCheckinRows || []) {
     if (row.game_id && row.team_id && row.player_id) {
@@ -1423,12 +1674,12 @@ export async function getFallbackRosterAppearanceRows(
   }
 
   const statSignals = new Set<string>();
-  for (const row of skaterRows || []) {
+  for (const row of [...(skaterRows || []), ...gameLevelSkaterRows]) {
     if (row.game_id && row.team_id) {
       statSignals.add(`${row.game_id}:${row.team_id}`);
     }
   }
-  for (const row of goalieRows || []) {
+  for (const row of [...(goalieRows || []), ...gameLevelGoalieRows]) {
     if (row.game_id && row.team_id) {
       statSignals.add(`${row.game_id}:${row.team_id}`);
     }
@@ -5668,11 +5919,14 @@ export async function getPlayerCareerStatsTimeline(
       : (rawRows || []) as StrictGoalieRawRow[];
 
     const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
-    const [confirmedBuckets, fallbackBuckets] = await Promise.all([
-      Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId], strict }))),
+    const [confirmedCheckins, fallbackBuckets] = await Promise.all([
+      strict
+        ? activeSeasonIds.length > 0
+          ? getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
+          : Promise.resolve([])
+        : Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId] }))).then((buckets) => buckets.flat()),
       Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))),
     ]);
-    const confirmedCheckins = confirmedBuckets.flat();
     const fallbackAppearances = fallbackBuckets.flat();
 
     const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
@@ -5842,11 +6096,14 @@ export async function getPlayerCareerStatsTimeline(
   }
 
   const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
-  const [confirmedBuckets, fallbackBuckets] = await Promise.all([
-    Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId], strict }))),
+  const [confirmedCheckins, fallbackBuckets] = await Promise.all([
+    strict
+      ? activeSeasonIds.length > 0
+        ? getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
+        : Promise.resolve([])
+      : Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId] }))).then((buckets) => buckets.flat()),
     Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))),
   ]);
-  const confirmedCheckins = confirmedBuckets.flat();
   const fallbackAppearances = fallbackBuckets.flat();
 
   const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
