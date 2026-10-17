@@ -5,6 +5,7 @@ export LANG=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREREQUISITE_MIGRATION="$ROOT/supabase/migrations/20261016010000_leagues_timezone_not_null.sql"
+FK_HARDENING_MIGRATION="$ROOT/supabase/migrations/20261016015000_game_duties_duty_type_fk_no_action.sql"
 MIGRATION="$ROOT/supabase/migrations/20261016020000_beer_guy_authority.sql"
 FIXTURE="$ROOT/supabase/tests/beer_guy_fixture.sql"
 TEST_FILES="${BEER_GUY_ACCEPTANCE_FILES:-beer_guy_catalog_acceptance.sql beer_guy_legacy_reconciliation_acceptance.sql beer_guy_assignment_invariant_acceptance.sql beer_guy_substitute_acceptance.sql beer_guy_attendance_lifecycle_acceptance.sql beer_guy_self_claim_acceptance.sql beer_guy_captain_acceptance.sql beer_guy_reply_scope_acceptance.sql beer_guy_reads_history_acceptance.sql beer_guy_new_team_acceptance.sql beer_guy_identity_lifecycle_acceptance.sql beer_guy_security_acceptance.sql beer_guy_cross_league_acceptance.sql beer_guy_checkin_select_acceptance.sql beer_guy_self_contained_invitation_rls_acceptance.sql beer_guy_self_contained_checkin_rls_acceptance.sql beer_guy_realtime_publication_acceptance.sql}"
@@ -40,6 +41,14 @@ apply_prerequisite_migration() {
   "${PSQL[@]}" -f "$PREREQUISITE_MIGRATION"
 }
 
+apply_fk_hardening_migration() {
+  if [[ ! -f "$FK_HARDENING_MIGRATION" ]]; then
+    printf 'missing FK hardening migration: %s\n' "$FK_HARDENING_MIGRATION" >&2
+    exit 1
+  fi
+  "${PSQL[@]}" -f "$FK_HARDENING_MIGRATION"
+}
+
 prepare_database() {
   local test_file="${1:-}"
   local realtime_baseline="${2:-empty}"
@@ -61,6 +70,7 @@ prepare_database() {
   fi
   if [[ "${BEER_GUY_SKIP_MIGRATION:-0}" != "1" ]]; then
     apply_prerequisite_migration
+    apply_fk_hardening_migration
     if [[ ! -f "$MIGRATION" ]]; then
       printf 'missing migration: %s\n' "$MIGRATION" >&2
       exit 1
@@ -134,6 +144,7 @@ run_team_provisioning_migration_race() {
   createdb -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME"
   "${PSQL[@]}" -f "$FIXTURE" >/dev/null
   apply_prerequisite_migration >/dev/null
+  apply_fk_hardening_migration >/dev/null
 
   set +e
   "${PSQL[@]}" -c "BEGIN; INSERT INTO public.teams(id,league_id,name) VALUES ('30000000-0000-4000-8000-000000000099','10000000-0000-4000-8000-000000000001','Concurrent Expansion'); SELECT pg_catalog.pg_sleep(2) /* beer-guy-team-race-inserter */; COMMIT;" >"$PG_ROOT/team-insert-racer.log" 2>&1 &
@@ -182,12 +193,13 @@ if [[ "${BEER_GUY_RUN_TEAM_PROVISIONING_RACE_ONLY:-0}" == "1" ]]; then
 fi
 
 if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
-  PREFLIGHT_CASES="${BEER_GUY_PREFLIGHT_CASES:-missing_column missing_uniqueness missing_checkin_uniqueness missing_sub_column missing_sub_fk missing_sub_status_constraint missing_parent_fk missing_id_default invalid_status_vocabulary rls_disabled function_owner function_collision authenticated_acl_missing service_acl_missing missing_realtime_publication realtime_publication_operations realtime_publication_row_filter realtime_publication_column_list realtime_publication_authority ambiguous_duties}"
+  PREFLIGHT_CASES="${BEER_GUY_PREFLIGHT_CASES:-missing_column missing_uniqueness missing_checkin_uniqueness missing_sub_column missing_sub_fk missing_sub_status_constraint missing_parent_fk wrong_hierarchy_delete_action wrong_duty_type_delete_action wrong_assigned_player_delete_action missing_id_default invalid_status_vocabulary rls_disabled function_owner function_collision authenticated_acl_missing service_acl_missing missing_realtime_publication realtime_publication_operations realtime_publication_row_filter realtime_publication_column_list realtime_publication_authority ambiguous_duties}"
   for rejection_case in $PREFLIGHT_CASES; do
     dropdb --if-exists -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME" >/dev/null 2>&1 || true
     createdb -h "$PG_HOST" -p "$PORT" -U postgres "$DB_NAME"
     "${PSQL[@]}" -f "$FIXTURE" >/dev/null
     apply_prerequisite_migration >/dev/null
+    apply_fk_hardening_migration >/dev/null
     MIGRATION_PSQL=("${PSQL[@]}")
     if [[ "$rejection_case" == "missing_column" ]]; then
       "${PSQL[@]}" -c 'ALTER TABLE public.game_duties DROP COLUMN notes' >/dev/null
@@ -203,6 +215,12 @@ if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
       "${PSQL[@]}" -c 'ALTER TABLE public.sub_invitations DROP CONSTRAINT sub_invitations_status_check' >/dev/null
     elif [[ "$rejection_case" == "missing_parent_fk" ]]; then
       "${PSQL[@]}" -c 'ALTER TABLE public.game_duties DROP CONSTRAINT game_duties_team_id_fkey' >/dev/null
+    elif [[ "$rejection_case" == "wrong_hierarchy_delete_action" ]]; then
+      "${PSQL[@]}" -c 'ALTER TABLE public.teams DROP CONSTRAINT teams_league_id_fkey, ADD CONSTRAINT teams_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id) ON DELETE NO ACTION' >/dev/null
+    elif [[ "$rejection_case" == "wrong_duty_type_delete_action" ]]; then
+      "${PSQL[@]}" -c 'ALTER TABLE public.game_duties DROP CONSTRAINT game_duties_duty_type_id_fkey, ADD CONSTRAINT game_duties_duty_type_id_fkey FOREIGN KEY (duty_type_id) REFERENCES public.duty_types(id) ON DELETE CASCADE' >/dev/null
+    elif [[ "$rejection_case" == "wrong_assigned_player_delete_action" ]]; then
+      "${PSQL[@]}" -c 'ALTER TABLE public.game_duties DROP CONSTRAINT game_duties_assigned_player_id_fkey, ADD CONSTRAINT game_duties_assigned_player_id_fkey FOREIGN KEY (assigned_player_id) REFERENCES public.profiles(id) ON DELETE CASCADE' >/dev/null
     elif [[ "$rejection_case" == "missing_id_default" ]]; then
       "${PSQL[@]}" -c 'ALTER TABLE public.duty_types ALTER COLUMN id DROP DEFAULT' >/dev/null
     elif [[ "$rejection_case" == "invalid_status_vocabulary" ]]; then
@@ -245,6 +263,14 @@ if [[ "${BEER_GUY_RUN_PREFLIGHT_REJECTION:-0}" == "1" ]]; then
     if ! grep -q 'Beer Guy baseline is incompatible\|Beer Guy baseline is ambiguous' "$PG_ROOT/preflight-$rejection_case.log"; then
       while IFS= read -r line; do printf '%s\n' "$line" >&2; done < "$PG_ROOT/preflight-$rejection_case.log"
       printf 'migration case %s failed without the expected preflight diagnostic\n' "$rejection_case" >&2
+      exit 1
+    fi
+    if [[ "$rejection_case" == "wrong_hierarchy_delete_action" ||
+          "$rejection_case" == "wrong_duty_type_delete_action" ||
+          "$rejection_case" == "wrong_assigned_player_delete_action" ]] &&
+       ! grep -q 'missing or mismatched foreign keys' "$PG_ROOT/preflight-$rejection_case.log"; then
+      while IFS= read -r line; do printf '%s\n' "$line" >&2; done < "$PG_ROOT/preflight-$rejection_case.log"
+      printf 'migration case %s failed for the wrong FK-action reason\n' "$rejection_case" >&2
       exit 1
     fi
     expected_realtime_diagnostic=""

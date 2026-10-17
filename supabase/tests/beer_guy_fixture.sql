@@ -53,14 +53,14 @@ CREATE TABLE public.leagues (
 
 CREATE TABLE public.teams (
   id uuid PRIMARY KEY,
-  league_id uuid NOT NULL REFERENCES public.leagues(id),
+  league_id uuid NOT NULL REFERENCES public.leagues(id) ON DELETE CASCADE,
   name text NOT NULL,
   captain_id uuid REFERENCES public.profiles(id)
 );
 
 CREATE TABLE public.seasons (
   id uuid PRIMARY KEY,
-  league_id uuid NOT NULL REFERENCES public.leagues(id),
+  league_id uuid NOT NULL REFERENCES public.leagues(id) ON DELETE CASCADE,
   name text NOT NULL,
   start_date date NOT NULL,
   end_date date,
@@ -70,10 +70,10 @@ CREATE TABLE public.seasons (
 
 CREATE TABLE public.games (
   id uuid PRIMARY KEY,
-  league_id uuid NOT NULL REFERENCES public.leagues(id),
-  season_id uuid NOT NULL REFERENCES public.seasons(id),
-  home_team_id uuid NOT NULL REFERENCES public.teams(id),
-  away_team_id uuid NOT NULL REFERENCES public.teams(id),
+  league_id uuid NOT NULL REFERENCES public.leagues(id) ON DELETE CASCADE,
+  season_id uuid NOT NULL REFERENCES public.seasons(id) ON DELETE CASCADE,
+  home_team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+  away_team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
   scheduled_at timestamptz NOT NULL,
   status public.game_status DEFAULT 'scheduled',
   updated_at timestamptz DEFAULT pg_catalog.now()
@@ -81,10 +81,10 @@ CREATE TABLE public.games (
 
 CREATE TABLE public.team_rosters (
   id uuid PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
-  player_id uuid NOT NULL REFERENCES public.profiles(id),
-  team_id uuid NOT NULL REFERENCES public.teams(id),
-  league_id uuid NOT NULL REFERENCES public.leagues(id),
-  season_id uuid NOT NULL REFERENCES public.seasons(id),
+  player_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+  league_id uuid NOT NULL REFERENCES public.leagues(id) ON DELETE CASCADE,
+  season_id uuid NOT NULL REFERENCES public.seasons(id) ON DELETE CASCADE,
   player_type text NOT NULL DEFAULT 'regular',
   status public.roster_status NOT NULL DEFAULT 'active',
   start_date date NOT NULL DEFAULT CURRENT_DATE,
@@ -98,9 +98,9 @@ CREATE TABLE public.team_rosters (
 
 CREATE TABLE public.game_checkins (
   id uuid PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
-  game_id uuid NOT NULL REFERENCES public.games(id),
-  player_id uuid NOT NULL REFERENCES public.profiles(id),
-  team_id uuid NOT NULL REFERENCES public.teams(id),
+  game_id uuid NOT NULL REFERENCES public.games(id) ON DELETE CASCADE,
+  player_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
   status text NOT NULL,
   note text,
   created_at timestamptz DEFAULT pg_catalog.now(),
@@ -111,7 +111,7 @@ CREATE TABLE public.game_checkins (
 
 CREATE TABLE public.duty_types (
   id uuid PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
-  team_id uuid NOT NULL REFERENCES public.teams(id),
+  team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
   name text NOT NULL,
   description text,
   icon text,
@@ -122,10 +122,10 @@ CREATE TABLE public.duty_types (
 
 CREATE TABLE public.game_duties (
   id uuid PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
-  game_id uuid NOT NULL REFERENCES public.games(id),
-  team_id uuid NOT NULL REFERENCES public.teams(id),
-  duty_type_id uuid NOT NULL REFERENCES public.duty_types(id),
-  assigned_player_id uuid REFERENCES public.profiles(id),
+  game_id uuid NOT NULL REFERENCES public.games(id) ON DELETE CASCADE,
+  team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+  duty_type_id uuid NOT NULL REFERENCES public.duty_types(id) ON DELETE NO ACTION,
+  assigned_player_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
   status text DEFAULT 'pending',
   notes text,
   created_at timestamptz DEFAULT pg_catalog.now(),

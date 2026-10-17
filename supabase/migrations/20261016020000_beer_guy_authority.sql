@@ -200,17 +200,17 @@ BEGIN
   INTO v_missing
   FROM (
     VALUES
-      ('teams', 'league_id', 'leagues', 'a'::"char"),
-      ('seasons', 'league_id', 'leagues', 'a'::"char"),
-      ('games', 'league_id', 'leagues', 'a'::"char"), ('games', 'season_id', 'seasons', 'a'::"char"),
-      ('games', 'home_team_id', 'teams', 'a'::"char"), ('games', 'away_team_id', 'teams', 'a'::"char"),
-      ('team_rosters', 'player_id', 'profiles', 'a'::"char"), ('team_rosters', 'team_id', 'teams', 'a'::"char"),
-      ('team_rosters', 'league_id', 'leagues', 'a'::"char"), ('team_rosters', 'season_id', 'seasons', 'a'::"char"),
-      ('game_checkins', 'game_id', 'games', 'a'::"char"), ('game_checkins', 'team_id', 'teams', 'a'::"char"),
-      ('game_checkins', 'player_id', 'profiles', 'a'::"char"),
-      ('duty_types', 'team_id', 'teams', 'a'::"char"),
-      ('game_duties', 'game_id', 'games', 'a'::"char"), ('game_duties', 'team_id', 'teams', 'a'::"char"),
-      ('game_duties', 'duty_type_id', 'duty_types', 'a'::"char"), ('game_duties', 'assigned_player_id', 'profiles', 'a'::"char")
+      ('teams', 'league_id', 'leagues', 'c'::"char"),
+      ('seasons', 'league_id', 'leagues', 'c'::"char"),
+      ('games', 'league_id', 'leagues', 'c'::"char"), ('games', 'season_id', 'seasons', 'c'::"char"),
+      ('games', 'home_team_id', 'teams', 'c'::"char"), ('games', 'away_team_id', 'teams', 'c'::"char"),
+      ('team_rosters', 'player_id', 'profiles', 'c'::"char"), ('team_rosters', 'team_id', 'teams', 'c'::"char"),
+      ('team_rosters', 'league_id', 'leagues', 'c'::"char"), ('team_rosters', 'season_id', 'seasons', 'c'::"char"),
+      ('game_checkins', 'game_id', 'games', 'c'::"char"), ('game_checkins', 'team_id', 'teams', 'c'::"char"),
+      ('game_checkins', 'player_id', 'profiles', 'c'::"char"),
+      ('duty_types', 'team_id', 'teams', 'c'::"char"),
+      ('game_duties', 'game_id', 'games', 'c'::"char"), ('game_duties', 'team_id', 'teams', 'c'::"char"),
+      ('game_duties', 'duty_type_id', 'duty_types', 'a'::"char"), ('game_duties', 'assigned_player_id', 'profiles', 'n'::"char")
   ) AS required(source_table, source_column, target_table, delete_action)
   WHERE NOT EXISTS (
     SELECT 1
