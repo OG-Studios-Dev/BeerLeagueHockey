@@ -5,6 +5,8 @@ import {
   ViewStyle,
 } from 'react-native';
 
+import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
+
 type RevealViewProps = {
   children: React.ReactNode;
   delay?: number;
@@ -20,9 +22,15 @@ export default function RevealView({
   duration = 380,
   style,
 }: RevealViewProps) {
+  const { reduceMotion } = useAccessibilityPreferences();
   const [progress] = React.useState(() => new Animated.Value(0));
 
   React.useEffect(() => {
+    if (reduceMotion) {
+      progress.setValue(1);
+      return;
+    }
+
     const animation = Animated.timing(progress, {
       toValue: 1,
       duration,
@@ -33,7 +41,7 @@ export default function RevealView({
     animation.start();
 
     return () => animation.stop();
-  }, [delay, duration, progress]);
+  }, [delay, duration, progress, reduceMotion]);
 
   return (
     <Animated.View
