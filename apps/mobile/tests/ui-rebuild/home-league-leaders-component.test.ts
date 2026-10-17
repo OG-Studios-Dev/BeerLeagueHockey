@@ -536,6 +536,40 @@ describe('Home League Leaders component', () => {
     assert.equal(flattenStyle(teamTab.props.style({ pressed: false })).flex, 1, 'Team pills keep their shared full-row layout');
   });
 
+  it('supports an explicit compact Team wrapper without changing the Home defaults', () => {
+    const harness = createHookHarness();
+    const Presentation = loadComponent(
+      harness,
+      new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url),
+    );
+    const opened: string[] = [];
+    harness.mount(() => Presentation({
+      leagueId, seasonName: 'Fall 2026', metric: 'points', leaders: fiveRowLeaders, status: 'ready',
+      width: 390, fontScale: 1, reduceTransparency: false, onMetricChange: () => {}, onRetry: () => {},
+      onOpenPlayer: (id: string) => opened.push(id), onOpenAllStats: () => {},
+      testIDPrefix: 'team', focusPrefix: 'team-public:test', showAllStats: false,
+      sectionTitle: 'Team Leaders', compactMetricTabs: true, visibleLeaderLimit: 5,
+      rowVariant: 'home-inline', showTeamCrests: false,
+    }));
+
+    const teamModule = findNode(harness.output, (node) => node.props.testID === 'team-league-leaders')!;
+    assert.match(nodeText(teamModule), /^Team Leaders/);
+    assert.doesNotMatch(nodeText(teamModule), /League Leaders/);
+    for (let index = 1; index <= 5; index += 1) {
+      assert.ok(findNode(teamModule, (node) => node.props.testID === `team-leader-row-leader-${index}`));
+    }
+    assert.equal(findNode(teamModule, (node) => node.type === 'TeamLogo'), undefined, 'Team rows omit their redundant crest');
+    const firstRow = findNode(teamModule, (node) => node.props.testID === 'team-leader-row-leader-1')!;
+    assert.ok(findNode(firstRow, (node) => node.props.testID === 'team-leader-rank-badge-leader-1'));
+    assert.equal(findNode(firstRow, (node) => node.props.testID === 'team-leader-crest-leader-1'), undefined);
+    assert.match(firstRow.props.accessibilityLabel, /Leader 1, Team 1, 18 points/);
+    firstRow.props.onPress();
+    assert.deepEqual(opened, ['leader-1']);
+    const teamTab = findNode(teamModule, (node) => node.props.testID === 'team-leaders-tab-points')!;
+    assert.equal(flattenStyle(teamTab.props.style({ pressed: false })).flex, undefined);
+    assert.equal(flattenStyle(teamTab.props.style({ pressed: false })).flexGrow, 0);
+  });
+
   it('keys artwork and crest lifetimes to exact changing identities', () => {
     const source = readFileSync(new URL('../../src/components/LeagueLeadersPresentation.tsx', import.meta.url).pathname, 'utf8');
     assert.match(source, /import jackFooteArt from ['"]\.\.\/\.\.\/assets\/league-leaders\/jack-foote\.png['"]/);

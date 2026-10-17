@@ -141,13 +141,13 @@ describe('Team page polish contract', () => {
     assert.deepEqual(rankHomeLeaders(population, 'gaa').map((row) => row.player_id), ['dual', 'goalie']);
   });
 
-  it('shares the Home League Leaders presentation while preserving Home IDs and omitting Team league-wide navigation', () => {
+  it('shares the Home League Leaders presentation through explicit Home and Team wrapper-owned variants', () => {
     assert.equal(existsSync(leadersCoreUrl.pathname), true, 'shared LeagueLeadersPresentation core must exist');
     const core = readFileSync(leadersCoreUrl.pathname, 'utf8');
     const home = readFileSync(homeLeadersUrl.pathname, 'utf8');
     const team = readFileSync(teamPageUrl.pathname, 'utf8');
 
-    assert.match(core, />League Leaders</);
+    assert.match(core, /sectionTitle = ['"]League Leaders['"]/);
     assert.match(core, /Goals.*Assists.*Points.*GAA/s);
     assert.match(core, /testID=\{`\$\{testIDPrefix\}-leader-feature-art`\}/);
     assert.match(home, /LeagueLeadersPresentation/);
@@ -156,7 +156,11 @@ describe('Team page polish contract', () => {
     assert.match(team, /<LeagueLeadersPresentation/);
     assert.match(team, /leaders=\{snapshot\.leagueLeaders\}/);
     assert.match(team, /showAllStats=\{false\}/);
-    assert.doesNotMatch(team, /Team Leaders/);
+    assert.match(team, /sectionTitle="Team Leaders"/);
+    assert.match(team, /compactMetricTabs/);
+    assert.match(team, /visibleLeaderLimit=\{5\}/);
+    assert.match(team, /rowVariant="home-inline"/);
+    assert.match(team, /showTeamCrests=\{false\}/);
   });
 
   it('selects the last two results and prefers one live game with deterministic time and ID ties', () => {

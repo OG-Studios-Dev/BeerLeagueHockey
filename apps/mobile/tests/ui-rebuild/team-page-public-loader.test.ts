@@ -215,6 +215,26 @@ describe('Team public loader producer boundary', () => {
     assert.equal(result.queries.some((q) => q.table === 'game_checkins' || q.table === 'player_availability'), false);
   });
 
+  it('pushes explicit regular-player membership into the current roster queries', async () => {
+    const data = fixture();
+    data.team_rosters.push(
+      { ...data.team_rosters[0], id: 'active-sub', player_id: 'accepted-sub', player_type: 'sub' },
+      { ...data.team_rosters[0], id: 'active-part-time', player_id: 'part-time', player_type: 'part_time' },
+      { ...data.team_rosters[0], id: 'active-malformed', player_id: 'malformed', player_type: 'accepted_sub' },
+      { ...data.team_rosters[0], id: 'active-missing', player_id: 'missing-type', player_type: undefined },
+    );
+
+    const result = await loadFixture(data);
+
+    assert.equal(result.error, null);
+    assert.deepEqual(result.data.roster.map((row: Row) => row.playerId), ['player-a']);
+    const rosterQueries = result.queries.filter((query) => query.table === 'team_rosters');
+    assert.ok(rosterQueries.length >= 2);
+    assert.ok(rosterQueries.every((query) => query.filters.some(
+      ([operation, field, value]) => operation === 'eq' && field === 'player_type' && value === 'regular',
+    )));
+  });
+
   it('reads the 1001st goalie row and scopes both raw-stat producers to league plus current season', async () => {
     const data = fixture();
     data.goalie_stats = [

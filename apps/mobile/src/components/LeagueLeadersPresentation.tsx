@@ -57,6 +57,8 @@ export type LeagueLeadersPresentationProps = {
   compactMetricTabs?: boolean;
   visibleLeaderLimit?: number;
   rowVariant?: 'standard' | 'home-inline';
+  sectionTitle?: string;
+  showTeamCrests?: boolean;
 };
 
 type ArtworkStage = 'remote' | 'generated' | 'photo' | 'neutral';
@@ -153,7 +155,7 @@ function MetricTabs({ value, onChange, testIDPrefix, compact }: { value: HomeLea
   );
 }
 
-function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, onOpen, testIDPrefix, focusPrefix, variant }: { leader: RankedHomeLeader; compact: boolean; stacked: boolean; fontScale: number; estimatedNameWidth: number; onOpen: () => void; testIDPrefix: string; focusPrefix: string; variant: 'standard' | 'home-inline' }) {
+function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, onOpen, testIDPrefix, focusPrefix, variant, showTeamCrest }: { leader: RankedHomeLeader; compact: boolean; stacked: boolean; fontScale: number; estimatedNameWidth: number; onOpen: () => void; testIDPrefix: string; focusPrefix: string; variant: 'standard' | 'home-inline'; showTeamCrest: boolean }) {
   const teamName = leader.display_team_name || leader.team_name || 'Free agent';
   const name = splitLeagueLeaderName(leader.player_name);
   const [measuredNameWidth, setMeasuredNameWidth] = React.useState(0);
@@ -205,8 +207,8 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
             pressed && styles.pressed,
           ]}
         >
-          <View testID={`${testIDPrefix}-leader-crest-cluster-${leader.player_id}`} style={styles.homeInlineCrestCluster}>
-            <View testID={`${testIDPrefix}-leader-crest-${leader.player_id}`} style={styles.homeInlineCrest}>
+          <View testID={`${testIDPrefix}-leader-crest-cluster-${leader.player_id}`} style={[styles.homeInlineCrestCluster, !showTeamCrest && styles.homeInlineRankOnlyCluster]}>
+            {showTeamCrest ? <View testID={`${testIDPrefix}-leader-crest-${leader.player_id}`} style={styles.homeInlineCrest}>
               <TeamLogo
                 key={`${leader.team_id ?? 'free'}:${leader.display_team_logo_url ?? 'none'}`}
                 teamId={leader.team_id}
@@ -215,7 +217,7 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
                 size={30}
                 transparentBacking
               />
-            </View>
+            </View> : null}
             <View testID={`${testIDPrefix}-leader-rank-badge-${leader.player_id}`} style={styles.homeInlineRankBadge}>
               <Text allowFontScaling={false} style={styles.homeInlineRankText}>{leader.rankLabel}</Text>
             </View>
@@ -246,14 +248,14 @@ function LeaderRow({ leader, compact, stacked, fontScale, estimatedNameWidth, on
         <View style={styles.rowCopy}>
           {nameBlock}
           <View style={[styles.valueLine, compact && styles.valueLineCompact]}>
-            <TeamLogo
+            {showTeamCrest ? <TeamLogo
               key={`${leader.team_id ?? 'free'}:${leader.display_team_logo_url ?? 'none'}`}
               teamId={leader.team_id}
               logoUrl={leader.display_team_logo_url}
               teamName={teamName}
               size={compact ? 30 : 36}
               transparentBacking
-            />
+            /> : null}
             <Text allowFontScaling={false} style={[styles.value, compact && styles.valueCompact]}>{metricValue}</Text>
             <Text style={[styles.metricLabel, compact && styles.metricLabelCompact]}>{metricLabel}</Text>
           </View>
@@ -267,6 +269,7 @@ export default function LeagueLeadersPresentation({
   leagueId, seasonName: _seasonName, metric, leaders, status, errorMessage, width, fontScale,
   onMetricChange, onRetry, onOpenPlayer, onOpenAllStats, manifestLoader = loadPlayerArtworkManifest, manifestRefreshKey,
   testIDPrefix = 'home', focusPrefix = testIDPrefix, showAllStats = true, compactMetricTabs = false, visibleLeaderLimit = 3, rowVariant = 'standard',
+  sectionTitle = 'League Leaders', showTeamCrests = true,
 }: LeagueLeadersPresentationProps) {
   const [manifest, setManifest] = React.useState<PlayerArtworkManifest | null>(null);
   React.useEffect(() => {
@@ -294,7 +297,7 @@ export default function LeagueLeadersPresentation({
     <View testID={`${testIDPrefix}-league-leaders`} style={styles.module}>
       <View style={styles.heading}>
         <View style={styles.headingCopy}>
-          <Text accessibilityRole="header" style={styles.title}>League Leaders</Text>
+          <Text accessibilityRole="header" style={styles.title}>{sectionTitle}</Text>
         </View>
       </View>
       <MetricTabs value={metric} onChange={onMetricChange} testIDPrefix={testIDPrefix} compact={compactMetricTabs} />
@@ -339,6 +342,7 @@ export default function LeagueLeadersPresentation({
                   testIDPrefix={testIDPrefix}
                   focusPrefix={focusPrefix}
                   variant={rowVariant}
+                  showTeamCrest={showTeamCrests}
                 />
               ))}
             </View>
@@ -390,6 +394,7 @@ const styles = StyleSheet.create({
   homeInlineRowFixed: { height: 65 },
   homeInlineRowStacked: { minHeight: 72, paddingVertical: 8 },
   homeInlineCrestCluster: { width: 44, height: 36, marginRight: 6, flexShrink: 0, position: 'relative' },
+  homeInlineRankOnlyCluster: { width: 24 },
   homeInlineCrest: { position: 'absolute', left: 14, top: 3, width: 30, height: 30, zIndex: 1 },
   homeInlineRankBadge: { position: 'absolute', left: 0, top: 6, width: 24, height: 24, borderRadius: 12, zIndex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#7C3AED' },
   homeInlineRankText: { color: '#FFFFFF', fontSize: 10, lineHeight: 12, fontWeight: '900', fontVariant: ['tabular-nums'] },

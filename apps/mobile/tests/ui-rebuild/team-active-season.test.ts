@@ -243,6 +243,10 @@ function createRuntime({
       '../../assets/team-page/jersey-back-liuna.png': 5,
       '../../assets/team-page/jersey-back-fitzrays.png': 6,
       '../../assets/team-page/jersey-back-fallback.png': 7,
+      '../../assets/team-page/captain-contact-player-base.png': 8,
+      '../../assets/team-page/captain-contact-team-mask.png': 9,
+      '../../assets/team-page/captain-contact-neutral-base.png': 10,
+      '../../assets/team-page/captain-contact-neutral-team-mask.png': 11,
     },
   ).default;
 
@@ -851,9 +855,12 @@ describe('Team active-season data boundary', () => {
     const roster = findNode(output, (node) => node.props.testID === 'team-roster-list');
     assert.ok(roster);
     assert.equal(findNode(roster, (node) => node.type === 'ScrollView' && node.props.horizontal), undefined);
-    const playerName = findNode(roster, (node) => node.type === 'Text' && nodeText(node) === 'Current Casey');
-    assert.ok(playerName);
-    assert.equal(playerName.props.numberOfLines, undefined);
+    const firstName = findNode(roster, (node) => node.props.testID === 'team-roster-first-name-player-current');
+    const lastName = findNode(roster, (node) => node.props.testID === 'team-roster-last-name-player-current');
+    assert.equal(nodeText(firstName), 'Current');
+    assert.equal(nodeText(lastName), 'Casey');
+    assert.equal(firstName?.props.numberOfLines, 1);
+    assert.equal(lastName?.props.numberOfLines, 1);
   });
 
   it('uses the opaque Team fallback when reduced transparency is enabled', async () => {
@@ -968,13 +975,14 @@ describe('Team active-season data boundary', () => {
     assert.match(text, new RegExp(longPlayerName));
     assert.match(text, /#0/);
     assert.match(text, /GOALIE/);
-    assert.match(text, /Captain • #0/);
+    assert.match(text, /Captain · #0/);
     assert.match(text, new RegExp(longVenue));
     const members = findNode(output, (node) => node.type === 'TeamPublicPage')?.props.snapshot.roster;
     assert.deepEqual(members.map((row: Row) => row.jerseyNumber), [0, 12, 27], 'Jersey zero sorts before twelve');
     const playerName = findNode(output, (node) => node.type === 'Text' && nodeText(node) === longPlayerName);
     assert.ok(playerName);
-    assert.equal(playerName.props.numberOfLines, undefined);
+    assert.equal(playerName.props.numberOfLines, 1);
+    assert.equal(playerName.props.adjustsFontSizeToFit, true);
     const gameCard = findNode(output, (node) => node.props.testID === 'schedule-matchup-card-body-game-current');
     assert.ok(gameCard?.props.accessibilityLabel.includes(longVenue));
   });

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
@@ -68,6 +69,43 @@ it('ships only efficient 2x transparent full-colour jersey variants with real pa
   }
 });
 
+it('ships the approved true-alpha Captain Contact base and team-tint mask bytes', () => {
+  const assets = [
+    ['captain-contact-player-base', '3ce047b027bc982a7cbb147e061785a39f8faa54d4af26ad2d7682b4bfe7c7d2'],
+    ['captain-contact-team-mask', '88bd1a7bfe88bc9da76a3764c3cf7006a8ca04258d4025cca8d6434d48252552'],
+  ] as const;
+  for (const [asset, expectedHash] of assets) {
+    const url = new NodeURL(`../../src/assets/team-page/${asset}.png`, import.meta.url);
+    assert.equal(existsSync(url), true, `${asset} must be copied into product assets`);
+    const bytes = readFileSync(url);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), expectedHash);
+    const image = pngPixels(asset);
+    assert.deepEqual([image.width, image.height], [1274, 1235]);
+    assert.equal(image.alpha(0, 0), 0, `${asset} keeps its true-alpha exterior`);
+    assert.ok([...image.pixels].some((value, index) => index % 4 === 3 && value === 255), `${asset} keeps opaque subject pixels`);
+  }
+});
+
+it('ships a deterministic true-alpha anonymous Captain Contact base and tint mask', () => {
+  const assets = [
+    ['captain-contact-neutral-base', '67394204ef44421f90e5717e6d10e3ce88a3913fa5c76c26227a841ab02c18af'],
+    ['captain-contact-neutral-team-mask', '30641b30f6546d32f7606033b6d23ef23a41f4ec15c0443aca1f76b25156500c'],
+  ] as const;
+  for (const [asset, expectedHash] of assets) {
+    const url = new NodeURL(`../../src/assets/team-page/${asset}.png`, import.meta.url);
+    assert.equal(existsSync(url), true, `${asset} must be shipped for non-Matt captains`);
+    const bytes = readFileSync(url);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), expectedHash);
+    const image = pngPixels(asset);
+    assert.deepEqual([image.width, image.height], [628, 628]);
+    assert.equal(image.alpha(0, 0), 0, `${asset}: transparent top-left corner`);
+    assert.equal(image.alpha(627, 0), 0, `${asset}: transparent top-right corner`);
+    assert.equal(image.alpha(0, 627), 0, `${asset}: transparent bottom-left corner`);
+    assert.equal(image.alpha(627, 627), 0, `${asset}: transparent bottom-right corner`);
+    assert.ok([...image.pixels].some((value, index) => index % 4 === 3 && value > 0), `${asset}: visible subject pixels`);
+  }
+});
+
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
 const team = (id: string, name: string, color: string) => ({ id, name, slug: id, logoUrl: `${id}.png`, primaryColor: color, secondaryColor: '#D9B64C' });
@@ -106,9 +144,9 @@ function LeagueLeadersPresentationMock(props: any) {
     .sort((left: any, right: any) => props.metric === 'gaa'
       ? left.gaa - right.gaa || left.player_id.localeCompare(right.player_id)
       : right[props.metric] - left[props.metric] || left.player_id.localeCompare(right.player_id))
-    .slice(0, 3);
+    .slice(0, props.visibleLeaderLimit ?? 3);
   return createElement('View', { ...props, testID: 'team-league-leaders' }, [
-    createElement('Text', {}, 'League Leaders'),
+    createElement('Text', {}, props.sectionTitle ?? 'League Leaders'),
     ...Object.entries(labels).map(([metric, label]) => createElement('Pressable', {
       testID: `team-leaders-tab-${metric}`,
       accessibilityRole: 'tab',
@@ -149,7 +187,7 @@ function ScheduleMatchupCardMock(props: any) {
   ]);
 }
 
-function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency = false) {
+function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency = false, fontScale = 1) {
   const harness = createHookHarness();
   const openedPlayers: string[] = [];
   const openedGames: string[] = [];
@@ -160,7 +198,7 @@ function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency
       'react-native': {
         Image: 'Image', ImageBackground: 'ImageBackground', Pressable: 'Pressable', ScrollView: 'ScrollView', Text: 'Text', View: 'View',
         StyleSheet: { create: <T>(styles: T) => styles, absoluteFillObject: { position: 'absolute', inset: 0 } },
-        useWindowDimensions: () => ({ width, height: 844, fontScale: 1 }),
+        useWindowDimensions: () => ({ width, height: 844, fontScale }),
       },
       '@expo/vector-icons': { Ionicons: 'Ionicon', MaterialCommunityIcons: 'MaterialCommunityIcon' },
       'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
@@ -177,6 +215,10 @@ function runtime(width = 390, sourceSnapshot: any = snapshot, reduceTransparency
       '../../assets/team-page/jersey-back-liuna.png': 8,
       '../../assets/team-page/jersey-back-fitzrays.png': 9,
       '../../assets/team-page/jersey-back-fallback.png': 10,
+      '../../assets/team-page/captain-contact-player-base.png': 11,
+      '../../assets/team-page/captain-contact-team-mask.png': 12,
+      '../../assets/team-page/captain-contact-neutral-base.png': 13,
+      '../../assets/team-page/captain-contact-neutral-team-mask.png': 14,
     },
   ).default;
   harness.mount(() => Component({ snapshot: sourceSnapshot, reduceTransparency, onOpenPlayer: (id: string) => openedPlayers.push(id), onOpenGame: (id: string) => openedGames.push(id) }));
@@ -225,6 +267,10 @@ describe('native Team public composition', () => {
         '../../assets/team-page/jersey-back-liuna.png': 8,
         '../../assets/team-page/jersey-back-fitzrays.png': 9,
         '../../assets/team-page/jersey-back-fallback.png': 10,
+        '../../assets/team-page/captain-contact-player-base.png': 11,
+        '../../assets/team-page/captain-contact-team-mask.png': 12,
+        '../../assets/team-page/captain-contact-neutral-base.png': 13,
+        '../../assets/team-page/captain-contact-neutral-team-mask.png': 14,
       },
     ).default;
     opaqueHarness.mount(() => Component({ snapshot, reduceTransparency: true, onOpenPlayer: () => undefined, onOpenGame: () => undefined }));
@@ -241,29 +287,64 @@ describe('native Team public composition', () => {
     assert.deepEqual(bridge?.props.colors, ['#07111F', '#241644', '#03070D']);
   });
 
-  it('renders all five roster statistics with honest zero and unknown values and player navigation', () => {
+  it('switches to a compact Team Roster table with four one-line skater metrics and stacked names', () => {
     const source = { ...snapshot, roster: [roster[0],
       { ...roster[1], gamesPlayed: 0, goals: 0, assists: 0, points: 0, penaltyMinutes: 0 },
       { ...roster[2], gamesPlayed: null, goals: null, assists: null, points: null, penaltyMinutes: null },
     ] };
     const run = runtime(320, source);
+    const initialSection = findNode(run.harness.output, (node) => node.props.testID === 'team-roster-section');
+    assert.ok(findNode(initialSection, (node) => node.type === 'Text' && nodeText(node) === 'Next Game Roster'));
     findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
     const output = run.harness.render();
     const list = findNode(output, (node) => node.props.testID === 'team-roster-list');
     assert.ok(list);
-    const labels = ['GP', 'G', 'A', 'PTS', 'PIM'];
-    const keys = ['gamesPlayed', 'goals', 'assists', 'points', 'penaltyMinutes'];
-    for (const [playerId, values] of [['p1', ['—', '12', '13', '25', '4']], ['p2', ['—', '0', '0', '0', '0']], ['p3', ['—', '—', '—', '—', '—']]] as const) {
+    const listSection = findNode(output, (node) => node.props.testID === 'team-roster-section');
+    assert.ok(findNode(listSection, (node) => node.type === 'Text' && nodeText(node) === 'Team Roster'));
+    assert.equal(findNode(listSection, (node) => node.type === 'Text' && nodeText(node) === 'Next Game Roster'), undefined);
+    const labels = ['GP', 'G', 'A', 'PTS'];
+    const keys = ['gamesPlayed', 'goals', 'assists', 'points'];
+    for (const [playerId, values] of [['p1', ['—', '12', '13', '25']], ['p2', ['—', '0', '0', '0']], ['p3', ['—', '—', '—', '—']]] as const) {
       for (let i = 0; i < keys.length; i++) {
         const cell = findNode(list, (node) => node.props.testID === `team-roster-stat-${playerId}-${keys[i]}`);
         assert.equal(nodeText(cell), `${labels[i]}${values[i]}`);
+        for (const text of findNodes(cell, (node) => node.type === 'Text')) {
+          assert.equal(text.props.numberOfLines, 1);
+          assert.equal(text.props.adjustsFontSizeToFit, true);
+        }
       }
+      assert.equal(findNode(list, (node) => node.props.testID === `team-roster-stat-${playerId}-penaltyMinutes`), undefined);
     }
     const current = findNode(list, (node) => node.props.testID === 'team-roster-player-p1');
-    assert.match(current?.props.accessibilityLabel, /Matt Grossi.*— games played.*12 goals.*13 assists.*25 points.*4 penalty minutes/i);
+    assert.match(current?.props.accessibilityLabel, /Matt Grossi.*— games played.*12 goals.*13 assists.*25 points/i);
+    assert.doesNotMatch(current?.props.accessibilityLabel, /penalty|PIM/i);
+    assert.equal(nodeText(findNode(current, (node) => node.props.testID === 'team-roster-first-name-p1')), 'Matt');
+    assert.equal(nodeText(findNode(current, (node) => node.props.testID === 'team-roster-last-name-p1')), 'Grossi');
+    const grid = findNode(current, (node) => node.props.testID === 'team-roster-stats-p1');
+    assert.equal(flattenStyle(grid?.props.style).flexWrap, 'nowrap');
+    assert.equal(flattenStyle(current?.props.style).flexDirection, 'row');
     assert.doesNotMatch(nodeText(run.harness.output), /~GP is estimated.*Needs review/i);
     current?.props.onPress();
     assert.deepEqual(run.openedPlayers, ['p1']);
+
+    const enlarged = runtime(320, source, false, 1.4);
+    findNode(enlarged.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    const enlargedRow = findNode(enlarged.harness.render(), (node) => node.props.testID === 'team-roster-player-p1');
+    for (const text of findNodes(enlargedRow, (node) => node.type === 'Text')) {
+      assert.ok(text.props.numberOfLines === 1 || text.props.numberOfLines === undefined);
+    }
+
+    const longSurnameRun = runtime(320, {
+      ...source,
+      roster: [{ ...source.roster[0], name: 'Cole McAllister-Smith' }, ...source.roster.slice(1)],
+    });
+    findNode(longSurnameRun.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
+    const longSurnameRow = findNode(longSurnameRun.harness.render(), (node) => node.props.testID === 'team-roster-player-p1');
+    const longSurnameText = findNode(longSurnameRow, (node) => node.props.testID === 'team-roster-last-name-p1');
+    assert.equal(nodeText(longSurnameText), 'McAllister-\nSmith');
+    assert.equal(longSurnameText?.props.numberOfLines, 2);
+    assert.match(longSurnameRow?.props.accessibilityLabel, /Cole McAllister-Smith.*— games played.*12 goals.*13 assists.*25 points/i);
+    assert.doesNotMatch(longSurnameRow?.props.accessibilityLabel, /\n/);
   });
 
   it('renders conflicted, estimated, unknown, and verified-zero v2 metrics truthfully', () => {
@@ -280,13 +361,14 @@ describe('native Team public composition', () => {
     findNode(run.harness.output, (node) => node.props.testID === 'team-roster-list-toggle')?.props.onPress();
     const output = run.harness.render();
     assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed')), 'GP—');
-    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-penaltyMinutes')), 'PIM—');
     assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-gamesPlayed')), 'GP—');
-    assert.equal(nodeText(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-penaltyMinutes')), 'PIM0');
-    assert.match(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /— games played.*Conflicting records need review.*Not recorded/i);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-penaltyMinutes'), undefined);
+    assert.equal(findNode(output, (node) => node.props.testID === 'team-roster-stat-p2-penaltyMinutes'), undefined);
+    assert.match(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /— games played.*Conflicting records need review/i);
+    assert.doesNotMatch(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /penalty|PIM/i);
     assert.doesNotMatch(findNode(output, (node) => node.props.testID === 'team-roster-player-p1')?.props.accessibilityLabel, /confirmed \d|recorded \d|estimated \d|candidate/i);
     const reviewCell = findNode(output, (node) => node.props.testID === 'team-roster-stat-p1-gamesPlayed');
-    assert.equal(flattenStyle(reviewCell?.props.style).flexBasis, '30%', 'blank conflict values use the ordinary metric-cell layout');
+    assert.equal(flattenStyle(reviewCell?.props.style).flex, 1, 'blank conflict values use the ordinary metric-cell layout');
   });
 
   it('exposes fact-bearing game/player labels and authoritative live/final scores without inventing jersey zero', () => {
@@ -397,12 +479,18 @@ describe('native Team public composition', () => {
     assert.match(hero?.props.accessibilityLabel, /record unavailable.*rank unavailable.*championship count unavailable/i);
   });
 
-  it('uses the shared League Leaders defaults without league-wide navigation', () => {
+  it('uses the explicit compact Team Leaders presentation without league-wide navigation', () => {
     const output = runtime(390, { ...snapshot, team: { ...snapshot.team, primaryColor: '#6046A8' }, league: { ...snapshot.league, primaryColor: '#1F6A44' } }).harness.output;
     const leaders = findNode(output, (node) => node.props.testID === 'team-league-leaders');
     assert.equal(leaders?.props.metric, 'points');
     assert.equal(leaders?.props.testIDPrefix, 'team');
     assert.equal(leaders?.props.showAllStats, false);
+    assert.equal(leaders?.props.sectionTitle, 'Team Leaders');
+    assert.equal(leaders?.props.compactMetricTabs, true);
+    assert.equal(leaders?.props.visibleLeaderLimit, 5);
+    assert.equal(leaders?.props.rowVariant, 'home-inline');
+    assert.equal(leaders?.props.showTeamCrests, false);
+    assert.match(nodeText(leaders), /^Team Leaders/);
   });
 
   it('uses the Hockey Life fallback when team and league accents are invalid without tinting fact text', () => {
@@ -424,6 +512,117 @@ describe('native Team public composition', () => {
     const leaders = findNode(output, (node) => node.props.testID === 'team-league-leaders');
     assert.equal(leaders?.props.metric, 'points');
     assert.deepEqual(leaders?.props.leaders.map((row: any) => row.team_id), ['team-a', 'team-a', 'team-a']);
+  });
+
+  it('renders the approved compact Captain Contact D3 only for Matt Grossi canonical identity at phone widths', () => {
+    for (const { width, fontScale } of [{ width: 390, fontScale: 1 }, { width: 320, fontScale: 1 }, { width: 320, fontScale: 1.4 }]) {
+      const source = {
+        ...snapshot,
+        team: { ...snapshot.team, name: 'Bad Bunny', primaryColor: '#7C3AED' },
+        captain: { ...snapshot.captain, playerId: 'add94b26-b344-459f-9727-8cddae9783de', name: 'Matt Grossi', jerseyNumber: 96 },
+      };
+      const run = runtime(width, source, false, fontScale);
+      const section = findNode(run.harness.output, (node) => node.props.testID === 'team-captain-contact');
+      const card = findNode(section, (node) => node.props.testID === 'team-captain-card');
+      assert.ok(card);
+      assert.equal(card?.props.accessibilityRole, 'button');
+      assert.equal(card?.props.accessibilityLabel, 'View profile for Matt Grossi, Bad Bunny Captain, jersey number 96');
+      const cardStyle = renderedStyle(card);
+      assert.equal(cardStyle.height, 132);
+      assert.ok(cardStyle.minHeight >= 132);
+      assert.ok(cardStyle.marginHorizontal >= 0);
+      assert.ok(cardStyle.borderRadius >= 10);
+
+      const base = findNode(card, (node) => node.props.testID === 'team-captain-player-base');
+      const mask = findNode(card, (node) => node.props.testID === 'team-captain-team-mask');
+      assert.equal(base?.props.source, 11);
+      assert.equal(mask?.props.source, 12);
+      assert.equal(flattenStyle(mask?.props.style).tintColor, '#7C3AED');
+      assert.deepEqual(
+        [flattenStyle(base?.props.style).left, flattenStyle(base?.props.style).top, flattenStyle(base?.props.style).width, flattenStyle(base?.props.style).height],
+        [flattenStyle(mask?.props.style).left, flattenStyle(mask?.props.style).top, flattenStyle(mask?.props.style).width, flattenStyle(mask?.props.style).height],
+        'base and alpha mask must remain perfectly aligned',
+      );
+      assert.equal(base?.props.resizeMode, 'contain');
+      assert.equal(mask?.props.resizeMode, 'contain');
+      assert.equal(findNode(card, (node) => node.props.testID === 'team-captain-neutral-player-base' || node.props.testID === 'team-captain-neutral-team-mask'), undefined);
+
+      const copy = findNode(card, (node) => node.props.testID === 'team-captain-copy');
+      const action = findNode(card, (node) => node.props.testID === 'team-captain-action');
+      const copyStyle = flattenStyle(copy?.props.style);
+      const actionStyle = flattenStyle(action?.props.style);
+      const imageStyle = flattenStyle(base?.props.style);
+      const projectedCardWidth = width - 32 - 2 * Number(cardStyle.marginHorizontal);
+      assert.ok(Number(imageStyle.left) + Number(imageStyle.width) <= Number(copyStyle.left), `${width}px art must not overlap copy`);
+      assert.ok(projectedCardWidth - Number(copyStyle.right) <= projectedCardWidth - Number(actionStyle.width), `${width}px copy must end before the action rail`);
+      assert.ok(Number(actionStyle.width) >= 44, 'profile action rail remains at least 44 points wide');
+      assert.match(nodeText(copy), /Bad Bunny · CaptainMatt GrossiCaptain · #96/);
+      const captainName = findNode(copy, (node) => node.type === 'Text' && nodeText(node) === 'Matt Grossi');
+      assert.equal(flattenStyle(captainName?.props.style).fontSize, width < 360 ? 14 : 18, 'compact copy keeps a two-word captain name visually complete');
+      assert.equal(findNode(card, (node) => node.type === 'TeamLogo' || node.type === 'Avatar'), undefined);
+      for (const text of findNodes(copy, (node) => node.type === 'Text')) {
+        assert.equal(text.props.numberOfLines, 1);
+        assert.equal(text.props.adjustsFontSizeToFit, true);
+      }
+      card?.props.onPress();
+      assert.deepEqual(run.openedPlayers, ['add94b26-b344-459f-9727-8cddae9783de']);
+    }
+  });
+
+  it('never reuses Matt Grossi artwork for another captain identity', () => {
+    const source = {
+      ...snapshot,
+      team: { ...snapshot.team, name: 'Aurora Wolves', primaryColor: '#22C55E' },
+      captain: { ...snapshot.captain, playerId: 'jordan-lee', name: 'Jordan Lee', jerseyNumber: 12 },
+    };
+    const run = runtime(320, source);
+    const card = findNode(run.harness.output, (node) => node.props.testID === 'team-captain-card');
+
+    assert.ok(card);
+    assert.equal(findNode(card, (node) => node.props.source === 11), undefined, 'Matt-specific base pixels must be absent');
+    assert.equal(findNode(card, (node) => node.props.source === 12), undefined, 'Matt-specific tint mask must be absent');
+    assert.doesNotMatch(nodeText(card), /Matt Grossi|Bad Bunny|#96/i);
+    assert.doesNotMatch(card?.props.accessibilityLabel ?? '', /Matt Grossi|Bad Bunny|jersey number 96/i);
+    assert.equal(card?.props.accessibilityLabel, 'View profile for Jordan Lee, Aurora Wolves Captain, jersey number 12');
+    card?.props.onPress();
+    assert.deepEqual(run.openedPlayers, ['jordan-lee']);
+  });
+
+  it('renders the anonymous helmeted fallback with the current non-purple team tint', () => {
+    const source = {
+      ...snapshot,
+      team: { ...snapshot.team, name: 'Aurora Wolves', primaryColor: '#22C55E' },
+      captain: { ...snapshot.captain, playerId: 'jordan-lee', name: 'Jordan Lee', jerseyNumber: 12 },
+    };
+    const run = runtime(320, source);
+    const card = findNode(run.harness.output, (node) => node.props.testID === 'team-captain-card');
+    const base = findNode(card, (node) => node.props.testID === 'team-captain-neutral-player-base');
+    const mask = findNode(card, (node) => node.props.testID === 'team-captain-neutral-team-mask');
+
+    assert.equal(base?.props.source, 13);
+    assert.equal(mask?.props.source, 14);
+    assert.equal(base?.props.accessible, false);
+    assert.equal(mask?.props.accessible, false);
+    assert.equal(flattenStyle(mask?.props.style).tintColor, '#22C55E');
+    assert.deepEqual(
+      [flattenStyle(base?.props.style).left, flattenStyle(base?.props.style).top, flattenStyle(base?.props.style).width, flattenStyle(base?.props.style).height],
+      [flattenStyle(mask?.props.style).left, flattenStyle(mask?.props.style).top, flattenStyle(mask?.props.style).width, flattenStyle(mask?.props.style).height],
+      'anonymous base and tint mask stay aligned',
+    );
+    assert.equal(findNode(card, (node) => node.props.source === 11 || node.props.source === 12), undefined);
+  });
+
+  it('uses #8995A8 rather than purple for the anonymous fallback when team primary colour is unavailable', () => {
+    const source = {
+      ...snapshot,
+      team: { ...snapshot.team, primaryColor: null },
+      captain: { ...snapshot.captain, playerId: 'jordan-lee', name: 'Jordan Lee', jerseyNumber: 12 },
+    };
+    const run = runtime(390, source);
+    const mask = findNode(run.harness.output, (node) => node.props.testID === 'team-captain-neutral-team-mask');
+    assert.equal(mask?.props.source, 14);
+    assert.equal(flattenStyle(mask?.props.style).tintColor, '#8995A8');
+    assert.notEqual(flattenStyle(mask?.props.style).tintColor, '#7C3AED');
   });
 
   it('treats jersey lettering as fixed artwork while the button exposes the complete identity', () => {
@@ -506,7 +705,7 @@ describe('native Team public composition', () => {
   it('renders the approved section order and public hero hierarchy', () => {
     const output = runtime().harness.output;
     const text = nodeText(output);
-    const order = ['7-2-2', 'Next Game', 'League Leaders', 'Schedule', 'Next Game Roster', 'Rivals', 'Captain Contact'].map((label) => text.indexOf(label));
+    const order = ['7-2-2', 'Next Game', 'Team Leaders', 'Schedule', 'Next Game Roster', 'Rivals', 'Captain Contact'].map((label) => text.indexOf(label));
     assert.ok(order.every((index) => index >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     assert.ok(findNode(output, (node) => node.props.testID === 'team-public-hero'));
@@ -693,7 +892,7 @@ describe('native Team public composition', () => {
     assert.doesNotMatch(row?.props.accessibilityLabel, /confirmed \d|recorded \d|estimated \d|candidate/i);
     assert.doesNotMatch(nodeText(row), /PTS|PIM/);
     const saveCell = findNode(row, (node) => node.props.testID === 'team-roster-stat-goalie-savePercentage');
-    assert.equal(flattenStyle(saveCell?.props.style).flexBasis, '30%');
+    assert.equal(flattenStyle(saveCell?.props.style).flex, 1);
   });
 
   it('uses goalie role for six truthful columns even when canonical goalie metrics are absent', () => {
@@ -704,7 +903,7 @@ describe('native Team public composition', () => {
     assert.match(nodeText(row), /GP—W—L—GAA—SV%—SO—/);
     assert.doesNotMatch(nodeText(row), /PTS|PIM/);
     const ordinaryCell = findNode(row, (node) => node.props.testID === 'team-roster-stat-unknown-goalie-savePercentage');
-    assert.equal(flattenStyle(ordinaryCell?.props.style).flexBasis, '30%');
+    assert.equal(flattenStyle(ordinaryCell?.props.style).flex, 1);
   });
 
   it('always renders trophy artwork and the exact championship count including zero', () => {

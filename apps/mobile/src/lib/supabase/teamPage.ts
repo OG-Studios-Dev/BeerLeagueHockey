@@ -431,7 +431,11 @@ function buildRivals(
 
   const standingMap = new Map(standings.map((row) => [row.teamId, row]));
   const canonicalPlayers = input.publicLeagueSeasonStats?.players ?? [];
-  const teamFor = (player: PublicSeasonPlayer) => player.displayTeam?.id && teamMap.has(player.displayTeam.id) ? player.displayTeam.id : null;
+  const teamFor = (player: PublicSeasonPlayer) => player.teams.length === 1
+    && (!player.displayTeam || player.displayTeam.id === player.teams[0].id)
+    && teamMap.has(player.teams[0].id)
+    ? player.teams[0].id
+    : null;
   const metricProvenance = (metric: PublicStatMetric | undefined): TeamStatProvenance => publicMetricValue(metric) == null ? null : 'authoritative';
   const compareSkaters = (metric: 'goals' | 'assists') => (a: PublicSeasonPlayer, b: PublicSeasonPlayer) =>
     (publicMetricValue(b.metrics[metric]) ?? -1) - (publicMetricValue(a.metrics[metric]) ?? -1) ||
@@ -444,8 +448,8 @@ function buildRivals(
     const sniper = skaters.filter((player) => publicMetricValue(player.metrics.goals) !== null).sort(compareSkaters('goals'))[0];
     const playmaker = skaters.filter((player) => publicMetricValue(player.metrics.assists) !== null).sort(compareSkaters('assists'))[0];
     const goalie = canonicalPlayers.filter((player) => teamFor(player) === teamId && player.goalie
-      && publicMetricValue(player.goalie.gamesPlayed) !== null
-      && publicMetricValue(player.goalie.goalsAgainstAverage) !== null)
+      && (publicMetricValue(player.goalie.gamesPlayed) !== null
+        || publicMetricValue(player.goalie.goalsAgainstAverage) !== null))
       .sort((a, b) => (publicMetricValue(b.goalie?.gamesPlayed) ?? -1) - (publicMetricValue(a.goalie?.gamesPlayed) ?? -1)
         || (publicMetricValue(a.goalie?.goalsAgainstAverage) ?? Infinity) - (publicMetricValue(b.goalie?.goalsAgainstAverage) ?? Infinity)
         || a.playerName.localeCompare(b.playerName))[0];
@@ -556,12 +560,20 @@ export function buildTeamPageSnapshot(input: TeamPageSnapshotInput, now = new Da
 
   const publicByPlayer = new Map((input.publicSeasonStats?.players ?? []).map((player) => [player.playerId, player]));
   const rosterRows = input.rosters
-    .filter((row) => row.team_id === input.teamId && row.league_id === input.leagueId && row.season_id === input.season.id && row.status === 'active' && row.end_date === null)
+    .filter((row) => row.team_id === input.teamId
+      && row.league_id === input.leagueId
+      && row.season_id === input.season.id
+      && row.status === 'active'
+      && row.end_date === null
+      && row.player_type === 'regular'
+      && stringValue(row.player_id) !== null)
     .sort((left, right) => (numberValue(left.jersey_number) ?? Number.MAX_SAFE_INTEGER) - (numberValue(right.jersey_number) ?? Number.MAX_SAFE_INTEGER) || String(left.id).localeCompare(String(right.id)));
   const deduped = new Map<string, Record<string, unknown>>();
-  for (const row of rosterRows) if (!deduped.has(String(row.player_id))) deduped.set(String(row.player_id), row);
-  const roster = Array.from(deduped.values()).map((row): TeamPageRosterPlayer => {
-    const playerId = String(row.player_id);
+  for (const row of rosterRows) {
+    const playerId = stringValue(row.player_id);
+    if (playerId && !deduped.has(playerId)) deduped.set(playerId, row);
+  }
+  const roster = Array.from(deduped.entries()).map(([playerId, row]): TeamPageRosterPlayer => {
     const profile = profileMap.get(playerId);
     const stat = candidates.get(playerId);
     const statsAvailable = hasStats(stat);
@@ -694,7 +706,7 @@ export async function loadTeamPageSnapshot(
       supabase.from('teams').select('id,league_id,name,slug,logo_url,primary_color,secondary_color').eq('id', teamId).eq('league_id', leagueId).maybeSingle(),
       supabase.from('leagues').select('id,name,slug,primary_color,timezone').eq('id', leagueId).maybeSingle(),
       queryAllRows(() => supabase.from('teams').select('id,league_id,name,slug,logo_url,primary_color,secondary_color,team_type').eq('league_id', leagueId).order('id'), 'teams'),
-      queryAllRows(() => supabase.from('team_rosters').select(rosterColumns).eq('team_id', teamId).eq('league_id', leagueId).eq('season_id', seasonId).eq('status', 'active').is('end_date', null).order('id'), 'roster'),
+      queryAllRows(() => supabase.from('team_rosters').select(rosterColumns).eq('team_id', teamId).eq('league_id', leagueId).eq('season_id', seasonId).eq('status', 'active').is('end_date', null).eq('player_type', 'regular').order('id'), 'roster'),
       queryAllRows(() => supabase.from('team_standings').select('team_id,season_id,games_played,wins,losses,ties,points,goals_for,goals_against').eq('season_id', seasonId).order('team_id'), 'standings'),
       queryAllRows(() => supabase.from('games').select('id,league_id,season_id,home_team_id,away_team_id,scheduled_at,status,location,home_score,away_score,game_type').eq('league_id', leagueId).eq('season_id', seasonId).order('scheduled_at').order('id'), 'games'),
       queryAllRows(() => supabase.from('seasons').select('id,league_id,name,status,start_date,end_date,champion_team_id').eq('league_id', leagueId).order('end_date', { ascending: false }).order('id'), 'seasons'),
@@ -717,7 +729,7 @@ export async function loadTeamPageSnapshot(
     const teamIds = teams.map((row) => String(row.id));
     const completedSeasonIds = seasons.filter((row) => row.status !== 'active' && stringValue(row.end_date) != null && new Date(String(row.end_date)).getTime() < now.getTime()).map((row) => String(row.id));
     const [leagueRosters, historicalStandings] = await Promise.all([
-      queryIdBatches(teamIds, (ids) => queryAllRows(() => supabase.from('team_rosters').select(rosterColumns).eq('league_id', leagueId).eq('season_id', seasonId).in('team_id', ids).eq('status', 'active').is('end_date', null).order('id'), 'league roster')),
+      queryIdBatches(teamIds, (ids) => queryAllRows(() => supabase.from('team_rosters').select(rosterColumns).eq('league_id', leagueId).eq('season_id', seasonId).in('team_id', ids).eq('status', 'active').is('end_date', null).eq('player_type', 'regular').order('id'), 'league roster')),
       queryIdBatches(completedSeasonIds, (ids) => queryAllRows(() => supabase.from('team_standings').select('team_id,season_id,games_played,wins,losses,ties,points,goals_for,goals_against').in('season_id', ids).order('season_id').order('team_id'), 'historical standings')),
     ]);
     const playerIds = Array.from(new Set([...leagueRosters, ...rosters, ...playerStats, ...goalieStats].map((row) => stringValue(row.player_id)).filter((id): id is string => id !== null)));

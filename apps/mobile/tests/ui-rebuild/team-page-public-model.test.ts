@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { compileCommonJs } from './component-harness';
+import { rankHomeLeaders } from '../../src/lib/homeLeagueLeaders';
+
+type Row = Record<string, any>;
 
 function loadModel() {
   return compileCommonJs<Record<string, (...args: any[]) => any>>(
@@ -29,13 +32,13 @@ const baseInput = {
     { team_id: 'team-b', season_id: 'season-a', wins: 6, losses: 4, ties: 1, points: 13, games_played: 11, goals_for: 30, goals_against: 28 },
   ],
   rosters: [
-    { id: 'r1', player_id: 'p1', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, jersey_number: 96, position: 'forward', is_goalie: false, leadership_role: 'captain', games_played_override: null },
-    { id: 'r1-duplicate', player_id: 'p1', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, jersey_number: 9, position: 'forward', is_goalie: false, leadership_role: null, games_played_override: null },
-    { id: 'r2', player_id: 'p2', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, jersey_number: 71, position: 'forward', is_goalie: false, leadership_role: null, games_played_override: 11 },
-    { id: 'r3', player_id: 'p3', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, jersey_number: 16, position: 'defense', is_goalie: false, leadership_role: null, games_played_override: null },
-    { id: 'ended', player_id: 'ended', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: '2026-02-01', jersey_number: 1, position: 'forward', is_goalie: false },
-    { id: 'wrong-team', player_id: 'wrong-team', team_id: 'team-b', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, jersey_number: 2, position: 'forward', is_goalie: false },
-    { id: 'wrong-season', player_id: 'wrong-season', team_id: 'team-a', league_id: 'league-a', season_id: 'old', status: 'active', end_date: null, jersey_number: 3, position: 'forward', is_goalie: false },
+    { id: 'r1', player_id: 'p1', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, player_type: 'regular', jersey_number: 96, position: 'forward', is_goalie: false, leadership_role: 'captain', games_played_override: null },
+    { id: 'r1-duplicate', player_id: 'p1', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, player_type: 'regular', jersey_number: 9, position: 'forward', is_goalie: false, leadership_role: null, games_played_override: null },
+    { id: 'r2', player_id: 'p2', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, player_type: 'regular', jersey_number: 71, position: 'forward', is_goalie: false, leadership_role: null, games_played_override: 11 },
+    { id: 'r3', player_id: 'p3', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, player_type: 'regular', jersey_number: 16, position: 'defense', is_goalie: false, leadership_role: null, games_played_override: null },
+    { id: 'ended', player_id: 'ended', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: '2026-02-01', player_type: 'regular', jersey_number: 1, position: 'forward', is_goalie: false },
+    { id: 'wrong-team', player_id: 'wrong-team', team_id: 'team-b', league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, player_type: 'regular', jersey_number: 2, position: 'forward', is_goalie: false },
+    { id: 'wrong-season', player_id: 'wrong-season', team_id: 'team-a', league_id: 'league-a', season_id: 'old', status: 'active', end_date: null, player_type: 'regular', jersey_number: 3, position: 'forward', is_goalie: false },
   ],
   profiles: [
     { id: 'p1', full_name: 'Matt Grossi', photo_url: 'current.jpg', avatar_url: 'legacy.jpg' },
@@ -88,6 +91,85 @@ describe('Team page public snapshot model', () => {
     assert.equal(snapshot.roster[1].gamesPlayed, null);
     assert.equal(snapshot.roster[1].gamesPlayedProvenance, null);
     assert.equal(snapshot.roster.some((player: any) => player.playerId === 'stats-only'), false);
+  });
+
+  it('keeps only active current regular roster members while retaining a regular with no stats', () => {
+    const model = loadModel();
+    const regular = {
+      id: 'regular-zero', player_id: 'regular-zero', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a',
+      status: 'active', end_date: null, player_type: 'regular', jersey_number: 6, position: 'defense', is_goalie: false,
+    };
+    const candidate = (id: string, overrides: Record<string, unknown>) => ({ ...regular, id, player_id: id, ...overrides });
+    const input = {
+      ...baseInput,
+      rosters: [
+        regular,
+        candidate('sub', { player_type: 'sub' }),
+        candidate('part-time', { player_type: 'part_time' }),
+        candidate('accepted-sub', { player_type: 'accepted_sub' }),
+        candidate('invited-sub', { player_type: 'invited_sub' }),
+        candidate('unknown-type', { player_type: 'mystery' }),
+        candidate('null-type', { player_type: null }),
+        candidate('missing-type', { player_type: undefined }),
+        candidate('ended-regular', { end_date: '2026-02-01' }),
+        candidate('inactive-regular', { status: 'inactive' }),
+        candidate('historical-regular', { season_id: 'old' }),
+        candidate('wrong-team-regular', { team_id: 'team-b' }),
+        candidate('wrong-league-regular', { league_id: 'league-b' }),
+      ],
+      profiles: [{ id: 'regular-zero', full_name: 'Zero Stat Regular', photo_url: null, avatar_url: null }],
+      seasonStats: [],
+      playerStats: [],
+      publicSeasonStats: undefined,
+    };
+
+    const snapshot = model.buildTeamPageSnapshot(input);
+
+    assert.deepEqual(snapshot.roster.map((player: any) => player.playerId), ['regular-zero']);
+    assert.deepEqual(
+      [snapshot.roster[0].gamesPlayed, snapshot.roster[0].goals, snapshot.roster[0].assists, snapshot.roster[0].points],
+      [null, null, null, null],
+    );
+  });
+
+  it('rejects malformed roster player identities without hiding a valid zero-stat regular', () => {
+    const model = loadModel();
+    const regular = {
+      id: 'valid-zero', player_id: 'regular-zero', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a',
+      status: 'active', end_date: null, player_type: 'regular', jersey_number: 6, position: 'defense', is_goalie: false,
+      leadership_role: null,
+    };
+    const malformed = [
+      ['missing', undefined],
+      ['null', null],
+      ['empty', ''],
+      ['whitespace', '   '],
+      ['number', 42],
+      ['boolean', false],
+      ['array', ['regular-zero']],
+      ['object', { id: 'regular-zero' }],
+    ].map(([id, playerId]) => ({
+      ...regular,
+      id: `invalid-${id}`,
+      player_id: playerId,
+      jersey_number: 1,
+      leadership_role: 'captain',
+    }));
+    const snapshot = model.buildTeamPageSnapshot({
+      ...baseInput,
+      rosters: [...malformed, regular],
+      profiles: [{ id: 'regular-zero', full_name: 'Zero Stat Regular', photo_url: null, avatar_url: null }],
+      seasonStats: [],
+      playerStats: [],
+      publicSeasonStats: undefined,
+    });
+
+    assert.deepEqual(snapshot.roster.map((player: any) => player.playerId), ['regular-zero']);
+    assert.equal(snapshot.captain, null, 'an invalid player identity cannot become captain');
+    assert.deepEqual(
+      [snapshot.roster[0].gamesPlayed, snapshot.roster[0].goals, snapshot.roster[0].assists, snapshot.roster[0].points],
+      [null, null, null, null],
+    );
   });
 
   it('matches P/G/A/PM ranking and truthful 0/1/2/3 podium order', () => {
@@ -169,6 +251,168 @@ describe('Team page public snapshot model', () => {
     assert.deepEqual(snapshot.rivals[0].rival.sniper, { name: 'Canonical Rival', goals: 2 });
     assert.deepEqual(snapshot.rivals[0].rival.playmaker, { name: 'Canonical Rival', assists: 4 });
     assert.doesNotMatch(JSON.stringify(snapshot.rivals), /carrier/i);
+  });
+
+  it('propagates canonical goalie GP for both rivalry sides when GAA remains unknown', () => {
+    const model = loadModel();
+    const metric = (value: number | null, state = value == null ? 'unknown' : 'recorded', sources = value == null ? [] : ['goalie_assignment']) => ({ value, state, sources });
+    const goalie = (playerId: string, playerName: string, teamId: string, gamesPlayed: number) => ({
+      playerId, playerName, avatarUrl: null, roles: ['goalie'],
+      displayTeam: { id: teamId, name: teamId === 'team-a' ? 'London Eco Metal' : 'First General London' },
+      teams: [{ id: teamId, name: teamId === 'team-a' ? 'London Eco Metal' : 'First General London' }],
+      metrics: {
+        gamesPlayed: metric(null), goals: metric(null), assists: metric(null), points: metric(null), penaltyMinutes: metric(null),
+      },
+      goalie: {
+        gamesPlayed: metric(gamesPlayed), wins: metric(null), losses: metric(null), saves: metric(null), goalsAgainst: metric(null),
+        savePercentage: metric(null), goalsAgainstAverage: metric(null), shutouts: metric(null),
+      },
+    });
+    const ambiguousGoalie = goalie('ambiguous-goalie', 'Ambiguous Goalie', 'team-a', 99);
+    ambiguousGoalie.teams.push({ id: 'team-b', name: 'First General London' });
+    const snapshot = model.buildTeamPageSnapshot({
+      ...baseInput,
+      publicLeagueSeasonStats: {
+        players: [
+          ambiguousGoalie,
+          goalie('home-goalie', 'Home Goalie', 'team-a', 2),
+          goalie('rival-goalie', 'Rival Goalie', 'team-b', 1),
+        ],
+      },
+    });
+
+    assert.deepEqual(snapshot.rivals[0].team.tendy, {
+      name: 'Home Goalie', gamesPlayed: 2, gamesPlayedProvenance: 'authoritative',
+      goalsAgainstAverage: null, goalsAgainstAverageProvenance: null,
+    });
+    assert.deepEqual(snapshot.rivals[0].rival.tendy, {
+      name: 'Rival Goalie', gamesPlayed: 1, gamesPlayedProvenance: 'authoritative',
+      goalsAgainstAverage: null, goalsAgainstAverageProvenance: null,
+    });
+  });
+
+  it('attributes a sole exact-team rival goalie when displayTeam is null without widening identity scope', () => {
+    const model = loadModel();
+    const metric = (value: number | null, state = value == null ? 'unknown' : 'recorded', sources = value == null ? [] : ['goalie_assignment']) => ({ value, state, sources });
+    const goalie = (playerId: string, playerName: string, teams: string[], displayTeamId: string | null, gamesPlayed: number) => ({
+      playerId, playerName, avatarUrl: null, roles: ['goalie'],
+      displayTeam: displayTeamId ? { id: displayTeamId, name: displayTeamId } : null,
+      teams: teams.map((id) => ({ id, name: id })),
+      metrics: {
+        gamesPlayed: metric(null), goals: metric(null), assists: metric(null), points: metric(null), penaltyMinutes: metric(null),
+      },
+      goalie: {
+        gamesPlayed: metric(gamesPlayed), wins: metric(null), losses: metric(null), saves: metric(null), goalsAgainst: metric(null),
+        savePercentage: metric(null), goalsAgainstAverage: metric(null), shutouts: metric(null),
+      },
+    });
+    const snapshot = model.buildTeamPageSnapshot({
+      ...baseInput,
+      publicLeagueSeasonStats: {
+        players: [
+          goalie('mismatched-display', 'Mismatched Display', ['team-b'], 'team-a', 99),
+          goalie('multiple-teams', 'Multiple Teams', ['team-a', 'team-b'], null, 98),
+          goalie('unknown-team', 'Unknown Team', ['team-c'], null, 97),
+          goalie('sole-rival', 'Sole Rival', ['team-b'], null, 3),
+        ],
+      },
+    });
+
+    assert.deepEqual(snapshot.rivals[0].rival.tendy, {
+      name: 'Sole Rival', gamesPlayed: 3, gamesPlayedProvenance: 'authoritative',
+      goalsAgainstAverage: null, goalsAgainstAverageProvenance: null,
+    });
+  });
+
+  it('keeps conflicted goalie GP and GAA null while preserving independently accepted canonical facts', () => {
+    const model = loadModel();
+    const metric = (value: number | null, state: string, sources: string[]) => ({ value, state, sources });
+    const goalie = (playerId: string, playerName: string, teamId: string, gamesPlayed: Row, goalsAgainstAverage: Row) => ({
+      playerId, playerName, avatarUrl: null, roles: ['goalie'],
+      displayTeam: { id: teamId, name: teamId === 'team-a' ? 'London Eco Metal' : 'First General London' },
+      teams: [{ id: teamId, name: teamId === 'team-a' ? 'London Eco Metal' : 'First General London' }],
+      metrics: {
+        gamesPlayed: metric(null, 'unknown', []), goals: metric(null, 'unknown', []), assists: metric(null, 'unknown', []),
+        points: metric(null, 'unknown', []), penaltyMinutes: metric(null, 'unknown', []),
+      },
+      goalie: {
+        gamesPlayed, wins: metric(null, 'unknown', []), losses: metric(null, 'unknown', []), saves: metric(null, 'unknown', []),
+        goalsAgainst: metric(null, 'unknown', []), savePercentage: metric(null, 'unknown', []), goalsAgainstAverage,
+        shutouts: metric(null, 'unknown', []),
+      },
+    });
+    const snapshot = model.buildTeamPageSnapshot({
+      ...baseInput,
+      publicLeagueSeasonStats: {
+        players: [
+          goalie(
+            'home-goalie', 'Home Goalie', 'team-a',
+            metric(null, 'conflicted', ['goalie_assignment', 'goalie_stats']),
+            metric(2.4, 'recorded', ['goalie_stats']),
+          ),
+          goalie(
+            'rival-goalie', 'Rival Goalie', 'team-b',
+            metric(3, 'recorded', ['goalie_assignment']),
+            metric(null, 'conflicted', ['goalie_stats', 'game_result']),
+          ),
+        ],
+      },
+    });
+
+    assert.deepEqual(snapshot.rivals[0].team.tendy, {
+      name: 'Home Goalie', gamesPlayed: null, gamesPlayedProvenance: null,
+      goalsAgainstAverage: 2.4, goalsAgainstAverageProvenance: 'authoritative',
+    });
+    assert.deepEqual(snapshot.rivals[0].rival.tendy, {
+      name: 'Rival Goalie', gamesPlayed: 3, gamesPlayedProvenance: 'authoritative',
+      goalsAgainstAverage: null, goalsAgainstAverageProvenance: null,
+    });
+  });
+
+  it('ranks canonical current-team goalie GAA without borrowing ambiguous or rival team facts', () => {
+    const model = loadModel();
+    const metric = (value: number | null, state = value == null ? 'unknown' : 'recorded') => ({
+      value,
+      state,
+      sources: value == null ? [] : ['goalie_assignment'],
+    });
+    const goalie = (playerId: string, playerName: string, displayTeamId: string, teamIds: string[], gaa: number | null, gaaState?: string) => ({
+      playerId, playerName, avatarUrl: null, roles: ['goalie'],
+      displayTeam: { id: displayTeamId, name: displayTeamId === 'team-a' ? 'London Eco Metal' : 'First General London' },
+      teams: teamIds.map((id) => ({ id, name: id === 'team-a' ? 'London Eco Metal' : 'First General London' })),
+      metrics: {
+        gamesPlayed: metric(null), goals: metric(null), assists: metric(null), points: metric(null), penaltyMinutes: metric(null),
+      },
+      goalie: {
+        gamesPlayed: metric(2), wins: metric(null), losses: metric(null), saves: metric(null), goalsAgainst: metric(null),
+        savePercentage: metric(null), goalsAgainstAverage: metric(gaa, gaaState), shutouts: metric(null),
+      },
+    });
+    const snapshot = model.buildTeamPageSnapshot({
+      ...baseInput,
+      publicSeasonStats: {
+        players: [
+          goalie('current-goalie', 'Current Goalie', 'team-a', ['team-a'], 2.5),
+          goalie('current-runner-up', 'Current Runner Up', 'team-a', ['team-a'], 3.1),
+          goalie('conflicted-goalie', 'Conflicted Goalie', 'team-a', ['team-a'], null, 'conflicted'),
+        ],
+      },
+      publicLeagueSeasonStats: {
+        players: [
+          goalie('ambiguous-goalie', 'Ambiguous Goalie', 'team-a', ['team-a', 'team-b'], 0.5),
+          goalie('rival-goalie', 'Rival Goalie', 'team-b', ['team-b'], 1.1),
+        ],
+      },
+    });
+
+    assert.deepEqual(rankHomeLeaders(snapshot.leagueLeaders, 'gaa').map((leader: Row) => ({
+      playerId: leader.player_id,
+      value: leader.metricValue,
+      estimated: leader.estimated,
+    })), [
+      { playerId: 'current-goalie', value: 2.5, estimated: false },
+      { playerId: 'current-runner-up', value: 3.1, estimated: false },
+    ]);
   });
 
   it('keeps local roster-window GP unavailable instead of exposing an estimated total', () => {
@@ -280,7 +524,7 @@ describe('Team page public snapshot model', () => {
 
   it('does not derive goalie appearances from team games when canonical goalie facts are absent', () => {
     const model = loadModel();
-    const goalies = ['team-a', 'team-b'].map((team_id, index) => ({ id: `r-goalie-${index}`, player_id: `goalie-${index}`, team_id, league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, is_goalie: true, position: 'Goalie' }));
+    const goalies = ['team-a', 'team-b'].map((team_id, index) => ({ id: `r-goalie-${index}`, player_id: `goalie-${index}`, team_id, league_id: 'league-a', season_id: 'season-a', status: 'active', end_date: null, player_type: 'regular', is_goalie: true, position: 'Goalie' }));
     const input = {
       ...baseInput, rosters: [goalies[0]], leagueRosters: goalies, playerStats: [], seasonStats: [], goalieStats: [], checkins: [], availability: [],
       profiles: [{ id: 'goalie-0', full_name: 'Home Goalie' }, { id: 'goalie-1', full_name: 'Away Goalie' }],

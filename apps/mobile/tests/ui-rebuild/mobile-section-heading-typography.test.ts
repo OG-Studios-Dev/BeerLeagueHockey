@@ -56,7 +56,7 @@ describe('mobile section heading typography contract', () => {
     assert.doesNotMatch(leaders, />LEAGUE<|\{seasonName \? <Text/);
     assert.match(homeLeaders, /LeagueLeadersPresentation/);
     assert.match(leaders, /seasonName/);
-    assert.match(leaders, />League Leaders</);
+    assert.match(leaders, /sectionTitle = ['"]League Leaders['"]/);
   });
 
   it('leaves page titles and published newspaper content explicitly outside the shared contract', () => {

@@ -6,9 +6,14 @@ import { compileCommonJs } from './component-harness';
 
 type Row = Record<string, any>;
 
-function loadTeamData(dataset: Record<string, Row[]>, errors: Record<string, { message: string }> = {}) {
+function loadTeamData(
+  dataset: Record<string, Row[]>,
+  errors: Record<string, { message: string }> = {},
+  unfilteredTables: ReadonlySet<string> = new Set(),
+) {
   type QueryRecord = {
     table: string;
+    selection: string | null;
     filters: Array<{ kind: 'eq' | 'in' | 'is'; column: string; value: unknown }>;
     orders: Array<{ column: string; ascending: boolean; nullsFirst: boolean }>;
   };
@@ -20,10 +25,10 @@ function loadTeamData(dataset: Record<string, Row[]>, errors: Record<string, { m
     private record: QueryRecord;
 
     constructor(private table: string) {
-      this.record = { table, filters: [], orders: [] };
+      this.record = { table, selection: null, filters: [], orders: [] };
       queryRecords.push(this.record);
     }
-    select() { return this; }
+    select(selection: string) { this.record.selection = selection; return this; }
     eq(column: string, value: unknown) {
       this.record.filters.push({ kind: 'eq', column, value });
       this.filters.push((row) => row[column] === value);
@@ -50,7 +55,7 @@ function loadTeamData(dataset: Record<string, Row[]>, errors: Record<string, { m
     limit(value: number) { this.maximum = value; return this; }
     private rows() {
       const rows = (dataset[this.table] ?? [])
-        .filter((row) => this.filters.every((filter) => filter(row)))
+        .filter((row) => unfilteredTables.has(this.table) || this.filters.every((filter) => filter(row)))
         .slice()
         .sort((left, right) => {
           for (const order of this.record.orders) {
@@ -88,17 +93,20 @@ const dataset: Record<string, Row[]> = {
     { id: 'season-old', league_id: 'league-a', name: 'Old A', status: 'completed', start_date: '2025-01-01', created_at: '2024-12-01' },
   ],
   team_rosters: [
-    { id: 'a-ended-selected', player_id: 'viewer', team_id: 'team-ended', league_id: 'league-a', season_id: 'season-a', status: 'active', start_date: '2026-09-10', joined_at: '2026-09-10', end_date: '2026-09-11', jersey_number: 66, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-ended', name: 'Ended Assignment', logo_url: null, primary_color: '#EF4444' } },
-    { id: 'a-1', player_id: 'viewer', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', joined_at: '2026-09-01', end_date: null, jersey_number: 8, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
-    { id: 'a-duplicate', player_id: 'viewer', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', joined_at: '2026-08-01', end_date: null, jersey_number: 88, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
-    { id: 'old', player_id: 'viewer', team_id: 'team-old', league_id: 'league-a', season_id: 'season-old', status: 'active', joined_at: '2025-01-01', end_date: null, jersey_number: 44, position: 'defense', is_goalie: false, leadership_role: null, team: { id: 'team-old', name: 'Historical A', logo_url: null, primary_color: '#999999' } },
-    { id: 'wrong-pair', player_id: 'viewer', team_id: 'team-cross', league_id: 'league-a', season_id: 'season-b', status: 'active', joined_at: '2026-09-01', end_date: null, jersey_number: 2, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-cross', name: 'Cross League', logo_url: null, primary_color: '#EF4444' } },
-    { id: 'b-ended-card', player_id: 'viewer', team_id: 'team-b-ended', league_id: 'league-b', season_id: 'season-b', status: 'active', joined_at: '2026-09-10', end_date: '2026-09-11', jersey_number: 71, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-b-ended', name: 'Ended B Card', logo_url: null, primary_color: '#EF4444' } },
-    { id: 'b-1', player_id: 'viewer', team_id: 'team-b', league_id: 'league-b', season_id: 'season-b', status: 'active', joined_at: '2026-09-02', end_date: null, jersey_number: 12, position: 'goalie', is_goalie: true, leadership_role: null, team: { id: 'team-b', name: 'Active B', logo_url: null, primary_color: '#8E7FFF' } },
-    { id: 'c-1', player_id: 'viewer', team_id: 'team-c', league_id: 'league-c', season_id: 'season-c-playoffs', status: 'active', joined_at: '2026-09-03', end_date: null, jersey_number: 31, position: 'goalie', is_goalie: true, leadership_role: null, team: { id: 'team-c', name: 'Playoff C', logo_url: null, primary_color: '#F59E0B' } },
-    { id: 'ended-roster-player', player_id: 'ended-player', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', joined_at: '2026-09-01', end_date: '2026-09-11', jersey_number: 1, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
-    { id: 'other-player', player_id: 'other', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', joined_at: '2026-09-01', end_date: null, jersey_number: 3, position: 'defense', is_goalie: false, leadership_role: 'alternate_captain', team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
-    { id: 'returning-player', player_id: 'returning', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', joined_at: '2026-09-03', end_date: null, jersey_number: 27, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'a-ended-selected', player_id: 'viewer', team_id: 'team-ended', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'regular', start_date: '2026-09-10', joined_at: '2026-09-10', end_date: '2026-09-11', jersey_number: 66, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-ended', name: 'Ended Assignment', logo_url: null, primary_color: '#EF4444' } },
+    { id: 'a-1', player_id: 'viewer', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'regular', joined_at: '2026-09-01', end_date: null, jersey_number: 8, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'a-duplicate', player_id: 'viewer', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'regular', joined_at: '2026-08-01', end_date: null, jersey_number: 88, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'old', player_id: 'viewer', team_id: 'team-old', league_id: 'league-a', season_id: 'season-old', status: 'active', player_type: 'regular', joined_at: '2025-01-01', end_date: null, jersey_number: 44, position: 'defense', is_goalie: false, leadership_role: null, team: { id: 'team-old', name: 'Historical A', logo_url: null, primary_color: '#999999' } },
+    { id: 'wrong-pair', player_id: 'viewer', team_id: 'team-cross', league_id: 'league-a', season_id: 'season-b', status: 'active', player_type: 'regular', joined_at: '2026-09-01', end_date: null, jersey_number: 2, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-cross', name: 'Cross League', logo_url: null, primary_color: '#EF4444' } },
+    { id: 'b-ended-card', player_id: 'viewer', team_id: 'team-b-ended', league_id: 'league-b', season_id: 'season-b', status: 'active', player_type: 'regular', joined_at: '2026-09-10', end_date: '2026-09-11', jersey_number: 71, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-b-ended', name: 'Ended B Card', logo_url: null, primary_color: '#EF4444' } },
+    { id: 'b-1', player_id: 'viewer', team_id: 'team-b', league_id: 'league-b', season_id: 'season-b', status: 'active', player_type: 'regular', joined_at: '2026-09-02', end_date: null, jersey_number: 12, position: 'goalie', is_goalie: true, leadership_role: null, team: { id: 'team-b', name: 'Active B', logo_url: null, primary_color: '#8E7FFF' } },
+    { id: 'c-1', player_id: 'viewer', team_id: 'team-c', league_id: 'league-c', season_id: 'season-c-playoffs', status: 'active', player_type: 'regular', joined_at: '2026-09-03', end_date: null, jersey_number: 31, position: 'goalie', is_goalie: true, leadership_role: null, team: { id: 'team-c', name: 'Playoff C', logo_url: null, primary_color: '#F59E0B' } },
+    { id: 'ended-roster-player', player_id: 'ended-player', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'regular', joined_at: '2026-09-01', end_date: '2026-09-11', jersey_number: 1, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'other-player', player_id: 'other', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'regular', joined_at: '2026-09-01', end_date: null, jersey_number: 3, position: 'defense', is_goalie: false, leadership_role: 'alternate_captain', team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'returning-player', player_id: 'returning', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'regular', joined_at: '2026-09-03', end_date: null, jersey_number: 27, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'active-sub', player_id: 'sub-player', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'sub', joined_at: '2026-09-03', end_date: null, jersey_number: 40, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'active-part-time', player_id: 'part-time-player', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'part_time', joined_at: '2026-09-03', end_date: null, jersey_number: 41, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
+    { id: 'active-malformed', player_id: 'malformed-player', team_id: 'team-a', league_id: 'league-a', season_id: 'season-a', status: 'active', player_type: 'accepted_sub', joined_at: '2026-09-03', end_date: null, jersey_number: 42, position: 'forward', is_goalie: false, leadership_role: null, team: { id: 'team-a', name: 'Active A', logo_url: null, primary_color: '#22D3EE' } },
   ],
   profiles: [
     { id: 'viewer', full_name: 'Viewer Victor', avatar_url: null },
@@ -183,6 +191,72 @@ describe('Team-only Supabase boundary', () => {
     const rosterQueries = teamData.queryRecords.filter((query: Row) => query.table === 'team_rosters');
     assert.equal(rosterQueries.length, 2);
     assert.ok(rosterQueries.every((query: Row) => query.filters.some((filter: Row) => filter.kind === 'is' && filter.column === 'end_date' && filter.value === null)));
+    const rosterQuery = rosterQueries.find((query: Row) => query.filters.some((filter: Row) => filter.column === 'team_id' && filter.value === 'team-a'));
+    assert.ok(rosterQuery?.filters.some((filter: Row) => filter.kind === 'eq' && filter.column === 'player_type' && filter.value === 'regular'));
+  });
+
+  it('fails closed when the roster provider returns unfiltered or malformed rows', async () => {
+    const legitimatePlayerId = 'opaque:legacy/import#42';
+    const validFields = {
+      team_id: 'team-a',
+      league_id: 'league-a',
+      season_id: 'season-a',
+      status: 'active',
+      end_date: null,
+      player_type: 'regular',
+      position: 'forward',
+      is_goalie: false,
+      leadership_role: null,
+    };
+    const rosterRows: Row[] = [
+      { ...validFields, id: 'legitimate', player_id: legitimatePlayerId, jersey_number: 1 },
+      { ...validFields, id: 'wrong-team', player_id: 'wrong-team-player', team_id: 'team-b', jersey_number: 2 },
+      { ...validFields, id: 'wrong-league', player_id: 'wrong-league-player', league_id: 'league-b', jersey_number: 3 },
+      { ...validFields, id: 'wrong-season', player_id: 'wrong-season-player', season_id: 'season-b', jersey_number: 4 },
+      { ...validFields, id: 'inactive', player_id: 'inactive-player', status: 'inactive', jersey_number: 5 },
+      { ...validFields, id: 'ended', player_id: 'ended-player', end_date: '2026-10-17', jersey_number: 6 },
+      { ...validFields, id: 'sub', player_id: 'sub-player', player_type: 'sub', jersey_number: 7 },
+      { ...validFields, id: 'part-time', player_id: 'part-time-player', player_type: 'part_time', jersey_number: 8 },
+      { ...validFields, id: 'unknown-type', player_id: 'unknown-type-player', player_type: 'unknown', jersey_number: 9 },
+      { ...validFields, id: 'null-id', player_id: null, jersey_number: 10 },
+      { ...validFields, id: 'missing-id', jersey_number: 11 },
+      { ...validFields, id: 'empty-id', player_id: '', jersey_number: 12 },
+      { ...validFields, id: 'whitespace-id', player_id: '   ', jersey_number: 13 },
+      { ...validFields, id: 'numeric-id', player_id: 42, jersey_number: 14 },
+      { ...validFields, id: 'boolean-id', player_id: true, jersey_number: 15 },
+      { ...validFields, id: 'array-id', player_id: ['array-player'], jersey_number: 16 },
+      { ...validFields, id: 'object-id', player_id: { id: 'object-player' }, jersey_number: 17 },
+    ];
+    const stringPlayerIds = rosterRows
+      .map((row) => row.player_id)
+      .filter((playerId): playerId is string => typeof playerId === 'string');
+    const teamData = loadTeamData(
+      {
+        team_rosters: rosterRows,
+        profiles: stringPlayerIds.map((id) => ({ id, full_name: `Profile ${id}`, avatar_url: null })),
+      },
+      {},
+      new Set(['team_rosters']),
+    );
+
+    const roster = await teamData.getActiveSeasonRoster('team-a', 'league-a', 'season-a');
+
+    assert.deepEqual(roster.map((row: Row) => row.player_id), [legitimatePlayerId]);
+    const rosterQuery = teamData.queryRecords.find((query: Row) => query.table === 'team_rosters');
+    assert.deepEqual(rosterQuery?.filters, [
+      { kind: 'eq', column: 'team_id', value: 'team-a' },
+      { kind: 'eq', column: 'league_id', value: 'league-a' },
+      { kind: 'eq', column: 'season_id', value: 'season-a' },
+      { kind: 'eq', column: 'status', value: 'active' },
+      { kind: 'is', column: 'end_date', value: null },
+      { kind: 'eq', column: 'player_type', value: 'regular' },
+    ]);
+    assert.match(rosterQuery?.selection ?? '', /\bstatus\b/);
+    assert.match(rosterQuery?.selection ?? '', /\bend_date\b/);
+    const profilesQuery = teamData.queryRecords.find((query: Row) => query.table === 'profiles');
+    assert.deepEqual(profilesQuery?.filters, [
+      { kind: 'in', column: 'id', value: [legitimatePlayerId] },
+    ]);
   });
 
   it('returns leadership only from the same newest current assignment used by the dock crest', async () => {

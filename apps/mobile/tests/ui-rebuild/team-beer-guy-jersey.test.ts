@@ -182,6 +182,10 @@ function publicPageRuntime(beerGuyPlayerId: string | null, sourceSnapshot = publ
       '../../assets/team-page/jersey-back-liuna.png': 8,
       '../../assets/team-page/jersey-back-fitzrays.png': 9,
       '../../assets/team-page/jersey-back-fallback.png': 10,
+      '../../assets/team-page/captain-contact-player-base.png': 11,
+      '../../assets/team-page/captain-contact-team-mask.png': 12,
+      '../../assets/team-page/captain-contact-neutral-base.png': 13,
+      '../../assets/team-page/captain-contact-neutral-team-mask.png': 14,
     },
   ).default;
   harness.mount(() => Component({

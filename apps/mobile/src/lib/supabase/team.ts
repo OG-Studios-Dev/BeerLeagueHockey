@@ -51,10 +51,13 @@ type TeamRosterDbRow = {
   team_id: string;
   league_id: string;
   season_id: string;
+  status: string;
+  end_date: string | null;
   jersey_number: number | null;
   position: string | null;
   is_goalie: boolean | null;
   leadership_role: string | null;
+  player_type: string | null;
 };
 
 type ProfileDbRow = { id: string; full_name: string | null; avatar_url: string | null };
@@ -209,16 +212,29 @@ export async function getActiveSeasonRoster(
 ): Promise<TeamRosterMember[]> {
   const { data, error } = await supabase
     .from('team_rosters')
-    .select('id, player_id, team_id, league_id, season_id, jersey_number, position, is_goalie, leadership_role')
+    .select('id, player_id, team_id, league_id, season_id, status, end_date, jersey_number, position, is_goalie, leadership_role, player_type')
     .eq('team_id', teamId)
     .eq('league_id', leagueId)
     .eq('season_id', seasonId)
     .eq('status', 'active')
-    .is('end_date', null);
+    .is('end_date', null)
+    .eq('player_type', 'regular');
 
   if (error) throw new Error('Unable to load the active-season roster.');
 
-  const rosterRows = dedupeTeamRosterRows((data as unknown as TeamRosterDbRow[] | null) ?? []);
+  const rosterRows = dedupeTeamRosterRows(
+    ((data as unknown as TeamRosterDbRow[] | null) ?? []).filter(
+      (row) =>
+        row.team_id === teamId &&
+        row.league_id === leagueId &&
+        row.season_id === seasonId &&
+        row.status === 'active' &&
+        row.end_date === null &&
+        row.player_type === 'regular' &&
+        typeof row.player_id === 'string' &&
+        row.player_id.trim().length > 0,
+    ),
+  );
   if (rosterRows.length === 0) return [];
 
   const playerIds = rosterRows.map((row) => row.player_id);
