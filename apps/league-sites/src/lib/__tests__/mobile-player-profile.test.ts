@@ -175,34 +175,163 @@ describe('GET /api/mobile/player-profile', () => {
     }));
   });
 
-  it('settles the explicit timeline before launching stats or decorative dependencies', async () => {
+  it('[correction-2 orchestration] overlaps the same-role canonical, role-sensitive, and independent reads inside a deterministic fake budget', async () => {
     const d = deps();
     const timeline = await d.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, true);
-    let resolveTimeline!: (rows: PlayerCareerSeasonRow[]) => void;
-    const timelineRead = new Promise<PlayerCareerSeasonRow[]>((resolve) => { resolveTimeline = resolve; });
-    d.getTimeline.mockClear();
-    d.getTimeline.mockImplementation(() => timelineRead);
-
-    const pendingResponse = handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    expect(d.getTimeline).toHaveBeenCalledTimes(1);
+    const stats = await d.getStats(PROFILE_ID, SEASON_ID, HOCKEY_LIFE_ID, false);
+    const badges = await d.getBadges(PROFILE_ID);
+    const achievements = await d.getImportedAchievements(PROFILE_ID, HOCKEY_LIFE_ID);
+    const articles = await d.getArticles(PROFILE_ID);
+    const games = await d.getGames(PROFILE_ID, SEASON_ID);
+    const matchups = await d.getMatchups(PROFILE_ID, SEASON_ID, false);
     for (const dependency of [
-      d.getStats,
       d.getPublicSeasonPlayer,
+      d.getTimeline,
+      d.getStats,
       d.getBadges,
       d.getImportedAchievements,
       d.getArticles,
       d.getGames,
       d.getMatchups,
+      d.generateHotFacts,
     ]) {
-      expect(dependency).not.toHaveBeenCalled();
+      dependency.mockClear();
     }
+    const delayed = <T>(milliseconds: number, value: T) => new Promise<T>((resolve) => {
+      setTimeout(() => resolve(value), milliseconds);
+    });
 
-    resolveTimeline(timeline);
-    await expect(pendingResponse).resolves.toMatchObject({ status: 200 });
-    expect(d.getStats).toHaveBeenCalledTimes(1);
-    expect(d.getBadges).toHaveBeenCalledTimes(1);
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+    try {
+      d.getPublicSeasonPlayer.mockImplementation(() => delayed(3_000, canonicalPlayer(4)));
+      d.getTimeline.mockImplementation(() => delayed(3_000, timeline));
+      d.getStats.mockImplementation(() => delayed(1_000, stats));
+      d.getBadges.mockImplementation(() => delayed(1_000, badges));
+      d.getImportedAchievements.mockImplementation(() => delayed(1_000, achievements));
+      d.getArticles.mockImplementation(() => delayed(1_000, articles));
+      d.getGames.mockImplementation(() => delayed(1_000, games));
+      d.getMatchups.mockImplementation(() => delayed(1_000, matchups));
+      d.generateHotFacts.mockImplementation(() => delayed(1_000, ['Fact']));
+
+      let settledAt: number | null = null;
+      const pendingResponse = handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)
+        .then((response) => {
+          settledAt = Date.now();
+          return response;
+        });
+      await jest.advanceTimersByTimeAsync(0);
+      const startedAtZero = {
+        publicPlayer: d.getPublicSeasonPlayer.mock.calls.length,
+        timeline: d.getTimeline.mock.calls.length,
+        stats: d.getStats.mock.calls.length,
+        badges: d.getBadges.mock.calls.length,
+        achievements: d.getImportedAchievements.mock.calls.length,
+        articles: d.getArticles.mock.calls.length,
+        games: d.getGames.mock.calls.length,
+        matchups: d.getMatchups.mock.calls.length,
+      };
+
+      await jest.advanceTimersByTimeAsync(3_999);
+      expect(settledAt).toBeNull();
+      await jest.advanceTimersByTimeAsync(1);
+      const settledWithinBudget = settledAt;
+      await jest.advanceTimersByTimeAsync(4_000);
+      await expect(pendingResponse).resolves.toMatchObject({ status: 200 });
+      expect(startedAtZero).toEqual({
+        publicPlayer: 1,
+        timeline: 1,
+        stats: 1,
+        badges: 1,
+        achievements: 1,
+        articles: 1,
+        games: 1,
+        matchups: 1,
+      });
+      expect(settledWithinBudget).toBe(4_000);
+      expect(d.getTimeline).toHaveBeenCalledTimes(1);
+      expect(d.getStats).toHaveBeenCalledTimes(1);
+      expect(d.getMatchups).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('[correction-2 orchestration] retries only mismatched role-sensitive reads and ignores rejected wrong-role speculation', async () => {
+    const d = deps();
+    const timeline = await d.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, true, true);
+    d.getTimeline.mockClear();
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['skater', 'goalie'];
+    canonical.goalie = {
+      gamesPlayed: { value: 1, state: 'reported', sources: ['goalie_assignment'] },
+      wins: unknown,
+      losses: unknown,
+      saves: unknown,
+      goalsAgainst: unknown,
+      savePercentage: unknown,
+      goalsAgainstAverage: unknown,
+      shutouts: unknown,
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+    d.getTimeline.mockImplementation((_leagueId, _playerId, isGoalie) => isGoalie
+      ? Promise.resolve(timeline)
+      : Promise.reject(new Error('ignored wrong-role timeline failure')));
+    d.getStats.mockImplementation((_playerId, _seasonId, _leagueId, isGoalie) => isGoalie
+      ? Promise.resolve({ games_played: 99, goals_against: 1 })
+      : Promise.reject(new Error('ignored wrong-role stats failure')));
+    d.getMatchups.mockImplementation((_playerId, _seasonId, isGoalie) => isGoalie
+      ? Promise.resolve([])
+      : Promise.reject(new Error('ignored wrong-role matchup failure')));
+
+    const response = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
+
+    expect(response.status).toBe(200);
+    expect(d.getTimeline.mock.calls.map((call) => call[2])).toEqual([false, true]);
+    expect(d.getStats.mock.calls.map((call) => call[3])).toEqual([false, true]);
+    expect(d.getMatchups.mock.calls.map((call) => call[2])).toEqual([false, true]);
+  });
+
+  it('[correction-2 orchestration] preserves the replacement stage and generic 502 when the correct-role retry fails', async () => {
+    const d = deps();
+    const timeline = await d.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, true, true);
+    d.getTimeline.mockClear();
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['goalie'];
+    canonical.goalie = {
+      gamesPlayed: { value: 1, state: 'reported', sources: ['goalie_assignment'] },
+      wins: unknown,
+      losses: unknown,
+      saves: unknown,
+      goalsAgainst: unknown,
+      savePercentage: unknown,
+      goalsAgainstAverage: unknown,
+      shutouts: unknown,
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+    d.getTimeline.mockImplementation((_leagueId, _playerId, isGoalie) => isGoalie
+      ? Promise.resolve(timeline)
+      : Promise.reject(new Error('ignored wrong-role timeline failure')));
+    d.getStats.mockImplementation((_playerId, _seasonId, _leagueId, isGoalie) => isGoalie
+      ? Promise.reject({ code: '57014' })
+      : Promise.reject(new Error('ignored wrong-role stats failure')));
+    d.getMatchups.mockImplementation((_playerId, _seasonId, isGoalie) => isGoalie
+      ? Promise.resolve([])
+      : Promise.reject(new Error('ignored wrong-role matchup failure')));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ error: { code: 'UPSTREAM_FAILURE', message: 'Player profile data is temporarily unavailable.' } });
+    expect(log).toHaveBeenCalledWith('mobile_player_profile_dependency_failure', {
+      stage: 'stats', providerCode: '57014',
+    });
+    expect(d.getStats.mock.calls.map((call) => call[3])).toEqual([false, true]);
+    log.mockRestore();
   });
 
   it('preserves current-season and career DTO fields while sharing the baseline-inclusive timeline', async () => {
@@ -298,14 +427,174 @@ describe('GET /api/mobile/player-profile', () => {
     expect(d.getPublicSeasonPlayer).toHaveBeenCalledWith(HOCKEY_LIFE_ID, SEASON_ID, PROFILE_ID);
   });
 
-  it('uses canonical goalie GP and provenance when generic participation is conflicted', async () => {
+  it('preserves selected-season skater unknown GP provenance when metric payloads are absent', async () => {
+    const d = deps();
+    d.getStats.mockResolvedValue(null);
+    d.getPublicSeasonPlayer.mockResolvedValue(null);
+
+    const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
+
+    expect(body.data.metrics).toBeNull();
+    expect(body.data.metricProvenance).toEqual({
+      games_played: { state: 'unknown', sources: [] },
+    });
+  });
+
+  it('[correction-2 role coherence] uses a truthful skater position when a current goalie selects a canonical skater season', async () => {
     const d = deps();
     d.resolvePlayer.mockResolvedValue({
       ...(await d.resolvePlayer(PROFILE_ID))!,
       position: 'Goalie',
       is_goalie: true,
     });
-    d.getStats.mockResolvedValue({ games_played: 99, wins: 1, losses: 0, goals_against: 2 });
+    d.getStats.mockResolvedValue({
+      games_played: 99,
+      goals: 3,
+      assists: 1,
+      points: 4,
+      wins: 9,
+      losses: 8,
+      saves: 43,
+      goals_against: 17,
+      save_percentage: 0.71667,
+      goals_against_average: 5.667,
+    });
+    d.getPublicSeasonPlayer.mockResolvedValue(canonicalPlayer(4));
+
+    const body = await (await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`),
+      d,
+    )).json();
+
+    expect(body.data).toMatchObject({ isGoalie: false, position: 'Skater' });
+    expect(body.data.metrics).toMatchObject({ games_played: 4, goals: 3, assists: 1, points: 4 });
+    expect(body.data.metricProvenance).toEqual({
+      games_played: { state: 'reported', sources: ['roster_window'] },
+    });
+    expect(body.data.metricProvenance).not.toHaveProperty('wins');
+    expect(d.getTimeline).toHaveBeenCalledWith(HOCKEY_LIFE_ID, PROFILE_ID, false, true);
+    expect(d.getStats).toHaveBeenCalledWith(PROFILE_ID, SEASON_ID, HOCKEY_LIFE_ID, false);
+    expect(d.getMatchups).toHaveBeenCalledWith(PROFILE_ID, SEASON_ID, false);
+    expect(d.generateHotFacts).toHaveBeenCalledWith(expect.objectContaining({ isGoalie: false }));
+  });
+
+  it('[correction-2 role coherence] uses a truthful goalie position when a current skater selects a canonical goalie season', async () => {
+    const d = deps();
+    d.getStats.mockResolvedValue({
+      games_played: 99,
+      wins: 9,
+      losses: 8,
+      ties: 7,
+      saves: 43,
+      goals_against: 17,
+      save_percentage: 0.71667,
+      goals_against_average: 5.667,
+      shutouts: 6,
+    });
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['goalie'];
+    canonical.goalie = {
+      gamesPlayed: { value: 1, state: 'reported', sources: ['goalie_assignment'] },
+      wins: unknown,
+      losses: unknown,
+      saves: unknown,
+      goalsAgainst: { value: 2, state: 'recorded', sources: ['goalie_assignment'] },
+      savePercentage: unknown,
+      goalsAgainstAverage: { value: 2, state: 'recorded', sources: ['goalie_assignment'] },
+      shutouts: unknown,
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+
+    const body = await (await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`),
+      d,
+    )).json();
+
+    expect(body.data).toMatchObject({ isGoalie: true, position: 'G' });
+    expect(body.data.metrics).toMatchObject({
+      games_played: 1,
+      wins: null,
+      losses: null,
+      ties: null,
+      saves: null,
+      goals_against: 2,
+      save_percentage: null,
+      goals_against_average: 2,
+      shutouts: null,
+    });
+    expect(body.data.metricProvenance).toEqual({
+      games_played: { state: 'reported', sources: ['goalie_assignment'] },
+      wins: { state: 'unknown', sources: [] },
+      losses: { state: 'unknown', sources: [] },
+      ties: { state: 'unknown', sources: [] },
+      saves: { state: 'unknown', sources: [] },
+      goals_against: { state: 'recorded', sources: ['goalie_assignment'] },
+      save_percentage: { state: 'unknown', sources: [] },
+      goals_against_average: { state: 'recorded', sources: ['goalie_assignment'] },
+      shutouts: { state: 'unknown', sources: [] },
+    });
+    expect(d.getTimeline).toHaveBeenCalledWith(HOCKEY_LIFE_ID, PROFILE_ID, true, true);
+    expect(d.getStats).toHaveBeenCalledWith(PROFILE_ID, SEASON_ID, HOCKEY_LIFE_ID, true);
+    expect(d.getMatchups).toHaveBeenCalledWith(PROFILE_ID, SEASON_ID, true);
+    expect(d.generateHotFacts).toHaveBeenCalledWith(expect.objectContaining({ isGoalie: true }));
+  });
+
+  it.each([
+    { goalieGroup: false, expectedIsGoalie: false, expectedPosition: 'C', expectedGamesPlayed: 3 },
+    { goalieGroup: true, expectedIsGoalie: true, expectedPosition: 'G', expectedGamesPlayed: 2 },
+  ])('[correction-2 dual role] resolves roles=[skater,goalie] from goalie group=$goalieGroup', async ({
+    goalieGroup,
+    expectedIsGoalie,
+    expectedPosition,
+    expectedGamesPlayed,
+  }) => {
+    const d = deps();
+    const canonical = canonicalPlayer(3);
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['skater', 'goalie'];
+    canonical.goalie = goalieGroup ? {
+      gamesPlayed: { value: 2, state: 'reported', sources: ['goalie_assignment'] },
+      wins: unknown,
+      losses: unknown,
+      saves: unknown,
+      goalsAgainst: unknown,
+      savePercentage: unknown,
+      goalsAgainstAverage: unknown,
+      shutouts: unknown,
+    } : null;
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+
+    const body = await (await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`),
+      d,
+    )).json();
+
+    expect(body.data).toMatchObject({
+      isGoalie: expectedIsGoalie,
+      position: expectedPosition,
+      metrics: { games_played: expectedGamesPlayed },
+    });
+  });
+
+  it('replaces selected-season legacy goalie metrics and provenance with the canonical public goalie group', async () => {
+    const d = deps();
+    d.resolvePlayer.mockResolvedValue({
+      ...(await d.resolvePlayer(PROFILE_ID))!,
+      position: 'Goalie',
+      is_goalie: true,
+    });
+    d.getStats.mockResolvedValue({
+      games_played: 99,
+      wins: 9,
+      losses: 8,
+      ties: 7,
+      saves: 43,
+      goals_against: 17,
+      save_percentage: 0.71667,
+      goals_against_average: 5.667,
+      shutouts: 6,
+    });
     const canonical = canonicalPlayer();
     const unknown = canonical.metrics.goals;
     canonical.roles = ['goalie'];
@@ -315,23 +604,107 @@ describe('GET /api/mobile/player-profile', () => {
       sources: ['attendance', 'goalie_stats'],
     };
     canonical.goalie = {
-      gamesPlayed: { value: 2, state: 'recorded', sources: ['goalie_stats'] },
+      gamesPlayed: { value: 3, state: 'reported', sources: ['roster_window', 'goalie_stats'] },
+      wins: { value: 2, state: 'recorded', sources: ['goalie_stats'] },
+      losses: { value: 1, state: 'verified', sources: ['goalie_stats', 'goalie_assignment', 'capture_confirmation'] },
+      saves: unknown,
+      goalsAgainst: { value: 13, state: 'reported', sources: ['goalie_assignment'] },
+      savePercentage: unknown,
+      goalsAgainstAverage: { value: 4.333, state: 'reported', sources: ['goalie_assignment', 'roster_window'] },
+      shutouts: { value: 0, state: 'recorded', sources: ['goalie_stats'] },
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+
+    const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
+
+    expect(body.data.metrics).toMatchObject({
+      games_played: 3,
+      wins: 2,
+      losses: 1,
+      ties: null,
+      saves: null,
+      goals_against: 13,
+      save_percentage: null,
+      goals_against_average: 4.333,
+      shutouts: 0,
+    });
+    expect(body.data.metricProvenance).toEqual({
+      games_played: { state: 'reported', sources: ['roster_window', 'goalie_stats'] },
+      wins: { state: 'recorded', sources: ['goalie_stats'] },
+      losses: { state: 'verified', sources: ['goalie_stats', 'goalie_assignment', 'capture_confirmation'] },
+      ties: { state: 'unknown', sources: [] },
+      saves: { state: 'unknown', sources: [] },
+      goals_against: { state: 'reported', sources: ['goalie_assignment'] },
+      save_percentage: { state: 'unknown', sources: [] },
+      goals_against_average: { state: 'reported', sources: ['goalie_assignment', 'roster_window'] },
+      shutouts: { state: 'recorded', sources: ['goalie_stats'] },
+    });
+    expect(body.data.metrics.saves).toBeNull();
+    expect(body.data.metrics.save_percentage).toBeNull();
+  });
+
+  it.each([
+    ['Aaron Buehler', 3, 13, 4.333333333333333],
+    ['Christian Jarchow', 1, 2, 2],
+    ['Cody Bolman', 3, 17, 5.666666666666667],
+  ])('preserves captured live canonical goalie parity for %s', async (name, gamesPlayed, goalsAgainst, goalsAgainstAverage) => {
+    const d = deps();
+    d.resolvePlayer.mockResolvedValue({
+      ...(await d.resolvePlayer(PROFILE_ID))!,
+      position: 'Goalie',
+      is_goalie: true,
+      profile: { full_name: name, avatar_url: null, photo_url: null },
+    });
+    d.getStats.mockResolvedValue({
+      games_played: 99,
+      wins: 9,
+      losses: 8,
+      ties: 7,
+      saves: 43,
+      goals_against: 99,
+      save_percentage: 0.71667,
+      goals_against_average: 99,
+      shutouts: 6,
+    });
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.playerName = name;
+    canonical.roles = ['goalie'];
+    canonical.goalie = {
+      gamesPlayed: { value: gamesPlayed, state: 'reported', sources: ['goalie_assignment'] },
       wins: unknown,
       losses: unknown,
       saves: unknown,
-      goalsAgainst: unknown,
+      goalsAgainst: { value: goalsAgainst, state: 'reported', sources: ['goalie_assignment'] },
       savePercentage: unknown,
-      goalsAgainstAverage: unknown,
+      goalsAgainstAverage: { value: goalsAgainstAverage, state: 'reported', sources: ['goalie_assignment'] },
       shutouts: unknown,
     };
     d.getPublicSeasonPlayer.mockResolvedValue(canonical);
 
     const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
 
-    expect(body.data.metrics.games_played).toBe(2);
-    expect(body.data.metricProvenance.games_played).toEqual({
-      state: 'recorded',
-      sources: ['goalie_stats'],
+    expect(body.data).toMatchObject({
+      fullName: name,
+      isGoalie: true,
+      metrics: {
+        games_played: gamesPlayed,
+        wins: null,
+        losses: null,
+        ties: null,
+        saves: null,
+        goals_against: goalsAgainst,
+        save_percentage: null,
+        goals_against_average: goalsAgainstAverage,
+        shutouts: null,
+      },
+    });
+    expect(body.data.metricProvenance).toMatchObject({
+      games_played: { state: 'reported', sources: ['goalie_assignment'] },
+      goals_against: { state: 'reported', sources: ['goalie_assignment'] },
+      goals_against_average: { state: 'reported', sources: ['goalie_assignment'] },
+      saves: { state: 'unknown', sources: [] },
+      save_percentage: { state: 'unknown', sources: [] },
     });
   });
 
@@ -344,6 +717,23 @@ describe('GET /api/mobile/player-profile', () => {
 
     expect(body.data.metrics).toMatchObject({ games_played: null, goals: 3 });
     expect(body.data.metricProvenance.games_played).toEqual({ state: 'unknown', sources: [] });
+  });
+
+  it('[correction-3 position normalization] emits G for a missing-canonical selected-season goalie', async () => {
+    const d = deps();
+    d.resolvePlayer.mockResolvedValue({
+      ...(await d.resolvePlayer(PROFILE_ID))!,
+      position: 'Goalie',
+      is_goalie: true,
+    });
+    d.getPublicSeasonPlayer.mockResolvedValue(null);
+
+    const body = await (await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`),
+      d,
+    )).json();
+
+    expect(body.data).toMatchObject({ isGoalie: true, position: 'G' });
   });
 
   it('fails closed at the profile metric budget before hydrating later source tables', async () => {
@@ -390,24 +780,143 @@ describe('GET /api/mobile/player-profile', () => {
     expect(ranges).toEqual([['games', 0, 999]]);
   });
 
-  it('does not add assumed saves to canonical goalie career rows', async () => {
+  it('fails closed for unproven goalie saves and save percentage in selected-season timeline and game rows', async () => {
     const d = deps();
     d.resolvePlayer.mockResolvedValue({ ...(await d.resolvePlayer(PROFILE_ID))!, position: 'Goalie', is_goalie: true });
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['goalie'];
+    canonical.goalie = {
+      gamesPlayed: { value: 2, state: 'reported', sources: ['goalie_assignment'] },
+      wins: unknown,
+      losses: unknown,
+      saves: unknown,
+      goalsAgainst: unknown,
+      savePercentage: unknown,
+      goalsAgainstAverage: unknown,
+      shutouts: unknown,
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
     const row = (await d.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, true, true))[0];
     d.getTimeline.mockClear();
-    d.getTimeline.mockResolvedValue([{ ...row, games_played: 2, saves: 0, goals_against: 5, save_percentage: 0 }]);
+    d.getTimeline.mockResolvedValue([{ ...row, games_played: 2, saves: 40, goals_against: 5, save_percentage: 88.889 }]);
+    d.getGames.mockResolvedValue([{
+      game_id: '80000000-0000-4000-8000-000000000008',
+      date: '2026-09-20T20:00:00Z',
+      opponent: 'Visitors',
+      result: 'W',
+      goals: 0,
+      assists: 0,
+      points: 0,
+      plus_minus: 0,
+      saves: 20,
+      goals_against: 2,
+      save_percentage: 0.909,
+    }]);
     const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
-    expect(body.data.careerRows[0].metrics).toMatchObject({ games_played: 2, saves: 0, goals_against: 5, save_percentage: 0 });
+    expect(body.data.careerRows[0].metrics).toMatchObject({ games_played: 2, saves: null, goals_against: 5, save_percentage: null });
+    expect(body.data.games[0].metrics).toMatchObject({ saves: null, goals_against: 2, save_percentage: null });
   });
 
-  it('normalizes ordinary goalie selected ratios to 0-100 but leaves canonical timeline percentages alone', async () => {
+  it('preserves authoritative imported aggregate timeline saves and save percentage in selected and career modes', async () => {
+    const importedRow = {
+      ...(await deps().getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, true, true))[0],
+      season_id: WINTER_2026_ID,
+      season_name: 'Winter 2026',
+      games_played: 9,
+      saves: 80,
+      goals_against: 10,
+      save_percentage: 88.9,
+      goals_against_average: 1.111,
+    };
+    const importedDeps = (statsSavePercentage = 88.9) => {
+      const d = deps();
+      d.resolvePlayer.mockResolvedValue({
+        id: ROSTER_ID,
+        player_id: PROFILE_ID,
+        jersey_number: 36,
+        position: 'Goalie',
+        leadership_role: null,
+        is_goalie: true,
+        profile: { full_name: 'Imported Goalie', avatar_url: null, photo_url: null },
+        team: { id: TEAM_ID, name: 'Bad Bunny', slug: 'bad-bunny', logo_url: null, primary_color: '#ff0000', league_id: HOCKEY_LIFE_ID },
+      });
+      d.getSeasons.mockResolvedValue([{
+        id: WINTER_2026_ID,
+        name: 'Winter 2026',
+        start_date: '2026-01-01',
+        status: 'completed',
+        league_id: HOCKEY_LIFE_ID,
+      }]);
+      d.getTimeline.mockResolvedValue([importedRow]);
+      d.getStats.mockResolvedValue({
+        games_played: 9,
+        wins: 6,
+        losses: 3,
+        ties: 0,
+        saves: 80,
+        goals_against: 10,
+        save_percentage: statsSavePercentage,
+        goals_against_average: 1.111,
+        shutouts: 1,
+      });
+      return d;
+    };
+
+    const selectedDeps = importedDeps();
+    const selected = await (await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}&season=${WINTER_2026_ID}`),
+      selectedDeps,
+    )).json();
+    const careerDeps = importedDeps(0.889);
+    const career = await (await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}&season=all`),
+      careerDeps,
+    )).json();
+
+    expect(selected.data).toMatchObject({
+      aggregateOnly: true,
+      isGoalie: true,
+      position: 'G',
+      metrics: { saves: 80, save_percentage: 88.9 },
+    });
+    expect(selected.data.careerRows[0].metrics).toMatchObject({ saves: 80, save_percentage: 88.9 });
+    expect(career.data).toMatchObject({
+      isGoalie: true,
+      position: 'G',
+      metrics: { saves: 80, save_percentage: 88.9 },
+    });
+    expect(career.data.careerRows[0].metrics).toMatchObject({ saves: 80, save_percentage: 88.9 });
+    expect(selectedDeps.getPublicSeasonPlayer).not.toHaveBeenCalled();
+    expect(selectedDeps.getGames).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for estimated and conflicted canonical goalie values even when they carry numbers', async () => {
     const d = deps();
     d.resolvePlayer.mockResolvedValue({ ...(await d.resolvePlayer(PROFILE_ID))!, position: 'G', is_goalie: true });
-    d.getStats.mockResolvedValue({ games_played: 1, wins: 1, losses: 0, ties: 0, saves: 18, goals_against: 2, save_percentage: 0.9, goals_against_average: 2, shutouts: 0 });
-    d.getTimeline.mockResolvedValue([{ ...(await d.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, true, false))[0], save_percentage: 90 }]);
+    d.getStats.mockResolvedValue({ games_played: 1, wins: 1, losses: 0, goals_against: 9, goals_against_average: 9 });
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['goalie'];
+    canonical.goalie = {
+      gamesPlayed: { value: 1, state: 'reported', sources: ['goalie_assignment'] },
+      wins: { value: 4, state: 'estimated', sources: ['goalie_stats'] },
+      losses: { value: 3, state: 'conflicted', sources: ['goalie_stats', 'goalie_assignment'] },
+      saves: unknown,
+      goalsAgainst: { value: 2, state: 'recorded', sources: ['goalie_assignment'] },
+      savePercentage: unknown,
+      goalsAgainstAverage: { value: 2, state: 'recorded', sources: ['goalie_assignment'] },
+      shutouts: { value: 0, state: 'verified', sources: ['goalie_stats', 'capture_confirmation'] },
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+
     const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
-    expect(body.data.metrics.save_percentage).toBe(90);
-    expect(body.data.careerRows[0].metrics.save_percentage).toBe(90);
+
+    expect(body.data.metrics).toMatchObject({ wins: null, losses: null, goals_against: 2, goals_against_average: 2, shutouts: 0 });
+    expect(body.data.metricProvenance).toMatchObject({
+      wins: { state: 'estimated', sources: ['goalie_stats'] },
+      losses: { state: 'conflicted', sources: ['goalie_stats', 'goalie_assignment'] },
+    });
   });
 
   it('normalizes the actual canonical career goalie summarizer ratio to the DTO percentage unit', async () => {

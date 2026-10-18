@@ -23,7 +23,10 @@ import { readCareerScope } from '@/lib/public-native-stats';
 import {
   aggregatePublicSeasonStats,
   readPublicStatMetricRows,
+  type PublicGoalieMetricGroup,
+  type PublicMetricState,
   type PublicSeasonMetricPlayer,
+  type PublicStatMetric,
 } from '@/lib/public-stat-metrics';
 import { createClient } from '@/lib/supabase/server';
 import type { NewsArticle, Player, PlayerBadge, PlayerGameLogEntry, PlayerStats, Season } from '@/lib/types';
@@ -34,11 +37,26 @@ const SITE_ORIGIN = 'https://hockey-life.beerleaguehockey.ca';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Keep player-scoped canonical hydration comfortably inside Build 46's fixed 8-second request timeout.
 const MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS = 5_000;
+const PUBLISHABLE_PUBLIC_METRIC_STATES = new Set<PublicMetricState>(['verified', 'recorded', 'reported']);
+const CANONICAL_GOALIE_METRICS = [
+  ['games_played', 'gamesPlayed'],
+  ['wins', 'wins'],
+  ['losses', 'losses'],
+  ['saves', 'saves'],
+  ['goals_against', 'goalsAgainst'],
+  ['save_percentage', 'savePercentage'],
+  ['goals_against_average', 'goalsAgainstAverage'],
+  ['shutouts', 'shutouts'],
+] as const;
 
 type LeagueIdentity = { id: string; slug: string; status?: string };
 type Matchup = { id: string; name: string; gamesPlayed: number; goals: number; assists: number; points: number; shots: number; shootingPct: number | null };
 type DependencyStage = 'league' | 'player' | 'seasons' | 'current_season' | 'health' | 'stats' | 'timeline'
   | 'badges' | 'achievements' | 'articles' | 'games' | 'matchups' | 'hot_facts' | 'handler';
+type SettledDependency<T> = Promise<
+  { status: 'fulfilled'; value: T }
+  | { status: 'rejected'; reason: unknown }
+>;
 
 class MobilePlayerProfileDependencyError extends Error {
   constructor(readonly stage: DependencyStage, readonly providerCode: '57014' | 'UNKNOWN') {
@@ -65,6 +83,19 @@ async function atDependencyStage<T>(stage: DependencyStage, read: () => Promise<
   } catch (error) {
     throw new MobilePlayerProfileDependencyError(stage, allowlistedProviderCode(error));
   }
+}
+
+function settleDependency<T>(read: Promise<T>): SettledDependency<T> {
+  return read.then(
+    (value) => ({ status: 'fulfilled' as const, value }),
+    (reason: unknown) => ({ status: 'rejected' as const, reason }),
+  );
+}
+
+async function unwrapDependency<T>(read: SettledDependency<T>): Promise<T> {
+  const result = await read;
+  if (result.status === 'rejected') throw result.reason;
+  return result.value;
 }
 
 export interface MobilePlayerProfileDependencies {
@@ -104,6 +135,33 @@ function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function isGoaliePosition(position: string | null | undefined): boolean {
+  return ['g', 'goalie', 'goaltender'].includes(position?.trim().toLowerCase() ?? '');
+}
+
+function selectedSeasonPosition(
+  currentPosition: string | null | undefined,
+  publicSeasonPlayer: PublicSeasonMetricPlayer | null,
+  isGoalie: boolean,
+): string | null | undefined {
+  if (isGoalie) return 'G';
+  if (!publicSeasonPlayer) return currentPosition;
+  return currentPosition?.trim() && !isGoaliePosition(currentPosition) ? currentPosition : 'Skater';
+}
+
+function canonicalGoalieMetricProjection(goalie: PublicGoalieMetricGroup | null | undefined) {
+  const values: Record<string, number | null> = {};
+  const provenance: Record<string, Pick<PublicStatMetric, 'state' | 'sources'>> = {};
+  for (const [dtoKey, canonicalKey] of CANONICAL_GOALIE_METRICS) {
+    const metric = goalie?.[canonicalKey] ?? { value: null, state: 'unknown' as const, sources: [] };
+    values[dtoKey] = PUBLISHABLE_PUBLIC_METRIC_STATES.has(metric.state) ? numberOrNull(metric.value) : null;
+    provenance[dtoKey] = { state: metric.state, sources: metric.sources };
+  }
+  values.ties = null;
+  provenance.ties = { state: 'unknown', sources: [] };
+  return { values, provenance };
+}
+
 function metrics(stats: Partial<PlayerStats> | null, isGoalie: boolean, goalieProvenance: 'ordinary-ratio' | 'percent'): Record<string, number | null> | null {
   if (!stats) return null;
   const result: Record<string, number | null> = {
@@ -117,12 +175,12 @@ function metrics(stats: Partial<PlayerStats> | null, isGoalie: boolean, goaliePr
   return result;
 }
 
-function timelineMetrics(row: PlayerCareerSeasonRow): Record<string, number | null> {
+function timelineMetrics(row: PlayerCareerSeasonRow, failClosedGoalieSaves = false): Record<string, number | null> {
   return {
     games_played: row.games_played, attendance: row.attendance_pct, goals: row.goals, assists: row.assists, points: row.points,
     gpg: row.goals_per_game, goals_per_game: row.goals_per_game, ppg: row.points_per_game, points_per_game: row.points_per_game,
-    wins: row.wins, losses: row.losses, ties: row.ties, saves: row.saves, goals_against: row.goals_against,
-    save_percentage: row.save_percentage, goals_against_average: row.goals_against_average, shutouts: row.shutouts,
+    wins: row.wins, losses: row.losses, ties: row.ties, saves: failClosedGoalieSaves ? null : row.saves, goals_against: row.goals_against,
+    save_percentage: failClosedGoalieSaves ? null : row.save_percentage, goals_against_average: row.goals_against_average, shutouts: row.shutouts,
   };
 }
 
@@ -233,63 +291,117 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
     const selectedSeasonId = isCareer ? null : season?.id ?? null;
     const selectedSeasonName = isCareer ? 'Career Stats' : season?.name ?? null;
     const aggregateOnly = isCareer || isAggregateOnlySeasonView(selectedSeasonId ?? undefined, selectedSeasonName);
-    const isGoalie = player.is_goalie === true || ['g', 'goalie', 'goaltender'].includes(player.position?.trim().toLowerCase() ?? '');
+    const currentIsGoalie = player.is_goalie === true || isGoaliePosition(player.position);
     if (deps.assertHealthy) {
       await atDependencyStage('health', () => deps.assertHealthy!(league.id, profileId, selectedSeasonId));
     }
 
-    const timelineWithBaseline = await atDependencyStage(
+    const hasSelectedCanonicalScope = !aggregateOnly && selectedSeasonId !== null;
+    const publicSeasonPlayerRead = settleDependency(hasSelectedCanonicalScope
+      ? atDependencyStage('stats', () => deps.getPublicSeasonPlayer(league.id, selectedSeasonId, profileId))
+      : Promise.resolve(null));
+    const speculativeTimelineRead = settleDependency(atDependencyStage(
       'timeline',
-      () => deps.getTimeline(league.id, profileId, isGoalie, true),
-    );
-    const [stats, publicSeasonPlayer, badges, achievements, articles, games, matchups] = await Promise.all([
-      atDependencyStage('stats', () => deps.getStats(profileId, selectedSeasonId, league.id, isGoalie)),
-      !aggregateOnly && selectedSeasonId
-        ? atDependencyStage('stats', () => deps.getPublicSeasonPlayer(league.id, selectedSeasonId, profileId))
-        : Promise.resolve(null),
-      atDependencyStage('badges', () => deps.getBadges(profileId)),
-      atDependencyStage('achievements', () => deps.getImportedAchievements(profileId, league.id)),
-      atDependencyStage('articles', () => deps.getArticles(profileId)),
-      !aggregateOnly && selectedSeasonId
-        ? atDependencyStage('games', () => deps.getGames(profileId, selectedSeasonId))
-        : Promise.resolve([]),
-      !aggregateOnly && selectedSeasonId
-        ? atDependencyStage('matchups', () => deps.getMatchups(profileId, selectedSeasonId, isGoalie))
-        : Promise.resolve([]),
-    ]);
+      () => deps.getTimeline(league.id, profileId, currentIsGoalie, true),
+    ));
+    const speculativeStatsRead = settleDependency(atDependencyStage(
+      'stats',
+      () => deps.getStats(profileId, selectedSeasonId, league.id, currentIsGoalie),
+    ));
+    const speculativeMatchupsRead = settleDependency(hasSelectedCanonicalScope
+      ? atDependencyStage('matchups', () => deps.getMatchups(profileId, selectedSeasonId, currentIsGoalie))
+      : Promise.resolve([]));
+    const badgesRead = settleDependency(atDependencyStage('badges', () => deps.getBadges(profileId)));
+    const achievementsRead = settleDependency(atDependencyStage(
+      'achievements',
+      () => deps.getImportedAchievements(profileId, league.id),
+    ));
+    const articlesRead = settleDependency(atDependencyStage('articles', () => deps.getArticles(profileId)));
+    const gamesRead = settleDependency(hasSelectedCanonicalScope
+      ? atDependencyStage('games', () => deps.getGames(profileId, selectedSeasonId))
+      : Promise.resolve([]));
+
+    const publicSeasonPlayer = await unwrapDependency(publicSeasonPlayerRead);
+    const isGoalie = publicSeasonPlayer ? publicSeasonPlayer.goalie !== null : currentIsGoalie;
+    const selectedRoleDiffers = isGoalie !== currentIsGoalie;
+    const timelineRead = selectedRoleDiffers
+      ? settleDependency(atDependencyStage(
+          'timeline',
+          () => deps.getTimeline(league.id, profileId, isGoalie, true),
+        ))
+      : speculativeTimelineRead;
+    const statsRead = selectedRoleDiffers
+      ? settleDependency(atDependencyStage(
+          'stats',
+          () => deps.getStats(profileId, selectedSeasonId, league.id, isGoalie),
+        ))
+      : speculativeStatsRead;
+    const matchupsRead = selectedRoleDiffers && hasSelectedCanonicalScope
+      ? settleDependency(atDependencyStage(
+          'matchups',
+          () => deps.getMatchups(profileId, selectedSeasonId, isGoalie),
+        ))
+      : speculativeMatchupsRead;
+
+    const timelineWithBaseline = await unwrapDependency(timelineRead);
     const leagueSeasonIds = new Set(seasons.map((item) => item.id));
     const visibleTimeline = filterVisiblePlayerCareerTimelineRows(timelineWithBaseline).filter((row) => leagueSeasonIds.has(row.season_id));
     const totalsTimeline = filterVisiblePlayerCareerTimelineRows(timelineWithBaseline, { includeHistoricalBaseline: true });
+    const hotFactsRead = settleDependency(atDependencyStage('hot_facts', () => deps.generateHotFacts({
+      playerName: player.profile?.full_name?.trim() || 'Unknown Player',
+      seasons: visibleTimeline,
+      careerTotalsSeasons: totalsTimeline,
+      isGoalie,
+      distinctSeasonComparisons: true,
+    })));
+    const [stats, badges, achievements, articles, games, matchups, hotFacts] = await Promise.all([
+      unwrapDependency(statsRead),
+      unwrapDependency(badgesRead),
+      unwrapDependency(achievementsRead),
+      unwrapDependency(articlesRead),
+      unwrapDependency(gamesRead),
+      unwrapDependency(matchupsRead),
+      unwrapDependency(hotFactsRead),
+    ]);
     const safeBadges = badges.filter((badge) => badge.league_id === league.id && leagueSeasonIds.has(badge.season_id));
     const safeArticles = articles.filter((article) => article.league_id === league.id);
     const achievementSummary = summarizePlayerCareerAchievements({ importedChampionships: achievements.championships, nativeChampionships: countChampionshipBadges(safeBadges) });
-    const hotFacts = await atDependencyStage('hot_facts', () => deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie, distinctSeasonComparisons: true }));
     const ordinaryRatio = isCareer || !isImportedAggregateSeasonId(selectedSeasonId ?? undefined);
     const publicGamesPlayed = !aggregateOnly && selectedSeasonId
       ? (isGoalie ? publicSeasonPlayer?.goalie?.gamesPlayed : publicSeasonPlayer?.metrics.gamesPlayed)
         ?? { value: null, state: 'unknown' as const, sources: [] }
       : null;
     const selectedMetrics = metrics(stats ?? (publicSeasonPlayer ? {} : null), isGoalie, ordinaryRatio ? 'ordinary-ratio' : 'percent');
-    if (publicGamesPlayed && selectedMetrics) {
-      selectedMetrics.games_played = ['verified', 'recorded', 'reported'].includes(publicGamesPlayed.state)
-        ? publicGamesPlayed.value
-        : null;
+    const selectedMetricProvenance: Record<string, Pick<PublicStatMetric, 'state' | 'sources'>> = {};
+    const canonicalGoalieSelection = isGoalie && !aggregateOnly && selectedSeasonId !== null;
+    if (canonicalGoalieSelection) {
+      const canonicalGoalie = canonicalGoalieMetricProjection(publicSeasonPlayer?.goalie);
+      if (selectedMetrics) Object.assign(selectedMetrics, canonicalGoalie.values);
+      Object.assign(selectedMetricProvenance, canonicalGoalie.provenance);
+    } else if (publicGamesPlayed) {
+      if (selectedMetrics) {
+        selectedMetrics.games_played = ['verified', 'recorded', 'reported'].includes(publicGamesPlayed.state)
+          ? publicGamesPlayed.value
+          : null;
+      }
+      selectedMetricProvenance.games_played = { state: publicGamesPlayed.state, sources: publicGamesPlayed.sources };
     }
+    const failClosedGoalieSaves = isGoalie && !aggregateOnly && selectedSeasonId !== null;
 
     const data = {
       playerId: profileId, rosterId: player.id, fullName: player.profile?.full_name?.trim() || 'Unknown Player',
-      photoUrl: absolutePublicUrl(resolvePlayerPhotoUrl(player.profile)), position: player.position, leadershipRole: player.leadership_role,
+      photoUrl: absolutePublicUrl(resolvePlayerPhotoUrl(player.profile)),
+      position: selectedSeasonPosition(player.position, publicSeasonPlayer, isGoalie),
+      leadershipRole: player.leadership_role,
       jerseyNumber: player.jersey_number, isGoalie,
       team: player.team ? { id: player.team.id, name: player.team.name, slug: player.team.slug, logoUrl: absolutePublicUrl(player.team.logo_url), primaryColor: player.team.primary_color ?? null } : null,
       seasons: seasons.map((item) => ({ id: item.id, name: item.name, start_date: item.start_date, status: item.status })),
       selectedSeasonId, selectedSeasonName, isCareer,
       metrics: selectedMetrics,
-      metricProvenance: publicGamesPlayed ? {
-        games_played: { state: publicGamesPlayed.state, sources: publicGamesPlayed.sources },
-      } : {},
-      careerRows: visibleTimeline.map((row) => ({ seasonId: row.season_id, seasonName: row.season_name, teamId: row.team_id, teamName: row.team_name, metrics: timelineMetrics(row) })),
+      metricProvenance: selectedMetricProvenance,
+      careerRows: visibleTimeline.map((row) => ({ seasonId: row.season_id, seasonName: row.season_name, teamId: row.team_id, teamName: row.team_name, metrics: timelineMetrics(row, failClosedGoalieSaves) })),
       badges: safeBadges.map((badge) => ({ id: badge.id, type: badge.badge_type, seasonId: badge.season_id, seasonName: badge.season?.name ?? null, teamName: badge.team?.name ?? null, createdAt: badge.created_at })),
-      games: games.map((game) => ({ id: game.game_id, date: game.date, opponent: game.opponent_name ?? game.opponent ?? null, result: game.result, score: game.score ?? null, metrics: { goals: numberOrNull(game.goals), assists: numberOrNull(game.assists), points: numberOrNull(game.points), penalty_minutes: numberOrNull(game.penalty_minutes ?? game.pim), plus_minus: numberOrNull(game.plus_minus), saves: numberOrNull(game.saves), goals_against: numberOrNull(game.goals_against), save_percentage: isGoalie && numberOrNull(game.save_percentage) !== null ? (game.save_percentage as number) * 100 : null } })),
+      games: games.map((game) => ({ id: game.game_id, date: game.date, opponent: game.opponent_name ?? game.opponent ?? null, result: game.result, score: game.score ?? null, metrics: { goals: numberOrNull(game.goals), assists: numberOrNull(game.assists), points: numberOrNull(game.points), penalty_minutes: numberOrNull(game.penalty_minutes ?? game.pim), plus_minus: numberOrNull(game.plus_minus), saves: failClosedGoalieSaves ? null : numberOrNull(game.saves), goals_against: numberOrNull(game.goals_against), save_percentage: !failClosedGoalieSaves && isGoalie && numberOrNull(game.save_percentage) !== null ? (game.save_percentage as number) * 100 : null } })),
       matchups, articles: safeArticles.map((article) => ({ id: article.id, slug: article.slug, title: article.title, excerpt: article.excerpt, publishedAt: article.published_at, imageUrl: absolutePublicUrl(article.image_url), type: article.type ?? null })),
       heroAwards: buildHeroAwards(safeBadges, achievementSummary.championships), aggregateOnly, hotFacts,
     };
