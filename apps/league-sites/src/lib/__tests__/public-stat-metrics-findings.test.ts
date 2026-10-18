@@ -33,7 +33,7 @@ function fixture(overrides: Partial<PublicStatMetricRows> = {}): PublicStatMetri
       { id: PLAYER, full_name: 'Player', avatar_url: null, photo_url: null },
       { id: GOALIE, full_name: 'Goalie', avatar_url: null, photo_url: null },
     ],
-    rosters: [], checkins: [], acceptedSubs: [], playerStats: [], goalieStats: [], goalieAppearances: [],
+    rosters: [], checkins: [], availabilities: [], acceptedSubs: [], playerStats: [], goalieStats: [], goalieAppearances: [],
     ...overrides,
   };
 }
@@ -68,9 +68,9 @@ describe('review findings: canonical season aggregation', () => {
     const goalie = aggregatePublicSeasonStats(rows, { leagueId: LEAGUE, seasonId: SEASON }).players[0];
     expect(goalie.metrics.gamesPlayed.state).toBe('conflicted');
     expect(goalie.goalie?.gamesPlayed.state).toBe('conflicted');
-    expect(goalie.goalie?.wins.value).toBe(1);
-    expect(goalie.goalie?.losses.value).toBe(0);
-    expect(goalie.goalie?.shutouts.value).toBeNull();
+    expect(goalie.goalie?.wins).toEqual(expect.objectContaining({ value: null, state: 'conflicted' }));
+    expect(goalie.goalie?.losses).toEqual(expect.objectContaining({ value: null, state: 'conflicted' }));
+    expect(goalie.goalie?.shutouts).toEqual(expect.objectContaining({ value: null, state: 'conflicted' }));
 
     rows.checkins = [];
     rows.goalieStats[0] = { ...rows.goalieStats[0], game_result: 'SOL', shutout: false };
@@ -93,7 +93,7 @@ describe('review findings: canonical season aggregation', () => {
       league_id: LEAGUE, season_id: SEASON, game_result: 'LOSS', saves: 0, shots_against: 0,
       goals_against: 0, shutout: false, scorekeeping_provenance: null,
     }];
-    expect(aggregatePublicSeasonStats(assigned, { leagueId: LEAGUE, seasonId: SEASON }).players[0].goalie?.saves.state).toBe('recorded');
+    expect(aggregatePublicSeasonStats(assigned, { leagueId: LEAGUE, seasonId: SEASON }).players[0].goalie?.saves.state).toBe('unknown');
   });
 
   it('excludes ineligible/non-regular rosters and preserves a valid games-played override', () => {
@@ -175,9 +175,7 @@ describe('review findings: privileged loader and route', () => {
     expect(selections.team_rosters).toEqual(expect.stringContaining('games_played_override'));
     expect(selections.team_rosters).toEqual(expect.stringContaining('player_type'));
     expect(selections.team_rosters).toEqual(expect.stringContaining('status'));
-    expect(filters).toEqual(expect.arrayContaining([
-      ['player_id', PLAYER],
-      ['invited_player_id', PLAYER],
-    ]));
+    expect(filters).toContainEqual(['player_id', PLAYER]);
+    expect(filters).not.toContainEqual(['invited_player_id', PLAYER]);
   });
 });

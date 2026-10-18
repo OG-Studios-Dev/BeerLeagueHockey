@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getDivisions, getLeagueBySlug, hasPlatformSubscription } from '@/lib/data';
+import { getLeagueDateKey } from '@/lib/league-timezone';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 
 export const PUBLIC_STAT_METRICS_SCHEMA_VERSION = 2 as const;
@@ -66,10 +67,13 @@ export type PublicMetricProfileRow = {
 export type PublicMetricRosterRow = {
   id: string; player_id: string; team_id: string; league_id: string; season_id: string;
   start_date: string | null; end_date: string | null; is_goalie: boolean | null; position: string | null;
-  status?: string; player_type?: string; games_played_override?: number | null;
+  status?: string; player_type?: string; historical_retained?: boolean | null; games_played_override?: number | null;
 };
 export type PublicMetricCheckinRow = {
   id: string; game_id: string; player_id: string; team_id: string; status: string;
+};
+export type PublicMetricAvailabilityRow = {
+  id: string; game_id: string; player_id: string; team_id: string; season_id: string; status: string;
 };
 export type PublicMetricAcceptedSubRow = {
   id: string; game_id: string; invited_player_id: string; team_id: string; status: string;
@@ -94,6 +98,7 @@ export type PublicStatMetricRows = {
   profiles: PublicMetricProfileRow[];
   rosters: PublicMetricRosterRow[];
   checkins: PublicMetricCheckinRow[];
+  availabilities: PublicMetricAvailabilityRow[];
   acceptedSubs: PublicMetricAcceptedSubRow[];
   playerStats: PublicMetricPlayerStatRow[];
   goalieStats: PublicMetricGoalieStatRow[];
@@ -103,13 +108,24 @@ export type PublicStatMetricRows = {
 export type MetricScope = { leagueId: string; seasonId: string; divisionId?: string | null; teamId?: string | null; playerId?: string };
 type Appearance = {
   playerId: string; gameId: string; teamIds: Set<string>;
-  confirmed: boolean; out: boolean; skater: boolean; goalie: boolean; goalieAssigned: boolean; roster: boolean; acceptedSub: boolean;
+  confirmed: boolean; out: boolean; skater: boolean; goalie: boolean; goalieAssigned: boolean;
+  roster: boolean; goalieRoster: boolean; acceptedSub: boolean;
+};
+type GoalieResolution = {
+  gameId: string;
+  teamId: string;
+  goalsAgainst: number | null;
+  goalsAgainstState: PublicMetricState;
+  state: PublicMetricState;
+  sources: PublicMetricSource[];
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_SOURCE_ROWS = 50_000;
+const MAX_DERIVED_APPEARANCE_WORK = 50_000;
+const MAX_APPEARANCES = 50_000;
 const DEFAULT_PAGE_SIZE = 1000;
 const SUCCESS_CACHE = 'public, s-maxage=60, stale-while-revalidate=300';
 const ERROR_CACHE = 'no-store';
@@ -142,6 +158,12 @@ function known(value: number, state: PublicMetricState, metricSources: PublicMet
   return { value: finite(value, 'metric value'), state, sources: sources(metricSources) };
 }
 
+function appendToIndex<Key, Value>(index: Map<Key, Value[]>, key: Key, value: Value): void {
+  const bucket = index.get(key);
+  if (bucket) bucket.push(value);
+  else index.set(key, [value]);
+}
+
 function combineState(states: PublicMetricState[]): PublicMetricState {
   return states.reduce((weakest, state) => STATE_ORDER.indexOf(state) > STATE_ORDER.indexOf(weakest) ? state : weakest, 'verified');
 }
@@ -151,13 +173,19 @@ function isGoalieRole(row: Pick<PublicMetricRosterRow, 'is_goalie' | 'position'>
   return row.is_goalie === true || position === 'g' || position === 'goalie';
 }
 
-function rosterEligible(row: PublicMetricRosterRow, game: PublicMetricGameRow): boolean {
+function rosterWithinWindow(row: PublicMetricRosterRow, game: PublicMetricGameRow): boolean {
   if (row.team_id !== game.home_team_id && row.team_id !== game.away_team_id) return false;
-  if (row.status !== undefined && row.status !== 'active') return false;
-  if (row.player_type !== undefined && row.player_type !== 'regular') return false;
-  const gameDate = game.scheduled_at.slice(0, 10);
-  return (!row.start_date || row.start_date.slice(0, 10) <= gameDate)
+  if (row.status !== 'active' && row.historical_retained !== true) return false;
+  if (!row.start_date) return false;
+  const gameDate = getLeagueDateKey(game.scheduled_at);
+  if (!gameDate) return false;
+  return row.start_date.slice(0, 10) <= gameDate
     && (!row.end_date || row.end_date.slice(0, 10) >= gameDate);
+}
+
+function rosterEligible(row: PublicMetricRosterRow, game: PublicMetricGameRow): boolean {
+  return rosterWithinWindow(row, game)
+    && row.player_type === 'regular';
 }
 
 function appearanceState(appearance: Appearance): PublicMetricState | null {
@@ -165,7 +193,7 @@ function appearanceState(appearance: Appearance): PublicMetricState | null {
   if (appearance.out && (appearance.confirmed || direct)) return 'conflicted';
   if (direct) return 'recorded';
   if (appearance.confirmed) return 'reported';
-  if (!appearance.out && (appearance.acceptedSub || appearance.roster)) return 'estimated';
+  if (!appearance.out && (appearance.roster || appearance.acceptedSub)) return 'reported';
   return null;
 }
 
@@ -183,9 +211,13 @@ function appearanceSources(appearance: Appearance): PublicMetricSource[] {
 function participationMetric(appearances: Appearance[]): PublicStatMetric {
   const classified = appearances.map((appearance) => ({ appearance, state: appearanceState(appearance) }))
     .filter((entry): entry is { appearance: Appearance; state: PublicMetricState } => entry.state !== null);
-  if (classified.length === 0) return unknown();
+  const metricSources = sources(appearances.flatMap(appearanceSources));
+  if (classified.length === 0) {
+    return appearances.some((appearance) => appearance.out)
+      ? known(0, 'reported', metricSources)
+      : unknown(metricSources);
+  }
   const state = combineState(classified.map((entry) => entry.state));
-  const metricSources = sources(classified.flatMap((entry) => appearanceSources(entry.appearance)));
   if (state === 'conflicted') {
     const confirmed = classified.filter(({ appearance }) => appearance.confirmed).length;
     const recorded = classified.filter(({ appearance }) => appearance.skater || appearance.goalie).length;
@@ -207,11 +239,15 @@ function participationMetric(appearances: Appearance[]): PublicStatMetric {
 function rosterOverrideMetric(rows: PublicMetricRosterRow[]): PublicStatMetric | null {
   const byTeam = new Map<string, Set<number>>();
   for (const row of rows) {
-    if (row.status !== undefined && row.status !== 'active') continue;
-    if (row.player_type !== undefined && row.player_type !== 'regular') continue;
+    if (row.status !== 'active' || row.player_type !== 'regular') continue;
     if (row.games_played_override === null || row.games_played_override === undefined) continue;
     const value = finite(row.games_played_override, 'games played override');
-    byTeam.set(row.team_id, new Set([...(byTeam.get(row.team_id) ?? []), value]));
+    let values = byTeam.get(row.team_id);
+    if (!values) {
+      values = new Set<number>();
+      byTeam.set(row.team_id, values);
+    }
+    values.add(value);
   }
   if (byTeam.size === 0) return null;
   if ([...byTeam.values()].some((values) => values.size !== 1)) {
@@ -223,7 +259,8 @@ function rosterOverrideMetric(rows: PublicMetricRosterRow[]): PublicStatMetric |
 function validateInputRows(rows: PublicStatMetricRows, scope: MetricScope) {
   const collections: Array<[string, Array<{ id: string }>]> = [
     ['game', rows.games], ['team', rows.teams], ['profile', rows.profiles], ['roster', rows.rosters],
-    ['checkin', rows.checkins], ['accepted sub', rows.acceptedSubs], ['player stat', rows.playerStats], ['goalie stat', rows.goalieStats],
+    ['checkin', rows.checkins], ['availability', rows.availabilities], ['accepted sub', rows.acceptedSubs],
+    ['player stat', rows.playerStats], ['goalie stat', rows.goalieStats],
   ];
   for (const [label, collection] of collections) {
     if (collection.length > MAX_SOURCE_ROWS) throw new PublicMetricLimitError(`${label} row limit exceeded`);
@@ -262,73 +299,298 @@ export function aggregatePublicSeasonStats(rows: PublicStatMetricRows, scope: Me
     .filter((game) => permittedTeams.has(game.home_team_id) || permittedTeams.has(game.away_team_id))
     .map((game) => [game.id, game]));
   const teamAllowed = (teamId: string) => permittedTeams.has(teamId) && (!scope.teamId || teamId === scope.teamId);
+  const gameTeamKey = (gameId: string, teamId: string) => `${gameId}\u0000${teamId}`;
+  const gameTeamPlayerKey = (gameId: string, teamId: string, playerId: string) =>
+    `${gameId}\u0000${teamId}\u0000${playerId}`;
+  const gamesByTeam = new Map<string, PublicMetricGameRow[]>();
+  for (const game of games.values()) {
+    for (const teamId of new Set([game.home_team_id, game.away_team_id])) {
+      appendToIndex(gamesByTeam, teamId, game);
+    }
+  }
+  const completedEvidenceGame = (gameId: string, teamId: string, label: string) => {
+    const game = games.get(gameId);
+    if (!game) return null;
+    if (teamId !== game.home_team_id && teamId !== game.away_team_id) {
+      throw new PublicMetricDataError(`${label} team does not participate in referenced game`);
+    }
+    return game;
+  };
   const appearanceMap = new Map<string, Appearance>();
+  const appearanceKey = (playerId: string, gameId: string, teamId: string) =>
+    `${playerId}\u0000${gameId}\u0000${teamId}`;
   const getAppearance = (playerId: string, gameId: string, teamId: string) => {
-    const key = `${playerId}\u0000${gameId}`;
+    const key = appearanceKey(playerId, gameId, teamId);
     let appearance = appearanceMap.get(key);
     if (!appearance) {
-      appearance = { playerId, gameId, teamIds: new Set(), confirmed: false, out: false, skater: false, goalie: false, goalieAssigned: false, roster: false, acceptedSub: false };
+      if (appearanceMap.size >= MAX_APPEARANCES) throw new PublicMetricLimitError('derived appearance limit exceeded');
+      appearance = {
+        playerId,
+        gameId,
+        teamIds: new Set(),
+        confirmed: false,
+        out: false,
+        skater: false,
+        goalie: false,
+        goalieAssigned: false,
+        roster: false,
+        goalieRoster: false,
+        acceptedSub: false,
+      };
       appearanceMap.set(key, appearance);
     }
     appearance.teamIds.add(teamId);
     return appearance;
   };
 
+  const rostersByPlayer = new Map<string, PublicMetricRosterRow[]>();
+  const goalieRostersByGameTeam = new Map<string, PublicMetricRosterRow[]>();
+  let derivedAppearanceWork = 0;
   for (const roster of rows.rosters) {
     if (roster.league_id !== scope.leagueId || roster.season_id !== scope.seasonId || !teamAllowed(roster.team_id)) continue;
-    for (const game of games.values()) {
+    if ((roster.status === 'active' || roster.historical_retained === true) && roster.player_type === 'regular') {
+      appendToIndex(rostersByPlayer, roster.player_id, roster);
+    }
+    const teamGames = gamesByTeam.get(roster.team_id) ?? [];
+    if (derivedAppearanceWork > MAX_DERIVED_APPEARANCE_WORK - teamGames.length) {
+      throw new PublicMetricLimitError('derived appearance work limit exceeded');
+    }
+    derivedAppearanceWork += teamGames.length;
+    for (const game of teamGames) {
+      if (!rosterWithinWindow(roster, game)) continue;
+      const goalieRoster = isGoalieRole(roster);
+      if (goalieRoster) appendToIndex(goalieRostersByGameTeam, gameTeamKey(game.id, roster.team_id), roster);
       if (!rosterEligible(roster, game)) continue;
       const appearance = getAppearance(roster.player_id, game.id, roster.team_id);
       appearance.roster = true;
+      appearance.goalieRoster ||= goalieRoster;
     }
   }
   for (const checkin of rows.checkins) {
-    if (!games.has(checkin.game_id) || !teamAllowed(checkin.team_id)) continue;
+    if (!completedEvidenceGame(checkin.game_id, checkin.team_id, 'checkin') || !teamAllowed(checkin.team_id)) continue;
     const appearance = getAppearance(checkin.player_id, checkin.game_id, checkin.team_id);
     appearance.confirmed ||= checkin.status === 'confirmed';
     appearance.out ||= checkin.status === 'out';
   }
+  for (const availability of rows.availabilities) {
+    if (availability.status !== 'out' || availability.season_id !== scope.seasonId
+      || !completedEvidenceGame(availability.game_id, availability.team_id, 'availability')
+      || !teamAllowed(availability.team_id)) continue;
+    getAppearance(availability.player_id, availability.game_id, availability.team_id).out = true;
+  }
   for (const sub of rows.acceptedSubs) {
-    if (sub.status !== 'accepted' || !games.has(sub.game_id) || !teamAllowed(sub.team_id)) continue;
+    if (sub.status !== 'accepted'
+      || !completedEvidenceGame(sub.game_id, sub.team_id, 'accepted substitute')
+      || !teamAllowed(sub.team_id)) continue;
     getAppearance(sub.invited_player_id, sub.game_id, sub.team_id).acceptedSub = true;
   }
-  const playerStats = rows.playerStats.filter((row) => games.has(row.game_id) && teamAllowed(row.team_id));
-  for (const stat of playerStats) getAppearance(stat.player_id, stat.game_id, stat.team_id).skater = true;
-  const goalieStats = rows.goalieStats.filter((row) => games.has(row.game_id) && teamAllowed(row.team_id));
-  for (const stat of goalieStats) getAppearance(stat.player_id, stat.game_id, stat.team_id).goalie = true;
-  const goalieAssignments = rows.goalieAppearances.filter((row) => games.has(row.game_id) && teamAllowed(row.team_id));
-  for (const assignment of goalieAssignments) {
-    const game = games.get(assignment.game_id)!;
+
+  const playerStatsByPlayer = new Map<string, PublicMetricPlayerStatRow[]>();
+  const playerStatsByAppearance = new Map<string, PublicMetricPlayerStatRow[]>();
+  for (const stat of rows.playerStats) {
+    if (!completedEvidenceGame(stat.game_id, stat.team_id, 'player stat') || !teamAllowed(stat.team_id)) continue;
+    appendToIndex(playerStatsByPlayer, stat.player_id, stat);
+    appendToIndex(playerStatsByAppearance, gameTeamPlayerKey(stat.game_id, stat.team_id, stat.player_id), stat);
+  }
+  for (const statRows of playerStatsByAppearance.values()) {
+    const stat = statRows[0];
+    getAppearance(stat.player_id, stat.game_id, stat.team_id).skater = true;
+  }
+
+  const goalieStatsByPlayer = new Map<string, PublicMetricGoalieStatRow[]>();
+  const goalieStatsByGameTeam = new Map<string, PublicMetricGoalieStatRow[]>();
+  const goalieStatsByGameTeamPlayer = new Map<string, PublicMetricGoalieStatRow[]>();
+  for (const stat of rows.goalieStats) {
+    if (!completedEvidenceGame(stat.game_id, stat.team_id, 'goalie stat') || !teamAllowed(stat.team_id)) continue;
+    appendToIndex(goalieStatsByPlayer, stat.player_id, stat);
+    appendToIndex(goalieStatsByGameTeam, gameTeamKey(stat.game_id, stat.team_id), stat);
+    appendToIndex(goalieStatsByGameTeamPlayer, gameTeamPlayerKey(stat.game_id, stat.team_id, stat.player_id), stat);
+    getAppearance(stat.player_id, stat.game_id, stat.team_id).goalie = true;
+  }
+
+  const goalieAssignmentsByPlayer = new Map<string, PublicMetricGoalieAppearanceRow[]>();
+  const goalieAssignmentsByGameTeam = new Map<string, PublicMetricGoalieAppearanceRow[]>();
+  for (const assignment of rows.goalieAppearances) {
+    const game = completedEvidenceGame(assignment.game_id, assignment.team_id, 'goalie assignment');
+    if (!game || !teamAllowed(assignment.team_id)) continue;
     const expectedTeam = assignment.team_type === 'home' ? game.home_team_id : game.away_team_id;
     if (assignment.team_id !== expectedTeam) throw new PublicMetricDataError('goalie assignment team conflict');
+    appendToIndex(goalieAssignmentsByPlayer, assignment.player_id, assignment);
+    appendToIndex(goalieAssignmentsByGameTeam, gameTeamKey(assignment.game_id, assignment.team_id), assignment);
     getAppearance(assignment.player_id, assignment.game_id, assignment.team_id).goalieAssigned = true;
   }
 
-  const rostersByPlayer = new Map<string, PublicMetricRosterRow[]>();
-  for (const roster of rows.rosters.filter((row) => teamAllowed(row.team_id)
-    && (row.status === undefined || row.status === 'active')
-    && (row.player_type === undefined || row.player_type === 'regular'))) {
-    rostersByPlayer.set(roster.player_id, [...(rostersByPlayer.get(roster.player_id) ?? []), roster]);
+  const goalieResolutionsByPlayer = new Map<string, GoalieResolution[]>();
+  const goalieIncompleteSourcesByPlayer = new Map<string, Set<PublicMetricSource>>();
+  const markGoalieIncomplete = (playerId: string, metricSources: PublicMetricSource[]) => {
+    const current = goalieIncompleteSourcesByPlayer.get(playerId) ?? new Set<PublicMetricSource>();
+    for (const source of metricSources) current.add(source);
+    goalieIncompleteSourcesByPlayer.set(playerId, current);
+  };
+  const addGoalieResolution = (playerId: string, resolution: GoalieResolution) => {
+    appendToIndex(goalieResolutionsByPlayer, playerId, resolution);
+  };
+  for (const game of games.values()) {
+    for (const teamId of new Set([game.home_team_id, game.away_team_id])) {
+      if (!teamAllowed(teamId)) continue;
+      const indexedGameTeamKey = gameTeamKey(game.id, teamId);
+      const assignments = goalieAssignmentsByGameTeam.get(indexedGameTeamKey) ?? [];
+      const directRows = goalieStatsByGameTeam.get(indexedGameTeamKey) ?? [];
+      if (directRows.length > 0) {
+        const directPlayerIds = [...new Set(directRows.map((row) => row.player_id))];
+        const assignmentPlayerIds = [...new Set(assignments.map((row) => row.player_id))];
+        const directPlayerIdSet = new Set(directPlayerIds);
+        const assignmentPlayerIdSet = new Set(assignmentPlayerIds);
+        const conflictingAssignment = assignmentPlayerIds.length > 0
+          && (assignmentPlayerIds.length !== directPlayerIds.length
+            || assignmentPlayerIds.some((playerId) => !directPlayerIdSet.has(playerId))
+            || directPlayerIds.some((playerId) => !assignmentPlayerIdSet.has(playerId)));
+        for (const playerId of directPlayerIds) {
+          const row = goalieStatsByGameTeamPlayer.get(gameTeamPlayerKey(game.id, teamId, playerId))![0];
+          const appearance = appearanceMap.get(appearanceKey(playerId, game.id, teamId));
+          const matchingAssignment = assignmentPlayerIds.length === 1 && assignmentPlayerIds[0] === playerId;
+          const captureVerified = row.scorekeeping_provenance === 'event_derived'
+            && game.goalie_capture_status === 'complete'
+            && matchingAssignment
+            && !conflictingAssignment;
+          const state: PublicMetricState = appearance?.out || conflictingAssignment
+            ? 'conflicted'
+            : captureVerified ? 'verified' : 'recorded';
+          const directGoalsAgainst = row.goals_against ?? (directPlayerIds.length === 1 && !conflictingAssignment
+            ? teamId === game.home_team_id ? game.away_score : game.home_score
+            : null);
+          const hasDirectGoalsAgainst = row.goals_against !== null && row.goals_against !== undefined;
+          addGoalieResolution(playerId, {
+            gameId: game.id,
+            teamId,
+            goalsAgainst: directGoalsAgainst,
+            goalsAgainstState: state === 'conflicted'
+              ? 'conflicted'
+              : hasDirectGoalsAgainst ? state : directGoalsAgainst === null ? 'unknown' : 'reported',
+            state,
+            sources: sources([
+              'goalie_stats',
+              ...(matchingAssignment || conflictingAssignment ? ['goalie_assignment' as const] : []),
+              ...(captureVerified ? ['capture_confirmation' as const] : []),
+              ...(appearance?.confirmed || appearance?.out ? ['attendance' as const] : []),
+            ]),
+          });
+        }
+        if (conflictingAssignment) {
+          for (const playerId of assignmentPlayerIds) {
+            if (directPlayerIdSet.has(playerId)) continue;
+            const appearance = appearanceMap.get(appearanceKey(playerId, game.id, teamId));
+            addGoalieResolution(playerId, {
+              gameId: game.id,
+              teamId,
+              goalsAgainst: null,
+              goalsAgainstState: 'conflicted',
+              state: 'conflicted',
+              sources: sources([
+                'goalie_stats',
+                'goalie_assignment',
+                ...(appearance?.confirmed || appearance?.out ? ['attendance' as const] : []),
+              ]),
+            });
+          }
+        }
+        continue;
+      }
+      const goalieRosterRows = goalieRostersByGameTeam.get(indexedGameTeamKey) ?? [];
+      const regularGoalieIdSet = new Set<string>();
+      const evidencedSubGoalieIdSet = new Set<string>();
+      for (const row of goalieRosterRows) {
+        if (row.player_type === 'regular') {
+          regularGoalieIdSet.add(row.player_id);
+          continue;
+        }
+        if (row.player_type !== 'sub' && row.player_type !== 'part_time') continue;
+        const appearance = appearanceMap.get(appearanceKey(row.player_id, game.id, teamId));
+        if (appearance?.acceptedSub || appearance?.confirmed) evidencedSubGoalieIdSet.add(row.player_id);
+      }
+      const regularGoalieIds = [...regularGoalieIdSet];
+      const evidencedSubGoalieIds = [...evidencedSubGoalieIdSet];
+      const candidateGoalieIds = [...new Set([...regularGoalieIds, ...evidencedSubGoalieIds])];
+      const candidateSources = (playerId: string): PublicMetricSource[] => {
+        const appearance = appearanceMap.get(appearanceKey(playerId, game.id, teamId));
+        return regularGoalieIdSet.has(playerId)
+          ? sources(['roster_window', ...(appearance?.confirmed || appearance?.out ? ['attendance' as const] : [])])
+          : sources([
+            ...(appearance?.confirmed || appearance?.out ? ['attendance' as const] : []),
+            ...(appearance?.acceptedSub ? ['accepted_sub' as const] : []),
+          ]);
+      };
+      if (assignments.length === 1) {
+        const assignment = assignments[0];
+        const appearance = appearanceMap.get(appearanceKey(assignment.player_id, game.id, teamId));
+        const goalsAgainst = teamId === game.home_team_id ? game.away_score : game.home_score;
+        addGoalieResolution(assignment.player_id, {
+          gameId: game.id,
+          teamId,
+          goalsAgainst,
+          goalsAgainstState: appearance?.out ? 'conflicted' : goalsAgainst === null ? 'unknown' : 'reported',
+          state: appearance?.out ? 'conflicted' : 'recorded',
+          sources: sources(['goalie_assignment', ...(appearance?.confirmed || appearance?.out ? ['attendance' as const] : [])]),
+        });
+        for (const playerId of candidateGoalieIds) {
+          if (playerId !== assignment.player_id) {
+            markGoalieIncomplete(playerId, sources([...candidateSources(playerId), 'goalie_assignment']));
+          }
+        }
+        continue;
+      }
+      if (assignments.length > 1) {
+        for (const assignment of assignments) markGoalieIncomplete(assignment.player_id, ['goalie_assignment']);
+        for (const playerId of candidateGoalieIds) {
+          markGoalieIncomplete(playerId, sources([...candidateSources(playerId), 'goalie_assignment']));
+        }
+        continue;
+      }
+      const eligibleGoalieIds = candidateGoalieIds
+        .filter((playerId) => !appearanceMap.get(appearanceKey(playerId, game.id, teamId))?.out);
+      if (eligibleGoalieIds.length !== 1) {
+        for (const playerId of candidateGoalieIds) markGoalieIncomplete(playerId, candidateSources(playerId));
+        continue;
+      }
+      const playerId = eligibleGoalieIds[0];
+      const goalsAgainst = teamId === game.home_team_id ? game.away_score : game.home_score;
+      const resolution: GoalieResolution = {
+        gameId: game.id,
+        teamId,
+        goalsAgainst,
+        goalsAgainstState: goalsAgainst === null ? 'unknown' : 'reported',
+        state: 'reported',
+        sources: candidateSources(playerId),
+      };
+      addGoalieResolution(playerId, resolution);
+      for (const excludedPlayerId of candidateGoalieIds) {
+        if (excludedPlayerId !== playerId) markGoalieIncomplete(excludedPlayerId, candidateSources(excludedPlayerId));
+      }
+    }
   }
+
   const appearancesByPlayer = new Map<string, Appearance[]>();
   for (const appearance of appearanceMap.values()) {
-    if (appearanceState(appearance) === null) continue;
-    appearancesByPlayer.set(appearance.playerId, [...(appearancesByPlayer.get(appearance.playerId) ?? []), appearance]);
+    if (appearanceState(appearance) === null
+      && !(appearance.out && (appearance.roster || appearance.acceptedSub))) continue;
+    appendToIndex(appearancesByPlayer, appearance.playerId, appearance);
   }
   const profileMap = new Map(rows.profiles.map((profile) => [profile.id, profile]));
   const overridePlayerIds = [...rostersByPlayer.entries()]
     .filter(([, rosterRows]) => rosterOverrideMetric(rosterRows) !== null)
     .map(([playerId]) => playerId);
-  const playerIds = [...new Set([...appearancesByPlayer.keys(), ...overridePlayerIds])];
+  const playerIds = [...new Set([...appearancesByPlayer.keys(), ...overridePlayerIds])]
+    .filter((playerId) => !scope.playerId || playerId === scope.playerId);
 
   const players = playerIds.map((playerId): PublicSeasonMetricPlayer => {
     const appearances = appearancesByPlayer.get(playerId) ?? [];
-    const skaterRows = playerStats.filter((row) => row.player_id === playerId);
-    const goalieRows = goalieStats.filter((row) => row.player_id === playerId);
+    const skaterRows = playerStatsByPlayer.get(playerId) ?? [];
+    const goalieRows = goalieStatsByPlayer.get(playerId) ?? [];
     const rosterRows = rostersByPlayer.get(playerId) ?? [];
     const skaterRole = skaterRows.length > 0 || rosterRows.some((row) => !isGoalieRole(row));
-    const assignedRows = goalieAssignments.filter((row) => row.player_id === playerId);
-    const goalieRole = goalieRows.length > 0 || assignedRows.length > 0 || rosterRows.some(isGoalieRole);
+    const assignedRows = goalieAssignmentsByPlayer.get(playerId) ?? [];
+    const goalieRole = goalieRows.length > 0 || assignedRows.length > 0 || rosterRows.some(isGoalieRole)
+      || goalieResolutionsByPlayer.has(playerId) || goalieIncompleteSourcesByPlayer.has(playerId);
     const roles: Array<'skater' | 'goalie'> = [...(skaterRole ? ['skater' as const] : []), ...(goalieRole ? ['goalie' as const] : [])];
     if (roles.length === 0) roles.push('skater');
 
@@ -372,24 +634,46 @@ export function aggregatePublicSeasonStats(rows: PublicStatMetricRows, scope: Me
 
     let goalie: PublicGoalieMetricGroup | null = null;
     if (goalieRole) {
+      const goalieResolutions = goalieResolutionsByPlayer.get(playerId) ?? [];
+      const incompleteGoalieSources = sources(goalieIncompleteSourcesByPlayer.get(playerId) ?? []);
       const goalieAppearances = appearances.filter((appearance) => appearance.goalie
         || appearance.goalieAssigned
-        || rosterRows.some((roster) => {
-          const game = games.get(appearance.gameId);
-          return Boolean(game && isGoalieRole(roster) && appearance.teamIds.has(roster.team_id) && rosterEligible(roster, game));
-        }));
-      const assignmentKeys = new Set(assignedRows.map((row) => `${row.game_id}\u0000${row.team_id}`));
+        || appearance.goalieRoster);
+      const resolutionByKey = new Map(goalieResolutions.map((resolution) => [
+        `${resolution.gameId}\u0000${resolution.teamId}`,
+        resolution,
+      ]));
+      const resolvedSources = sources(goalieResolutions.flatMap((resolution) => resolution.sources));
+      const goalieIdentitySources = sources([
+        ...resolvedSources,
+        ...incompleteGoalieSources,
+        ...(goalieRows.length ? ['goalie_stats' as const] : []),
+      ]);
+      const goalieConflict = goalieResolutions.some((resolution) => resolution.state === 'conflicted');
+      const directGoalieRowKeys = goalieRows.map((row) => `${row.game_id}\u0000${row.team_id}`);
+      const duplicateGoalieRows = new Set(directGoalieRowKeys).size !== directGoalieRowKeys.length;
+      const unresolvedGoalieRows = goalieRows.some((row) => !resolutionByKey.has(`${row.game_id}\u0000${row.team_id}`));
       const captureConflict = goalieRows.some((row) => row.scorekeeping_provenance === 'event_derived'
         && games.get(row.game_id)?.goalie_capture_status === 'complete'
-        && !assignmentKeys.has(`${row.game_id}\u0000${row.team_id}`));
-      const rowCaptured = (row: PublicMetricGoalieStatRow) => row.scorekeeping_provenance === 'event_derived'
-        && games.get(row.game_id)?.goalie_capture_status === 'complete'
-        && assignmentKeys.has(`${row.game_id}\u0000${row.team_id}`);
+        && !resolutionByKey.has(`${row.game_id}\u0000${row.team_id}`));
+      const rowCaptured = (row: PublicMetricGoalieStatRow) => {
+        const resolution = resolutionByKey.get(`${row.game_id}\u0000${row.team_id}`);
+        return row.scorekeeping_provenance === 'event_derived'
+          && games.get(row.game_id)?.goalie_capture_status === 'complete'
+          && resolution?.state === 'verified'
+          && resolution.sources.includes('goalie_assignment');
+      };
       const goalieField = (values: Array<number | null | undefined>, label: string): PublicStatMetric => {
         const fieldSources: PublicMetricSource[] = goalieRows.length ? ['goalie_stats'] : [];
         const captured = goalieRows.length > 0 && goalieRows.every(rowCaptured);
         if (captured) fieldSources.push('goalie_assignment', 'capture_confirmation');
         if (captureConflict) return { value: null, state: 'conflicted', sources: sources([...fieldSources, 'goalie_assignment', 'capture_confirmation']) };
+        if (duplicateGoalieRows || goalieConflict) {
+          return { value: null, state: 'conflicted', sources: sources([...fieldSources, ...goalieIdentitySources]) };
+        }
+        if (unresolvedGoalieRows || incompleteGoalieSources.length > 0) {
+          return unknown(sources([...fieldSources, ...goalieIdentitySources]));
+        }
         const value = nullableSum(values, label);
         return value === null ? unknown(fieldSources) : known(value, captured ? 'verified' : 'recorded', fieldSources);
       };
@@ -406,16 +690,39 @@ export function aggregatePublicSeasonStats(rows: PublicStatMetricRows, scope: Me
       };
       const wins = goalieField(goalieRows.map((row) => resultValue(row, 'win')), 'goalie wins');
       const losses = goalieField(goalieRows.map((row) => resultValue(row, 'loss')), 'goalie losses');
-      const saves = goalieField(goalieRows.map((row) => row.saves), 'goalie saves');
-      const goalsAgainst = goalieField(goalieRows.map((row) => row.goals_against), 'goals against');
-      const shotsAgainst = goalieField(goalieRows.map((row) => row.shots_against), 'shots against');
+      const saves = unknown();
+      const goalsAgainstConflict = goalieResolutions.some((resolution) => resolution.goalsAgainstState === 'conflicted');
+      const resolvedGoalsAgainst = goalieResolutions.some((resolution) => resolution.goalsAgainst === null)
+        ? unknown(resolvedSources)
+        : known(
+          goalieResolutions.reduce((sum, resolution) => sum + finite(resolution.goalsAgainst, 'final score goals against'), 0),
+          combineState(goalieResolutions.map((resolution) => resolution.goalsAgainstState)),
+          resolvedSources,
+        );
+      const goalsAgainst = goalsAgainstConflict
+        ? { value: null, state: 'conflicted' as const, sources: goalieIdentitySources }
+        : incompleteGoalieSources.length > 0
+        ? unknown(sources([...resolvedSources, ...incompleteGoalieSources]))
+        : goalieResolutions.length > 0
+          ? resolvedGoalsAgainst
+          : unknown(goalieIdentitySources);
       const shutouts = goalieField(goalieRows.map((row) => row.shutout === null ? null : Number(row.shutout)), 'shutouts');
-      let gp = participationMetric(goalieAppearances);
+      let gp = goalieConflict
+        ? { value: null, state: 'conflicted' as const, sources: goalieIdentitySources }
+        : incompleteGoalieSources.length > 0
+        ? unknown(sources([...resolvedSources, ...incompleteGoalieSources]))
+        : goalieResolutions.length > 0
+          ? known(
+            goalieResolutions.length,
+            combineState(goalieResolutions.map((resolution) => resolution.state)),
+            resolvedSources,
+          )
+          : unknown(goalieIdentitySources);
       if (captureConflict) gp = { value: null, state: 'conflicted', sources: sources([...gp.sources, 'goalie_assignment', 'capture_confirmation']) };
-      const assignedOnly = goalieAppearances.length > 0 && goalieAppearances.every((appearance) =>
+      const assignedOnly = goalieRows.length === 0 && goalieAppearances.length > 0 && goalieAppearances.every((appearance) =>
         appearance.goalieAssigned && !appearance.out && games.get(appearance.gameId)?.goalie_capture_status === 'complete');
       if (assignedOnly && gp.state === 'recorded') {
-        gp = known(goalieAppearances.length, 'verified', ['goalie_assignment', 'capture_confirmation']);
+        gp = known(goalieAppearances.length, 'verified', sources([...gp.sources, 'capture_confirmation']));
       }
       const rateMetric = (value: number, parts: PublicStatMetric[]) => {
         const state = combineState(parts.map((part) => part.state));
@@ -428,7 +735,7 @@ export function aggregatePublicSeasonStats(rows: PublicStatMetricRows, scope: Me
         losses,
         saves,
         goalsAgainst,
-        savePercentage: shotsAgainst.value && saves.value !== null ? rateMetric(saves.value / shotsAgainst.value, [saves, shotsAgainst]) : unknown(sources([...saves.sources, ...shotsAgainst.sources])),
+        savePercentage: unknown(),
         goalsAgainstAverage: gp.value && goalsAgainst.value !== null ? rateMetric(goalsAgainst.value / gp.value, [goalsAgainst, gp]) : gp.state === 'conflicted'
           ? { value: null, state: 'conflicted', sources: sources([...goalsAgainst.sources, ...gp.sources]) }
           : unknown(sources([...goalsAgainst.sources, ...gp.sources])),
@@ -523,19 +830,26 @@ export async function loadPublicStatMetricRows(
     throw new PublicMetricDataError('invalid total row limit');
   }
   const maxTotalRows = options.maxTotalRows;
-  const selected = new Set<SourceName>(options.tables ?? ['games', 'teams', 'rosters', 'checkins', 'acceptedSubs', 'playerStats', 'goalieStats', 'goalieAppearances']);
-  const playerFilter = scope.playerId ? [['eq', 'player_id', scope.playerId] as ['eq', string, unknown]] : [];
+  const selected = new Set<SourceName>(options.tables ?? [
+    'games', 'teams', 'rosters', 'checkins', 'availabilities', 'acceptedSubs',
+    'playerStats', 'goalieStats', 'goalieAppearances',
+  ]);
+  const playerStatFilter = scope.playerId ? [['eq', 'player_id', scope.playerId] as ['eq', string, unknown]] : [];
   const tableConfig: Record<Exclude<SourceName, 'profiles'>, { table: string; columns: string; filters: Array<['eq' | 'in', string, unknown]>; orderColumns?: string[] }> = {
     games: { table: 'games', columns: 'id, league_id, season_id, status, home_team_id, away_team_id, home_score, away_score, scheduled_at, penalty_capture_status, goalie_capture_status, skater_capture_status', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ['eq', 'status', 'completed']] },
     teams: { table: 'teams', columns: 'id, league_id, division_id, name', filters: [['eq', 'league_id', scope.leagueId], ...(scope.divisionId ? [['eq', 'division_id', scope.divisionId] as ['eq', string, unknown]] : []), ...(scope.teamId ? [['eq', 'id', scope.teamId] as ['eq', string, unknown]] : [])] },
-    rosters: { table: 'team_rosters', columns: 'id, player_id, team_id, league_id, season_id, start_date, end_date, is_goalie, position, status, player_type, games_played_override', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
-    checkins: { table: 'game_checkins', columns: 'id, game_id, player_id, team_id, status, game:games!inner(id)', filters: [['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
-    acceptedSubs: { table: 'sub_invitations', columns: 'id, game_id, invited_player_id, team_id, status, game:games!inner(id)', filters: [['eq', 'status', 'accepted'], ['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.playerId ? [['eq', 'invited_player_id', scope.playerId] as ['eq', string, unknown]] : []), ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
-    playerStats: { table: 'player_stats', columns: 'id, game_id, player_id, team_id, league_id, season_id, goals, assists, penalty_minutes, scorekeeping_provenance, game:games!inner(id)', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
-    goalieStats: { table: 'goalie_stats', columns: 'id, game_id, player_id, team_id, league_id, season_id, game_result, saves, shots_against, goals_against, shutout, scorekeeping_provenance, game:games!inner(id)', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
-    goalieAppearances: { table: 'game_goalie_appearances', columns: 'game_id, player_id, team_id, team_type, game:games!inner(id)', filters: [['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])], orderColumns: ['game_id', 'player_id'] },
+    rosters: { table: 'team_rosters', columns: 'id, player_id, team_id, league_id, season_id, start_date, end_date, is_goalie, position, status, player_type, historical_retained, games_played_override', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    checkins: { table: 'game_checkins', columns: 'id, game_id, player_id, team_id, status, game:games!inner(id)', filters: [['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    availabilities: { table: 'player_availability', columns: 'id, game_id, player_id, team_id, season_id, status, game:games!inner(id)', filters: [['eq', 'season_id', scope.seasonId], ['eq', 'status', 'out'], ['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    acceptedSubs: { table: 'sub_invitations', columns: 'id, game_id, invited_player_id, team_id, status, game:games!inner(id)', filters: [['eq', 'status', 'accepted'], ['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    playerStats: { table: 'player_stats', columns: 'id, game_id, player_id, team_id, league_id, season_id, goals, assists, penalty_minutes, scorekeeping_provenance, game:games!inner(id)', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...playerStatFilter, ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    goalieStats: { table: 'goalie_stats', columns: 'id, game_id, player_id, team_id, league_id, season_id, game_result, saves, shots_against, goals_against, shutout, scorekeeping_provenance, game:games!inner(id)', filters: [['eq', 'league_id', scope.leagueId], ['eq', 'season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])] },
+    goalieAppearances: { table: 'game_goalie_appearances', columns: 'game_id, player_id, team_id, team_type, game:games!inner(id)', filters: [['eq', 'game.league_id', scope.leagueId], ['eq', 'game.season_id', scope.seasonId], ['eq', 'game.status', 'completed'], ...(scope.teamId ? [['eq', 'team_id', scope.teamId] as ['eq', string, unknown]] : [])], orderColumns: ['game_id', 'player_id'] },
   };
-  const output: PublicStatMetricRows = { games: [], teams: [], profiles: [], rosters: [], checkins: [], acceptedSubs: [], playerStats: [], goalieStats: [], goalieAppearances: [] };
+  const output: PublicStatMetricRows = {
+    games: [], teams: [], profiles: [], rosters: [], checkins: [], availabilities: [],
+    acceptedSubs: [], playerStats: [], goalieStats: [], goalieAppearances: [],
+  };
   let totalRows = 0;
   const addRows = (count: number) => {
     totalRows += count;
@@ -556,8 +870,9 @@ export async function loadPublicStatMetricRows(
     output[name] = loaded as never;
     addRows(loaded.length);
   }
-  const playerIds = [...new Set([
+  const playerIds = scope.playerId ? [scope.playerId] : [...new Set([
     ...output.rosters.map((row) => row.player_id), ...output.checkins.map((row) => row.player_id),
+    ...output.availabilities.map((row) => row.player_id),
     ...output.acceptedSubs.map((row) => row.invited_player_id), ...output.playerStats.map((row) => row.player_id),
     ...output.goalieStats.map((row) => row.player_id), ...output.goalieAppearances.map((row) => row.player_id),
   ])];

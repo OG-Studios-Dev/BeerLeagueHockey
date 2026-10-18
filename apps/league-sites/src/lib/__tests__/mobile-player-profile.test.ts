@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import {
   HOCKEY_LIFE_ID,
   handleMobilePlayerProfileRequest,
+  mobilePlayerProfileDependencies,
   type MobilePlayerProfileDependencies,
 } from '@/lib/mobile-player-profile';
 import {
@@ -21,6 +22,11 @@ import {
   type PlayerCareerSeasonRow,
 } from '@/lib/data';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import {
+  aggregatePublicSeasonStats,
+  type PublicSeasonMetricPlayer,
+  type PublicStatMetricRows,
+} from '@/lib/public-stat-metrics';
 
 jest.mock('@/lib/supabase/server', () => ({ createClient: jest.fn(), createServiceRoleClient: jest.fn() }));
 const mockedCreateClient = jest.mocked(createClient);
@@ -36,6 +42,26 @@ const OTHER_LEAGUE_ID = '30000000-0000-4000-8000-000000000003';
 
 function req(query: string) {
   return new NextRequest(`https://hockey-life.beerleaguehockey.ca/api/mobile/player-profile?${query}`);
+}
+
+function canonicalPlayer(gamesPlayed = 0): PublicSeasonMetricPlayer {
+  const unknown = { value: null, state: 'unknown' as const, sources: [] };
+  return {
+    playerId: PROFILE_ID,
+    playerName: 'Matt Grossi',
+    avatarUrl: null,
+    displayTeam: null,
+    teams: [],
+    roles: ['skater'],
+    metrics: {
+      gamesPlayed: { value: gamesPlayed, state: 'reported', sources: ['roster_window'] },
+      goals: unknown,
+      assists: unknown,
+      points: unknown,
+      penaltyMinutes: unknown,
+    },
+    goalie: null,
+  };
 }
 
 function deps(): jest.Mocked<MobilePlayerProfileDependencies> {
@@ -56,6 +82,7 @@ function deps(): jest.Mocked<MobilePlayerProfileDependencies> {
     getSeasons: jest.fn().mockResolvedValue([{ id: SEASON_ID, name: 'Fall 2026', start_date: '2026-09-01', status: 'active', league_id: HOCKEY_LIFE_ID }]),
     getCurrentSeason: jest.fn().mockResolvedValue({ id: SEASON_ID, name: 'Fall 2026' }),
     getStats: jest.fn().mockResolvedValue({ games_played: 0, goals: 0, assists: 0, points: 0, penalty_minutes: 0, plus_minus: 0 }),
+    getPublicSeasonPlayer: jest.fn().mockResolvedValue(canonicalPlayer()),
     getTimeline: jest.fn().mockResolvedValue(timeline),
     getGames: jest.fn().mockResolvedValue([]),
     getBadges: jest.fn().mockResolvedValue([{ id: 'b', player_id: PROFILE_ID, league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, team_id: TEAM_ID, badge_type: 'top_scorer', metadata: {}, created_at: '2026-09-02', season: { name: 'Fall 2026' }, team: { name: 'Bad Bunny' } }]),
@@ -160,7 +187,15 @@ describe('GET /api/mobile/player-profile', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(d.getTimeline).toHaveBeenCalledTimes(1);
-    for (const dependency of [d.getStats, d.getBadges, d.getImportedAchievements, d.getArticles, d.getGames, d.getMatchups]) {
+    for (const dependency of [
+      d.getStats,
+      d.getPublicSeasonPlayer,
+      d.getBadges,
+      d.getImportedAchievements,
+      d.getArticles,
+      d.getGames,
+      d.getMatchups,
+    ]) {
       expect(dependency).not.toHaveBeenCalled();
     }
 
@@ -173,6 +208,7 @@ describe('GET /api/mobile/player-profile', () => {
   it('preserves current-season and career DTO fields while sharing the baseline-inclusive timeline', async () => {
     const currentDeps = deps();
     currentDeps.getStats.mockResolvedValue({ games_played: 4, goals: 3, assists: 2, points: 5, penalty_minutes: 6, plus_minus: 1 });
+    currentDeps.getPublicSeasonPlayer.mockResolvedValue(canonicalPlayer(4));
     const current = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), currentDeps)).json();
     expect(current.data).toMatchObject({
       selectedSeasonId: SEASON_ID,
@@ -196,6 +232,162 @@ describe('GET /api/mobile/player-profile', () => {
     });
     expect(currentDeps.getTimeline).toHaveBeenCalledTimes(1);
     expect(careerDeps.getTimeline).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the canonical public-stat GP value and provenance for a selected season', async () => {
+    const d = deps() as jest.Mocked<MobilePlayerProfileDependencies> & {
+      getPublicSeasonPlayer: jest.Mock<Promise<PublicSeasonMetricPlayer | null>>;
+    };
+    d.getStats.mockResolvedValue({ games_played: 99, goals: 3, assists: 2, points: 5, penalty_minutes: 0 });
+    const awayTeamId = '70000000-0000-4000-8000-000000000008';
+    const completedGameId = '80000000-0000-4000-8000-000000000008';
+    const canonicalRows: PublicStatMetricRows = {
+      games: [{
+        id: completedGameId,
+        league_id: HOCKEY_LIFE_ID,
+        season_id: SEASON_ID,
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: awayTeamId,
+        home_score: 4,
+        away_score: 2,
+        scheduled_at: '2026-09-20T20:00:00Z',
+        penalty_capture_status: null,
+        goalie_capture_status: null,
+        skater_capture_status: null,
+      }],
+      teams: [
+        { id: TEAM_ID, league_id: HOCKEY_LIFE_ID, division_id: null, name: 'Bad Bunny' },
+        { id: awayTeamId, league_id: HOCKEY_LIFE_ID, division_id: null, name: 'Visitors' },
+      ],
+      profiles: [{ id: PROFILE_ID, full_name: 'Matt Grossi', avatar_url: null, photo_url: null }],
+      rosters: [{
+        id: ROSTER_ID,
+        player_id: PROFILE_ID,
+        team_id: TEAM_ID,
+        league_id: HOCKEY_LIFE_ID,
+        season_id: SEASON_ID,
+        start_date: '2026-09-01',
+        end_date: null,
+        is_goalie: false,
+        position: 'C',
+        status: 'active',
+        player_type: 'regular',
+      }],
+      checkins: [],
+      availabilities: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
+    };
+    const canonical = aggregatePublicSeasonStats(canonicalRows, {
+      leagueId: HOCKEY_LIFE_ID,
+      seasonId: SEASON_ID,
+      playerId: PROFILE_ID,
+    }).players[0];
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+
+    const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
+
+    expect(body.data.metrics).toMatchObject({ games_played: canonical.metrics.gamesPlayed.value, goals: 3 });
+    expect(body.data.metricProvenance.games_played).toEqual({
+      state: canonical.metrics.gamesPlayed.state,
+      sources: canonical.metrics.gamesPlayed.sources,
+    });
+    expect(d.getPublicSeasonPlayer).toHaveBeenCalledWith(HOCKEY_LIFE_ID, SEASON_ID, PROFILE_ID);
+  });
+
+  it('uses canonical goalie GP and provenance when generic participation is conflicted', async () => {
+    const d = deps();
+    d.resolvePlayer.mockResolvedValue({
+      ...(await d.resolvePlayer(PROFILE_ID))!,
+      position: 'Goalie',
+      is_goalie: true,
+    });
+    d.getStats.mockResolvedValue({ games_played: 99, wins: 1, losses: 0, goals_against: 2 });
+    const canonical = canonicalPlayer();
+    const unknown = canonical.metrics.goals;
+    canonical.roles = ['goalie'];
+    canonical.metrics.gamesPlayed = {
+      value: null,
+      state: 'conflicted',
+      sources: ['attendance', 'goalie_stats'],
+    };
+    canonical.goalie = {
+      gamesPlayed: { value: 2, state: 'recorded', sources: ['goalie_stats'] },
+      wins: unknown,
+      losses: unknown,
+      saves: unknown,
+      goalsAgainst: unknown,
+      savePercentage: unknown,
+      goalsAgainstAverage: unknown,
+      shutouts: unknown,
+    };
+    d.getPublicSeasonPlayer.mockResolvedValue(canonical);
+
+    const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
+
+    expect(body.data.metrics.games_played).toBe(2);
+    expect(body.data.metricProvenance.games_played).toEqual({
+      state: 'recorded',
+      sources: ['goalie_stats'],
+    });
+  });
+
+  it('does not fall back to legacy GP when canonical selected-season evidence is absent', async () => {
+    const d = deps();
+    d.getStats.mockResolvedValue({ games_played: 99, goals: 3, assists: 2, points: 5, penalty_minutes: 0 });
+    d.getPublicSeasonPlayer.mockResolvedValue(null);
+
+    const body = await (await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d)).json();
+
+    expect(body.data.metrics).toMatchObject({ games_played: null, goals: 3 });
+    expect(body.data.metricProvenance.games_played).toEqual({ state: 'unknown', sources: [] });
+  });
+
+  it('fails closed at the profile metric budget before hydrating later source tables', async () => {
+    const gameRows = Array.from({ length: 5_001 }, (_, index) => ({
+      id: `80000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`,
+      league_id: HOCKEY_LIFE_ID,
+      season_id: SEASON_ID,
+      status: 'completed',
+      home_team_id: TEAM_ID,
+      away_team_id: '71000000-0000-4000-8000-000000000007',
+      home_score: 2,
+      away_score: 1,
+      scheduled_at: '2026-09-01T20:00:00Z',
+      penalty_capture_status: null,
+      goalie_capture_status: null,
+      skater_capture_status: null,
+    }));
+    const queriedTables: string[] = [];
+    const ranges: Array<[string, number, number]> = [];
+    const client = {
+      from(table: string) {
+        queriedTables.push(table);
+        const query = {
+          eq() { return this; },
+          in() { return this; },
+          order() { return this; },
+          async range(from: number, to: number) {
+            ranges.push([table, from, to]);
+            const data = table === 'games' ? gameRows.slice(from, to + 1) : [];
+            return { data, count: table === 'games' ? gameRows.length : 0, error: null };
+          },
+        };
+        return { select: () => query };
+      },
+    };
+    mockedCreateServiceRoleClient.mockReturnValueOnce(client as never);
+
+    await expect(mobilePlayerProfileDependencies.getPublicSeasonPlayer(
+      HOCKEY_LIFE_ID,
+      SEASON_ID,
+      PROFILE_ID,
+    )).rejects.toThrow('metric source total row limit exceeded');
+    expect(queriedTables).toEqual(['games']);
+    expect(ranges).toEqual([['games', 0, 999]]);
   });
 
   it('does not add assumed saves to canonical goalie career rows', async () => {

@@ -31,7 +31,7 @@ function rows(player = true): PublicStatMetricRows {
       scheduled_at: '2026-09-01T20:00:00Z', penalty_capture_status: null, goalie_capture_status: null, skater_capture_status: null }],
     teams: [{ id: TEAM, league_id: LEAGUE, season_id: SEASON, division_id: null, name: 'Owls' }],
     profiles: player ? [{ id: PLAYER, full_name: 'Player', avatar_url: null, photo_url: null }] : [],
-    rosters: [], checkins: [], acceptedSubs: [], goalieStats: [], goalieAppearances: [],
+    rosters: [], checkins: [], availabilities: [], acceptedSubs: [], goalieStats: [], goalieAppearances: [],
     playerStats: player ? [{ id: 'a0000000-0000-4000-8000-000000000001', game_id: GAME, player_id: PLAYER, team_id: TEAM,
       league_id: LEAGUE, season_id: SEASON, goals: 1, assists: 2, penalty_minutes: 4, scorekeeping_provenance: null }] : [],
   };
