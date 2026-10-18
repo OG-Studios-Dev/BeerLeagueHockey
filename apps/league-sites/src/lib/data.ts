@@ -5918,7 +5918,9 @@ export async function getPlayerCareerStatsTimeline(
       ? classifyStrictGoalieCareerSources((rawRows || []) as StrictGoalieRawRow[], baselineStats, historicalBaselineSeason?.id ?? null)
       : (rawRows || []) as StrictGoalieRawRow[];
 
-    const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
+    const activeSeasonIds = [...new Set(rows
+      .map((row) => row.season_id)
+      .filter((seasonId): seasonId is string => Boolean(seasonId) && seasonId !== historicalBaselineSeason?.id))];
     const [confirmedCheckins, fallbackBuckets] = await Promise.all([
       strict
         ? activeSeasonIds.length > 0
@@ -6095,7 +6097,9 @@ export async function getPlayerCareerStatsTimeline(
     );
   }
 
-  const activeSeasonIds = [...new Set(rows.map((row) => row.season_id).filter((seasonId): seasonId is string => Boolean(seasonId)))];
+  const activeSeasonIds = [...new Set(rows
+    .map((row) => row.season_id)
+    .filter((seasonId): seasonId is string => Boolean(seasonId) && seasonId !== historicalBaselineSeason?.id))];
   const [confirmedCheckins, fallbackBuckets] = await Promise.all([
     strict
       ? activeSeasonIds.length > 0

@@ -39,6 +39,7 @@ const TEAM_ID = '093f611c-0cdc-4509-afde-9c661b5833c9';
 const WINTER_2026_ID = '30ee2c0b-5981-4df4-b0cc-d7cae05b9e37';
 const OTHER_SEASON_ID = '20000000-0000-4000-8000-000000000002';
 const OTHER_LEAGUE_ID = '30000000-0000-4000-8000-000000000003';
+const HISTORICAL_BASELINE_ID = 'e813368a-6389-4678-b596-294e70e89a9a';
 
 function req(query: string) {
   return new NextRequest(`https://hockey-life.beerleaguehockey.ca/api/mobile/player-profile?${query}`);
@@ -1033,7 +1034,7 @@ function strictAppearanceClient(options: {
   return { client, checkinQuery, gameQueries };
 }
 
-function strictTimelineProductionClient() {
+function strictTimelineProductionClient(options: { includeHistoricalBaseline?: boolean; isGoalie?: boolean } = {}) {
   type Trace = {
     table: string;
     selection: string;
@@ -1052,6 +1053,39 @@ function strictTimelineProductionClient() {
     ['season-b-game', { id: 'season-b-game', league_id: HOCKEY_LIFE_ID, season_id: OTHER_SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-03-01', home_score: 2, away_score: 1 }],
     ['other-league-game', { id: 'other-league-game', league_id: OTHER_LEAGUE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-06-01', home_score: 3, away_score: 2 }],
   ]);
+  const seasons = [
+    { id: SEASON_ID, name: 'Fall 2026', start_date: '2026-09-01' },
+    { id: OTHER_SEASON_ID, name: 'Spring 2026', start_date: '2026-03-01' },
+    ...(options.includeHistoricalBaseline
+      ? [{ id: HISTORICAL_BASELINE_ID, name: 'Historical Career Baseline - Imported', start_date: '2025-01-01' }]
+      : []),
+  ];
+  const skaterRows = [
+    { season_id: SEASON_ID, team_id: TEAM_ID, team_name: 'Bad Bunny', position: 'C', games_played: 0, goals: 1, assists: 0, points: 1 },
+    { season_id: OTHER_SEASON_ID, team_id: TEAM_ID, team_name: 'Bad Bunny', position: 'C', games_played: 0, goals: 1, assists: 0, points: 1 },
+    ...(options.includeHistoricalBaseline
+      ? [{ season_id: HISTORICAL_BASELINE_ID, team_id: TEAM_ID, team_name: 'Legacy', position: 'C', games_played: 1, goals: 105, assists: 45, points: 150 }]
+      : []),
+  ];
+  const goalieRows = [
+    { id: 'goalie-a', game_id: 'season-a-game', season_id: SEASON_ID, team_id: TEAM_ID, saves: 18, shots_against: 20, goals_against: 2, game_result: 'W', shutout: false },
+    { id: 'goalie-b', game_id: 'season-b-game', season_id: OTHER_SEASON_ID, team_id: TEAM_ID, saves: 27, shots_against: 30, goals_against: 3, game_result: 'L', shutout: false },
+    ...(options.includeHistoricalBaseline
+      ? [{ id: 'goalie-carrier', game_id: 'goalie-carrier-game', season_id: HISTORICAL_BASELINE_ID, team_id: null, saves: 1000, shots_against: 1250, goals_against: 250, game_result: 'W', shutout: true }]
+      : []),
+  ];
+  const baseline = options.isGoalie
+    ? {
+        league_id: HOCKEY_LIFE_ID, player_id: PROFILE_ID,
+        source_system: 'hockeylifehl_legacy_players', source_batch_id: 'legacy_players_current',
+        games_played: 100, wins: 60, ties: 10, saves: 1000, goals_against: 250,
+        shutouts: 5, save_percentage: 80, goals_against_average: 2.5,
+      }
+    : {
+        league_id: HOCKEY_LIFE_ID, player_id: PROFILE_ID,
+        source_system: 'hockeylifehl_legacy_players', source_batch_id: 'legacy_players_current',
+        games_played: 72, goals: 105, assists: 45, points: 150,
+      };
   const client = { from: jest.fn((table: string) => {
     const trace: Trace = { table, selection: '', selectOptions: undefined, filters: [], ranged: false };
     traces.push(trace);
@@ -1068,15 +1102,12 @@ function strictTimelineProductionClient() {
       });
     }
     const result = () => {
-      if (table === 'seasons') return { data: [
-        { id: SEASON_ID, name: 'Fall 2026', start_date: '2026-09-01' },
-        { id: OTHER_SEASON_ID, name: 'Spring 2026', start_date: '2026-03-01' },
-      ], error: null, count: 2 };
-      if (table === 'player_season_stats') return { data: [
-        { season_id: SEASON_ID, team_id: TEAM_ID, team_name: 'Bad Bunny', position: 'C', games_played: 0, goals: 1, assists: 0, points: 1 },
-        { season_id: OTHER_SEASON_ID, team_id: TEAM_ID, team_name: 'Bad Bunny', position: 'C', games_played: 0, goals: 1, assists: 0, points: 1 },
-      ], error: null, count: 2 };
-      if (table === 'player_career_baselines') return { data: null, error: null, count: null };
+      if (table === 'seasons') return { data: seasons, error: null, count: seasons.length };
+      if (table === 'player_season_stats') return { data: skaterRows, error: null, count: skaterRows.length };
+      if (table === 'goalie_stats') return { data: goalieRows, error: null, count: goalieRows.length };
+      if (table === 'player_career_baselines') return {
+        data: options.includeHistoricalBaseline ? baseline : null, error: null, count: null,
+      };
       if (table === 'game_checkins') return { data: checkins, error: null, count: checkins.length };
       if (table === 'teams') return { data: [{ id: TEAM_ID, name: 'Bad Bunny' }], error: null, count: 1 };
       if (table === 'games' && trace.selection.includes('league_id, status')) {
@@ -1576,6 +1607,48 @@ describe('strict career appearance query scoping', () => {
     expect(fallbackReads).toHaveLength(2);
     expect(fallbackReads.map((trace) => trace.filters.find(([method, column]) => method === 'eq' && column === 'season_id')?.[2]))
       .toEqual(expect.arrayContaining([SEASON_ID, OTHER_SEASON_ID]));
+  });
+
+  it.each([
+    ['skater', false, {
+      team_id: TEAM_ID, team_name: 'Legacy', position: 'C', games_played: 72, team_games: 72,
+      attendance_pct: 100, goals: 105, assists: 45, points: 150,
+    }],
+    ['goalie', true, {
+      team_id: null, team_name: null, position: 'Goalie', games_played: 100, team_games: 100,
+      attendance_pct: 100, wins: 60, losses: 30, ties: 10, saves: 1000, goals_against: 250,
+      save_percentage: 80, goals_against_average: 2.5, shutouts: 5,
+    }],
+  ] as const)('keeps the authoritative %s baseline without baseline attendance fanout', async (_role, isGoalie, expectedBaseline) => {
+    const { client, traces } = strictTimelineProductionClient({ includeHistoricalBaseline: true, isGoalie });
+    mockedCreateClient.mockResolvedValue(client as never);
+    mockedCreateServiceRoleClient.mockReturnValue(client as never);
+
+    const timeline = await getPlayerCareerStatsTimeline(HOCKEY_LIFE_ID, PROFILE_ID, isGoalie, {
+      includeHistoricalBaseline: true,
+      strict: true,
+    });
+
+    expect(timeline.find((row) => row.season_id === HISTORICAL_BASELINE_ID)).toMatchObject({
+      season_id: HISTORICAL_BASELINE_ID,
+      season_name: 'Historical Career Baseline - Imported',
+      ...expectedBaseline,
+    });
+    const fallbackReads = traces.filter((trace) => trace.table === 'team_rosters'
+      && trace.selection.includes('joined_at'));
+    const fallbackSeasonIds = fallbackReads.map((trace) => trace.filters
+      .find(([method, column]) => method === 'eq' && column === 'season_id')?.[2]);
+    expect(fallbackReads).toHaveLength(2);
+    expect(fallbackSeasonIds).toEqual([SEASON_ID, OTHER_SEASON_ID]);
+    expect(fallbackSeasonIds).not.toContain(HISTORICAL_BASELINE_ID);
+
+    const teamGameReads = traces.filter((trace) => trace.table === 'games'
+      && trace.selection === 'id, season_id, home_team_id, away_team_id, location');
+    expect(teamGameReads).toHaveLength(1);
+    const hydratedSeasonIds = teamGameReads[0].filters
+      .find(([method, column]) => method === 'in' && column === 'season_id')?.[2];
+    expect(hydratedSeasonIds).toEqual([SEASON_ID, OTHER_SEASON_ID]);
+    expect(hydratedSeasonIds).not.toContain(HISTORICAL_BASELINE_ID);
   });
 });
 
