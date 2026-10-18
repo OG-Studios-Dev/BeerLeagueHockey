@@ -6,6 +6,7 @@ import { FocusCard } from '../../components/CardFocus';
 import NativeNewspaperEdition from '../../components/NativeNewspaperEdition';
 import NewsArticleHeader from '../../components/NewsArticleHeader';
 import TeamLogo from '../../components/TeamLogo';
+import { shareLoadedArticlePdf } from '../../lib/articlePdfShare';
 import { classifyArticleHref, parseArticleBlocks, parseInlineMarkdown, publicArticleUrl } from '../../lib/leagueContentModel';
 import { loadPublishedNewspaperEdition, type PublishedEditionResult } from '../../lib/newspaperReader';
 import { useMobileShellData } from '../../navigation/MobileShellDataContext';
@@ -29,13 +30,9 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
   const currentKeyRef = React.useRef(readerKey);
   const generationRef = React.useRef(0);
   const shareInFlightRef = React.useRef<symbol | null>(null);
-  const shareScopeRef = React.useRef<{ key: string }>({ key: readerKey });
-  const shareActiveRef = React.useRef(true);
-  if (shareScopeRef.current.key !== readerKey) {
-    shareScopeRef.current = { key: readerKey };
-    shareInFlightRef.current = null;
-  }
-  const shareScope = shareScopeRef.current;
+  const shareScope = React.useMemo(() => ({ key: readerKey }), [readerKey]);
+  const shareScopeRef = React.useRef<{ key: string } | null>(null);
+  const shareActiveRef = React.useRef(false);
   const [retryKey, setRetryKey] = React.useState(0);
   const [showTextFallback, setShowTextFallback] = React.useState(false);
   const [reader, setReader] = React.useState<ReaderState | { key: string; status: 'loading' } | null>(null);
@@ -55,7 +52,11 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
 
   React.useEffect(() => () => { generationRef.current += 1; }, []);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
+    if (shareScopeRef.current !== shareScope) {
+      shareScopeRef.current = shareScope;
+      shareInFlightRef.current = null;
+    }
     shareActiveRef.current = true;
     const invalidate = () => {
       if (shareScopeRef.current !== shareScope) return;
@@ -68,7 +69,7 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
     const unsubscribeBlur = navigation.addListener?.('blur', invalidate);
     const unsubscribeFocus = navigation.addListener?.('focus', restore);
     return () => { invalidate(); unsubscribeBlur?.(); unsubscribeFocus?.(); };
-  }, [navigation, readerKey, shareScope]);
+  }, [navigation, shareScope]);
 
   const open = (href: string) => {
     const target = classifyArticleHref(href, scope.leagueSlug); if (!target) return;
@@ -88,12 +89,31 @@ export default function NewsArticleScreen({ route, navigation }: Props) {
     if (!shareUrl || !shareActiveRef.current || shareScopeRef.current !== shareScope || shareInFlightRef.current) return;
     const operation = Symbol('article-share');
     shareInFlightRef.current = operation;
-    try {
+    const ownsOperation = () => shareActiveRef.current && shareScopeRef.current === shareScope && shareInFlightRef.current === operation;
+    let fallbackAttempted = false;
+    const shareCanonicalFallback = async () => {
+      if (fallbackAttempted || !ownsOperation()) return;
+      fallbackAttempted = true;
       await Share.share(Platform.OS === 'ios'
         ? { title: article.title, message: article.title, url: shareUrl }
         : { title: article.title, message: `${article.title}\n${shareUrl}` });
+    };
+    try {
+      if (Platform.OS === 'web') {
+        await shareCanonicalFallback();
+      } else {
+        if (currentReader?.status === 'ready') {
+          await shareLoadedArticlePdf({ kind: 'newspaper', title: article.title, edition: currentReader.edition }, ownsOperation);
+        } else {
+          await shareLoadedArticlePdf({ kind: 'article', article: { title: article.title, authorName: article.authorName, publishedAt: article.publishedAt, content: article.content, canonicalUrl: shareUrl } }, ownsOperation);
+        }
+      }
     } catch {
-      // Native share rejection, error, and dismissal do not need app-level feedback.
+      try {
+        await shareCanonicalFallback();
+      } catch {
+        // Native share rejection, error, and dismissal do not need app-level feedback.
+      }
     } finally {
       if (shareInFlightRef.current === operation) shareInFlightRef.current = null;
     }

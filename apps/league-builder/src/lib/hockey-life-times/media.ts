@@ -11,8 +11,21 @@ export const NEWSPAPER_MEDIA_HOST = 'ntplczcmhvfkijjxavdl.supabase.co';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
-const PROMPT_VERSION = 'hockey-life-editorial-caricature-v1';
+const GENERATED_PROMPT_VERSIONS = [
+  'hockey-life-editorial-caricature-v1',
+  'hockey-life-editorial-caricature-v2:portrait-three-quarter',
+  'hockey-life-editorial-caricature-v2:stick-over-shoulder',
+  'hockey-life-editorial-caricature-v2:upright-stick',
+  'hockey-life-editorial-caricature-v2:rink-ready-pose',
+  'hockey-life-editorial-caricature-v2:net-and-pucks',
+] as const;
+const GENERATED_PROMPT_VERSION_SET = new Set<string>(GENERATED_PROMPT_VERSIONS);
+const REVIEWED_PROVENANCES = ['trusted-reviewed-import-v1', 'trusted-reviewed-import-v2'] as const;
+const REVIEWED_PROVENANCE_SET = new Set<string>(REVIEWED_PROVENANCES);
 const MODEL = 'gpt-image-2';
+
+type NewspaperGeneratedPromptVersion = typeof GENERATED_PROMPT_VERSIONS[number];
+type NewspaperReviewedProvenance = typeof REVIEWED_PROVENANCES[number];
 
 interface NewspaperMediaAssetBase {
   playerId: string;
@@ -27,11 +40,11 @@ interface NewspaperMediaAssetBase {
 export interface NewspaperGeneratedMediaAsset extends NewspaperMediaAssetBase {
   sourcePhotoSha256: string;
   model: 'gpt-image-2';
-  promptVersion: 'hockey-life-editorial-caricature-v1';
+  promptVersion: NewspaperGeneratedPromptVersion;
 }
 
 export interface NewspaperReviewedMediaAsset extends NewspaperMediaAssetBase {
-  provenance: 'trusted-reviewed-import-v1';
+  provenance: NewspaperReviewedProvenance;
   sourceArtifactSha256: string;
   decodedPixelSha256: string;
   approvedEditionSha256: string;
@@ -97,9 +110,13 @@ function parseAsset(
   }
   if (kind === 'generated') {
     if (typeof raw.sourcePhotoSha256 !== 'string' || !SHA256.test(raw.sourcePhotoSha256)) throw new Error('Illustration service returned an invalid source hash.');
-    if (raw.model !== MODEL || raw.promptVersion !== PROMPT_VERSION) throw new Error('Illustration service returned an unsupported generator contract.');
+    if (raw.model !== MODEL || typeof raw.promptVersion !== 'string' || !GENERATED_PROMPT_VERSION_SET.has(raw.promptVersion)) {
+      throw new Error('Illustration service returned an unsupported generator contract.');
+    }
   } else {
-    if (raw.provenance !== 'trusted-reviewed-import-v1') throw new Error('Reviewed media has an invalid provenance marker.');
+    if (typeof raw.provenance !== 'string' || !REVIEWED_PROVENANCE_SET.has(raw.provenance)) {
+      throw new Error('Reviewed media has an invalid provenance marker.');
+    }
     for (const key of ['sourceArtifactSha256', 'decodedPixelSha256', 'approvedEditionSha256', 'approvedPdfSha256']) {
       if (typeof raw[key] !== 'string' || !SHA256.test(raw[key] as string)) throw new Error(`Reviewed media has an invalid ${key}.`);
     }

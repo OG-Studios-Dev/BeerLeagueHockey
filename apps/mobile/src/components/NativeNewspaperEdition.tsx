@@ -84,6 +84,10 @@ function upper(value: string) {
   return value.toLocaleUpperCase('en-CA');
 }
 
+function countLabel(value: number, singular: string) {
+  return `${value} ${singular}${value === 1 ? '' : 's'}`;
+}
+
 function PageHeader({ edition, recordLine }: { edition: NewspaperEdition; recordLine: string }) {
   return <View style={styles.pageHeader}>
     <View style={styles.folioRow}>
@@ -237,7 +241,7 @@ function BriefSection({
     {items.length ? items.map((item, index) => <View key={`${item.headline}:${index}`} style={styles.brief}>
       {item.imageUrl ? <Artwork uri={item.imageUrl} label={item.headline} /> : null}
       <Text accessibilityRole="header" style={styles.briefHeadline}>{upper(item.headline)}</Text>
-      <Text style={styles.bodyCopy}>{item.body}</Text>
+      <Text testID={`newspaper-brief-copy-${index}`} style={styles.briefCopy}>{item.body}</Text>
     </View>) : <Text style={styles.muted}>No {title.toLowerCase()} item was supplied.</Text>}
   </View>;
 }
@@ -278,7 +282,7 @@ function GameReportsPage({ edition }: { edition: NewspaperEdition }) {
       <Text style={styles.redKicker}>GAME {index + 1}</Text>
       <Text accessibilityRole="header" style={styles.reportHeadline}>{upper(game.headline)}</Text>
       <GameScore game={game} />
-      {game.body.map((paragraph, paragraphIndex) => <Text key={`${paragraphIndex}:${paragraph.slice(0, 12)}`} style={styles.bodyCopy}>{paragraph}</Text>)}
+      {game.body.map((paragraph, paragraphIndex) => <Text key={`${paragraphIndex}:${paragraph.slice(0, 12)}`} testID={paragraphIndex === 0 ? 'newspaper-game-copy' : undefined} style={styles.gameCopy}>{paragraph}</Text>)}
       {game.imageUrl ? <View style={styles.reportArtwork}><Artwork uri={game.imageUrl} label={game.headline} /><Text style={styles.caption}>From the rink report</Text></View> : null}
       <Text accessibilityRole="header" style={styles.contributorTitle}>Names on the scoresheet</Text>
       {game.contributors.length ? game.contributors.map((player) => <View key={player.playerId} style={styles.contributorRow}>
@@ -296,21 +300,21 @@ function StarsAndNumbersPage({ edition }: { edition: NewspaperEdition }) {
   const visibleNumbers = edition.numbers.filter((item) => !/\b(?:source\s+warnings?|warning\s+count)\b/i.test(item.label));
   return <NewspaperPage edition={edition} page={3} recordLine="PERFORMANCE DESERVES INK">
     <SectionHeading kicker="THE PODIUM" title="Three Stars of the Week" dek="The Times’ editorial picks from this week’s verified scoresheets." />
-    <View style={styles.starGrid}>
-      {edition.stars.map((star, index) => <View key={star.playerId} style={styles.starCard}>
+    <View testID="three-stars-row" style={styles.starGrid}>
+      {edition.stars.map((star, index) => <View key={star.playerId} testID={`three-star-${index + 1}`} style={styles.starCard}>
         <View style={styles.starRank}><Text style={styles.starRankText}>{index + 1}</Text></View>
         {star.illustrationUrl || star.photoUrl ? <Artwork uri={star.illustrationUrl || star.photoUrl} label={`${star.name}, ${star.teamName}`} /> : null}
-        <Text style={styles.redKicker}>{upper(star.teamName)}</Text>
-        <Text accessibilityRole="header" style={styles.starName}>{upper(star.name)}</Text>
+        <Text testID={`three-star-kicker-${index + 1}`} style={styles.starKicker}>{upper(star.teamName)}</Text>
+        <Text testID={`three-star-name-${index + 1}`} accessibilityRole="header" style={styles.starName}>{upper(star.name)}</Text>
         <View style={styles.starStats}>
-          <Text style={styles.starStat}>{star.goals} goals</Text>
-          <Text style={styles.starStat}>{star.assists} assists</Text>
-          <Text style={styles.starPoints}>{star.points} points</Text>
+          <Text style={styles.starStat}>{countLabel(star.goals, 'goal')}</Text>
+          <Text style={styles.starStat}>{countLabel(star.assists, 'assist')}</Text>
+          <Text style={styles.starPoints}>{countLabel(star.points, 'point')}</Text>
         </View>
-        <Text style={styles.bodyCopy}>{star.reason}</Text>
+        <Text testID={`three-star-reason-${index + 1}`} style={styles.starReason}>{star.reason}</Text>
       </View>)}
     </View>
-    <View style={styles.numbersSection}>
+    <View testID="newspaper-numbers-section" style={styles.numbersSection}>
       <Text accessibilityRole="header" style={styles.columnTitle}>THIS WEEK BY THE NUMBERS</Text>
       <View style={styles.numberGrid}>
         {visibleNumbers.map((item, index) => <View key={`${item.label}:${index}`} style={styles.numberCard}>
@@ -364,8 +368,8 @@ function NextWeekPage({ edition }: { edition: NewspaperEdition }) {
         <Text accessibilityRole="header" style={styles.upcomingHeadline}>{upper(game.headline)}</Text>
         <Text style={styles.upcomingTeams}>{game.awayName} at {game.homeName}</Text>
         <Text style={styles.upcomingMeta}>{formatEditionScheduled(game.scheduledAt, edition.timezone)}{game.venue ? ` · ${game.venue}` : ''}</Text>
-        <Text style={styles.bodyCopy}>{game.body}</Text>
-      </View>) : <Text style={styles.bodyCopy}>{edition.upcomingNote}</Text>}
+        <Text testID={`newspaper-upcoming-copy-${index + 1}`} style={styles.upcomingCopy}>{game.body}</Text>
+      </View>) : <Text testID="newspaper-upcoming-note" style={styles.upcomingCopy}>{edition.upcomingNote}</Text>}
     </View>
     <BriefSection title="Around the Rink" items={edition.aroundRink ?? []} layout="flow" testID="page-5-around-rink" />
     <View testID="page-5-source-notes" style={styles.sourceNotes}>
@@ -456,7 +460,8 @@ const styles = StyleSheet.create({
   teamName: { flex: 1, minWidth: 0, color: INK, fontFamily: CONDENSED, fontSize: 13, lineHeight: 17, fontWeight: '900' },
   scoreValue: { color: NEWSPAPER_RED, fontFamily: CONDENSED, fontSize: 27, lineHeight: 30, fontWeight: '900' },
   final: { color: MUTED_INK, fontFamily: CONDENSED, fontSize: 8, lineHeight: 10, fontWeight: '900', textAlign: 'center' },
-  bodyCopy: { color: INK, fontFamily: SERIF, fontSize: 14, lineHeight: 21 },
+  gameCopy: { color: INK, fontFamily: SERIF, fontSize: 11, lineHeight: 16 },
+
   reportArtwork: { gap: 4 },
   contributorTitle: { color: INK, fontFamily: CONDENSED, fontSize: 15, lineHeight: 18, fontWeight: '900', borderTopWidth: 2, borderBottomWidth: 1, borderColor: INK, paddingVertical: 5, textTransform: 'uppercase' },
   contributorRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: HAIRLINE, paddingVertical: 5 },
@@ -465,14 +470,16 @@ const styles = StyleSheet.create({
   contributorStats: { color: INK, fontFamily: CONDENSED, fontSize: 13, lineHeight: 16, fontWeight: '900', textAlign: 'right' },
   grow: { flex: 1, minWidth: 0 },
   muted: { color: MUTED_INK, fontFamily: SERIF, fontSize: 12, lineHeight: 18 },
-  starGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 8 },
-  starCard: { minWidth: 140, flexGrow: 1, flexShrink: 1, flexBasis: 140, gap: 6, borderTopWidth: 2, borderBottomWidth: 1, borderColor: INK, paddingVertical: 8 },
-  starRank: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: NEWSPAPER_RED },
-  starRankText: { color: '#FFFFFF', fontFamily: CONDENSED, fontSize: 17, lineHeight: 20, fontWeight: '900' },
-  starName: { color: INK, fontFamily: CONDENSED, fontSize: 20, lineHeight: 22, fontWeight: '900' },
-  starStats: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 7, borderTopWidth: 1, borderBottomWidth: 1, borderColor: HAIRLINE, paddingVertical: 5 },
-  starStat: { color: INK, fontFamily: CONDENSED, fontSize: 11, lineHeight: 14, fontWeight: '800' },
-  starPoints: { color: NEWSPAPER_RED, fontFamily: CONDENSED, fontSize: 14, lineHeight: 17, fontWeight: '900' },
+  starGrid: { flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
+  starCard: { minWidth: 0, flexGrow: 1, flexShrink: 1, flexBasis: 0, overflow: 'visible', gap: 4, borderTopWidth: 2, borderBottomWidth: 1, borderColor: INK, paddingVertical: 6 },
+  starRank: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: NEWSPAPER_RED },
+  starRankText: { color: '#FFFFFF', fontFamily: CONDENSED, fontSize: 13, lineHeight: 16, fontWeight: '900' },
+  starKicker: { color: NEWSPAPER_RED, fontFamily: CONDENSED, fontSize: 7, lineHeight: 9, fontWeight: '900', letterSpacing: 0.35 },
+  starName: { color: INK, fontFamily: CONDENSED, fontSize: 13, lineHeight: 15, fontWeight: '900' },
+  starStats: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 4, rowGap: 2, borderTopWidth: 1, borderBottomWidth: 1, borderColor: HAIRLINE, paddingVertical: 4 },
+  starStat: { color: INK, fontFamily: CONDENSED, fontSize: 8, lineHeight: 10, fontWeight: '800' },
+  starPoints: { color: NEWSPAPER_RED, fontFamily: CONDENSED, fontSize: 9, lineHeight: 11, fontWeight: '900' },
+  starReason: { color: INK, fontFamily: SERIF, fontSize: 10, lineHeight: 14 },
   numbersSection: { gap: 8, borderTopWidth: 3, borderColor: INK, paddingTop: 8 },
   columnTitle: { color: INK, fontFamily: CONDENSED, fontSize: 20, lineHeight: 22, fontWeight: '900' },
   numberGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 7 },
@@ -497,11 +504,13 @@ const styles = StyleSheet.create({
   ruledSectionFlow: { width: '100%', flexGrow: 0, flexShrink: 0 },
   brief: { gap: 6, borderBottomWidth: 1, borderColor: HAIRLINE, paddingBottom: 9 },
   briefHeadline: { color: INK, fontFamily: CONDENSED, fontSize: 18, lineHeight: 20, fontWeight: '900' },
+  briefCopy: { color: INK, fontFamily: SERIF, fontSize: 11, lineHeight: 16 },
   upcomingList: { gap: 9 },
   upcomingCard: { gap: 5, borderTopWidth: 2, borderBottomWidth: 1, borderColor: INK, paddingVertical: 8 },
   upcomingHeadline: { color: INK, fontFamily: CONDENSED, fontSize: 21, lineHeight: 23, fontWeight: '900' },
   upcomingTeams: { color: INK, fontFamily: SERIF, fontSize: 15, lineHeight: 20, fontWeight: '700' },
   upcomingMeta: { color: MUTED_INK, fontFamily: CONDENSED, fontSize: 11, lineHeight: 15, fontWeight: '800' },
+  upcomingCopy: { color: INK, fontFamily: SERIF, fontSize: 11, lineHeight: 16 },
   sourceNotes: { gap: 7, borderTopWidth: 3, borderColor: INK, paddingTop: 8 },
   sourceMeta: { color: MUTED_INK, fontFamily: CONDENSED, fontSize: 11, lineHeight: 16, fontWeight: '700' },
   artwork: { width: '100%', backgroundColor: colors.bgMedia },

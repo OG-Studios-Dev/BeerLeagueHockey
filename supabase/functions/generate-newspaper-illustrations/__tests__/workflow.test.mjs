@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  CARICATURE_PROMPT,
   EXPECTED_PROJECT_REF,
   HOCKEY_LIFE_LEAGUE_ID,
   IMAGE_MODEL,
   OUTPUT_MIME,
-  PROMPT_VERSION,
+  composeIllustrationPrompt,
+  promptVersionForComposition,
+  selectIllustrationComposition,
   sha256Hex,
 } from '../policy.ts';
 import { generateIllustrations } from '../workflow.ts';
@@ -19,6 +20,8 @@ const gameId = '44444444-4444-4444-8444-444444444444';
 const homeTeamId = '55555555-5555-4555-8555-555555555555';
 const awayTeamId = '66666666-6666-4666-8666-666666666666';
 const photoUrl = `https://${EXPECTED_PROJECT_REF}.supabase.co/storage/v1/object/public/player-avatars/legacy-profile-uuid/photo.jpg`;
+const ACTIVE_PROMPT = composeIllustrationPrompt('net-and-pucks');
+const ACTIVE_PROMPT_VERSION = promptVersionForComposition('net-and-pucks');
 
 function fixture(overrides = {}) {
   const calls = { provider: 0, stores: 0, cache: 0 };
@@ -64,7 +67,7 @@ function fixture(overrides = {}) {
   const provider = {
     generate: async ({ prompt }) => {
       calls.provider += 1;
-      assert.equal(prompt, CARICATURE_PROMPT);
+      assert.equal(prompt, ACTIVE_PROMPT);
       return { image: syntheticPng1024(1), requestId: 'synthetic-request' };
     },
     ...overrides.provider,
@@ -102,10 +105,59 @@ test('rejects unresolved profile identity and photo fields', async () => {
   assert.equal(setup.calls.provider, 0);
 });
 
+test('uses the deterministic v2 composition, complete-prompt hash, and exact source-photo bytes with cache reuse', async () => {
+  const sourceBytes = new Uint8Array([0xff, 0xd8, 0xff, 17, 29, 41]);
+  const compositionId = await selectIllustrationComposition({
+    periodStart: '2026-09-21',
+    playerId,
+    starIndex: 0,
+  });
+  const expectedPrompt = composeIllustrationPrompt(compositionId);
+  const expectedPromptVersion = promptVersionForComposition(compositionId);
+  const expectedPromptSha256 = await sha256Hex(expectedPrompt);
+  let stored = null;
+  let providerCalls = 0;
+  const setup = fixture({
+    photos: {
+      load: async (url) => ({ bytes: sourceBytes, mime: 'image/jpeg', url }),
+    },
+    provider: {
+      generate: async (input) => {
+        providerCalls += 1;
+        assert.deepEqual(input.image, sourceBytes);
+        assert.equal(input.mime, 'image/jpeg');
+        assert.equal(input.prompt, expectedPrompt);
+        assert.doesNotMatch(input.prompt, /Synthetic Player|Home|goal|assist|headline|result/i);
+        return { image: syntheticPng1024(11), requestId: 'synthetic-v2-request' };
+      },
+    },
+    repository: {
+      loadVerifiedCache: async (_paths, expected) => stored && Object.entries(expected).every(([key, value]) => stored.metadata[key] === value)
+        ? stored
+        : null,
+      storeCache: async (paths, image, metadata) => {
+        setup.calls.stores += 1;
+        assert.match(paths.metadataPath, new RegExp(expectedPromptVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+        assert.equal(metadata.promptVersion, expectedPromptVersion);
+        assert.equal(metadata.promptSha256, expectedPromptSha256);
+        stored = { image, metadata };
+      },
+    },
+  });
+
+  const first = await generateIllustrations(setup.request, setup.dependencies);
+  const second = await generateIllustrations(setup.request, setup.dependencies);
+  assert.equal(first.illustrations[0].promptVersion, expectedPromptVersion);
+  assert.equal(first.illustrations[0].cacheHit, false);
+  assert.equal(second.illustrations[0].cacheHit, true);
+  assert.equal(providerCalls, 1);
+  assert.equal(setup.calls.stores, 1);
+});
+
 test('reuses only a verified content-bound cache entry without provider work', async () => {
   const output = syntheticPng1024(2);
   const setup = fixture();
-  const promptSha256 = await sha256Hex(CARICATURE_PROMPT);
+  const promptSha256 = await sha256Hex(ACTIVE_PROMPT);
   setup.dependencies.repository.loadVerifiedCache = async (_paths, expected) => {
     setup.calls.cache += 1;
     return {
@@ -118,7 +170,7 @@ test('reuses only a verified content-bound cache entry without provider work', a
         sourcePhotoUrlSha256: expected.sourcePhotoUrlSha256,
         sourcePhotoSha256: expected.sourcePhotoSha256,
         model: IMAGE_MODEL,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: ACTIVE_PROMPT_VERSION,
         promptSha256,
         cacheKeyContextSha256: expected.cacheKeyContextSha256,
         providerRequestId: 'synthetic-cached-request',
@@ -152,7 +204,7 @@ test('fails closed when a cache entry is bound to a different source photo hash'
       sourcePhotoUrlSha256: expected.sourcePhotoUrlSha256,
       sourcePhotoSha256: 'a'.repeat(64),
       model: IMAGE_MODEL,
-      promptVersion: PROMPT_VERSION,
+      promptVersion: ACTIVE_PROMPT_VERSION,
       promptSha256: expected.promptSha256,
       cacheKeyContextSha256: expected.cacheKeyContextSha256,
       providerRequestId: 'synthetic-wrong-binding',

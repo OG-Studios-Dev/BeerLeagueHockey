@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as policyModule from '../policy.ts';
 import {
   EXPECTED_PROJECT_REF,
   assertExpectedSupabaseUrl,
@@ -43,6 +44,69 @@ test('request parser preserves valid literal IDs and rejects malformed, duplicat
   assert.throws(() => parseIllustrationRequest({ editionId, generationToken, playerIds: [playerId, playerId] }), /INVALID_REQUEST/);
   assert.throws(() => parseIllustrationRequest({ editionId, generationToken, playerIds: [playerId, editionId, generationToken, '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555'] }), /INVALID_REQUEST/);
   assert.throws(() => parseIllustrationRequest({ editionId, generationToken, playerIds: [playerId], prompt: 'caller supplied' }), /INVALID_REQUEST/);
+  assert.throws(() => parseIllustrationRequest({ editionId, generationToken, playerIds: [playerId], composition: 'upright-stick' }), /INVALID_REQUEST/);
+});
+
+test('the closed composition palette keeps every identity, style, fact-safety, and crop invariant', () => {
+  const expectedIds = [
+    'portrait-three-quarter',
+    'stick-over-shoulder',
+    'upright-stick',
+    'rink-ready-pose',
+    'net-and-pucks',
+  ];
+  assert.deepEqual(policyModule.ILLUSTRATION_COMPOSITIONS, expectedIds);
+  const prompts = expectedIds.map((compositionId) => policyModule.composeIllustrationPrompt(compositionId));
+  assert.equal(new Set(prompts).size, expectedIds.length);
+  for (const [index, prompt] of prompts.entries()) {
+    assert.equal(
+      policyModule.promptVersionForComposition(expectedIds[index]),
+      `hockey-life-editorial-caricature-v2:${expectedIds[index]}`,
+    );
+    for (const invariant of [
+      /supplied (?:real )?player profile photo (?:is|as) the sole identity reference/i,
+      /exactly one adult/i,
+      /recognizable.*face/i,
+      /face.*prominent.*unobstructed/i,
+      /same facial structure.*hair.*facial hair.*skin tone/i,
+      /no helmet or visor.*obscur/i,
+      /fine (?:black )?ink.*cross-hatching.*muted watercolour.*cream newsprint/i,
+      /generic.*unbranded.*gear/i,
+      /no text.*numbers.*logos.*stats.*opponents.*score.*trophy.*injury.*claimed game event/i,
+      /posed editorial hockey-ready stance.*not game chronology/i,
+      /subject.*stick.*equipment.*central safe area.*web cover crops.*native contain/i,
+    ]) assert.match(prompt, invariant);
+  }
+  assert.match(prompts[4], /net and pucks.*decorative practice-equipment motif.*not.*game/i);
+});
+
+test('composition selection rotates every consecutive cover week and hashes supporting-star scope deterministically', async () => {
+  assert.equal(typeof policyModule.selectIllustrationComposition, 'function');
+  const consecutiveMondays = [
+    '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28',
+    '2026-10-05', '2026-10-12', '2026-10-19',
+  ];
+  const covers = await Promise.all(consecutiveMondays.map((periodStart) => (
+    policyModule.selectIllustrationComposition({ periodStart, playerId, starIndex: 0 })
+  )));
+  for (let index = 1; index < covers.length; index += 1) assert.notEqual(covers[index], covers[index - 1]);
+
+  const supportingInput = { periodStart: '2026-09-21', playerId, starIndex: 1 };
+  assert.equal(await policyModule.selectIllustrationComposition(supportingInput), 'rink-ready-pose');
+  assert.equal(
+    await policyModule.selectIllustrationComposition({ ...supportingInput, playerId: playerId.toUpperCase() }),
+    'rink-ready-pose',
+  );
+  assert.equal(await policyModule.selectIllustrationComposition(supportingInput), 'rink-ready-pose');
+
+  const source = [
+    policyModule.canonicalWeekOrdinal,
+    policyModule.selectIllustrationComposition,
+  ].map((value) => value.toString()).join('\n');
+  assert.doesNotMatch(source, /Math\.random|Date\.now|provider/i);
+  const policySource = await import('node:fs').then(({ readFileSync }) => readFileSync(new URL('../policy.ts', import.meta.url), 'utf8'));
+  assert.match(policySource, /hockey-life-newspaper-supporting-composition:v1/);
+  assert.match(policySource, /weekOrdinal[\s\S]*canonicalPlayerId[\s\S]*starIndex/);
 });
 
 test('photo URLs are restricted to public player-avatars objects on approved HTTPS hosts', () => {

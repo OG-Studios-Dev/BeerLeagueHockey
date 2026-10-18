@@ -99,6 +99,7 @@ describe('Hockey Life Times artwork integration', () => {
     expect(completeAt).toBeGreaterThan(invokeAt);
     expect(failAt).toBeGreaterThan(completeAt);
     expect(source).toContain('p_edition_json: illustratedEdition');
+    expect(source).toContain("p_generation_method: 'deterministic-verified-facts-with-gpt-image-2-v2'");
     expect(source).toContain('p_lease_seconds: 180');
   });
 

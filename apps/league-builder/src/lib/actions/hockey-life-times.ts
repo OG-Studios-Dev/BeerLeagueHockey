@@ -609,7 +609,7 @@ export async function generateHockeyLifeTimesDraft(input: {
       p_edition_id: claimed.id,
       p_generation_token: claimed.generation_token,
       p_edition_json: illustratedEdition as NewspaperEdition,
-      p_generation_method: 'deterministic-verified-facts-with-gpt-image-2-v1',
+      p_generation_method: 'deterministic-verified-facts-with-gpt-image-2-v2',
     });
     if (complete.error) throw complete.error;
     revalidatePath(`/dashboard/leagues/${input.leagueId}/news`);

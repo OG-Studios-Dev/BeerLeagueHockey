@@ -1,7 +1,9 @@
 export const EXPECTED_PROJECT_REF = 'ntplczcmhvfkijjxavdl';
 export const HOCKEY_LIFE_LEAGUE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 export const IMAGE_MODEL = 'gpt-image-2';
-export const PROMPT_VERSION = 'hockey-life-editorial-caricature-v1';
+export const LEGACY_PROMPT_VERSION = 'hockey-life-editorial-caricature-v1';
+export const PROMPT_VERSION = LEGACY_PROMPT_VERSION;
+export const PROMPT_VERSION_PREFIX = 'hockey-life-editorial-caricature-v2:';
 export const IMAGE_SIZE = '1024x1024';
 export const IMAGE_QUALITY = 'high';
 export const OUTPUT_MIME = 'image/png';
@@ -402,6 +404,99 @@ export async function verifyHmacSha256Hex(secret: string, message: string, signa
   return crypto.subtle.verify('HMAC', key, ownedBuffer(signature), ownedBuffer(new TextEncoder().encode(message)));
 }
 
+export const ILLUSTRATION_COMPOSITIONS = [
+  'portrait-three-quarter',
+  'stick-over-shoulder',
+  'upright-stick',
+  'rink-ready-pose',
+  'net-and-pucks',
+] as const;
+
+export type IllustrationCompositionId = typeof ILLUSTRATION_COMPOSITIONS[number];
+
+const COMPOSITION_PROMPTS: Record<IllustrationCompositionId, string> = {
+  'portrait-three-quarter': 'Composition: a chest-up natural three-quarter portrait with relaxed shoulders and one gloved hand lightly resting on the stick shaft.',
+  'stick-over-shoulder': 'Composition: a waist-up three-quarter portrait with the hockey stick angled clearly over one shoulder and both hands visible.',
+  'upright-stick': 'Composition: an upright waist-up portrait with one gloved hand holding the hockey stick vertically beside the body.',
+  'rink-ready-pose': 'Composition: a balanced knees-up rink-ready pose with both gloved hands on the hockey stick, clearly posed rather than moving through play.',
+  'net-and-pucks': 'Composition: a three-quarter rink-ready portrait with a small net and a few pucks arranged behind the subject. The net and pucks are a decorative practice-equipment motif only, not evidence of a game or event.',
+};
+
+const PROMPT_INVARIANTS = [
+  'The supplied real player profile photo is the sole identity reference.',
+  "Create exactly one adult in a posed editorial hockey-ready stance, not game chronology. Make the same person's recognizable face prominent, fully visible, and unobstructed.",
+  'Preserve the same facial structure, hair, facial hair, skin tone, and other identity-defining features.',
+  'No helmet or visor may obscure identity.',
+  'Style: fine black ink linework and cross-hatching, restrained muted watercolour washes, and a warm cream newsprint background in a classic local sports newspaper illustration.',
+  'Use only generic, unbranded hockey gear.',
+  'No text, letters, numbers, jersey numbers, logos, stats, opponents, score, trophy, injury, or claimed game event.',
+  'Keep the subject and all stick and equipment inside a central safe area for existing web cover crops and native contain.',
+];
+
+function isIllustrationCompositionId(value: string): value is IllustrationCompositionId {
+  return (ILLUSTRATION_COMPOSITIONS as readonly string[]).includes(value);
+}
+
+export function promptVersionForComposition(compositionId: string): string {
+  if (!isIllustrationCompositionId(compositionId)) throw new Error('INVALID_ILLUSTRATION_COMPOSITION');
+  return `${PROMPT_VERSION_PREFIX}${compositionId}`;
+}
+
+export function isSupportedPromptVersion(value: unknown): value is string {
+  if (value === LEGACY_PROMPT_VERSION) return true;
+  if (typeof value !== 'string' || !value.startsWith(PROMPT_VERSION_PREFIX)) return false;
+  return isIllustrationCompositionId(value.slice(PROMPT_VERSION_PREFIX.length));
+}
+
+export function composeIllustrationPrompt(compositionId: string): string {
+  if (!isIllustrationCompositionId(compositionId)) throw new Error('INVALID_ILLUSTRATION_COMPOSITION');
+  return [...PROMPT_INVARIANTS, COMPOSITION_PROMPTS[compositionId]].join(' ');
+}
+
+const SUPPORTING_COMPOSITION_DOMAIN = 'hockey-life-newspaper-supporting-composition:v1';
+const MILLISECONDS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+
+export function canonicalWeekOrdinal(periodStart: string): number {
+  if (!ISO_DATE.test(periodStart)) throw new Error('INVALID_EDITION_SCOPE');
+  const start = new Date(`${periodStart}T12:00:00Z`);
+  if (
+    Number.isNaN(start.getTime())
+    || start.toISOString().slice(0, 10) !== periodStart
+    || start.getUTCDay() !== 1
+  ) throw new Error('INVALID_EDITION_SCOPE');
+  return Math.floor(start.getTime() / MILLISECONDS_PER_WEEK);
+}
+
+export async function selectIllustrationComposition(input: {
+  periodStart: string;
+  playerId: string;
+  starIndex: number;
+}): Promise<IllustrationCompositionId> {
+  const weekOrdinal = canonicalWeekOrdinal(input.periodStart);
+  const canonicalPlayerId = input.playerId.toLowerCase();
+  const starIndex = input.starIndex;
+  if (!isUuid(canonicalPlayerId) || !Number.isInteger(starIndex) || starIndex < 0 || starIndex >= MAX_PLAYERS) {
+    throw new Error('INVALID_ILLUSTRATION_SELECTION');
+  }
+  if (starIndex === 0) {
+    const paletteIndex = ((weekOrdinal % ILLUSTRATION_COMPOSITIONS.length) + ILLUSTRATION_COMPOSITIONS.length)
+      % ILLUSTRATION_COMPOSITIONS.length;
+    return ILLUSTRATION_COMPOSITIONS[paletteIndex];
+  }
+  const hash = await sha256Hex([
+    SUPPORTING_COMPOSITION_DOMAIN,
+    String(weekOrdinal),
+    canonicalPlayerId,
+    String(starIndex),
+  ].join('\0'));
+  let paletteIndex = 0;
+  for (let offset = 0; offset < hash.length; offset += 2) {
+    paletteIndex = (paletteIndex + Number.parseInt(hash.slice(offset, offset + 2), 16)) % ILLUSTRATION_COMPOSITIONS.length;
+  }
+  return ILLUSTRATION_COMPOSITIONS[paletteIndex];
+}
+
+/** @deprecated Future generation uses composeIllustrationPrompt with a closed v2 composition. */
 export const CARICATURE_PROMPT = [
   'Use the supplied real player profile photo only as the identity reference.',
   'Create a recognizable chest-up editorial newspaper caricature of this same adult person.',
@@ -433,7 +528,7 @@ export function cachePaths(identity: CacheIdentity) {
     !isUuid(identity.playerId)
     || hashes.some((value) => !/^[0-9a-f]{64}$/.test(value))
     || identity.model !== IMAGE_MODEL
-    || identity.promptVersion !== PROMPT_VERSION
+    || !isSupportedPromptVersion(identity.promptVersion)
   ) throw new Error('INVALID_CACHE_IDENTITY');
   const root = [
     CACHE_PREFIX,

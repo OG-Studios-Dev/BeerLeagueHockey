@@ -477,6 +477,7 @@ describe('mounted native article reader state', () => {
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' },
       '../../components/NativeNewspaperEdition': { __esModule: true, default: (props: any) => createElement('NativeEdition', props) },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [], parseInlineMarkdown: () => [], classifyArticleHref: () => null, publicArticleUrl: (leagueSlug: string, articleSlug: string) => `https://${leagueSlug}.beerleaguehockey.ca/${leagueSlug}/news/${articleSlug}` },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: async () => ({ status: 'ready', edition: edition() }) },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: { buttonDefault: '#22D3EE', textOnPrimary: '#02111B', textPrimary: '#F7FBFF', textSecondary: '#A8B4C8' } },
@@ -515,6 +516,7 @@ describe('mounted native article reader state', () => {
     assert.ok(allNodes(output).findIndex((node) => node === button) < allNodes(output).findIndex((node) => node.type === 'NativeEdition'));
     button.props.onPress();
     button.props.onPress();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(shareCalls, [{ title: 'Hockey Life Times', message: 'Hockey Life Times', url: 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/hockey-life-times-2026-09-28-145ac7ee' }]);
 
     current = { id: '22222222-2222-4222-8222-222222222222', slug: 'second-story', title: 'Second Story' };
@@ -522,6 +524,7 @@ describe('mounted native article reader state', () => {
     platform.OS = 'android';
     output = harness.output;
     findNode(output, (node) => node.props.accessibilityLabel === 'Share article')!.props.onPress();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(shareCalls[1], { title: 'Second Story', message: 'Second Story\nhttps://hockey-life.beerleaguehockey.ca/hockey-life/news/second-story' });
 
     pending[0]!.resolve({ action: 'dismissedAction' });
@@ -531,6 +534,7 @@ describe('mounted native article reader state', () => {
     pending[1]!.reject(new Error('native share rejected'));
     await new Promise<void>((resolve) => setImmediate(resolve));
     findNode(harness.render(), (node) => node.props.accessibilityLabel === 'Share article')!.props.onPress();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(shareCalls.length, 3);
     pending[2]!.resolve({ action: 'dismissedAction' });
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -544,6 +548,7 @@ describe('mounted native article reader state', () => {
       'react-native': { ActivityIndicator: 'ActivityIndicator', Image: 'Image', Linking: { openURL: async () => undefined }, Platform: { OS: 'ios' }, Share: { share: async () => ({ action: 'dismissedAction' }) }, Pressable: 'Pressable', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' }, '../../components/NativeNewspaperEdition': { __esModule: true, default: 'NativeEdition' },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [{ kind: 'paragraph', text: 'Inline Player remains in the story.' }], parseInlineMarkdown: (value: string) => [{ text: value }], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/story' },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: async () => ({ status: 'unavailable' }) },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: {} },
@@ -579,7 +584,8 @@ describe('mounted native article reader state', () => {
       const Screen = compileCommonJs<any>(new URL('../../src/screens/league-pages/NewsArticleScreen.tsx', import.meta.url), {
         react: React, 'react-native': { ActivityIndicator: element('i'), Image: element('img'), Linking: { openURL: async () => { throw new Error('not called'); } }, Pressable: element('button'), StyleSheet: { create: <T>(value: T) => value }, Text: element('span'), View: element('div') },
         '../../components/Avatar': { __esModule: true, default: element('span') }, '../../components/TeamLogo': { __esModule: true, default: element('span') }, '../../components/NativeNewspaperEdition': { __esModule: true, default: ({ edition: value }: any) => React.createElement('article', null, value.lead.headline) }, '../../components/CardFocus': { FocusCard: element('div') },
-        '../../lib/leagueContentModel': { parseArticleBlocks: () => [{ kind: 'paragraph', text: 'FULL BODY' }], parseInlineMarkdown: (value: string) => [{ text: value }], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/article' }, '../../lib/newspaperReader': { loadPublishedNewspaperEdition: load }, '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: {} },
+        '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
+      '../../lib/leagueContentModel': { parseArticleBlocks: () => [{ kind: 'paragraph', text: 'FULL BODY' }], parseInlineMarkdown: (value: string) => [{ text: value }], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/article' }, '../../lib/newspaperReader': { loadPublishedNewspaperEdition: load }, '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: {} },
         './LeaguePageCommon': { useLeaguePageScope: (value: unknown) => value, LeaguePageFrame: element('main'), PageLoadState: element('div'), commonStyles: { section: {}, sectionTitle: {}, card: {}, secondaryButton: {}, secondaryButtonText: {} } }, './ContentPageCommon': { useLeagueContent: () => ({ loading: false, error: null, retry() {}, data: { article: { id: publicRow.article_id, slug: expected.articleSlug, title: 'Article', publishedAt: publicRow.published_at, content: 'FULL BODY', mentions: [], taggedPlayers: [], relatedGame: null } } }) },
       }).default;
       const container = dom.window.document.getElementById('root')!; const root = createRoot(container);
@@ -605,6 +611,7 @@ describe('mounted native article reader state', () => {
       'react-native': { Image: 'Image', Linking: { openURL: async () => { throw new Error('not called'); } }, Pressable: 'Pressable', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' }, '../../components/NativeNewspaperEdition': { __esModule: true, default: 'NativeEdition' },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [{ kind: 'paragraph', text: 'FULL BODY FIRST and FULL BODY LAST' }], parseInlineMarkdown: (value: string) => [{ text: value }], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/article' },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: (identity: any, _query: unknown, options: { signal?: AbortSignal }) => reader.loadPublishedNewspaperEdition(identity, () => new Promise(() => {}), { ...options, timeoutMs: 5 }) },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: {} },
@@ -630,6 +637,7 @@ describe('mounted native article reader state', () => {
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' },
       '../../components/NativeNewspaperEdition': { __esModule: true, default: ({ edition: value }: any) => createElement('NativeEdition', { edition: value }, value.lead.headline) },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [{ kind: 'paragraph', text: 'fallback body' }], parseInlineMarkdown: (value: string) => [{ text: value }], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/article' },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: ({ articleId: id }: any) => new Promise((resolve) => pending.set(id, resolve)) },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) },
@@ -660,6 +668,7 @@ describe('mounted native article reader state', () => {
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' },
       '../../components/NativeNewspaperEdition': { __esModule: true, default: 'NativeEdition' },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [{ kind: 'paragraph', text: 'Complete fallback article body.' }], parseInlineMarkdown: (value: string) => [{ text: value }], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/article' },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: async () => (++attempts === 1 ? { status: 'error', message: 'Edition lookup failed.' } : { status: 'unavailable' }) },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) },
@@ -690,6 +699,7 @@ describe('mounted native article reader state', () => {
       'react-native': { Image: 'Image', Linking: { openURL: async () => undefined }, Pressable: 'Pressable', StyleSheet: { create: <T>(value: T) => value }, Text: 'Text', View: 'View' },
       '../../components/Avatar': { __esModule: true, default: 'Avatar' }, '../../components/TeamLogo': { __esModule: true, default: 'TeamLogo' }, '../../components/NativeNewspaperEdition': { __esModule: true, default: 'NativeEdition' },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': { parseArticleBlocks: () => [], parseInlineMarkdown: () => [], classifyArticleHref: () => null, publicArticleUrl: () => 'https://hockey-life.beerleaguehockey.ca/hockey-life/news/article' },
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: (_identity: unknown, _query: unknown, options: { signal?: AbortSignal }) => { requestSignal = options.signal; return new Promise((resolve) => { release = resolve; }); } },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#1F6A44' }) }, '../../theme/colors': { __esModule: true, default: {} },

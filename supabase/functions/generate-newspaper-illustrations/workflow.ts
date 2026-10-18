@@ -1,18 +1,20 @@
 import {
-  CARICATURE_PROMPT,
   HOCKEY_LIFE_LEAGUE_ID,
   IMAGE_MODEL,
   MAX_PLAYERS,
   MAX_OUTPUT_IMAGE_BYTES,
   OUTPUT_MIME,
   PRIVATE_MEDIA_BUCKET,
-  PROMPT_VERSION,
   assertCanonicalWeek,
   assertPng1024,
   cachePaths,
+  composeIllustrationPrompt,
   editionUtcBounds,
   hmacSha256Hex,
   immutableMediaPaths,
+  isSupportedPromptVersion,
+  promptVersionForComposition,
+  selectIllustrationComposition,
   sha256Hex,
   validatePlayerPhotoUrl,
   verifyHmacSha256Hex,
@@ -285,6 +287,8 @@ export function cacheMetadataMatches(actual: CacheMetadata, expected: Partial<Ca
     !actual
     || actual.schemaVersion !== 2
     || actual.generator !== 'generate-newspaper-illustrations'
+    || actual.model !== IMAGE_MODEL
+    || !isSupportedPromptVersion(actual.promptVersion)
     || actual.outputMime !== OUTPUT_MIME
     || !/^[0-9a-f]{64}$/.test(actual.sourcePhotoSha256)
     || !/^[0-9a-f]{64}$/.test(actual.sourcePhotoUrlSha256)
@@ -368,17 +372,24 @@ export async function generateIllustrations(
 
   const profiles = await run(() => dependencies.repository.loadProfiles(request.playerIds));
   const profilesById = new Map(profiles.map((profile) => [profile.id.toLowerCase(), profile]));
-  const resolved = request.playerIds.map((playerId) => {
+  const resolved = request.playerIds.map((playerId, starIndex) => {
     const profile = profilesById.get(playerId.toLowerCase());
     if (!profile || profile.id.toLowerCase() !== playerId.toLowerCase()) throw new Error('PLAYER_PROFILE_NOT_FOUND');
     if (!profile.full_name?.trim()) throw new Error('PLAYER_NAME_UNRESOLVED');
     if (!profile.avatar_url) throw new Error('PLAYER_PHOTO_UNRESOLVED');
     validatePlayerPhotoUrl(profile.avatar_url);
-    return { playerId, profile };
+    return { playerId, profile, starIndex };
   });
 
-  const promptSha256 = await sha256Hex(CARICATURE_PROMPT);
-  const illustrations = await mapBounded(resolved, Math.max(1, Math.min(MAX_PLAYERS, dependencies.concurrency ?? 2)), async ({ playerId, profile }): Promise<IllustrationResult> => {
+  const illustrations = await mapBounded(resolved, Math.max(1, Math.min(MAX_PLAYERS, dependencies.concurrency ?? 2)), async ({ playerId, profile, starIndex }): Promise<IllustrationResult> => {
+    const compositionId = await selectIllustrationComposition({
+      periodStart: edition.period_start,
+      playerId: profile.id,
+      starIndex,
+    });
+    const prompt = composeIllustrationPrompt(compositionId);
+    const promptVersion = promptVersionForComposition(compositionId);
+    const promptSha256 = await sha256Hex(prompt);
     const source = await run(() => dependencies.photos.load(profile.avatar_url!));
     const sourcePhotoSha256 = await sha256Hex(source.bytes);
     validatePlayerPhotoUrl(source.url);
@@ -388,7 +399,7 @@ export async function generateIllustrations(
       sourcePhotoUrlSha256,
       sourcePhotoSha256,
       model: IMAGE_MODEL,
-      promptVersion: PROMPT_VERSION,
+      promptVersion,
       promptSha256,
       cacheKeyContextSha256: dependencies.repository.cacheKeyContextSha256,
     };
@@ -401,7 +412,7 @@ export async function generateIllustrations(
       sourcePhotoUrlSha256,
       sourcePhotoSha256,
       model: IMAGE_MODEL,
-      promptVersion: PROMPT_VERSION,
+      promptVersion,
       promptSha256,
       cacheKeyContextSha256: dependencies.repository.cacheKeyContextSha256,
       outputMime: OUTPUT_MIME,
@@ -416,11 +427,11 @@ export async function generateIllustrations(
         outputMime: OUTPUT_MIME, outputBytes: cached.metadata.outputBytes,
         privatePath: cached.metadata.privatePath, publicPath: cached.metadata.publicPath,
         publicUrl: cached.metadata.publicUrl, model: IMAGE_MODEL,
-        promptVersion: PROMPT_VERSION, cacheHit: true,
+        promptVersion, cacheHit: true,
       };
     }
 
-    const generated = await run(() => dependencies.provider.generate({ image: source.bytes, mime: source.mime, prompt: CARICATURE_PROMPT }));
+    const generated = await run(() => dependencies.provider.generate({ image: source.bytes, mime: source.mime, prompt }));
     if (generated.image.byteLength > 16 * 1024 * 1024) throw new Error('GENERATED_IMAGE_TOO_LARGE');
     await assertPng1024(generated.image);
     const outputSha256 = await sha256Hex(generated.image);
@@ -443,7 +454,7 @@ export async function generateIllustrations(
       outputMime: OUTPUT_MIME, outputBytes: verified.metadata.outputBytes,
       privatePath: verified.metadata.privatePath, publicPath: verified.metadata.publicPath,
       publicUrl: verified.metadata.publicUrl, model: IMAGE_MODEL,
-      promptVersion: PROMPT_VERSION, cacheHit: false,
+      promptVersion, cacheHit: false,
     };
   });
 

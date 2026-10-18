@@ -79,6 +79,7 @@ describe('mounted native content navigation', () => {
       '../../components/TeamLogo': { __esModule: true, default: (props: any) => createElement('TeamLogo', props) },
       '../../components/NativeNewspaperEdition': { __esModule: true, default: (props: any) => createElement('NativeEdition', props) },
       '../../components/CardFocus': { FocusCard: (props: any) => createElement('FocusCard', props, props.children) },
+      '../../lib/articlePdfShare': { shareLoadedArticlePdf: async () => { throw new Error('native file sharing unavailable'); } },
       '../../lib/leagueContentModel': leagueContentModel,
       '../../lib/newspaperReader': { loadPublishedNewspaperEdition: async () => ({ status: 'unavailable' }) },
       '../../navigation/MobileShellDataContext': { useMobileShellData: () => ({ focusAccent: '#0ff' }) },

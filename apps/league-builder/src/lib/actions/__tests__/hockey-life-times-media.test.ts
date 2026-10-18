@@ -10,6 +10,7 @@ import {
   decodeIllustrationResponse,
   hydrateDraftMedia,
   promoteApprovedMedia,
+  validateMediaManifest,
   type MediaStorageAdapter,
   type NewspaperIllustration,
   type NewspaperReviewedMediaAsset,
@@ -74,6 +75,55 @@ describe('Hockey Life Times immutable media contract', () => {
     expect(decoded.get(playerId)).toEqual(illustration);
     expect(() => decodeIllustrationResponse({ illustrations: [{ ...illustration, publicPath: 'caller/chosen.png' }] }, [playerId])).toThrow(/mapping/i);
     expect(() => decodeIllustrationResponse({ illustrations: [{ ...illustration, signedUrl: 'secret' }] }, [playerId])).toThrow(/unexpected fields/i);
+  });
+
+  it('accepts legacy v1, every closed v2 generator variant, and reviewed imports v1/v2 while rejecting unknowns', () => {
+    const v2Versions = [
+      'hockey-life-editorial-caricature-v2:portrait-three-quarter',
+      'hockey-life-editorial-caricature-v2:stick-over-shoulder',
+      'hockey-life-editorial-caricature-v2:upright-stick',
+      'hockey-life-editorial-caricature-v2:rink-ready-pose',
+      'hockey-life-editorial-caricature-v2:net-and-pucks',
+    ];
+    expect(decodeIllustrationResponse({ illustrations: [illustration] }, [playerId]).get(playerId)?.promptVersion)
+      .toBe('hockey-life-editorial-caricature-v1');
+    for (const promptVersion of v2Versions) {
+      expect(decodeIllustrationResponse({ illustrations: [{ ...illustration, promptVersion }] }, [playerId]).get(playerId)?.promptVersion)
+        .toBe(promptVersion);
+    }
+    expect(() => decodeIllustrationResponse({
+      illustrations: [{ ...illustration, promptVersion: 'hockey-life-editorial-caricature-v2:unknown' }],
+    }, [playerId])).toThrow(/unsupported generator contract/i);
+
+    const reviewedBase = {
+      playerId,
+      outputSha256,
+      outputMime: 'image/png',
+      outputBytes: bytes.byteLength,
+      privatePath: `outputs/v1/${outputSha256}.png`,
+      publicPath: `approved/v1/${outputSha256}.png`,
+      publicUrl,
+      sourceArtifactSha256: 'b'.repeat(64),
+      decodedPixelSha256: 'c'.repeat(64),
+      approvedEditionSha256: 'd'.repeat(64),
+      approvedPdfSha256: 'e'.repeat(64),
+    };
+    for (const provenance of ['trusted-reviewed-import-v1', 'trusted-reviewed-import-v2']) {
+      expect(validateMediaManifest({
+        schemaVersion: 2,
+        assets: [{ ...reviewedBase, provenance }],
+        bindings: [{
+          field: 'lead.imageUrl',
+          playerId,
+          gameId: '44444444-4444-4444-8444-444444444444',
+        }],
+      }).assets[0]).toMatchObject({ provenance });
+    }
+    expect(() => validateMediaManifest({
+      schemaVersion: 2,
+      assets: [{ ...reviewedBase, provenance: 'trusted-reviewed-import-v3' }],
+      bindings: [{ field: 'lead.imageUrl', playerId, gameId: '44444444-4444-4444-8444-444444444444' }],
+    })).toThrow(/provenance/i);
   });
 
   it('persists only reserved stable URLs and a typed private manifest', () => {
