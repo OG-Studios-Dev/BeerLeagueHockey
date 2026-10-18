@@ -72,6 +72,21 @@
         "image": "macos-tahoe-26.5-xcode-26.6",
         "simulator": false
       }
+    },
+    "production-cloud-build46": {
+      "node": "22.11.0",
+      "pnpm": "10.17.1",
+      "channel": "production",
+      "developmentClient": false,
+      "distribution": "store",
+      "environment": "production",
+      "autoIncrement": false,
+      "credentialsSource": "remote",
+      "resourceClass": "medium",
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "simulator": false
+      }
     }
   },
   "submit": {
