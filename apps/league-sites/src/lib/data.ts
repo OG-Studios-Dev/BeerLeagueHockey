@@ -1573,6 +1573,7 @@ type StrictFallbackEvidenceRow = {
 };
 
 const FALLBACK_SCOPE_BATCH_SIZE = 50;
+const FALLBACK_REQUEST_TARGET_MAX_BYTES = 8192;
 
 function canonicalRosterDateKey(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -1597,6 +1598,7 @@ async function getStrictFallbackRosterAppearanceRows(
     playerIds?: string[];
     gameStatuses: readonly string[];
     strictBatchConcurrency: number;
+    strictEvidenceBatchConcurrency: number;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   const requestedSeasonIds = options.seasonIds;
@@ -1739,26 +1741,129 @@ async function getStrictFallbackRosterAppearanceRows(
   }
   if (gameRows.length === 0) return [];
 
-  const gamesBySeason = new Map<string, StrictFallbackGameRow[]>();
-  for (const game of gameRows) {
+  type CoreEvidenceScope = {
+    seasonIds: string[];
+    gameIds: string[];
+    teamIds: string[];
+  };
+  type CoreEvidenceGame = {
+    seasonId: string;
+    gameId: string;
+    teamIds: string[];
+  };
+  const coreEvidenceGames: CoreEvidenceGame[] = gameRows.map((game) => {
     const seasonId = game.season_id as string;
-    const seasonGames = gamesBySeason.get(seasonId) || [];
-    seasonGames.push(game);
-    gamesBySeason.set(seasonId, seasonGames);
-  }
-  const gameEvidenceScopes = requestedSeasonIds.flatMap((seasonId) => (
-    chunkCanonicalValues(
-      gamesBySeason.get(seasonId) || [],
-      FALLBACK_SCOPE_BATCH_SIZE,
-    ).map((games) => ({
+    const rosterTeamIds = rosterDomainBySeason.get(seasonId)!;
+    return {
       seasonId,
-      gameIds: games.map((game) => game.id as string),
-      teamIds: [...new Set(games.flatMap((game) => [game.home_team_id, game.away_team_id])
-        .filter((teamId): teamId is string => (
-          typeof teamId === 'string' && rosterDomainBySeason.get(seasonId)!.has(teamId)
-        )))],
-    }))
-  ));
+      gameId: game.id as string,
+      teamIds: [game.home_team_id, game.away_team_id].filter((teamId): teamId is string => (
+        typeof teamId === 'string' && rosterTeamIds.has(teamId)
+      )),
+    };
+  });
+  const toCoreEvidenceScope = (games: CoreEvidenceGame[]): CoreEvidenceScope => ({
+    seasonIds: [...new Set(games.map((game) => game.seasonId))],
+    gameIds: games.map((game) => game.gameId),
+    teamIds: [...new Set(games.flatMap((game) => game.teamIds))],
+  });
+  const coreEvidenceSources = [
+    {
+      table: 'game_checkins' as const,
+      selection: 'id, game_id, team_id, player_id',
+      context: 'fallback out check-ins',
+      statusOut: true,
+      seasonScoped: false,
+    },
+    {
+      table: 'player_availability' as const,
+      selection: 'id, game_id, team_id, player_id, season_id',
+      context: 'fallback out availability',
+      statusOut: true,
+      seasonScoped: true,
+    },
+    {
+      table: 'player_stats' as const,
+      selection: 'id, game_id, team_id, player_id, season_id',
+      context: 'fallback skater signals',
+      statusOut: false,
+      seasonScoped: true,
+    },
+    {
+      table: 'goalie_stats' as const,
+      selection: 'id, game_id, team_id, player_id, season_id',
+      context: 'fallback goalie signals',
+      statusOut: false,
+      seasonScoped: true,
+    },
+  ];
+  type CoreEvidenceSource = typeof coreEvidenceSources[number];
+  const buildCoreEvidenceQuery = (source: CoreEvidenceSource, scope: CoreEvidenceScope) => {
+    let query = supabase
+      .from(source.table)
+      .select(source.selection, { count: 'exact' });
+    if (!source.seasonScoped) query = query.eq('status', 'out');
+    if (source.seasonScoped) {
+      query = scope.seasonIds.length === 1
+        ? query.eq('season_id', scope.seasonIds[0])
+        : query.in('season_id', scope.seasonIds);
+    }
+    query = query
+      .in('game_id', scope.gameIds)
+      .in('team_id', scope.teamIds);
+    if (source.seasonScoped && source.statusOut) query = query.eq('status', 'out');
+    if (requestedPlayerIds.length > 0) query = query.in('player_id', requestedPlayerIds);
+    query = query
+      .order('game_id', { ascending: true })
+      .order('team_id', { ascending: true });
+    if (!source.seasonScoped) query = query.order('player_id', { ascending: true });
+    return query.order('id', { ascending: true }) as unknown as StrictExactQuery<StrictFallbackEvidenceRow> & {
+      url?: { pathname?: unknown; search?: unknown };
+    };
+  };
+  const installedSerializerAvailable = Boolean(
+    (supabase as unknown as { rest?: { url?: unknown } }).rest?.url,
+  );
+  const measureCoreEvidenceTargetBytes = (source: CoreEvidenceSource, scope: CoreEvidenceScope) => {
+    if (!installedSerializerAvailable) return null;
+    const query = buildCoreEvidenceQuery(source, scope);
+    const largestSafePageOffset = Number.MAX_SAFE_INTEGER - CANONICAL_PAGE_SIZE + 1;
+    const rangedQuery = query.range(
+      largestSafePageOffset,
+      Number.MAX_SAFE_INTEGER,
+    ) as unknown as {
+      url?: { pathname?: unknown; search?: unknown };
+    };
+    const pathname = rangedQuery.url?.pathname;
+    const search = rangedQuery.url?.search;
+    if (typeof pathname !== 'string' || typeof search !== 'string') {
+      throwCanonicalReadError(new Error('installed serializer target unavailable'), 'fallback evidence request packing');
+    }
+    return new TextEncoder().encode(`${pathname}${search}`).byteLength;
+  };
+  const scopeFitsInstalledSerializer = (scope: CoreEvidenceScope) => coreEvidenceSources.every((source) => {
+    const targetBytes = measureCoreEvidenceTargetBytes(source, scope);
+    return targetBytes === null || targetBytes <= FALLBACK_REQUEST_TARGET_MAX_BYTES;
+  });
+  const gameEvidenceScopes: CoreEvidenceScope[] = [];
+  let pendingGames: CoreEvidenceGame[] = [];
+  for (const game of coreEvidenceGames) {
+    const candidateGames = [...pendingGames, game];
+    const candidateScope = toCoreEvidenceScope(candidateGames);
+    if (candidateGames.length <= FALLBACK_SCOPE_BATCH_SIZE && scopeFitsInstalledSerializer(candidateScope)) {
+      pendingGames = candidateGames;
+      continue;
+    }
+    if (pendingGames.length === 0) {
+      throwCanonicalReadError(new Error('single game exceeds request target ceiling'), 'fallback evidence request packing');
+    }
+    gameEvidenceScopes.push(toCoreEvidenceScope(pendingGames));
+    pendingGames = [game];
+    if (!scopeFitsInstalledSerializer(toCoreEvidenceScope(pendingGames))) {
+      throwCanonicalReadError(new Error('single game exceeds request target ceiling'), 'fallback evidence request packing');
+    }
+  }
+  if (pendingGames.length > 0) gameEvidenceScopes.push(toCoreEvidenceScope(pendingGames));
   if (gameEvidenceScopes.length === 0) return [];
 
   const outCheckinBatchRows: StrictFallbackEvidenceRow[][] = [];
@@ -1767,59 +1872,25 @@ async function getStrictFallbackRosterAppearanceRows(
   const goalieBatchRows: StrictFallbackEvidenceRow[][] = [];
   const gameLevelSkaterBatchRows: StrictFallbackEvidenceRow[][] = [];
   const gameLevelGoalieBatchRows: StrictFallbackEvidenceRow[][] = [];
-  const evidenceReads: StrictStageRead[] = [];
+  const coreEvidenceReads: StrictStageRead[] = [];
+  const optionalEvidenceReads: StrictStageRead[] = [];
 
-  for (const [batchIndex, scope] of gameEvidenceScopes.entries()) {
-    evidenceReads.push({
-      run: async () => {
-        outCheckinBatchRows[batchIndex] = await readStrictExactPages<StrictFallbackEvidenceRow>(() => {
-          let query = supabase
-            .from('game_checkins')
-            .select('id, game_id, team_id, player_id', { count: 'exact' })
-            .eq('status', 'out')
-            .in('game_id', scope.gameIds)
-            .in('team_id', scope.teamIds);
-          if (requestedPlayerIds.length > 0) query = query.in('player_id', requestedPlayerIds);
-          return query
-            .order('game_id', { ascending: true })
-            .order('team_id', { ascending: true })
-            .order('player_id', { ascending: true })
-            .order('id', { ascending: true }) as unknown as StrictExactQuery<StrictFallbackEvidenceRow>;
-        }, `fallback out check-ins batch ${batchIndex + 1}`);
-      },
-    });
-  }
-  const addCoreEvidenceReads = (
-    table: 'player_availability' | 'player_stats' | 'goalie_stats',
-    selection: string,
-    context: string,
-    output: StrictFallbackEvidenceRow[][],
-    statusOut: boolean,
-  ) => {
+  const addCoreEvidenceReads = (source: CoreEvidenceSource, output: StrictFallbackEvidenceRow[][]) => {
     for (const [batchIndex, scope] of gameEvidenceScopes.entries()) {
-      evidenceReads.push({
+      coreEvidenceReads.push({
         run: async () => {
-          output[batchIndex] = await readStrictExactPages<StrictFallbackEvidenceRow>(() => {
-            let query = supabase
-              .from(table)
-              .select(selection, { count: 'exact' })
-              .eq('season_id', scope.seasonId)
-              .in('game_id', scope.gameIds)
-              .in('team_id', scope.teamIds);
-            if (statusOut) query = query.eq('status', 'out');
-            if (requestedPlayerIds.length > 0) query = query.in('player_id', requestedPlayerIds);
-            return query
-              .order('game_id', { ascending: true })
-              .order('team_id', { ascending: true })
-              .order('id', { ascending: true }) as unknown as StrictExactQuery<StrictFallbackEvidenceRow>;
-          }, `${context} batch ${batchIndex + 1}`);
+          output[batchIndex] = await readStrictExactPages<StrictFallbackEvidenceRow>(
+            () => buildCoreEvidenceQuery(source, scope),
+            `${source.context} batch ${batchIndex + 1}`,
+          );
         },
       });
     }
   };
-  addCoreEvidenceReads('player_availability', 'id, game_id, team_id, player_id, season_id', 'fallback out availability', outAvailabilityBatchRows, true);
-  addCoreEvidenceReads('player_stats', 'id, game_id, team_id, player_id, season_id', 'fallback skater signals', skaterBatchRows, false);
-  addCoreEvidenceReads('goalie_stats', 'id, game_id, team_id, player_id, season_id', 'fallback goalie signals', goalieBatchRows, false);
+  addCoreEvidenceReads(coreEvidenceSources[0], outCheckinBatchRows);
+  addCoreEvidenceReads(coreEvidenceSources[1], outAvailabilityBatchRows);
+  addCoreEvidenceReads(coreEvidenceSources[2], skaterBatchRows);
+  addCoreEvidenceReads(coreEvidenceSources[3], goalieBatchRows);
 
   const scorelessGamesBySeason = new Map<string, StrictFallbackGameRow[]>();
   for (const game of gameRows) {
@@ -1846,7 +1917,7 @@ async function getStrictFallbackRosterAppearanceRows(
     output: StrictFallbackEvidenceRow[][],
   ) => {
     for (const [batchIndex, scope] of optionalScopes.entries()) {
-      evidenceReads.push({
+      optionalEvidenceReads.push({
         run: async () => {
           if (scope.gameIds.length === 0 || scope.teamIds.length === 0) {
             throwCanonicalReadError(new Error('invalid batch scope'), `${context} validation`);
@@ -1868,7 +1939,41 @@ async function getStrictFallbackRosterAppearanceRows(
   };
   addOptionalEvidenceReads('player_stats', 'fallback game skater signals', gameLevelSkaterBatchRows);
   addOptionalEvidenceReads('goalie_stats', 'fallback game goalie signals', gameLevelGoalieBatchRows);
-  await runStrictReadStage(evidenceReads, options.strictBatchConcurrency);
+  let coreEvidenceFailure: unknown;
+  try {
+    await runStrictReadStage(coreEvidenceReads, options.strictEvidenceBatchConcurrency);
+  } catch (error) {
+    coreEvidenceFailure = error;
+  }
+  let optionalEvidenceFailure: unknown;
+  try {
+    await runStrictReadStage(optionalEvidenceReads, options.strictBatchConcurrency);
+  } catch (error) {
+    optionalEvidenceFailure = error;
+  }
+  if (coreEvidenceFailure) throw coreEvidenceFailure;
+  if (optionalEvidenceFailure) throw optionalEvidenceFailure;
+
+  const validateCorePackMembership = (
+    batches: StrictFallbackEvidenceRow[][],
+    source: string,
+  ) => {
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+      const requestedPackGameIds = new Set(gameEvidenceScopes[batchIndex]?.gameIds || []);
+      for (const row of batches[batchIndex] || []) {
+        if (typeof row.game_id !== 'string' || !requestedPackGameIds.has(row.game_id)) {
+          throwCanonicalReadError(
+            new Error('provider returned evidence outside requested pack'),
+            `fallback ${source} evidence validation`,
+          );
+        }
+      }
+    }
+  };
+  validateCorePackMembership(outCheckinBatchRows, 'game_checkins');
+  validateCorePackMembership(outAvailabilityBatchRows, 'player_availability');
+  validateCorePackMembership(skaterBatchRows, 'core player_stats');
+  validateCorePackMembership(goalieBatchRows, 'core goalie_stats');
 
   const outCheckinRows = outCheckinBatchRows.flatMap((rows) => rows || []);
   const outAvailabilityRows = outAvailabilityBatchRows.flatMap((rows) => rows || []);
@@ -1988,10 +2093,14 @@ export async function getFallbackRosterAppearanceRows(
     gameStatuses?: readonly string[];
     strict?: boolean;
     strictBatchConcurrency?: number;
+    strictEvidenceBatchConcurrency?: number;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   const strictBatchConcurrency = options.strict
     ? resolveStrictBatchConcurrency(options.strictBatchConcurrency)
+    : CANONICAL_BATCH_CONCURRENCY;
+  const strictEvidenceBatchConcurrency = options.strict
+    ? resolveStrictBatchConcurrency(options.strictEvidenceBatchConcurrency ?? strictBatchConcurrency)
     : CANONICAL_BATCH_CONCURRENCY;
   const seasonIds = [...new Set([
     ...(options.seasonId ? [options.seasonId] : []),
@@ -2009,6 +2118,7 @@ export async function getFallbackRosterAppearanceRows(
       playerIds: options.playerIds,
       gameStatuses,
       strictBatchConcurrency,
+      strictEvidenceBatchConcurrency,
     });
   }
   const singleSeasonId = seasonIds.length === 1 ? seasonIds[0] : null;
@@ -6508,6 +6618,7 @@ export async function getPlayerCareerStatsTimeline(
             playerIds: [playerId],
             strict: true,
             strictBatchConcurrency: 2,
+            strictEvidenceBatchConcurrency: 1,
           })
         : [];
       return [confirmedCheckins, fallbackAppearances];
