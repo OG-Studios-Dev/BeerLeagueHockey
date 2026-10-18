@@ -111,6 +111,39 @@ describe('mobile Player Profile production dependencies', () => {
       getTimeline.mockRestore();
     }
   });
+
+  it('[v9 production coordinator pressure] omits the redundant health graph and keeps the selected-skater response graph at 41 provider requests', async () => {
+    const withoutHealth = await runProductionCoordinatorPressure({
+      ...mobilePlayerProfileDependencies,
+      assertHealthy: undefined,
+    });
+    const production = await runProductionCoordinatorPressure();
+
+    expect(withoutHealth.requestCount).toBe(46);
+    expect(withoutHealth.responseGraphRequestCount).toBe(41);
+    expect(withoutHealth.prerequisiteTables).toEqual([
+      'leagues', 'team_rosters', 'team_rosters', 'seasons', 'seasons',
+    ]);
+    expect(production.status).toBe(withoutHealth.status);
+    expect(production.body).toEqual(withoutHealth.body);
+    expect({
+      fullRouteRequestCount: production.requestCount,
+      responseGraphRequestCount: production.responseGraphRequestCount,
+      healthHeadRequests: production.healthHeadRequests,
+      hasProductionHealthHook: Object.prototype.hasOwnProperty.call(mobilePlayerProfileDependencies, 'assertHealthy'),
+      maxActive: production.maxActive,
+      activeAtReturn: production.activeAtReturn,
+      allSettledAtReturn: production.allSettledAtReturn,
+    }).toEqual({
+      fullRouteRequestCount: 46,
+      responseGraphRequestCount: 41,
+      healthHeadRequests: [],
+      hasProductionHealthHook: false,
+      maxActive: 4,
+      activeAtReturn: 0,
+      allSettledAtReturn: true,
+    });
+  });
 });
 
 describe('GET /api/mobile/player-profile', () => {
@@ -288,6 +321,32 @@ describe('GET /api/mobile/player-profile', () => {
     expect(d.getTimeline.mock.calls.map((call) => call[2])).toEqual([true]);
     expect(d.getStats).not.toHaveBeenCalled();
     expect(d.getMatchups.mock.calls.map((call) => call[2])).toEqual([true]);
+  });
+
+  it('[v9 injected health contract] reports stage=health and blocks every later dependency', async () => {
+    const d = deps();
+    d.assertHealthy = jest.fn().mockRejectedValue({ code: '57014' });
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ error: { code: 'UPSTREAM_FAILURE', message: 'Player profile data is temporarily unavailable.' } });
+    expect(log).toHaveBeenCalledWith('mobile_player_profile_dependency_failure', {
+      stage: 'health', providerCode: '57014',
+    });
+    expect(d.assertHealthy).toHaveBeenCalledWith(HOCKEY_LIFE_ID, PROFILE_ID, SEASON_ID);
+    expect(d.getPublicSeasonPlayer).not.toHaveBeenCalled();
+    expect(d.getTimeline).not.toHaveBeenCalled();
+    expect(d.getStats).not.toHaveBeenCalled();
+    expect(d.getGames).not.toHaveBeenCalled();
+    expect(d.getBadges).not.toHaveBeenCalled();
+    expect(d.getImportedAchievements).not.toHaveBeenCalled();
+    expect(d.getArticles).not.toHaveBeenCalled();
+    expect(d.getMatchups).not.toHaveBeenCalled();
+    expect(d.generateHotFacts).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it('[v7 canonical-role failure] preserves the timeline stage and generic 502 contract', async () => {
@@ -1604,6 +1663,219 @@ function strictTimelineProductionClient(options: {
     return query;
   }) };
   return { client, traces, appearance };
+}
+
+function productionCoordinatorPressureClient() {
+  type Trace = {
+    table: string;
+    selection: string;
+    selectOptions: { count?: string; head?: boolean } | null;
+    filters: Array<[string, string, unknown]>;
+    activeAtStart: number;
+    settled: boolean;
+  };
+  const state = { active: 0, maxActive: 0 };
+  const traces: Trace[] = [];
+  const seasons = [
+    { id: SEASON_ID, league_id: HOCKEY_LIFE_ID, name: 'Fall 2026', status: 'active', start_date: '2026-09-01', created_at: '2026-08-01' },
+    { id: OTHER_SEASON_ID, league_id: HOCKEY_LIFE_ID, name: 'Spring 2026', status: 'completed', start_date: '2026-03-01', created_at: '2026-02-01' },
+  ];
+  const games = [
+    { id: '80000000-0000-4000-8000-000000000001', league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, scheduled_at: '2026-09-20T20:00:00Z', status: 'completed', home_team_id: TEAM_ID, away_team_id: '71000000-0000-4000-8000-000000000007', home_score: 4, away_score: 2, location: 'Arena', penalty_capture_status: null, goalie_capture_status: null, skater_capture_status: null },
+    { id: '80000000-0000-4000-8000-000000000002', league_id: HOCKEY_LIFE_ID, season_id: OTHER_SEASON_ID, scheduled_at: '2026-03-20T20:00:00Z', status: 'completed', home_team_id: TEAM_ID, away_team_id: '71000000-0000-4000-8000-000000000007', home_score: 3, away_score: 1, location: 'Arena', penalty_capture_status: null, goalie_capture_status: null, skater_capture_status: null },
+  ];
+  const nestedGame = (game: typeof games[number]) => ({
+    ...game,
+    home_team: { id: TEAM_ID, name: 'Bad Bunny', slug: 'bad-bunny' },
+    away_team: { id: game.away_team_id, name: 'Visitors', slug: 'visitors' },
+  });
+  const rosters = seasons.map((season, index) => ({
+    id: `10000000-0000-4000-8000-00000000000${index + 1}`,
+    player_id: PROFILE_ID,
+    team_id: TEAM_ID,
+    league_id: HOCKEY_LIFE_ID,
+    season_id: season.id,
+    start_date: season.start_date,
+    joined_at: season.start_date,
+    end_date: null,
+    status: 'active',
+    player_type: 'regular',
+    historical_retained: false,
+    games_played_override: null,
+    jersey_number: 36,
+    leadership_role: null,
+    position: 'C',
+    is_goalie: false,
+    team: { name: 'Bad Bunny' },
+  }));
+  const checkins = games.map((game, index) => ({
+    id: `90000000-0000-4000-8000-00000000000${index + 1}`,
+    player_id: PROFILE_ID,
+    team_id: TEAM_ID,
+    game_id: game.id,
+    status: 'confirmed',
+    game: { id: game.id },
+  }));
+  const playerStats = games.map((game, index) => ({
+    id: `a0000000-0000-4000-8000-00000000000${index + 1}`,
+    game_id: game.id,
+    player_id: PROFILE_ID,
+    team_id: TEAM_ID,
+    league_id: HOCKEY_LIFE_ID,
+    season_id: game.season_id,
+    goals: index + 1,
+    assists: 1,
+    penalty_minutes: 2,
+    scorekeeping_provenance: 'recorded',
+    game: nestedGame(game),
+  }));
+  const sourceRows = (table: string, selection: string) => {
+    if (table === 'leagues') return [{ id: HOCKEY_LIFE_ID, slug: 'hockey-life', status: 'active' }];
+    if (table === 'seasons') return seasons;
+    if (table === 'teams') return [
+      { id: TEAM_ID, league_id: HOCKEY_LIFE_ID, division_id: null, name: 'Bad Bunny' },
+      { id: '71000000-0000-4000-8000-000000000007', league_id: HOCKEY_LIFE_ID, division_id: null, name: 'Visitors' },
+    ];
+    if (table === 'team_rosters') {
+      if (selection.includes('profile:profiles')) return rosters.map((row) => ({
+        ...row,
+        profile: { id: PROFILE_ID, full_name: 'Fixture Player', avatar_url: null, photo_url: null },
+        team: { id: TEAM_ID, name: 'Bad Bunny', slug: 'bad-bunny', logo_url: null, primary_color: null, secondary_color: null, league_id: HOCKEY_LIFE_ID },
+      }));
+      return rosters;
+    }
+    if (table === 'games') return games;
+    if (table === 'game_checkins') return checkins;
+    if (table === 'player_availability' || table === 'sub_invitations' || table === 'goalie_stats'
+      || table === 'game_goalie_appearances' || table === 'player_career_baselines') return [];
+    if (table === 'player_stats') return playerStats;
+    if (table === 'profiles') return [{ id: PROFILE_ID, full_name: 'Fixture Player', avatar_url: null, photo_url: null }];
+    if (table === 'player_season_stats') return seasons.map((season, index) => ({
+      player_id: PROFILE_ID,
+      season_id: season.id,
+      team_id: TEAM_ID,
+      team_name: 'Bad Bunny',
+      position: 'C',
+      games_played: 1,
+      goals: index + 1,
+      assists: 1,
+      points: index + 2,
+    }));
+    if (table === 'player_badges') return [{
+      id: 'b1000000-0000-4000-8000-000000000001',
+      player_id: PROFILE_ID,
+      league_id: HOCKEY_LIFE_ID,
+      season_id: SEASON_ID,
+      badge_type: 'top_scorer',
+      created_at: '2026-10-01',
+      season: { name: 'Fall 2026' },
+      team: { name: 'Bad Bunny' },
+    }];
+    if (table === 'article_player_tags') return [{ article_id: 'a1000000-0000-4000-8000-000000000001', player_id: PROFILE_ID }];
+    if (table === 'articles') return [{
+      id: 'a1000000-0000-4000-8000-000000000001',
+      league_id: HOCKEY_LIFE_ID,
+      slug: 'fixture',
+      title: 'Fixture',
+      excerpt: 'Fixture',
+      published_at: '2026-10-01',
+      image_url: null,
+      type: 'news',
+      published: true,
+      player_tags: [{ player_id: PROFILE_ID }],
+    }];
+    if (table === 'player_goalie_matchups') return [{
+      id: '91000000-0000-4000-8000-000000000001',
+      league_id: HOCKEY_LIFE_ID,
+      season_id: SEASON_ID,
+      player_id: PROFILE_ID,
+      goalie_id: 'bdd94b26-b344-459f-9727-8cddae9783df',
+      games_played: 1,
+      goals: 1,
+      assists: 0,
+      points: 1,
+      shots: 2,
+      shooting_percentage: 50,
+      goalie: { id: 'bdd94b26-b344-459f-9727-8cddae9783df', full_name: 'Goalie' },
+    }];
+    return [];
+  };
+  const client = { from: jest.fn((table: string) => {
+    let selection = '';
+    let selectOptions: { count?: string; head?: boolean } | null = null;
+    const filters: Array<[string, string, unknown]> = [];
+    let limit: number | null = null;
+    const query: Record<string, unknown> = {};
+    query.select = jest.fn((columns: string, options?: { count?: string; head?: boolean }) => {
+      selection = columns;
+      selectOptions = options ?? null;
+      return query;
+    });
+    query.eq = jest.fn((column: string, value: unknown) => { filters.push(['eq', column, value]); return query; });
+    query.in = jest.fn((column: string, value: unknown) => { filters.push(['in', column, value]); return query; });
+    query.is = jest.fn((column: string, value: unknown) => { filters.push(['is', column, value]); return query; });
+    query.or = jest.fn((value: string) => { filters.push(['or', value, null]); return query; });
+    query.order = jest.fn(() => query);
+    query.limit = jest.fn((value: number) => { limit = value; return query; });
+    const execute = async (kind: 'then' | 'range' | 'single' | 'maybeSingle', range?: [number, number]) => {
+      let rows = sourceRows(table, selection);
+      for (const [method, column, value] of filters) {
+        if (column.includes('.')) continue;
+        if (method === 'eq') rows = rows.filter((row) => (row as Record<string, unknown>)[column] === value);
+        if (method === 'in' && Array.isArray(value)) rows = rows.filter((row) => value.includes((row as Record<string, unknown>)[column]));
+        if (method === 'is') rows = rows.filter((row) => (row as Record<string, unknown>)[column] === value);
+        if (method === 'or') {
+          const teams = new Set([...column.matchAll(/(?:home|away)_team_id\.(?:eq|in\.\()([0-9a-z-]+)/gi)].map((match) => match[1]));
+          if (teams.size > 0) rows = rows.filter((row) => teams.has((row as Record<string, unknown>).home_team_id as string)
+            || teams.has((row as Record<string, unknown>).away_team_id as string));
+        }
+      }
+      if (limit !== null) rows = rows.slice(0, limit);
+      const count = rows.length;
+      if (range) rows = rows.slice(range[0], range[1] + 1);
+      const trace: Trace = { table, selection, selectOptions, filters: [...filters], activeAtStart: state.active + 1, settled: false };
+      traces.push(trace);
+      state.active += 1;
+      state.maxActive = Math.max(state.maxActive, state.active);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      state.active -= 1;
+      trace.settled = true;
+      if (selectOptions?.head) return { data: null, error: null, count };
+      if (kind === 'single' || kind === 'maybeSingle') return { data: rows[0] ?? null, error: null, count: selectOptions?.count === 'exact' ? count : null };
+      return { data: rows, error: null, count: selectOptions?.count === 'exact' ? count : null };
+    };
+    query.range = jest.fn((from: number, to: number) => execute('range', [from, to]));
+    query.single = jest.fn(() => execute('single'));
+    query.maybeSingle = jest.fn(() => execute('maybeSingle'));
+    query.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => execute('then').then(resolve, reject);
+    return query;
+  }) };
+  return { client, traces, state };
+}
+
+async function runProductionCoordinatorPressure(dependencies?: MobilePlayerProfileDependencies) {
+  const { client, traces, state } = productionCoordinatorPressureClient();
+  mockedCreateClient.mockResolvedValue(client as never);
+  mockedCreateServiceRoleClient.mockReturnValue(client as never);
+  const request = req(`playerId=${PROFILE_ID}`);
+  const response = dependencies
+    ? await handleMobilePlayerProfileRequest(request, dependencies)
+    : await handleMobilePlayerProfileRequest(request);
+  const body = await response.json();
+  return {
+    status: response.status,
+    body,
+    requestCount: traces.length,
+    prerequisiteTables: traces.slice(0, 5).map((trace) => trace.table),
+    responseGraphRequestCount: traces.slice(5).length,
+    healthHeadRequests: traces.filter((trace) => trace.selectOptions?.head).map((trace) => ({
+      table: trace.table,
+      selection: trace.selection,
+    })),
+    maxActive: state.maxActive,
+    activeAtReturn: state.active,
+    allSettledAtReturn: traces.every((trace) => trace.settled),
+  };
 }
 
 describe('strict canonical appearance query completeness', () => {

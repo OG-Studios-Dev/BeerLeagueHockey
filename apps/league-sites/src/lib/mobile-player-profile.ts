@@ -20,7 +20,6 @@ import {
 import { countChampionshipBadges, summarizePlayerCareerAchievements } from '@/lib/career-achievements';
 import { isAggregateOnlySeasonView, isImportedAggregateSeasonId } from '@/lib/imported-aggregate-season-overrides';
 import { resolvePlayerPhotoUrl } from '@/lib/player-photo';
-import { readCareerScope } from '@/lib/public-native-stats';
 import {
   aggregatePublicSeasonStats,
   readPublicStatMetricRows,
@@ -276,20 +275,6 @@ export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = 
     }));
   },
   generateHotFacts: generatePlayerCareerHotFacts,
-  assertHealthy: async (leagueId, playerId, seasonId) => {
-    const scope = await readCareerScope(leagueId, playerId);
-    if (!scope.isEligible) throw new Error('canonical player sources unavailable');
-    const client = await createClient();
-    const queries = [
-      client.from('player_badges').select('id', { count: 'exact', head: true }).eq('league_id', leagueId).eq('player_id', playerId),
-      client.from('article_player_tags').select('article_id', { count: 'exact', head: true }).eq('player_id', playerId),
-      seasonId
-        ? client.from('player_goalie_matchups').select('season_id', { count: 'exact', head: true }).eq('season_id', seasonId).or(`player_id.eq.${playerId},goalie_id.eq.${playerId}`)
-        : Promise.resolve({ error: null }),
-    ];
-    const results = await Promise.all(queries);
-    if (results.some((result) => result.error)) throw new Error('canonical public content source read failed');
-  },
 };
 
 export async function handleMobilePlayerProfileRequest(request: NextRequest, deps: MobilePlayerProfileDependencies = mobilePlayerProfileDependencies) {
