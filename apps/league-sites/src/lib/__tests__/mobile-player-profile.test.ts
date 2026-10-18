@@ -28,6 +28,7 @@ import {
   type PublicSeasonMetricPlayer,
   type PublicStatMetricRows,
 } from '@/lib/public-stat-metrics';
+import * as dataModule from '@/lib/data';
 
 jest.mock('@/lib/supabase/server', () => ({ createClient: jest.fn(), createServiceRoleClient: jest.fn() }));
 const mockedCreateClient = jest.mocked(createClient);
@@ -94,6 +95,23 @@ function deps(): jest.Mocked<MobilePlayerProfileDependencies> {
     generateHotFacts: jest.fn().mockResolvedValue(['Fact']),
   } as unknown as jest.Mocked<MobilePlayerProfileDependencies>;
 }
+
+describe('mobile Player Profile production dependencies', () => {
+  it('[v8 mobile wiring] opts only its strict timeline call into profile-safe appearance hydration', async () => {
+    const getTimeline = jest.spyOn(dataModule, 'getPlayerCareerStatsTimeline').mockResolvedValue([]);
+
+    try {
+      await mobilePlayerProfileDependencies.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, true);
+      expect(getTimeline).toHaveBeenCalledWith(HOCKEY_LIFE_ID, PROFILE_ID, false, {
+        includeHistoricalBaseline: true,
+        strict: true,
+        profileSafeStrictAppearanceHydration: true,
+      });
+    } finally {
+      getTimeline.mockRestore();
+    }
+  });
+});
 
 describe('GET /api/mobile/player-profile', () => {
   it('rejects malformed and invalid selection input before player helpers', async () => {
@@ -1360,6 +1378,7 @@ function strictAppearanceClient(options: {
   checkinPageRows?: (from: number, to: number) => Array<{ player_id?: unknown; team_id?: unknown; game_id?: unknown }>;
   gameBatchErrorIndex?: number;
   gameRows?: (ids: string[], batchIndex: number) => unknown[];
+  gameResult?: (ids: string[], batchIndex: number) => Promise<{ data: unknown[] | null; error: unknown; count: number | null }>;
 }) {
   const checkinQuery: Record<string, jest.Mock> & { then?: unknown } = {} as never;
   for (const method of ['select', 'eq', 'in', 'order']) checkinQuery[method] = jest.fn(() => checkinQuery);
@@ -1380,18 +1399,20 @@ function strictAppearanceClient(options: {
       if (column === 'id') ids = values;
       return query;
     });
-    query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(
-      batchIndex === options.gameBatchErrorIndex
-        ? { data: null, error: { code: 'PGRST500', message: 'later batch failed' }, count: null }
-        : {
-            data: options.gameRows?.(ids, batchIndex) ?? ids.map((id) => ({
-              id, league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed',
-              home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01',
-              home_score: 1, away_score: 0,
-            })),
-            error: null,
-            count: ids.length,
-          },
+    query.then = (resolve: (value: unknown) => unknown) => (
+      options.gameResult?.(ids, batchIndex) ?? Promise.resolve(
+        batchIndex === options.gameBatchErrorIndex
+          ? { data: null, error: { code: 'PGRST500', message: 'later batch failed' }, count: null }
+          : {
+              data: options.gameRows?.(ids, batchIndex) ?? ids.map((id) => ({
+                id, league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed',
+                home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01',
+                home_score: 1, away_score: 0,
+              })),
+              error: null,
+              count: ids.length,
+            },
+      )
     ).then(resolve);
     gameQueries.push(query);
     return query;
@@ -1399,7 +1420,12 @@ function strictAppearanceClient(options: {
   return { client, checkinQuery, gameQueries };
 }
 
-function strictTimelineProductionClient(options: { includeHistoricalBaseline?: boolean; isGoalie?: boolean } = {}) {
+function strictTimelineProductionClient(options: {
+  includeHistoricalBaseline?: boolean;
+  isGoalie?: boolean;
+  appearanceGameCount?: number;
+  trackAppearanceConcurrency?: boolean;
+} = {}) {
   type Trace = {
     table: string;
     selection: string;
@@ -1408,17 +1434,45 @@ function strictTimelineProductionClient(options: { includeHistoricalBaseline?: b
     ranged: boolean;
   };
   const traces: Trace[] = [];
-  const checkins = [
-    { player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'season-a-game' },
-    { player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'season-b-game' },
-    { player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'other-league-game' },
-  ];
-  const games = new Map([
-    ['season-a-game', { id: 'season-a-game', league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01', home_score: 1, away_score: 0 }],
-    ['season-b-game', { id: 'season-b-game', league_id: HOCKEY_LIFE_ID, season_id: OTHER_SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-03-01', home_score: 2, away_score: 1 }],
-    ['other-league-game', { id: 'other-league-game', league_id: OTHER_LEAGUE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-06-01', home_score: 3, away_score: 2 }],
-    ['historical-game', { id: 'historical-game', league_id: HOCKEY_LIFE_ID, season_id: HISTORICAL_BASELINE_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2025-01-01', home_score: 4, away_score: 3 }],
-  ]);
+  const measuredGames = options.appearanceGameCount === undefined
+    ? null
+    : Array.from({ length: options.appearanceGameCount }, (_, index) => {
+        const seasonId = index % 2 === 0 ? SEASON_ID : OTHER_SEASON_ID;
+        const id = `v8-timeline-game-${String(index).padStart(4, '0')}`;
+        return {
+          id,
+          league_id: HOCKEY_LIFE_ID,
+          season_id: seasonId,
+          status: 'completed',
+          home_team_id: TEAM_ID,
+          away_team_id: null,
+          scheduled_at: seasonId === SEASON_ID ? '2026-09-01' : '2026-03-01',
+          home_score: 2,
+          away_score: 1,
+        };
+      });
+  const games = new Map((measuredGames || [
+    { id: 'season-a-game', league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01', home_score: 1, away_score: 0 },
+    { id: 'season-b-game', league_id: HOCKEY_LIFE_ID, season_id: OTHER_SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-03-01', home_score: 2, away_score: 1 },
+    { id: 'other-league-game', league_id: OTHER_LEAGUE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-06-01', home_score: 3, away_score: 2 },
+    { id: 'historical-game', league_id: HOCKEY_LIFE_ID, season_id: HISTORICAL_BASELINE_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2025-01-01', home_score: 4, away_score: 3 },
+  ]).map((game) => [game.id, game] as const));
+  const checkins = measuredGames
+    ? measuredGames.map((game) => ({ player_id: PROFILE_ID, team_id: TEAM_ID, game_id: game.id }))
+    : [
+        { player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'season-a-game' },
+        { player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'season-b-game' },
+        { player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'other-league-game' },
+      ];
+  const appearance = {
+    active: 0,
+    maxActive: 0,
+    overlap: false,
+    started: { confirmed: 0, fallback: 0 },
+    settled: { confirmed: 0, fallback: 0 },
+    activeByPhase: { confirmed: 0, fallback: 0 },
+    events: [] as string[],
+  };
   const seasons = [
     { id: SEASON_ID, name: 'Fall 2026', start_date: '2026-09-01' },
     { id: OTHER_SEASON_ID, name: 'Spring 2026', start_date: '2026-03-01' },
@@ -1512,19 +1566,44 @@ function strictTimelineProductionClient(options: { includeHistoricalBaseline?: b
       if (table === 'profiles') return { data: { full_name: 'Fixture Player' }, error: null, count: null };
       return { data: [], error: null, count: 0 };
     };
-    query.range = jest.fn((from: number, to: number) => {
+    const appearancePhase = () => {
+      if (table === 'game_checkins' && trace.selection === 'player_id, team_id, game_id') return 'confirmed' as const;
+      if (table === 'games' && trace.selection.includes('league_id, status')) return 'confirmed' as const;
+      if (table === 'team_rosters' && trace.selection.includes('start_date')) return 'fallback' as const;
+      if (table === 'games' && trace.selection.includes('scheduled_at, status')) return 'fallback' as const;
+      if (trace.selection.startsWith('id, game_id, team_id')) return 'fallback' as const;
+      return null;
+    };
+    const execute = async () => {
+      const phase = options.trackAppearanceConcurrency ? appearancePhase() : null;
+      if (phase) {
+        appearance.started[phase] += 1;
+        appearance.active += 1;
+        appearance.activeByPhase[phase] += 1;
+        appearance.maxActive = Math.max(appearance.maxActive, appearance.active);
+        appearance.overlap ||= appearance.activeByPhase.confirmed > 0 && appearance.activeByPhase.fallback > 0;
+        appearance.events.push(`start:${phase}`);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        appearance.active -= 1;
+        appearance.activeByPhase[phase] -= 1;
+        appearance.settled[phase] += 1;
+        appearance.events.push(`settle:${phase}`);
+      }
+      return result();
+    };
+    query.range = jest.fn(async (from: number, to: number) => {
       trace.ranged = true;
-      const value = result();
-      return Promise.resolve({
+      const value = await execute();
+      return {
         ...value,
         data: Array.isArray(value.data) ? value.data.slice(from, to + 1) : value.data,
-      });
+      };
     });
     query.maybeSingle = jest.fn(() => Promise.resolve(result()));
-    query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve);
+    query.then = (resolve: (value: unknown) => unknown) => execute().then(resolve);
     return query;
   }) };
-  return { client, traces };
+  return { client, traces, appearance };
 }
 
 describe('strict canonical appearance query completeness', () => {
@@ -1665,7 +1744,7 @@ describe('strict canonical appearance query completeness', () => {
       strict: true,
     })).resolves.toHaveLength(1001);
     expect(gameQueries).toHaveLength(11);
-    expect(maxActiveGameQueries).toBeLessThanOrEqual(4);
+    expect(maxActiveGameQueries).toBe(4);
   });
 
   it('preserves the original non-strict capped-query behavior and projection options', async () => {
@@ -1800,6 +1879,102 @@ describe('strict canonical appearance query completeness', () => {
     expect(started).toEqual([0, 1, 2, 3, 4, 5]);
     expect(maxActive).toBeLessThanOrEqual(4);
     expect(unhandled).toHaveLength(0);
+  });
+
+  it('[v8 strict override] caps hydration at two while preserving deterministic errors and full settlement', async () => {
+    const checkins = Array.from({ length: 501 }, (_, index) => ({
+      player_id: PROFILE_ID,
+      team_id: TEAM_ID,
+      game_id: `v8-override-game-${String(index).padStart(4, '0')}`,
+    }));
+    const schedules = [
+      { delay: 30, error: 'scheduled-first' },
+      { delay: 5, error: 'fastest-second' },
+      { delay: 15, error: null },
+      { delay: 10, error: null },
+      { delay: 1, error: null },
+      { delay: 1, error: 'later-sixth' },
+    ];
+    let active = 0;
+    let settled = 0;
+    let maxActive = 0;
+    const started: number[] = [];
+    const fixture = strictAppearanceClient({
+      checkins,
+      gameResult: (ids, batchIndex) => new Promise((resolve) => {
+        started.push(batchIndex);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        const schedule = schedules[batchIndex];
+        setTimeout(() => {
+          active -= 1;
+          settled += 1;
+          resolve(schedule.error
+            ? { data: null, error: { code: 'PGRST500', message: schedule.error }, count: null }
+            : {
+                data: ids.map((id) => ({
+                  id, league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed',
+                  home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01T20:00:00Z',
+                  home_score: 3, away_score: 2,
+                })),
+                error: null,
+                count: ids.length,
+              });
+        }, schedule.delay);
+      }),
+    });
+
+    let thrown: unknown;
+    let stateAtReturn: { active: number; settled: number; started: number } | undefined;
+    try {
+      await getConfirmedCheckinAppearanceRows(fixture.client as never, {
+        leagueId: HOCKEY_LIFE_ID,
+        seasonId: SEASON_ID,
+        playerIds: [PROFILE_ID],
+        strict: true,
+        strictBatchConcurrency: 2,
+      } as Parameters<typeof getConfirmedCheckinAppearanceRows>[1] & { strictBatchConcurrency: number });
+    } catch (error) {
+      thrown = error;
+      stateAtReturn = { active, settled, started: started.length };
+    }
+
+    expect(thrown).toEqual(expect.objectContaining({
+      message: expect.stringContaining('confirmed check-in game validation batch 1'),
+    }));
+    expect(stateAtReturn).toEqual({ active: 0, settled: 6, started: 6 });
+    expect(started).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(maxActive).toBe(2);
+  });
+
+  it.each([
+    ['confirmed', 0],
+    ['confirmed', 1.5],
+    ['confirmed', 5],
+    ['confirmed', Number.NaN],
+    ['fallback', 0],
+    ['fallback', 1.5],
+    ['fallback', 5],
+    ['fallback', Number.NaN],
+  ] as const)('[v8 strict concurrency contract] fails closed for %s concurrency %s before provider work', async (helper, strictBatchConcurrency) => {
+    const client = { from: jest.fn(() => { throw new Error('provider work must not start'); }) };
+    const read = helper === 'confirmed'
+      ? getConfirmedCheckinAppearanceRows(client as never, {
+          leagueId: HOCKEY_LIFE_ID,
+          seasonId: SEASON_ID,
+          playerIds: [PROFILE_ID],
+          strict: true,
+          strictBatchConcurrency,
+        })
+      : getFallbackRosterAppearanceRows(client as never, {
+          seasonId: SEASON_ID,
+          playerIds: [PROFILE_ID],
+          strict: true,
+          strictBatchConcurrency,
+        } as Parameters<typeof getFallbackRosterAppearanceRows>[1] & { strictBatchConcurrency: number });
+
+    await expect(read).rejects.toThrow('strict batch concurrency must be an integer from 1 to 4');
+    expect(client.from).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -3128,6 +3303,30 @@ describe('strict career appearance query scoping', () => {
       expect(fallbackRead.selectOptions).toEqual({ count: 'exact' });
       expect(fallbackRead.ranged).toBe(true);
     }
+  });
+
+  it('[v8 profile-safe timeline] caps appearance reads at two and never overlaps confirmed with fallback hydration', async () => {
+    const { client, appearance } = strictTimelineProductionClient({
+      appearanceGameCount: 201,
+      trackAppearanceConcurrency: true,
+    });
+    mockedCreateClient.mockResolvedValue(client as never);
+    mockedCreateServiceRoleClient.mockReturnValue(client as never);
+
+    const timeline = await getPlayerCareerStatsTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, {
+      strict: true,
+      profileSafeStrictAppearanceHydration: true,
+    } as Parameters<typeof getPlayerCareerStatsTimeline>[3] & { profileSafeStrictAppearanceHydration: boolean });
+
+    expect(timeline.map((row) => row.season_id)).toEqual([OTHER_SEASON_ID, SEASON_ID]);
+    expect(appearance.maxActive).toBe(2);
+    expect(appearance.overlap).toBe(false);
+    expect(appearance.started.confirmed).toBeGreaterThan(1);
+    expect(appearance.started.fallback).toBeGreaterThan(2);
+    expect(appearance.settled).toEqual(appearance.started);
+    expect(appearance.active).toBe(0);
+    expect(appearance.events.lastIndexOf('settle:confirmed'))
+      .toBeLessThan(appearance.events.indexOf('start:fallback'));
   });
 
   it.each([

@@ -457,6 +457,16 @@ function chunkCanonicalValues<T>(values: T[], size = CANONICAL_ID_BATCH_SIZE): T
   return chunks;
 }
 
+function resolveStrictBatchConcurrency(concurrency = CANONICAL_BATCH_CONCURRENCY): number {
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > CANONICAL_BATCH_CONCURRENCY) {
+    throwCanonicalReadError(
+      new Error('invalid strict batch concurrency'),
+      `strict batch concurrency must be an integer from 1 to ${CANONICAL_BATCH_CONCURRENCY}`,
+    );
+  }
+  return concurrency;
+}
+
 async function readCanonicalBatchedRows<T>(
   values: string[],
   context: string,
@@ -1277,11 +1287,13 @@ export async function getConfirmedCheckinAppearanceRows(
     playerIds?: string[];
     gameStatuses?: readonly string[];
     strict?: boolean;
+    strictBatchConcurrency?: number;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   const gameStatuses = options.gameStatuses ?? PLAYED_GAME_STATUSES;
 
   if (options.strict) {
+    const strictBatchConcurrency = resolveStrictBatchConcurrency(options.strictBatchConcurrency);
     const playerIds = [...new Set(options.playerIds || [])];
     const requestedSeasonIds = new Set([
       ...(options.seasonIds || []),
@@ -1399,7 +1411,7 @@ export async function getConfirmedCheckinAppearanceRows(
         }
         hydratedGameBatches[batchIndex] = hydratedGames;
       },
-    })));
+    })), strictBatchConcurrency);
     for (const hydratedGames of hydratedGameBatches) {
       for (const rawGame of hydratedGames) {
         const gameId = rawGame.id as string;
@@ -1504,7 +1516,11 @@ async function readStrictExactPages<T>(
   return rows;
 }
 
-async function runStrictReadStage(reads: StrictStageRead[]): Promise<void> {
+async function runStrictReadStage(
+  reads: StrictStageRead[],
+  concurrency = CANONICAL_BATCH_CONCURRENCY,
+): Promise<void> {
+  const strictBatchConcurrency = resolveStrictBatchConcurrency(concurrency);
   let nextReadIndex = 0;
   const failures: Array<{ index: number; error: unknown }> = [];
   const worker = async () => {
@@ -1518,7 +1534,7 @@ async function runStrictReadStage(reads: StrictStageRead[]): Promise<void> {
     }
   };
   await Promise.all(Array.from(
-    { length: Math.min(CANONICAL_BATCH_CONCURRENCY, reads.length) },
+    { length: Math.min(strictBatchConcurrency, reads.length) },
     worker,
   ));
   if (failures.length > 0) {
@@ -1580,6 +1596,7 @@ async function getStrictFallbackRosterAppearanceRows(
     teamIds?: string[];
     playerIds?: string[];
     gameStatuses: readonly string[];
+    strictBatchConcurrency: number;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
   const requestedSeasonIds = options.seasonIds;
@@ -1618,7 +1635,7 @@ async function getStrictFallbackRosterAppearanceRows(
           .order('player_id', { ascending: true }) as unknown as StrictExactQuery<StrictFallbackRosterRow>;
       }, `fallback roster appearances batch ${batchIndex + 1}`);
     },
-  })));
+  })), options.strictBatchConcurrency);
   const rawRosterRows = rosterBatchRows.flatMap((rows) => rows || []);
   if (rawRosterRows.length === 0) return [];
 
@@ -1680,7 +1697,7 @@ async function getStrictFallbackRosterAppearanceRows(
           .order('id', { ascending: true }) as unknown as StrictExactQuery<StrictFallbackGameRow>;
       }, `fallback games batch ${batchIndex + 1}`);
     },
-  })));
+  })), options.strictBatchConcurrency);
 
   const gameRows: StrictFallbackGameRow[] = [];
   const gamesById = new Map<string, { row: StrictFallbackGameRow; canonical: string }>();
@@ -1851,7 +1868,7 @@ async function getStrictFallbackRosterAppearanceRows(
   };
   addOptionalEvidenceReads('player_stats', 'fallback game skater signals', gameLevelSkaterBatchRows);
   addOptionalEvidenceReads('goalie_stats', 'fallback game goalie signals', gameLevelGoalieBatchRows);
-  await runStrictReadStage(evidenceReads);
+  await runStrictReadStage(evidenceReads, options.strictBatchConcurrency);
 
   const outCheckinRows = outCheckinBatchRows.flatMap((rows) => rows || []);
   const outAvailabilityRows = outAvailabilityBatchRows.flatMap((rows) => rows || []);
@@ -1970,8 +1987,12 @@ export async function getFallbackRosterAppearanceRows(
     playerIds?: string[];
     gameStatuses?: readonly string[];
     strict?: boolean;
+    strictBatchConcurrency?: number;
   },
 ): Promise<ConfirmedCheckinAppearanceRow[]> {
+  const strictBatchConcurrency = options.strict
+    ? resolveStrictBatchConcurrency(options.strictBatchConcurrency)
+    : CANONICAL_BATCH_CONCURRENCY;
   const seasonIds = [...new Set([
     ...(options.seasonId ? [options.seasonId] : []),
     ...(options.seasonIds || []),
@@ -1987,6 +2008,7 @@ export async function getFallbackRosterAppearanceRows(
       teamIds: options.teamIds,
       playerIds: options.playerIds,
       gameStatuses,
+      strictBatchConcurrency,
     });
   }
   const singleSeasonId = seasonIds.length === 1 ? seasonIds[0] : null;
@@ -6444,9 +6466,14 @@ export async function getPlayerCareerStatsTimeline(
   options: {
     includeHistoricalBaseline?: boolean;
     strict?: boolean;
+    profileSafeStrictAppearanceHydration?: boolean;
   } = {},
 ): Promise<PlayerCareerSeasonRow[]> {
-  const { includeHistoricalBaseline = false, strict = false } = options;
+  const {
+    includeHistoricalBaseline = false,
+    strict = false,
+    profileSafeStrictAppearanceHydration = false,
+  } = options;
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
   const seasonQuery = supabase.from('seasons');
@@ -6462,6 +6489,42 @@ export async function getPlayerCareerStatsTimeline(
   const seasonSortById = new Map(seasons.map((season) => [season.id, season.start_date ?? null]));
   const historicalBaselineSeason = seasons.find((season) => isHistoricalCareerBaselineSeasonName(season.name));
   const leagueSeasonIds = seasons.map((season) => season.id);
+  const loadAppearanceRows = async (
+    activeSeasonIds: string[],
+  ): Promise<[ConfirmedCheckinAppearanceRow[], ConfirmedCheckinAppearanceRow[]]> => {
+    if (strict && profileSafeStrictAppearanceHydration) {
+      const confirmedCheckins = activeSeasonIds.length > 0
+        ? await getConfirmedCheckinAppearanceRows(supabase, {
+            leagueId,
+            seasonIds: activeSeasonIds,
+            playerIds: [playerId],
+            strict: true,
+            strictBatchConcurrency: 2,
+          })
+        : [];
+      const fallbackAppearances = activeSeasonIds.length > 0
+        ? await getFallbackRosterAppearanceRows(supabase, {
+            seasonIds: activeSeasonIds,
+            playerIds: [playerId],
+            strict: true,
+            strictBatchConcurrency: 2,
+          })
+        : [];
+      return [confirmedCheckins, fallbackAppearances];
+    }
+    return Promise.all([
+      strict
+        ? activeSeasonIds.length > 0
+          ? getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
+          : Promise.resolve([])
+        : Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId] }))).then((buckets) => buckets.flat()),
+      strict
+        ? activeSeasonIds.length > 0
+          ? getFallbackRosterAppearanceRows(supabase, { seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
+          : Promise.resolve([])
+        : Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))).then((buckets) => buckets.flat()),
+    ]);
+  };
 
   if (isGoalie) {
     const rawResult = strict
@@ -6511,18 +6574,7 @@ export async function getPlayerCareerStatsTimeline(
     const activeSeasonIds = [...new Set(rows
       .map((row) => row.season_id)
       .filter((seasonId): seasonId is string => Boolean(seasonId) && seasonId !== historicalBaselineSeason?.id))];
-    const [confirmedCheckins, fallbackAppearances] = await Promise.all([
-      strict
-        ? activeSeasonIds.length > 0
-          ? getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
-          : Promise.resolve([])
-        : Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId] }))).then((buckets) => buckets.flat()),
-      strict
-        ? activeSeasonIds.length > 0
-          ? getFallbackRosterAppearanceRows(supabase, { seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
-          : Promise.resolve([])
-        : Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))).then((buckets) => buckets.flat()),
-    ]);
+    const [confirmedCheckins, fallbackAppearances] = await loadAppearanceRows(activeSeasonIds);
 
     const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
     const teamGameCountBySeasonTeam = await loadTeamGameCountsBySeasonTeam(supabase, leagueId, activeSeasonIds, [
@@ -6693,18 +6745,7 @@ export async function getPlayerCareerStatsTimeline(
   const activeSeasonIds = [...new Set(rows
     .map((row) => row.season_id)
     .filter((seasonId): seasonId is string => Boolean(seasonId) && seasonId !== historicalBaselineSeason?.id))];
-  const [confirmedCheckins, fallbackAppearances] = await Promise.all([
-    strict
-      ? activeSeasonIds.length > 0
-        ? getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
-        : Promise.resolve([])
-      : Promise.all(activeSeasonIds.map((seasonId) => getConfirmedCheckinAppearanceRows(supabase, { leagueId, seasonId, playerIds: [playerId] }))).then((buckets) => buckets.flat()),
-    strict
-      ? activeSeasonIds.length > 0
-        ? getFallbackRosterAppearanceRows(supabase, { seasonIds: activeSeasonIds, playerIds: [playerId], strict: true })
-        : Promise.resolve([])
-      : Promise.all(activeSeasonIds.map((seasonId) => getFallbackRosterAppearanceRows(supabase, { seasonId, playerIds: [playerId], strict }))).then((buckets) => buckets.flat()),
-  ]);
+  const [confirmedCheckins, fallbackAppearances] = await loadAppearanceRows(activeSeasonIds);
 
   const teamNames = await loadTeamNameMap(supabase, rows.map((row) => row.team_id), { strict });
   const teamGameCountBySeasonTeam = await loadTeamGameCountsBySeasonTeam(supabase, leagueId, activeSeasonIds, [

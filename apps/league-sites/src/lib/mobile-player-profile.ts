@@ -254,7 +254,11 @@ export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = 
     });
     return aggregatePublicSeasonStats(rows, scope).players.find((player) => player.playerId === playerId) ?? null;
   },
-  getTimeline: (leagueId, playerId, isGoalie, includeHistoricalBaseline) => getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, { includeHistoricalBaseline, strict: true }),
+  getTimeline: (leagueId, playerId, isGoalie, includeHistoricalBaseline) => getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, {
+    includeHistoricalBaseline,
+    strict: true,
+    profileSafeStrictAppearanceHydration: true,
+  }),
   getGames: (playerId, seasonId) => getPlayerGameLog(playerId, seasonId, 20, { strict: true }),
   getBadges: (playerId) => getPlayerBadges(playerId, { leagueId: HOCKEY_LIFE_ID, strict: true }),
   getImportedAchievements: (playerId, leagueId) => getImportedPlayerCareerAchievements(playerId, { leagueId, strict: true }),
