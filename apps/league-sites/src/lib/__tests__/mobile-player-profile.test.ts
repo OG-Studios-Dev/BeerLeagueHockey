@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 import {
   HOCKEY_LIFE_ID,
@@ -985,8 +986,168 @@ describe('GET /api/mobile/player-profile', () => {
 function queryResult(result: { data: unknown[] | null; error: unknown; count: number | null }) {
   const query: Record<string, unknown> = {};
   for (const method of ['select', 'eq', 'in', 'or', 'order']) query[method] = jest.fn(() => query);
+  query.range = jest.fn((from: number, to: number) => Promise.resolve({
+    ...result,
+    data: result.data?.slice(from, to + 1) ?? null,
+  }));
   query.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
   return query;
+}
+
+function strictFallbackScorelessClient(options: {
+  gameRows: Array<Record<string, unknown>>;
+  rosterRows?: Array<Record<string, unknown>>;
+  outCheckinRows?: Array<Record<string, unknown>>;
+  outAvailabilityRows?: Array<Record<string, unknown>>;
+  scopedSkaterRows?: Array<Record<string, unknown>>;
+  scopedGoalieRows?: Array<Record<string, unknown>>;
+  gameLevelSkaterRows?: Array<Record<string, unknown>>;
+  gameLevelGoalieRows?: Array<Record<string, unknown>>;
+  returnOutOfScopeOptionalRows?: boolean;
+  returnOutOfScopeCoreRows?: boolean;
+  returnOutOfScopeGameRows?: boolean;
+  returnOutOfScopeCheckinRows?: boolean;
+  conflictingDuplicateGameId?: string;
+  conflictingDuplicateAwayTeamId?: string;
+  coreErrorTable?: 'game_checkins' | 'player_availability' | 'player_stats' | 'goalie_stats';
+  coreCountMismatchTable?: 'game_checkins' | 'player_availability' | 'player_stats' | 'goalie_stats';
+  optionalErrorTable?: 'player_stats' | 'goalie_stats';
+  optionalErrorGameId?: string;
+  optionalCountMismatchTable?: 'player_stats' | 'goalie_stats';
+  optionalCountMismatchGameId?: string;
+  optionalPageErrorTable?: 'player_stats' | 'goalie_stats';
+  optionalPageErrorGameId?: string;
+  optionalPageErrorOffset?: number;
+}) {
+  type Trace = {
+    table: string;
+    selection: string;
+    filters: Array<[string, string, unknown]>;
+    reads: number;
+  };
+  const traces: Trace[] = [];
+  const indexedGames = options.gameRows.map((row) => ({
+    row,
+    seasonId: row.season_id,
+    homeTeamId: row.home_team_id,
+    awayTeamId: row.away_team_id,
+  }));
+  const client = { from: jest.fn((table: string) => {
+    const trace: Trace = { table, selection: '', filters: [], reads: 0 };
+    traces.push(trace);
+    const query: Record<string, unknown> = {};
+    query.select = jest.fn((selection: string) => { trace.selection = selection; return query; });
+    for (const method of ['eq', 'in', 'or', 'order']) {
+      query[method] = jest.fn((column: string, value: unknown) => {
+        trace.filters.push([method, column, value]);
+        return query;
+      });
+    }
+    const materialize = (from = 0) => {
+      const gameIds = trace.filters.find(([method, column]) => method === 'in' && column === 'game_id')?.[2] as string[] | undefined;
+      const optionalSignalRead = Boolean(gameIds && !trace.filters.some(
+        ([method, column]) => method === 'in' && column === 'player_id',
+      ));
+      const coreEvidenceRead = table === 'game_checkins' || table === 'player_availability'
+        || (table === 'player_stats' || table === 'goalie_stats') && !optionalSignalRead;
+      const targetsOptionalGame = (gameId?: string) => !gameId || Boolean(gameIds?.includes(gameId));
+      if (optionalSignalRead && options.optionalErrorTable === table
+        && targetsOptionalGame(options.optionalErrorGameId)) {
+        return { data: null, error: { code: '57014', message: 'optional signal read failed' }, count: null };
+      }
+      if (optionalSignalRead && options.optionalPageErrorTable === table
+        && targetsOptionalGame(options.optionalPageErrorGameId) && options.optionalPageErrorOffset === from) {
+        return { data: null, error: { code: 'PGRST500', message: 'optional later page failed' }, count: null };
+      }
+      if (coreEvidenceRead && options.coreErrorTable === table) {
+        return { data: null, error: { code: 'PGRST500', message: 'core evidence read failed' }, count: null };
+      }
+      let data: Array<Record<string, unknown>> = [];
+      if (table === 'team_rosters') {
+        data = (options.rosterRows || [{
+          player_id: PROFILE_ID,
+          team_id: TEAM_ID,
+          season_id: SEASON_ID,
+          start_date: '2026-01-01',
+          joined_at: null,
+          end_date: null,
+          status: 'active',
+          player_type: 'regular',
+        }]).map((row) => ({
+          start_date: '2026-01-01',
+          status: 'active',
+          player_type: 'regular',
+          ...row,
+        }));
+      } else if (table === 'games') {
+        const seasonEq = trace.filters.find(([method, column]) => method === 'eq' && column === 'season_id')?.[2];
+        const seasonIn = trace.filters.find(([method, column]) => method === 'in' && column === 'season_id')?.[2];
+        const teamFilter = trace.filters.find(([method]) => method === 'or')?.[1] || '';
+        const requestedTeams = new Set(
+          typeof teamFilter === 'string'
+            ? [...teamFilter.matchAll(/(?:home|away)_team_id\.eq\.([0-9a-z-]+)/gi)].map((match) => match[1])
+            : [],
+        );
+        data = indexedGames.filter((game) => (
+          options.returnOutOfScopeGameRows
+          || ((typeof seasonEq !== 'string' || game.seasonId === seasonEq)
+          && (!Array.isArray(seasonIn) || seasonIn.includes(game.seasonId))
+          && (requestedTeams.size === 0
+            || requestedTeams.has(game.homeTeamId as string)
+            || requestedTeams.has(game.awayTeamId as string)))
+        )).map((game) => (
+          game.row.id === options.conflictingDuplicateGameId
+            && requestedTeams.has(options.conflictingDuplicateAwayTeamId || '')
+            ? { ...game.row, scheduled_at: '2026-09-02' }
+            : game.row
+        ));
+      } else if (table === 'game_checkins') {
+        data = (options.outCheckinRows || []).filter((row) => (
+          options.returnOutOfScopeCheckinRows || !gameIds || gameIds.includes(row.game_id as string)
+        ));
+      } else if (table === 'player_availability') {
+        data = (options.outAvailabilityRows || []).filter((row) => (
+          options.returnOutOfScopeCoreRows || !gameIds || gameIds.includes(row.game_id as string)
+        ));
+      } else if (optionalSignalRead && table === 'player_stats') {
+        data = (options.gameLevelSkaterRows || []).filter((row) => (
+          options.returnOutOfScopeOptionalRows || gameIds?.includes(row.game_id as string)
+        ));
+      } else if (optionalSignalRead && table === 'goalie_stats') {
+        data = (options.gameLevelGoalieRows || []).filter((row) => (
+          options.returnOutOfScopeOptionalRows || gameIds?.includes(row.game_id as string)
+        ));
+      } else if (table === 'player_stats') {
+        data = (options.scopedSkaterRows || [])
+          .filter((row) => options.returnOutOfScopeCoreRows || !gameIds || gameIds.includes(row.game_id as string))
+          .map((row) => ({ player_id: PROFILE_ID, ...row }));
+      } else if (table === 'goalie_stats') {
+        data = (options.scopedGoalieRows || [])
+          .filter((row) => options.returnOutOfScopeCoreRows || !gameIds || gameIds.includes(row.game_id as string))
+          .map((row) => ({ player_id: PROFILE_ID, ...row }));
+      }
+      const countMismatch = optionalSignalRead && options.optionalCountMismatchTable === table
+        && targetsOptionalGame(options.optionalCountMismatchGameId);
+      const coreCountMismatch = coreEvidenceRead && options.coreCountMismatchTable === table;
+      return { data, error: null, count: data.length + (countMismatch || coreCountMismatch ? 1 : 0) };
+    };
+    const read = (from = 0) => {
+      trace.reads += 1;
+      return Promise.resolve(materialize(from));
+    };
+    query.range = jest.fn((from: number, to: number) => read(from).then((result) => ({
+      ...result,
+      data: result.data?.slice(from, to + 1) ?? null,
+    })));
+    query.then = (resolve: (value: unknown) => unknown) => read().then(resolve);
+    return query;
+  }) };
+  const optionalProviderReads = () => traces.filter((trace) => trace.filters.some(
+    ([method, column]) => method === 'in' && column === 'game_id',
+  ) && !trace.filters.some(
+    ([method, column]) => method === 'in' && column === 'player_id',
+  ));
+  return { client, traces, optionalProviderReads };
 }
 
 function strictAppearanceClient(options: {
@@ -1052,6 +1213,7 @@ function strictTimelineProductionClient(options: { includeHistoricalBaseline?: b
     ['season-a-game', { id: 'season-a-game', league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01', home_score: 1, away_score: 0 }],
     ['season-b-game', { id: 'season-b-game', league_id: HOCKEY_LIFE_ID, season_id: OTHER_SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-03-01', home_score: 2, away_score: 1 }],
     ['other-league-game', { id: 'other-league-game', league_id: OTHER_LEAGUE_ID, season_id: SEASON_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-06-01', home_score: 3, away_score: 2 }],
+    ['historical-game', { id: 'historical-game', league_id: HOCKEY_LIFE_ID, season_id: HISTORICAL_BASELINE_ID, status: 'completed', home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2025-01-01', home_score: 4, away_score: 3 }],
   ]);
   const seasons = [
     { id: SEASON_ID, name: 'Fall 2026', start_date: '2026-09-01' },
@@ -1072,6 +1234,13 @@ function strictTimelineProductionClient(options: { includeHistoricalBaseline?: b
     { id: 'goalie-b', game_id: 'season-b-game', season_id: OTHER_SEASON_ID, team_id: TEAM_ID, saves: 27, shots_against: 30, goals_against: 3, game_result: 'L', shutout: false },
     ...(options.includeHistoricalBaseline
       ? [{ id: 'goalie-carrier', game_id: 'goalie-carrier-game', season_id: HISTORICAL_BASELINE_ID, team_id: null, saves: 1000, shots_against: 1250, goals_against: 250, game_result: 'W', shutout: true }]
+      : []),
+  ];
+  const rosterRows = [
+    { player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID, start_date: '2026-01-01', end_date: null, status: 'active', player_type: 'regular' },
+    { player_id: PROFILE_ID, team_id: TEAM_ID, season_id: OTHER_SEASON_ID, start_date: '2026-01-01', end_date: null, status: 'active', player_type: 'regular' },
+    ...(options.includeHistoricalBaseline
+      ? [{ player_id: PROFILE_ID, team_id: TEAM_ID, season_id: HISTORICAL_BASELINE_ID, start_date: '2025-01-01', end_date: null, status: 'active', player_type: 'regular' }]
       : []),
   ];
   const baseline = options.isGoalie
@@ -1101,14 +1270,27 @@ function strictTimelineProductionClient(options: { includeHistoricalBaseline?: b
         return query;
       });
     }
+    const filterToRequestedSeasons = <T extends { season_id?: string | null }>(rows: T[]) => {
+      const seasonEq = trace.filters.find(([method, column]) => method === 'eq' && column === 'season_id')?.[2];
+      const seasonIn = trace.filters.find(([method, column]) => method === 'in' && column === 'season_id')?.[2];
+      if (typeof seasonEq === 'string') return rows.filter((row) => row.season_id === seasonEq);
+      if (Array.isArray(seasonIn)) return rows.filter((row) => row.season_id && seasonIn.includes(row.season_id));
+      return rows;
+    };
     const result = () => {
       if (table === 'seasons') return { data: seasons, error: null, count: seasons.length };
       if (table === 'player_season_stats') return { data: skaterRows, error: null, count: skaterRows.length };
-      if (table === 'goalie_stats') return { data: goalieRows, error: null, count: goalieRows.length };
+      if (table === 'goalie_stats') {
+        const data = trace.selection.includes('id, game_id, team_id') ? [] : filterToRequestedSeasons(goalieRows);
+        return { data, error: null, count: data.length };
+      }
       if (table === 'player_career_baselines') return {
         data: options.includeHistoricalBaseline ? baseline : null, error: null, count: null,
       };
-      if (table === 'game_checkins') return { data: checkins, error: null, count: checkins.length };
+      if (table === 'game_checkins') {
+        const isOutRead = trace.filters.some(([method, column, value]) => method === 'eq' && column === 'status' && value === 'out');
+        return { data: isOutRead ? [] : checkins, error: null, count: isOutRead ? 0 : checkins.length };
+      }
       if (table === 'teams') return { data: [{ id: TEAM_ID, name: 'Bad Bunny' }], error: null, count: 1 };
       if (table === 'games' && trace.selection.includes('league_id, status')) {
         const ids = trace.filters.find(([method, column]) => method === 'in' && column === 'id')?.[2] as string[];
@@ -1116,19 +1298,23 @@ function strictTimelineProductionClient(options: { includeHistoricalBaseline?: b
         return { data, error: null, count: data.length };
       }
       if (table === 'games') {
-        const data = [games.get('season-a-game'), games.get('season-b-game')];
+        const data = filterToRequestedSeasons([...games.values()].filter((game) => game.league_id === HOCKEY_LIFE_ID));
         return { data, error: null, count: data.length };
       }
-      if (table === 'team_rosters') return { data: [], error: null, count: 0 };
+      if (table === 'team_rosters') {
+        const data = filterToRequestedSeasons(rosterRows);
+        return { data, error: null, count: data.length };
+      }
       if (table === 'profiles') return { data: { full_name: 'Fixture Player' }, error: null, count: null };
       return { data: [], error: null, count: 0 };
     };
     query.range = jest.fn((from: number, to: number) => {
       trace.ranged = true;
       const value = result();
-      return Promise.resolve(table === 'game_checkins'
-        ? { ...value, data: checkins.slice(from, to + 1) }
-        : value);
+      return Promise.resolve({
+        ...value,
+        data: Array.isArray(value.data) ? value.data.slice(from, to + 1) : value.data,
+      });
     });
     query.maybeSingle = jest.fn(() => Promise.resolve(result()));
     query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve);
@@ -1322,6 +1508,96 @@ describe('strict canonical appearance query completeness', () => {
     })).rejects.toThrow('confirmed check-in game validation batch 2');
   });
 
+  it('[v6 direct-scheduler rail] consumes every hydration batch and chooses the earliest scheduled failure', async () => {
+    const checkins = Array.from({ length: 501 }, (_, index) => ({
+      player_id: PROFILE_ID,
+      team_id: TEAM_ID,
+      game_id: `scheduler-game-${String(index).padStart(4, '0')}`,
+    }));
+    const checkinQuery: Record<string, jest.Mock> & { then?: unknown } = {} as never;
+    for (const method of ['select', 'eq', 'in', 'order']) checkinQuery[method] = jest.fn(() => checkinQuery);
+    checkinQuery.range = jest.fn((from: number, to: number) => Promise.resolve({
+      data: checkins.slice(from, to + 1), error: null, count: checkins.length,
+    }));
+
+    const schedules = [
+      { delay: 30, error: 'scheduled-first' },
+      { delay: 5, error: 'fastest-second' },
+      { delay: 15, error: null },
+      { delay: 10, error: null },
+      { delay: 1, error: null },
+      { delay: 1, error: 'later-sixth' },
+    ];
+    let active = 0;
+    let settled = 0;
+    let maxActive = 0;
+    const started: number[] = [];
+    let created = 0;
+    const client = { from: jest.fn((table: string) => {
+      if (table === 'game_checkins') return checkinQuery;
+      const batchIndex = created++;
+      const query: Record<string, jest.Mock> & { then?: unknown } = {} as never;
+      let ids: string[] = [];
+      for (const method of ['select', 'eq', 'order']) query[method] = jest.fn(() => query);
+      query.in = jest.fn((column: string, values: string[]) => {
+        if (column === 'id') ids = values;
+        return query;
+      });
+      query.then = (resolve: (value: unknown) => unknown) => {
+        started.push(batchIndex);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        const schedule = schedules[batchIndex];
+        return new Promise((release) => {
+          setTimeout(() => {
+            active -= 1;
+            settled += 1;
+            release(schedule.error
+              ? { data: null, error: { code: 'PGRST500', message: schedule.error }, count: null }
+              : {
+                  data: ids.map((id) => ({
+                    id, league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID, status: 'completed',
+                    home_team_id: TEAM_ID, away_team_id: null, scheduled_at: '2026-09-01T20:00:00Z',
+                    home_score: 3, away_score: 2,
+                  })),
+                  error: null,
+                  count: ids.length,
+                });
+          }, schedule.delay);
+        }).then(resolve);
+      };
+      return query;
+    }) };
+
+    const unhandled: unknown[] = [];
+    const captureUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', captureUnhandled);
+    let thrown: unknown;
+    let stateAtReturn: { active: number; settled: number; started: number } | undefined;
+    try {
+      try {
+        await getConfirmedCheckinAppearanceRows(client as never, {
+          leagueId: HOCKEY_LIFE_ID, seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+        });
+      } catch (error) {
+        thrown = error;
+        stateAtReturn = { active, settled, started: started.length };
+      }
+      while (active > 0) await new Promise((resolve) => setTimeout(resolve, 5));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    } finally {
+      process.off('unhandledRejection', captureUnhandled);
+    }
+
+    expect(thrown).toEqual(expect.objectContaining({
+      message: expect.stringContaining('confirmed check-in game validation batch 1'),
+    }));
+    expect(stateAtReturn).toEqual({ active: 0, settled: 6, started: 6 });
+    expect(started).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(maxActive).toBeLessThanOrEqual(4);
+    expect(unhandled).toHaveLength(0);
+  });
+
   it.each([
     ['invalid check-in', [{ player_id: PROFILE_ID, team_id: null, game_id: 'game-1' }], undefined],
     ['duplicate check-in', [
@@ -1346,10 +1622,1001 @@ describe('strict canonical appearance query completeness', () => {
     })).rejects.toThrow(/validation|completeness/);
   });
 
+  it('[v5 URL rail] keeps every installed-client core and optional request target URL-safe at 1,000 teams across 10 seasons', async () => {
+    const seasonIds = Array.from({ length: 10 }, (_, index) => (
+      `10000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    ));
+    const teamIds = Array.from({ length: 1000 }, (_, index) => (
+      `20000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    ));
+    const gameIds = Array.from({ length: 1000 }, (_, index) => (
+      `30000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    ));
+    const rosterRows = teamIds.map((teamId, index) => ({
+      player_id: PROFILE_ID,
+      team_id: teamId,
+      season_id: seasonIds[Math.floor(index / 100)],
+      start_date: '2026-01-01',
+      end_date: null,
+      status: 'active',
+      player_type: 'regular',
+    }));
+    const games = gameIds.map((id, index) => ({
+      id,
+      season_id: seasonIds[Math.floor(index / 100)],
+      scheduled_at: '2026-09-01',
+      status: 'completed',
+      home_team_id: teamIds[index],
+      away_team_id: teamIds[Math.floor(index / 100) * 100 + ((index + 1) % 100)],
+      home_score: null,
+      away_score: null,
+    }));
+    type SerializedRequest = {
+      source: string;
+      table: string;
+      targetBytes: number;
+      url: URL;
+    };
+    const requests: SerializedRequest[] = [];
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const parseInFilter = (value: string | null) => {
+      if (!value?.startsWith('in.(') || !value.endsWith(')')) return [];
+      return value.slice(4, -1).split(',').filter(Boolean);
+    };
+    const requestedValues = (url: URL, column: string) => {
+      const value = url.searchParams.get(column);
+      if (!value) return [];
+      if (value.startsWith('eq.')) return [value.slice(3)];
+      return parseInFilter(value);
+    };
+    const exactResponse = (rows: Array<Record<string, unknown>>) => new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Range': rows.length > 0 ? `0-${rows.length - 1}/${rows.length}` : '*/0',
+      },
+    });
+    const serializedFetch: typeof fetch = async (input) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+      const table = url.pathname.split('/').pop() || '';
+      const hasPlayerScope = Boolean(url.searchParams.get('player_id'));
+      const hasGameScope = Boolean(url.searchParams.get('game_id'));
+      const source = table === 'player_stats' || table === 'goalie_stats'
+        ? (hasGameScope && !hasPlayerScope ? `optional ${table}` : `core ${table}`)
+        : table;
+      requests.push({
+        source,
+        table,
+        targetBytes: Buffer.byteLength(`${url.pathname}${url.search}`, 'utf8'),
+        url,
+      });
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      activeReads -= 1;
+
+      const requestedSeasons = requestedValues(url, 'season_id');
+      const requestedTeams = requestedValues(url, 'team_id');
+      const requestedGames = requestedValues(url, 'game_id');
+      if (table === 'team_rosters') {
+        return exactResponse(rosterRows.filter((row) => (
+          requestedSeasons.length === 0 || requestedSeasons.includes(row.season_id)
+        )));
+      }
+      if (table === 'games') {
+        const teamFilter = url.searchParams.get('or') || '';
+        const requestedGameTeams = new Set(
+          [...teamFilter.matchAll(/(?:home|away)_team_id\.eq\.([0-9a-f-]+)/g)].map((match) => match[1]),
+        );
+        return exactResponse(games.filter((game) => (
+          (requestedSeasons.length === 0 || requestedSeasons.includes(game.season_id))
+          && (requestedGameTeams.has(game.home_team_id) || requestedGameTeams.has(game.away_team_id))
+        )));
+      }
+      if ((table === 'player_stats' || table === 'goalie_stats') && hasGameScope && !hasPlayerScope) {
+        const lastGame = games.at(-1)!;
+        return exactResponse(table === 'player_stats' && requestedGames.includes(lastGame.id)
+          ? [{ id: 'v5-last-evidence', game_id: lastGame.id, team_id: lastGame.home_team_id, season_id: lastGame.season_id }]
+          : []);
+      }
+      if (table === 'game_checkins' || table === 'player_availability'
+        || table === 'player_stats' || table === 'goalie_stats') {
+        expect(requestedTeams.length).toBeGreaterThan(0);
+        return exactResponse([]);
+      }
+      throw new Error(`unexpected table ${table}`);
+    };
+    const serializedClient = createSupabaseClient('https://project.supabase.co', 'public-test-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: serializedFetch },
+    });
+
+    await expect(getFallbackRosterAppearanceRows(serializedClient as never, {
+      seasonIds,
+      playerIds: [PROFILE_ID],
+      strict: true,
+    })).resolves.toMatchObject([{
+      player_id: PROFILE_ID,
+      team_id: games.at(-1)?.home_team_id,
+      game_id: games.at(-1)?.id,
+    }]);
+
+    const requiredSources = [
+      'team_rosters', 'games', 'game_checkins', 'player_availability',
+      'core player_stats', 'core goalie_stats', 'optional player_stats', 'optional goalie_stats',
+    ];
+    expect([...new Set(requests.map((request) => request.source))].sort())
+      .toEqual([...requiredSources].sort());
+    const maxTargetBySource = Object.fromEntries(requiredSources.map((source) => [
+      source,
+      Math.max(...requests.filter((request) => request.source === source).map((request) => request.targetBytes)),
+    ]));
+    const requestCountBySource = Object.fromEntries(requiredSources.map((source) => [
+      source,
+      requests.filter((request) => request.source === source).length,
+    ]));
+    const oversizedSources = Object.entries(maxTargetBySource)
+      .filter(([, targetBytes]) => targetBytes > 8192);
+    const requestMetrics = { maxTargetBySource, requestCountBySource, maxActiveReads, oversizedSources };
+    expect(requestMetrics).toEqual({ ...requestMetrics, oversizedSources: [] });
+    expect(maxActiveReads).toBeLessThanOrEqual(4);
+
+    const coveredValues = (source: string, column: string) => requests
+      .filter((request) => request.source === source)
+      .flatMap((request) => requestedValues(request.url, column));
+    expect(new Set(coveredValues('team_rosters', 'season_id'))).toEqual(new Set(seasonIds));
+    expect(requests.filter((request) => request.source === 'team_rosters')).toHaveLength(1);
+    expect(requests.find((request) => request.source === 'team_rosters')?.url.searchParams.get('season_id'))
+      .toMatch(/^in\.\(/);
+    for (const source of ['game_checkins', 'player_availability', 'core player_stats', 'core goalie_stats']) {
+      const coveredTeams = coveredValues(source, 'team_id');
+      expect(new Set(coveredTeams)).toEqual(new Set(teamIds));
+    }
+    const coveredCheckinGames = coveredValues('game_checkins', 'game_id');
+    expect(coveredCheckinGames).toHaveLength(gameIds.length);
+    expect(new Set(coveredCheckinGames)).toEqual(new Set(gameIds));
+    expect(coveredCheckinGames.filter((gameId) => gameId === gameIds[0])).toHaveLength(1);
+    expect(coveredCheckinGames.filter((gameId) => gameId === gameIds.at(-1))).toHaveLength(1);
+    for (const source of ['player_availability', 'core player_stats', 'core goalie_stats']) {
+      const sourceRequests = requests.filter((request) => request.source === source);
+      expect(sourceRequests.every((request) => request.url.searchParams.get('season_id')?.startsWith('eq.'))).toBe(true);
+      expect(new Set(coveredValues(source, 'season_id'))).toEqual(new Set(seasonIds));
+      const coveredGames = coveredValues(source, 'game_id');
+      expect(coveredGames).toHaveLength(gameIds.length);
+      expect(new Set(coveredGames)).toEqual(new Set(gameIds));
+    }
+    const gameTeamCoverage = requests
+      .filter((request) => request.source === 'games')
+      .flatMap((request) => [...(request.url.searchParams.get('or') || '')
+        .matchAll(/(?:home|away)_team_id\.eq\.([0-9a-f-]+)/g)].map((match) => match[1]));
+    expect(new Set(gameTeamCoverage)).toEqual(new Set(teamIds));
+    for (const source of ['optional player_stats', 'optional goalie_stats']) {
+      const coveredGames = coveredValues(source, 'game_id');
+      expect(coveredGames).toHaveLength(gameIds.length);
+      expect(new Set(coveredGames)).toEqual(new Set(gameIds));
+      expect(coveredGames.filter((gameId) => gameId === gameIds[0])).toHaveLength(1);
+      expect(coveredGames.filter((gameId) => gameId === gameIds.at(-1))).toHaveLength(1);
+    }
+  });
+
+  it('[v5 batching rail] merges identical games returned by different team batches without double counting', async () => {
+    const teamIds = Array.from({ length: 51 }, (_, index) => `batch-team-${index}`);
+    const gameId = 'cross-batch-game';
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: teamIds.map((teamId) => ({
+        player_id: PROFILE_ID, team_id: teamId, season_id: SEASON_ID, joined_at: null, end_date: null,
+      })),
+      gameRows: [{
+        id: gameId,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: teamIds[49],
+        away_team_id: teamIds[50],
+        home_score: 2,
+        away_score: 1,
+      }],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([
+      { game_id: gameId, team_id: teamIds[49] },
+      { game_id: gameId, team_id: teamIds[50] },
+    ]);
+    expect(fixture.traces.filter((trace) => trace.table === 'games')).toHaveLength(2);
+  });
+
+  it('[v5 batching rail] fails closed for conflicting duplicate games returned by different team batches', async () => {
+    const teamIds = Array.from({ length: 51 }, (_, index) => `conflict-team-${index}`);
+    const gameId = 'conflicting-cross-batch-game';
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: teamIds.map((teamId) => ({
+        player_id: PROFILE_ID, team_id: teamId, season_id: SEASON_ID, joined_at: null, end_date: null,
+      })),
+      gameRows: [{
+        id: gameId,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: teamIds[49],
+        away_team_id: teamIds[50],
+        home_score: 2,
+        away_score: 1,
+      }],
+      conflictingDuplicateGameId: gameId,
+      conflictingDuplicateAwayTeamId: teamIds[50],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow('fallback games validation');
+  });
+
+  it('[v5 exact-scope rail] excludes legitimate historical check-ins outside returned requested games', async () => {
+    const gameId = 'requested-current-game';
+    const fixture = strictFallbackScorelessClient({
+      gameRows: [{
+        id: gameId,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: null,
+        home_score: 1,
+        away_score: 0,
+      }],
+      outCheckinRows: [{
+        id: 'legitimate-historical-out',
+        game_id: 'historical-game-outside-requested-seasons',
+        team_id: TEAM_ID,
+        player_id: PROFILE_ID,
+      }],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([{ game_id: gameId, team_id: TEAM_ID }]);
+    const checkinRead = fixture.traces.find((trace) => trace.table === 'game_checkins');
+    expect(checkinRead?.filters).toContainEqual(['in', 'game_id', [gameId]]);
+  });
+
+  it.each([
+    ['later provider error', { coreErrorTable: 'goalie_stats' as const }, 'fallback goalie signals batch 1'],
+    ['exact-count drift', { coreCountMismatchTable: 'player_stats' as const }, 'fallback skater signals batch 1 completeness'],
+  ])('[v5 batching rail] consumes every scheduled core read before selecting a deterministic %s failure', async (_label, failure, expected) => {
+    const teamIds = Array.from({ length: 101 }, (_, index) => `core-team-${index}`);
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: teamIds.map((teamId) => ({
+        player_id: PROFILE_ID, team_id: teamId, season_id: SEASON_ID, joined_at: null, end_date: null,
+      })),
+      gameRows: teamIds.map((teamId, index) => ({
+        id: `core-game-${index}`,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: teamId,
+        away_team_id: null,
+        home_score: 1,
+        away_score: 0,
+      })),
+      ...failure,
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow(expected);
+    const evidenceReads = fixture.traces.filter((trace) => (
+      trace.table === 'game_checkins' || trace.table === 'player_availability'
+      || trace.table === 'player_stats' || trace.table === 'goalie_stats'
+    ));
+    expect(evidenceReads).toHaveLength(12);
+    expect(evidenceReads.every((trace) => trace.reads === 1)).toBe(true);
+  });
+
+  it.each(([
+    'game_checkins',
+    'player_availability',
+    'core player_stats',
+    'core goalie_stats',
+    'optional player_stats',
+    'optional goalie_stats',
+  ] as const).flatMap((source) => (
+    (source === 'game_checkins'
+      ? ['allowed-but-wrong game pair', 'wrong participating team', 'foreign game', 'duplicate id']
+      : ['allowed-but-wrong season/game pair', 'wrong participating team', 'foreign game', 'duplicate id', 'malformed season']
+    ).map((mutation) => [source, mutation] as const)
+  )))('[v5 composite rail] rejects %s evidence with %s', async (source, mutation) => {
+    const secondTeamId = '40000000-0000-4000-8000-000000000004';
+    const firstGameId = '50000000-0000-4000-8000-000000000001';
+    const secondGameId = '50000000-0000-4000-8000-000000000002';
+    const foreignGameId = '50000000-0000-4000-8000-000000000003';
+    const rosterRows = [
+      { player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID, joined_at: null, end_date: null },
+      { player_id: PROFILE_ID, team_id: secondTeamId, season_id: OTHER_SEASON_ID, joined_at: null, end_date: null },
+    ];
+    const gameRows = [
+      {
+        id: firstGameId, season_id: SEASON_ID, scheduled_at: '2026-09-01', status: 'completed',
+        home_team_id: TEAM_ID, away_team_id: null, home_score: null, away_score: null,
+      },
+      {
+        id: secondGameId, season_id: OTHER_SEASON_ID, scheduled_at: '2026-03-01', status: 'completed',
+        home_team_id: secondTeamId, away_team_id: null, home_score: null, away_score: null,
+      },
+    ];
+    const optionalSource = source.startsWith('optional');
+    const checkinSource = source === 'game_checkins';
+    const baseRow: Record<string, unknown> = {
+      id: 'evidence-id',
+      game_id: firstGameId,
+      team_id: TEAM_ID,
+      ...(checkinSource || source === 'player_availability' ? { player_id: PROFILE_ID } : {}),
+      ...(checkinSource ? {} : { season_id: SEASON_ID }),
+    };
+    if (mutation.includes('allowed-but-wrong')) {
+      if (checkinSource) {
+        baseRow.game_id = secondGameId;
+      } else {
+        baseRow.season_id = OTHER_SEASON_ID;
+      }
+    } else if (mutation === 'wrong participating team') {
+      baseRow.team_id = secondTeamId;
+    } else if (mutation === 'foreign game') {
+      baseRow.game_id = foreignGameId;
+    } else if (mutation === 'malformed season') {
+      baseRow.season_id = null;
+    }
+    const evidenceRows = mutation === 'duplicate id'
+      ? [baseRow, { ...baseRow }]
+      : [baseRow];
+    const fixture = strictFallbackScorelessClient({
+      rosterRows,
+      gameRows,
+      outCheckinRows: source === 'game_checkins' ? evidenceRows : [],
+      outAvailabilityRows: source === 'player_availability' ? evidenceRows : [],
+      scopedSkaterRows: source === 'core player_stats' ? evidenceRows : [],
+      scopedGoalieRows: source === 'core goalie_stats' ? evidenceRows : [],
+      gameLevelSkaterRows: source === 'optional player_stats' ? evidenceRows : [],
+      gameLevelGoalieRows: source === 'optional goalie_stats' ? evidenceRows : [],
+      returnOutOfScopeOptionalRows: mutation === 'foreign game',
+      returnOutOfScopeCoreRows: !optionalSource && mutation === 'foreign game',
+      returnOutOfScopeCheckinRows: source === 'game_checkins',
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonIds: [SEASON_ID, OTHER_SEASON_ID],
+      playerIds: [PROFILE_ID],
+      strict: true,
+    })).rejects.toThrow(/validation|provider row|evidence/);
+    if (optionalSource) {
+      expect(fixture.optionalProviderReads().some((trace) => (
+        trace.table === source.replace('optional ', '')
+      ))).toBe(true);
+    }
+  });
+
+  it('[v5 composite rail] accepts distinct stable IDs carrying the same legitimate canonical signal', async () => {
+    const gameId = 'legitimate-distinct-signal-game';
+    const fixture = strictFallbackScorelessClient({
+      gameRows: [{
+        id: gameId,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: null,
+        home_score: null,
+        away_score: null,
+      }],
+      scopedSkaterRows: [
+        { id: 'distinct-signal-a', game_id: gameId, team_id: TEAM_ID, season_id: SEASON_ID },
+        { id: 'distinct-signal-b', game_id: gameId, team_id: TEAM_ID, season_id: SEASON_ID },
+      ],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([{ game_id: gameId, team_id: TEAM_ID }]);
+  });
+
+  it.each([
+    ['regular', 'score', 1],
+    ['regular', 'direct-stat', 1],
+    ['regular', 'explicit-out', 0],
+    ['sub', 'score', 0],
+    ['sub', 'direct-stat', 1],
+    ['sub', 'explicit-out', 0],
+    ['part_time', 'score', 0],
+    ['part_time', 'direct-stat', 1],
+    ['part_time', 'explicit-out', 0],
+    ['mystery', 'score', 0],
+    ['mystery', 'direct-stat', 0],
+    ['mystery', 'explicit-out', 0],
+    [null, 'score', 0],
+    [null, 'direct-stat', 0],
+    [null, 'explicit-out', 0],
+  ] as const)('[v6 roster-type rail] gives %s roster rows %s evidence the exact attendance result', async (playerType, evidence, expectedCount) => {
+    const gameId = `roster-type-${playerType ?? 'null'}-${evidence}`;
+    const hasDirectStat = evidence === 'direct-stat' || evidence === 'explicit-out';
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [{
+        player_id: PROFILE_ID,
+        team_id: TEAM_ID,
+        season_id: SEASON_ID,
+        start_date: '2026-01-01',
+        end_date: null,
+        status: 'active',
+        player_type: playerType,
+      }],
+      gameRows: [{
+        id: gameId,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01T20:00:00Z',
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: null,
+        home_score: evidence === 'score' ? 3 : null,
+        away_score: evidence === 'score' ? 2 : null,
+      }],
+      scopedSkaterRows: hasDirectStat ? [{
+        id: `direct-${gameId}`,
+        game_id: gameId,
+        team_id: TEAM_ID,
+        player_id: PROFILE_ID,
+        season_id: SEASON_ID,
+      }] : [],
+      outAvailabilityRows: evidence === 'explicit-out' ? [{
+        id: `out-${gameId}`,
+        game_id: gameId,
+        team_id: TEAM_ID,
+        player_id: PROFILE_ID,
+        season_id: SEASON_ID,
+      }] : [],
+    });
+
+    const appearances = await getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    });
+
+    expect(appearances).toHaveLength(expectedCount);
+    expect(fixture.traces.find((trace) => trace.table === 'team_rosters')?.selection)
+      .toContain('status, player_type');
+    const coreSkaterRead = fixture.traces.find((trace) => trace.table === 'player_stats'
+      && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id'));
+    if (playerType === 'regular' || playerType === 'sub' || playerType === 'part_time') {
+      expect(coreSkaterRead?.selection).toContain('player_id');
+    } else {
+      expect(coreSkaterRead).toBeUndefined();
+    }
+  });
+
+  it.each([
+    ['inactive'],
+    ['mystery'],
+    [null],
+    [undefined],
+  ] as const)('[v6 roster-type rail] locally denies a permissively returned %s roster status', async (status) => {
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [{
+        player_id: PROFILE_ID,
+        team_id: TEAM_ID,
+        season_id: SEASON_ID,
+        start_date: '2026-01-01',
+        end_date: null,
+        status,
+        player_type: 'regular',
+      }],
+      gameRows: [{
+        id: 'permissive-status-game', season_id: SEASON_ID,
+        scheduled_at: '2026-09-01T20:00:00Z', status: 'completed',
+        home_team_id: TEAM_ID, away_team_id: null, home_score: 3, away_score: 2,
+      }],
+    });
+
+    const rows = await getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('[v6 roster-type rail] does not cross-credit one substitute player direct stats to another player', async () => {
+    const otherPlayerId = '60000000-0000-4000-8000-000000000006';
+    const gameId = 'multi-player-direct-stat';
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [PROFILE_ID, otherPlayerId].map((playerId) => ({
+        player_id: playerId,
+        team_id: TEAM_ID,
+        season_id: SEASON_ID,
+        start_date: '2026-01-01',
+        end_date: null,
+        status: 'active',
+        player_type: 'sub',
+      })),
+      gameRows: [{
+        id: gameId, season_id: SEASON_ID, scheduled_at: '2026-09-01T20:00:00Z',
+        status: 'completed', home_team_id: TEAM_ID, away_team_id: null,
+        home_score: 3, away_score: 2,
+      }],
+      scopedGoalieRows: [{
+        id: 'only-first-player-stat', game_id: gameId, team_id: TEAM_ID,
+        player_id: PROFILE_ID, season_id: SEASON_ID,
+      }],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID, otherPlayerId], strict: true,
+    })).resolves.toMatchObject([{ player_id: PROFILE_ID, game_id: gameId }]);
+  });
+
+  it.each([
+    ['same-day inclusive start and end', '2026-09-01', '2026-09-01', '2026-09-01T20:00:00Z', 1],
+    ['before start', '2026-09-02', null, '2026-09-01T20:00:00Z', 0],
+    ['after end', '2026-08-01', '2026-08-31', '2026-09-01T20:00:00Z', 0],
+    ['Toronto date at a UTC-day boundary', '2026-09-01', '2026-09-01', '2026-09-02T02:00:00Z', 1],
+    ['missing start', null, null, '2026-09-01T20:00:00Z', 0],
+    ['malformed start text', 'not-a-date', null, '2026-09-01T20:00:00Z', 0],
+    ['impossible start date', '2026-02-30', null, '2026-09-01T20:00:00Z', 0],
+    ['malformed end text', '2026-01-01', 'not-a-date', '2026-09-01T20:00:00Z', 0],
+    ['impossible end date', '2026-01-01', '2026-02-30', '2026-02-15T20:00:00Z', 0],
+  ] as const)('[v6 roster-window rail] applies canonical league-date semantics for %s', async (_label, startDate, endDate, scheduledAt, expectedCount) => {
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [{
+        player_id: PROFILE_ID,
+        team_id: TEAM_ID,
+        season_id: SEASON_ID,
+        start_date: startDate,
+        end_date: endDate,
+        status: 'active',
+        player_type: 'regular',
+      }],
+      gameRows: [{
+        id: 'canonical-roster-window-game', season_id: SEASON_ID,
+        scheduled_at: scheduledAt, status: 'completed',
+        home_team_id: TEAM_ID, away_team_id: null, home_score: 3, away_score: 2,
+      }],
+    });
+
+    const appearances = await getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    });
+
+    expect(appearances).toHaveLength(expectedCount);
+    const rosterSelection = fixture.traces.find((trace) => trace.table === 'team_rosters')?.selection;
+    expect(rosterSelection).toContain('start_date');
+    expect(rosterSelection).not.toContain('joined_at');
+  });
+
+  it.each([
+    ['player_availability', 'outAvailabilityRows'],
+    ['player_stats', 'scopedSkaterRows'],
+    ['goalie_stats', 'scopedGoalieRows'],
+  ] as const)('[v6 exact-evidence-scope rail] excludes a legitimate future %s row at the provider boundary', async (table, fixtureField) => {
+    const currentGameId = `current-${table}`;
+    const futureRow = {
+      id: `future-${table}`,
+      game_id: `future-game-${table}`,
+      team_id: TEAM_ID,
+      player_id: PROFILE_ID,
+      season_id: SEASON_ID,
+    };
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [{
+        player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID,
+        start_date: '2026-01-01', end_date: null, status: 'active', player_type: 'regular',
+      }],
+      gameRows: [{
+        id: currentGameId, season_id: SEASON_ID, scheduled_at: '2026-09-01T20:00:00Z',
+        status: 'completed', home_team_id: TEAM_ID, away_team_id: null,
+        home_score: 3, away_score: 2,
+      }],
+      [fixtureField]: [futureRow],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([{ player_id: PROFILE_ID, game_id: currentGameId }]);
+
+    const coreRead = fixture.traces.find((trace) => trace.table === table
+      && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id'));
+    expect(coreRead?.filters).toEqual(expect.arrayContaining([
+      ['in', 'game_id', [currentGameId]],
+      ['eq', 'season_id', SEASON_ID],
+      ['in', 'team_id', [TEAM_ID]],
+      ['in', 'player_id', [PROFILE_ID]],
+    ]));
+  });
+
+  it.each([
+    ['player_availability', 'outAvailabilityRows'],
+    ['player_stats', 'scopedSkaterRows'],
+    ['goalie_stats', 'scopedGoalieRows'],
+  ] as const)('[v6 exact-evidence-scope rail] still fails closed when a permissive %s provider returns a foreign row', async (table, fixtureField) => {
+    const currentGameId = `permissive-current-${table}`;
+    const fixture = strictFallbackScorelessClient({
+      gameRows: [{
+        id: currentGameId, season_id: SEASON_ID, scheduled_at: '2026-09-01T20:00:00Z',
+        status: 'completed', home_team_id: TEAM_ID, away_team_id: null,
+        home_score: 3, away_score: 2,
+      }],
+      [fixtureField]: [{
+        id: `permissive-foreign-${table}`,
+        game_id: `foreign-game-${table}`,
+        team_id: TEAM_ID,
+        player_id: PROFILE_ID,
+        season_id: SEASON_ID,
+      }],
+      returnOutOfScopeCoreRows: true,
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow(/validation|evidence/);
+    const coreRead = fixture.traces.find((trace) => trace.table === table
+      && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id'));
+    expect(coreRead?.filters).toContainEqual(['in', 'game_id', [currentGameId]]);
+  });
+
+  it('serializes 1,000 scoreless game signals into exact URL-safe batches under one shared concurrency cap', async () => {
+    const gameIds = Array.from({ length: 1000 }, (_, index) => (
+      `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    ));
+    const games = gameIds.map((id) => ({
+      id,
+      season_id: SEASON_ID,
+      scheduled_at: '2026-09-01',
+      status: 'completed',
+      home_team_id: TEAM_ID,
+      away_team_id: 'other-team',
+      home_score: null,
+      away_score: null,
+    }));
+    const optionalRequests: Array<{ table: string; targetBytes: number; gameIds: string[] }> = [];
+    let optionalInFlight = 0;
+    let maxOptionalInFlight = 0;
+    const parseInFilter = (value: string | null) => {
+      if (!value?.startsWith('in.(') || !value.endsWith(')')) throw new Error('invalid serialized in filter');
+      return value.slice(4, -1).split(',').filter(Boolean);
+    };
+    const exactResponse = (rows: Array<Record<string, unknown>>) => new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Range': rows.length > 0 ? `0-${rows.length - 1}/${rows.length}` : '*/0',
+      },
+    });
+    const serializedFetch: typeof fetch = async (input) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+      const table = url.pathname.split('/').pop() || '';
+      const gameIdFilter = url.searchParams.get('game_id');
+      const hasPlayerScope = Boolean(url.searchParams.get('player_id'));
+      if ((table === 'player_stats' || table === 'goalie_stats') && gameIdFilter && !hasPlayerScope) {
+        const requestedGameIds = parseInFilter(gameIdFilter);
+        optionalRequests.push({
+          table,
+          targetBytes: Buffer.byteLength(`${url.pathname}${url.search}`, 'utf8'),
+          gameIds: requestedGameIds,
+        });
+        optionalInFlight += 1;
+        maxOptionalInFlight = Math.max(maxOptionalInFlight, optionalInFlight);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        optionalInFlight -= 1;
+        return exactResponse(table === 'player_stats' && requestedGameIds.includes(gameIds.at(-1)!)
+          ? [{ id: 'teammate-last', game_id: gameIds.at(-1), team_id: TEAM_ID, season_id: SEASON_ID }]
+          : []);
+      }
+      if (table === 'team_rosters') {
+        return exactResponse([{
+          player_id: PROFILE_ID,
+          team_id: TEAM_ID,
+          season_id: SEASON_ID,
+          start_date: '2026-01-01',
+          end_date: null,
+          status: 'active',
+          player_type: 'regular',
+        }]);
+      }
+      if (table === 'games') return exactResponse(games);
+      return exactResponse([]);
+    };
+    const serializedClient = createSupabaseClient('https://project.supabase.co', 'public-test-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: serializedFetch },
+    });
+
+    await expect(getFallbackRosterAppearanceRows(serializedClient as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([{ player_id: PROFILE_ID, team_id: TEAM_ID, game_id: gameIds.at(-1) }]);
+
+    expect(maxOptionalInFlight).toBeLessThanOrEqual(4);
+    for (const table of ['player_stats', 'goalie_stats']) {
+      const requests = optionalRequests.filter((request) => request.table === table);
+      expect(Math.max(...requests.map((request) => request.targetBytes))).toBeLessThanOrEqual(8192);
+      expect(requests.length).toBeGreaterThan(1);
+      expect(Math.max(...requests.map((request) => request.gameIds.length))).toBeLessThanOrEqual(100);
+      const serializedIds = requests.flatMap((request) => request.gameIds);
+      expect(serializedIds).toHaveLength(gameIds.length);
+      expect(new Set(serializedIds).size).toBe(gameIds.length);
+      expect([...serializedIds].sort()).toEqual([...gameIds].sort());
+      expect(serializedIds.filter((id) => id === gameIds[0])).toHaveLength(1);
+      expect(serializedIds.filter((id) => id === gameIds.at(-1))).toHaveLength(1);
+    }
+  });
+
+  it('batches each optional scoreless-signal helper source while preserving exact teammate evidence', async () => {
+    const games = Array.from({ length: 101 }, (_, index) => ({
+      id: `scoreless-${index}`,
+      season_id: SEASON_ID,
+      scheduled_at: '2026-09-01',
+      status: 'completed',
+      home_team_id: TEAM_ID,
+      away_team_id: 'other-team',
+      home_score: null,
+      away_score: null,
+    }));
+    const fixture = strictFallbackScorelessClient({
+      gameRows: games,
+      gameLevelSkaterRows: [{
+        id: 'teammate-last', game_id: 'scoreless-100', team_id: TEAM_ID, season_id: SEASON_ID,
+      }],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([{ player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'scoreless-100' }]);
+
+    const optionalReads = fixture.optionalProviderReads();
+    for (const table of ['player_stats', 'goalie_stats']) {
+      const sourceReads = optionalReads.filter((trace) => trace.table === table);
+      expect(sourceReads.length).toBeGreaterThan(1);
+      expect(sourceReads.every((trace) => trace.reads === 1)).toBe(true);
+      const serializedGameIds = sourceReads.flatMap((trace) => (
+        trace.filters.find(([method, column]) => method === 'in' && column === 'game_id')?.[2] as string[]
+      ));
+      expect(Math.max(...sourceReads.map((trace) => (
+        trace.filters.find(([method, column]) => method === 'in' && column === 'game_id')?.[2] as string[]
+      ).length))).toBeLessThanOrEqual(100);
+      expect(serializedGameIds).toEqual(games.map((game) => game.id));
+    }
+  });
+
+  it('fails closed on a later optional provider batch error after consuming every scheduled read', async () => {
+    const games = Array.from({ length: 101 }, (_, index) => ({
+      id: `scoreless-error-${index}`,
+      season_id: SEASON_ID,
+      scheduled_at: '2026-09-01',
+      status: 'completed',
+      home_team_id: TEAM_ID,
+      away_team_id: 'other-team',
+      home_score: null,
+      away_score: null,
+    }));
+    const fixture = strictFallbackScorelessClient({
+      gameRows: games,
+      optionalErrorTable: 'goalie_stats',
+      optionalErrorGameId: games.at(-1)?.id,
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow('fallback game goalie signals');
+    expect(fixture.optionalProviderReads().every((trace) => trace.reads === 1)).toBe(true);
+  });
+
+  it('fails closed on a later optional provider batch exact-count mismatch', async () => {
+    const games = Array.from({ length: 101 }, (_, index) => ({
+      id: `scoreless-count-${index}`,
+      season_id: SEASON_ID,
+      scheduled_at: '2026-09-01',
+      status: 'completed',
+      home_team_id: TEAM_ID,
+      away_team_id: 'other-team',
+      home_score: null,
+      away_score: null,
+    }));
+    const fixture = strictFallbackScorelessClient({
+      gameRows: games,
+      optionalCountMismatchTable: 'player_stats',
+      optionalCountMismatchGameId: games.at(-1)?.id,
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow('fallback game skater signals completeness');
+    expect(fixture.optionalProviderReads().every((trace) => trace.reads === 1)).toBe(true);
+  });
+
+  it('fully pages an optional provider batch and fails closed on a later page error', async () => {
+    const gameId = 'scoreless-page-error';
+    const fixture = strictFallbackScorelessClient({
+      gameRows: [{
+        id: gameId,
+        season_id: SEASON_ID,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: 'other-team',
+        home_score: null,
+        away_score: null,
+      }],
+      gameLevelSkaterRows: Array.from({ length: 1001 }, (_, index) => ({
+        id: `page-row-${index}`, game_id: gameId, team_id: TEAM_ID, season_id: SEASON_ID,
+      })),
+      optionalPageErrorTable: 'player_stats',
+      optionalPageErrorGameId: gameId,
+      optionalPageErrorOffset: 1000,
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow('fallback game skater signals batch 1 page 1000');
+    const skaterPageReads = fixture.optionalProviderReads().filter((trace) => trace.table === 'player_stats');
+    expect(skaterPageReads).toHaveLength(2);
+    expect(skaterPageReads.every((trace) => trace.reads === 1)).toBe(true);
+  });
+
+  it('bounds near-cap roster/game derived work by composite season and team while preserving exact output', async () => {
+    let derivedFieldAccesses = 0;
+    const rosterRows = Array.from({ length: 1000 }, (_, index) => {
+      const row: Record<string, unknown> = {
+        player_id: PROFILE_ID,
+        joined_at: null,
+        end_date: null,
+      };
+      Object.defineProperties(row, {
+        season_id: { enumerable: true, get: () => { derivedFieldAccesses += 1; return SEASON_ID; } },
+        team_id: { enumerable: true, get: () => { derivedFieldAccesses += 1; return `team-${index}`; } },
+      });
+      return row;
+    });
+    const gameRows = Array.from({ length: 1000 }, (_, index) => {
+      const row: Record<string, unknown> = {
+        id: `near-cap-game-${index}`,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_score: 1,
+        away_score: 0,
+      };
+      Object.defineProperties(row, {
+        season_id: { enumerable: true, get: () => { derivedFieldAccesses += 1; return SEASON_ID; } },
+        home_team_id: { enumerable: true, get: () => { derivedFieldAccesses += 1; return `team-${index}`; } },
+        away_team_id: { enumerable: true, get: () => { derivedFieldAccesses += 1; return null; } },
+      });
+      return row;
+    });
+    const fixture = strictFallbackScorelessClient({ rosterRows, gameRows });
+
+    const appearances = await getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    });
+    const productionDerivedFieldAccesses = derivedFieldAccesses;
+
+    expect(appearances).toHaveLength(1000);
+    expect(appearances.map((row) => row.game_id)).toEqual(gameRows.map((row) => row.id));
+    expect(productionDerivedFieldAccesses).toBeLessThanOrEqual(
+      (rosterRows.length + gameRows.length) * 12 + appearances.length * 4,
+    );
+  });
+
+  it.each(([
+    ['team_rosters', OTHER_SEASON_ID],
+    ['team_rosters', null],
+    ['games', OTHER_SEASON_ID],
+    ['games', null],
+    ['player_availability', OTHER_SEASON_ID],
+    ['player_availability', null],
+    ['player_stats', OTHER_SEASON_ID],
+    ['player_stats', null],
+    ['goalie_stats', OTHER_SEASON_ID],
+    ['goalie_stats', null],
+  ] as const))('fails closed for returned %s rows with an out-of-request or malformed %s season', async (source, returnedSeasonId) => {
+    const rosterRows = [{
+      player_id: PROFILE_ID,
+      team_id: TEAM_ID,
+      season_id: source === 'team_rosters' ? returnedSeasonId : SEASON_ID,
+      joined_at: null,
+      end_date: null,
+    }];
+    const gameRows = [{
+      id: 'season-validation-game',
+      season_id: source === 'games' ? returnedSeasonId : SEASON_ID,
+      scheduled_at: '2026-09-01',
+      status: 'completed',
+      home_team_id: TEAM_ID,
+      away_team_id: 'other-team',
+      home_score: 1,
+      away_score: 0,
+    }];
+    const seasonBearingSignal = {
+      game_id: 'season-validation-game',
+      team_id: TEAM_ID,
+      player_id: PROFILE_ID,
+      season_id: returnedSeasonId,
+    };
+    const fixture = strictFallbackScorelessClient({
+      rosterRows,
+      gameRows,
+      outAvailabilityRows: source === 'player_availability' ? [seasonBearingSignal] : [],
+      scopedSkaterRows: source === 'player_stats' ? [seasonBearingSignal] : [],
+      scopedGoalieRows: source === 'goalie_stats' ? [seasonBearingSignal] : [],
+      returnOutOfScopeGameRows: source === 'games',
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: SEASON_ID, playerIds: [PROFILE_ID], strict: true,
+    })).rejects.toThrow('fallback returned season validation');
+  });
+
+  it('accepts exact requested opaque text season IDs without UUID-shape validation', async () => {
+    const opaqueSeasonId = 'legacy:season/text-v3';
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [{
+        player_id: PROFILE_ID,
+        team_id: TEAM_ID,
+        season_id: opaqueSeasonId,
+        joined_at: null,
+        end_date: null,
+      }],
+      gameRows: [{
+        id: 'opaque-season-game',
+        season_id: opaqueSeasonId,
+        scheduled_at: '2026-09-01',
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: null,
+        home_score: 1,
+        away_score: 0,
+      }],
+    });
+
+    await expect(getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonId: opaqueSeasonId, playerIds: [PROFILE_ID], strict: true,
+    })).resolves.toMatchObject([{ game_id: 'opaque-season-game' }]);
+    expect(fixture.traces.find((trace) => trace.table === 'team_rosters')?.filters)
+      .toContainEqual(['eq', 'season_id', opaqueSeasonId]);
+  });
+
+  it('keeps batched fallback roster and game rows paired by identical season identity', async () => {
+    const fixture = strictFallbackScorelessClient({
+      rosterRows: [{
+        player_id: PROFILE_ID,
+        team_id: TEAM_ID,
+        season_id: SEASON_ID,
+        joined_at: null,
+        end_date: null,
+      }],
+      gameRows: [
+        { id: 'season-a-game', season_id: SEASON_ID, scheduled_at: '2026-09-01', status: 'completed', home_team_id: TEAM_ID, away_team_id: null, home_score: 2, away_score: 1 },
+        { id: 'season-b-game', season_id: OTHER_SEASON_ID, scheduled_at: '2026-03-01', status: 'completed', home_team_id: TEAM_ID, away_team_id: null, home_score: 3, away_score: 2 },
+      ],
+    });
+
+    const appearances = await getFallbackRosterAppearanceRows(fixture.client as never, {
+      seasonIds: [SEASON_ID, OTHER_SEASON_ID, SEASON_ID],
+      playerIds: [PROFILE_ID],
+      strict: true,
+    });
+
+    expect(appearances).toHaveLength(1);
+    expect(appearances[0]).toMatchObject({ player_id: PROFILE_ID, team_id: TEAM_ID, game_id: 'season-a-game' });
+    const pairedGame = Array.isArray(appearances[0].game) ? appearances[0].game[0] : appearances[0].game;
+    expect(pairedGame?.season_id).toBe(SEASON_ID);
+    expect(fixture.traces.find((trace) => trace.table === 'team_rosters')?.filters)
+      .toContainEqual(['in', 'season_id', [SEASON_ID, OTHER_SEASON_ID]]);
+    expect(fixture.traces.filter((trace) => trace.table === 'games')).toHaveLength(1);
+  });
+
   it('propagates a later fallback-source query error after the roster query succeeds', async () => {
     const results: Record<string, { data: unknown[] | null; error: unknown; count: number | null }> = {
-      team_rosters: { data: [{ player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID, joined_at: null, end_date: null }], error: null, count: 1 },
-      games: { data: [], error: null, count: 0 },
+      team_rosters: { data: [{
+        player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID,
+        start_date: '2026-01-01', end_date: null, status: 'active', player_type: 'regular',
+      }], error: null, count: 1 },
+      games: { data: [{
+        id: 'later-source-error-game', season_id: SEASON_ID, scheduled_at: '2026-09-01', status: 'completed',
+        home_team_id: TEAM_ID, away_team_id: null, home_score: 1, away_score: 0,
+      }], error: null, count: 1 },
       game_checkins: { data: [], error: null, count: 0 },
       player_availability: { data: null, error: { code: 'PGRST500', message: 'later query failed' }, count: null },
       player_stats: { data: [], error: null, count: 0 },
@@ -1377,11 +2644,14 @@ describe('strict canonical appearance query completeness', () => {
         const hasFilter = (method: string, column: string) => trace.filters.some(([candidate, field]) => candidate === method && field === column);
         let data: unknown[] = [];
         if (table === 'team_rosters') {
-          data = [{ player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID, joined_at: null, end_date: null }];
+          data = [{
+            player_id: PROFILE_ID, team_id: TEAM_ID, season_id: SEASON_ID,
+            start_date: '2026-01-01', end_date: null, status: 'active', player_type: 'regular',
+          }];
         } else if (table === 'games') {
           data = [{ id: 'scoreless-game', season_id: SEASON_ID, scheduled_at: '2026-09-01', status: 'completed', home_team_id: TEAM_ID, away_team_id: 'other-team', home_score: null, away_score: null }];
         } else if (table === 'player_stats' && hasFilter('in', 'game_id') && !hasFilter('in', 'player_id')) {
-          data = [{ id: 'teammate-stat', game_id: 'scoreless-game', team_id: TEAM_ID }];
+          data = [{ id: 'teammate-stat', game_id: 'scoreless-game', team_id: TEAM_ID, season_id: SEASON_ID }];
         }
         return Promise.resolve({ data, error: null, count: data.length }).then(resolve);
       };
@@ -1400,11 +2670,21 @@ describe('strict canonical appearance query completeness', () => {
     for (const table of ['player_stats', 'goalie_stats']) {
       const gameScoped = traces.filter((trace) => trace.table === table
         && trace.filters.some(([method, column]) => method === 'in' && column === 'game_id'));
-      expect(gameScoped).toHaveLength(1);
-      expect(gameScoped[0].select?.[1]).toEqual({ count: 'exact' });
-      const gameIds = gameScoped[0].filters.find(([method, column]) => method === 'in' && column === 'game_id')?.[2] as string[];
-      expect(gameIds).toHaveLength(1);
-      expect(gameIds.length).toBeLessThanOrEqual(100);
+      expect(gameScoped).toHaveLength(2);
+      expect(gameScoped.every((trace) => trace.select?.[1] && (trace.select[1] as { count?: unknown }).count === 'exact')).toBe(true);
+      const coreScoped = gameScoped.filter((trace) => trace.filters.some(
+        ([method, column]) => method === 'in' && column === 'player_id',
+      ));
+      const optionalScoped = gameScoped.filter((trace) => !trace.filters.some(
+        ([method, column]) => method === 'in' && column === 'player_id',
+      ));
+      expect(coreScoped).toHaveLength(1);
+      expect(optionalScoped).toHaveLength(1);
+      for (const trace of gameScoped) {
+        const gameIds = trace.filters.find(([method, column]) => method === 'in' && column === 'game_id')?.[2] as string[];
+        expect(gameIds).toHaveLength(1);
+        expect(gameIds.length).toBeLessThanOrEqual(100);
+      }
     }
   });
 
@@ -1538,7 +2818,7 @@ function selectedStatsProductionClient(seasonSummary: Record<string, unknown> | 
         data: [{ game_id: 'selected-game', goals: 3, assists: 2, penalty_minutes: 4 }], error: null, count: 1,
       };
       if (table === 'game_checkins') return { data: [], error: null, count: 0 };
-      if (table === 'team_rosters' && selection.includes('joined_at')) return { data: [], error: null, count: 0 };
+      if (table === 'team_rosters' && selection.includes('start_date')) return { data: [], error: null, count: 0 };
       if (table === 'team_rosters') return {
         data: { position: 'C', team: { name: 'Bad Bunny' } }, error: null, count: null,
       };
@@ -1587,7 +2867,7 @@ describe('selected-season production aggregator preservation', () => {
 });
 
 describe('strict career appearance query scoping', () => {
-  it('hydrates all active source seasons once and excludes a legitimate other-league check-in', async () => {
+  it('hydrates all active source seasons through one exact-scoped fallback read set', async () => {
     const { client, traces } = strictTimelineProductionClient();
     mockedCreateClient.mockResolvedValue(client as never);
     mockedCreateServiceRoleClient.mockReturnValue(client as never);
@@ -1597,16 +2877,53 @@ describe('strict career appearance query scoping', () => {
     expect(timeline.map((row) => row.season_id)).toEqual([OTHER_SEASON_ID, SEASON_ID]);
     expect(timeline.map((row) => row.games_played)).toEqual([1, 1]);
     const directCheckinReads = traces.filter((trace) => trace.table === 'game_checkins'
-      && trace.selection === 'player_id, team_id, game_id');
+      && trace.selection === 'player_id, team_id, game_id' && trace.ranged);
     expect(directCheckinReads).toHaveLength(1);
     const hydrationReads = traces.filter((trace) => trace.table === 'games'
       && trace.selection.includes('league_id, status'));
     expect(hydrationReads).toHaveLength(1);
     const fallbackReads = traces.filter((trace) => trace.table === 'team_rosters'
-      && trace.selection.includes('joined_at'));
-    expect(fallbackReads).toHaveLength(2);
-    expect(fallbackReads.map((trace) => trace.filters.find(([method, column]) => method === 'eq' && column === 'season_id')?.[2]))
-      .toEqual(expect.arrayContaining([SEASON_ID, OTHER_SEASON_ID]));
+      && trace.selection.includes('start_date'));
+    expect(fallbackReads).toHaveLength(1);
+    const fallbackOutReads = traces.filter((trace) => trace.table === 'game_checkins'
+      && trace.selection === 'id, game_id, team_id, player_id' && trace.ranged);
+    expect(fallbackOutReads).toHaveLength(2);
+    expect(new Set(fallbackOutReads.flatMap((trace) => (
+      trace.filters.find(([method, column]) => method === 'in' && column === 'game_id')?.[2] as string[]
+    )))).toEqual(new Set(['season-a-game', 'season-b-game']));
+    for (const fallbackOutRead of fallbackOutReads) {
+      expect(fallbackOutRead.selectOptions).toEqual({ count: 'exact' });
+      expect(fallbackOutRead.filters).toEqual(expect.arrayContaining([
+        ['eq', 'status', 'out'],
+        ['in', 'player_id', [PROFILE_ID]],
+      ]));
+      expect(fallbackOutRead.filters.some(([, column]) => column === 'season_id')).toBe(false);
+    }
+
+    const fallbackGameReads = traces.filter((trace) => trace.table === 'games'
+      && trace.selection.includes('scheduled_at, status'));
+    expect(fallbackGameReads).toHaveLength(2);
+    expect(new Set(fallbackGameReads.map((trace) => trace.filters
+      .find(([method, column]) => method === 'eq' && column === 'season_id')?.[2])))
+      .toEqual(new Set([SEASON_ID, OTHER_SEASON_ID]));
+    const fallbackEvidenceReads = [
+      ...traces.filter((trace) => trace.table === 'player_availability'
+        && trace.selection === 'id, game_id, team_id, player_id, season_id'),
+      ...traces.filter((trace) => trace.table === 'player_stats'
+        && trace.selection === 'id, game_id, team_id, player_id, season_id'
+        && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id')),
+      ...traces.filter((trace) => trace.table === 'goalie_stats'
+        && trace.selection === 'id, game_id, team_id, player_id, season_id'
+        && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id')),
+    ];
+    expect(fallbackEvidenceReads).toHaveLength(6);
+    expect(new Set(fallbackEvidenceReads.map((trace) => trace.filters
+      .find(([method, column]) => method === 'eq' && column === 'season_id')?.[2])))
+      .toEqual(new Set([SEASON_ID, OTHER_SEASON_ID]));
+    for (const fallbackRead of [...fallbackReads, ...fallbackGameReads, ...fallbackEvidenceReads]) {
+      expect(fallbackRead.selectOptions).toEqual({ count: 'exact' });
+      expect(fallbackRead.ranged).toBe(true);
+    }
   });
 
   it.each([
@@ -1635,12 +2952,33 @@ describe('strict career appearance query scoping', () => {
       ...expectedBaseline,
     });
     const fallbackReads = traces.filter((trace) => trace.table === 'team_rosters'
-      && trace.selection.includes('joined_at'));
-    const fallbackSeasonIds = fallbackReads.map((trace) => trace.filters
+      && trace.selection.includes('start_date'));
+    expect(fallbackReads).toHaveLength(1);
+    const fallbackGameReads = traces.filter((trace) => trace.table === 'games'
+      && trace.selection.includes('scheduled_at, status'));
+    expect(fallbackGameReads).toHaveLength(2);
+    const fallbackEvidenceReads = [
+      ...traces.filter((trace) => trace.table === 'player_availability'
+        && trace.selection === 'id, game_id, team_id, player_id, season_id'),
+      ...traces.filter((trace) => trace.table === 'player_stats'
+        && trace.selection === 'id, game_id, team_id, player_id, season_id'
+        && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id')),
+      ...traces.filter((trace) => trace.table === 'goalie_stats'
+        && trace.selection === 'id, game_id, team_id, player_id, season_id'
+        && trace.filters.some(([method, column]) => method === 'in' && column === 'player_id')),
+    ];
+    expect(fallbackEvidenceReads).toHaveLength(6);
+    const exactSeasonIds = [...fallbackGameReads, ...fallbackEvidenceReads].map((trace) => trace.filters
       .find(([method, column]) => method === 'eq' && column === 'season_id')?.[2]);
-    expect(fallbackReads).toHaveLength(2);
-    expect(fallbackSeasonIds).toEqual([SEASON_ID, OTHER_SEASON_ID]);
-    expect(fallbackSeasonIds).not.toContain(HISTORICAL_BASELINE_ID);
+    expect(new Set(exactSeasonIds)).toEqual(new Set([SEASON_ID, OTHER_SEASON_ID]));
+    expect(exactSeasonIds).not.toContain(HISTORICAL_BASELINE_ID);
+    expect(fallbackReads[0].filters
+      .find(([method, column]) => method === 'in' && column === 'season_id')?.[2])
+      .toEqual([SEASON_ID, OTHER_SEASON_ID]);
+    for (const fallbackRead of [...fallbackReads, ...fallbackGameReads, ...fallbackEvidenceReads]) {
+      expect(fallbackRead.selectOptions).toEqual({ count: 'exact' });
+      expect(fallbackRead.ranged).toBe(true);
+    }
 
     const teamGameReads = traces.filter((trace) => trace.table === 'games'
       && trace.selection === 'id, season_id, home_team_id, away_team_id, location');
