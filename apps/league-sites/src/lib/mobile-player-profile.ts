@@ -20,6 +20,11 @@ import { countChampionshipBadges, summarizePlayerCareerAchievements } from '@/li
 import { isAggregateOnlySeasonView, isImportedAggregateSeasonId } from '@/lib/imported-aggregate-season-overrides';
 import { resolvePlayerPhotoUrl } from '@/lib/player-photo';
 import { readCareerScope } from '@/lib/public-native-stats';
+import {
+  aggregatePublicSeasonStats,
+  readPublicStatMetricRows,
+  type PublicSeasonMetricPlayer,
+} from '@/lib/public-stat-metrics';
 import { createClient } from '@/lib/supabase/server';
 import type { NewsArticle, Player, PlayerBadge, PlayerGameLogEntry, PlayerStats, Season } from '@/lib/types';
 
@@ -27,6 +32,8 @@ export const HOCKEY_LIFE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 const HOCKEY_LIFE_SLUG = 'hockey-life';
 const SITE_ORIGIN = 'https://hockey-life.beerleaguehockey.ca';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Keep player-scoped canonical hydration comfortably inside Build 46's fixed 8-second request timeout.
+const MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS = 5_000;
 
 type LeagueIdentity = { id: string; slug: string; status?: string };
 type Matchup = { id: string; name: string; gamesPlayed: number; goals: number; assists: number; points: number; shots: number; shootingPct: number | null };
@@ -66,6 +73,7 @@ export interface MobilePlayerProfileDependencies {
   getSeasons(leagueId: string): Promise<Season[]>;
   getCurrentSeason(leagueId: string): Promise<Pick<Season, 'id' | 'name'> | null>;
   getStats(playerId: string, seasonId: string | null, leagueId: string, isGoalie: boolean): Promise<Partial<PlayerStats> | null>;
+  getPublicSeasonPlayer(leagueId: string, seasonId: string, playerId: string): Promise<PublicSeasonMetricPlayer | null>;
   getTimeline(leagueId: string, playerId: string, isGoalie: boolean, includeHistoricalBaseline: boolean): Promise<PlayerCareerSeasonRow[]>;
   getGames(playerId: string, seasonId: string): Promise<PlayerGameLogEntry[]>;
   getBadges(playerId: string): Promise<PlayerBadge[]>;
@@ -156,6 +164,13 @@ export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = 
   getSeasons: (leagueId) => getSeasons(leagueId, { strict: true }),
   getCurrentSeason: (leagueId) => getCurrentSeason(leagueId, { strict: true }),
   getStats: (playerId, seasonId, leagueId, isGoalie) => getPlayerCareerStats(playerId, seasonId, { leagueId, isGoalie, strict: true }),
+  getPublicSeasonPlayer: async (leagueId, seasonId, playerId) => {
+    const scope = { leagueId, seasonId, playerId };
+    const rows = await readPublicStatMetricRows(scope, {
+      maxTotalRows: MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS,
+    });
+    return aggregatePublicSeasonStats(rows, scope).players.find((player) => player.playerId === playerId) ?? null;
+  },
   getTimeline: (leagueId, playerId, isGoalie, includeHistoricalBaseline) => getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, { includeHistoricalBaseline, strict: true }),
   getGames: (playerId, seasonId) => getPlayerGameLog(playerId, seasonId, 20, { strict: true }),
   getBadges: (playerId) => getPlayerBadges(playerId, { leagueId: HOCKEY_LIFE_ID, strict: true }),
@@ -227,8 +242,11 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       'timeline',
       () => deps.getTimeline(league.id, profileId, isGoalie, true),
     );
-    const [stats, badges, achievements, articles, games, matchups] = await Promise.all([
+    const [stats, publicSeasonPlayer, badges, achievements, articles, games, matchups] = await Promise.all([
       atDependencyStage('stats', () => deps.getStats(profileId, selectedSeasonId, league.id, isGoalie)),
+      !aggregateOnly && selectedSeasonId
+        ? atDependencyStage('stats', () => deps.getPublicSeasonPlayer(league.id, selectedSeasonId, profileId))
+        : Promise.resolve(null),
       atDependencyStage('badges', () => deps.getBadges(profileId)),
       atDependencyStage('achievements', () => deps.getImportedAchievements(profileId, league.id)),
       atDependencyStage('articles', () => deps.getArticles(profileId)),
@@ -247,6 +265,16 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
     const achievementSummary = summarizePlayerCareerAchievements({ importedChampionships: achievements.championships, nativeChampionships: countChampionshipBadges(safeBadges) });
     const hotFacts = await atDependencyStage('hot_facts', () => deps.generateHotFacts({ playerName: player.profile?.full_name?.trim() || 'Unknown Player', seasons: visibleTimeline, careerTotalsSeasons: totalsTimeline, isGoalie, distinctSeasonComparisons: true }));
     const ordinaryRatio = isCareer || !isImportedAggregateSeasonId(selectedSeasonId ?? undefined);
+    const publicGamesPlayed = !aggregateOnly && selectedSeasonId
+      ? (isGoalie ? publicSeasonPlayer?.goalie?.gamesPlayed : publicSeasonPlayer?.metrics.gamesPlayed)
+        ?? { value: null, state: 'unknown' as const, sources: [] }
+      : null;
+    const selectedMetrics = metrics(stats ?? (publicSeasonPlayer ? {} : null), isGoalie, ordinaryRatio ? 'ordinary-ratio' : 'percent');
+    if (publicGamesPlayed && selectedMetrics) {
+      selectedMetrics.games_played = ['verified', 'recorded', 'reported'].includes(publicGamesPlayed.state)
+        ? publicGamesPlayed.value
+        : null;
+    }
 
     const data = {
       playerId: profileId, rosterId: player.id, fullName: player.profile?.full_name?.trim() || 'Unknown Player',
@@ -255,7 +283,10 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       team: player.team ? { id: player.team.id, name: player.team.name, slug: player.team.slug, logoUrl: absolutePublicUrl(player.team.logo_url), primaryColor: player.team.primary_color ?? null } : null,
       seasons: seasons.map((item) => ({ id: item.id, name: item.name, start_date: item.start_date, status: item.status })),
       selectedSeasonId, selectedSeasonName, isCareer,
-      metrics: metrics(stats, isGoalie, ordinaryRatio ? 'ordinary-ratio' : 'percent'),
+      metrics: selectedMetrics,
+      metricProvenance: publicGamesPlayed ? {
+        games_played: { state: publicGamesPlayed.state, sources: publicGamesPlayed.sources },
+      } : {},
       careerRows: visibleTimeline.map((row) => ({ seasonId: row.season_id, seasonName: row.season_name, teamId: row.team_id, teamName: row.team_name, metrics: timelineMetrics(row) })),
       badges: safeBadges.map((badge) => ({ id: badge.id, type: badge.badge_type, seasonId: badge.season_id, seasonName: badge.season?.name ?? null, teamName: badge.team?.name ?? null, createdAt: badge.created_at })),
       games: games.map((game) => ({ id: game.game_id, date: game.date, opponent: game.opponent_name ?? game.opponent ?? null, result: game.result, score: game.score ?? null, metrics: { goals: numberOrNull(game.goals), assists: numberOrNull(game.assists), points: numberOrNull(game.points), penalty_minutes: numberOrNull(game.penalty_minutes ?? game.pim), plus_minus: numberOrNull(game.plus_minus), saves: numberOrNull(game.saves), goals_against: numberOrNull(game.goals_against), save_percentage: isGoalie && numberOrNull(game.save_percentage) !== null ? (game.save_percentage as number) * 100 : null } })),

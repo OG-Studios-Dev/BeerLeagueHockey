@@ -26,6 +26,7 @@ function metricRows(): PublicStatMetricRows {
     profiles: [{ id: PLAYER_ID, full_name: 'Matt', avatar_url: null, photo_url: null }],
     rosters: [],
     checkins: [{ id: CHECKIN_ID, game_id: GAME_ID, player_id: PLAYER_ID, team_id: TEAM_ID, status: 'out' }],
+    availabilities: [],
     acceptedSubs: [],
     playerStats: [{ id: STAT_ID, game_id: GAME_ID, player_id: PLAYER_ID, team_id: TEAM_ID, league_id: LEAGUE_ID,
       season_id: SEASON_ID, goals: 15, assists: 10, penalty_minutes: 0, scorekeeping_provenance: null }],
@@ -85,10 +86,10 @@ describe('public Goalies/Career v2 mobile DTOs', () => {
       teams: [{ id: TEAM_ID, name: 'Ice Owls' }],
       metrics: expect.objectContaining({
         gamesPlayed: expect.objectContaining({ value: null, state: 'conflicted' }),
-        saves: { value: 20, state: 'verified', sources: ['goalie_stats', 'goalie_assignment', 'capture_confirmation'] },
+        saves: { value: null, state: 'unknown', sources: [] },
       }),
     }]);
-    expect(payload.coverage).toEqual({ goalies: ['verified', 'conflicted'] });
+    expect(payload.coverage).toEqual({ goalies: ['unknown', 'conflicted'] });
     expect(JSON.stringify(payload)).not.toMatch(/game_id|checkin|scheduled_at|goalie_capture_status/);
     expect(deps.readPresentationSeason).not.toHaveBeenCalled();
   });
