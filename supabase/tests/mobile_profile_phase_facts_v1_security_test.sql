@@ -216,7 +216,9 @@ insert into public.profiles values
   ('10000000-0000-4000-8000-000000000004','Unrelated Goalie',null,null),
   ('10000000-0000-4000-8000-000000000005','Forged Child',null,null),
   ('10000000-0000-4000-8000-000000000006','Private Player',null,null),
-  ('10000000-0000-4000-8000-000000000007','Inactive Player',null,null);
+  ('10000000-0000-4000-8000-000000000007','Inactive Player',null,null),
+  ('10000000-0000-4000-8000-000000000008','Selected Season Sub Only',null,null),
+  ('10000000-0000-4000-8000-000000000009','Malformed Sub Only',null,null);
 insert into public.games values
   ('80000000-0000-4000-8000-000000000001','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','completed','70000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',2,1,'2026-09-20T20:00:00Z','Arena','complete','complete','complete'),
   ('80000000-0000-4000-8000-000000000002','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','completed','72000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',3,2,'2026-09-21T20:00:00Z','Unrelated Arena','complete','complete','complete'),
@@ -236,7 +238,9 @@ insert into public.team_rosters values
   ('10000000-0000-4000-8000-000000000013','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,false,'C','inactive','regular',false,null),
   ('10000000-0000-4000-8000-000000000014','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,false,'C','active','part_time',false,null),
   ('10000000-0000-4000-8000-000000000015','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-10-01',null,false,'C','active','regular',false,null),
-  ('10000000-0000-4000-8000-000000000016','bdd94b26-b344-459f-9727-8cddae9783df','72500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000001','2026-03-01','2026-04-30',false,'C','inactive','regular',true,7);
+  ('10000000-0000-4000-8000-000000000016','bdd94b26-b344-459f-9727-8cddae9783df','72500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000001','2026-03-01','2026-04-30',false,'C','inactive','regular',true,7),
+  ('10000000-0000-4000-8000-000000000017','10000000-0000-4000-8000-000000000008','72500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000001','2026-03-01','2026-04-30',false,'C','inactive','regular',true,null),
+  ('10000000-0000-4000-8000-000000000018','10000000-0000-4000-8000-000000000009','72500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000001','2026-03-01','2026-04-30',false,'C','inactive','regular',true,null);
 insert into public.game_checkins values
   ('90000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','confirmed'),
   ('90000000-0000-4000-8000-000000000002','80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000005','72000000-0000-4000-8000-000000000007','confirmed'),
@@ -254,6 +258,10 @@ insert into public.sub_invitations values
   ('92000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','accepted'),
   ('92000000-0000-4000-8000-000000000002','80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000005','72000000-0000-4000-8000-000000000007','accepted'),
   ('92000000-0000-4000-8000-000000000003','80000000-0000-4000-8000-000000000003','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','accepted'),
+  ('92000000-0000-4000-8000-000000000094','80000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000009','70000000-0000-4000-8000-000000000007','accepted'),
+  ('92000000-0000-4000-8000-000000000095','80000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000008','70000000-0000-4000-8000-000000000007','accepted'),
+  ('92000000-0000-4000-8000-000000000096','80000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000008','70000000-0000-4000-8000-000000000007','accepted'),
+  ('92000000-0000-4000-8000-000000000097','80000000-0000-4000-8000-000000000007','10000000-0000-4000-8000-000000000008','70000000-0000-4000-8000-000000000007','accepted'),
   ('92000000-0000-4000-8000-000000000099','80000000-0000-4000-8000-000000000006','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','accepted');
 insert into public.player_stats values
   ('a0000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002',2,1,0,'event_derived',pg_catalog.now()),
@@ -289,6 +297,7 @@ grant execute on function public.mobile_profile_phase_facts_v1(text, uuid, uuid,
 
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
 \ir ../migrations/20261019040025_mobile_profile_roster_team_closure.sql
+\ir ../migrations/20261019052543_mobile_profile_sub_scope_closure.sql
 reset role;
 
 do $post_migration_schema_create$
@@ -387,6 +396,13 @@ create temp table captured_phase_payloads (
   payload jsonb not null
 );
 grant select, insert on captured_phase_payloads to service_role;
+create temp table captured_sub_only_phase_results (
+  phase text primary key,
+  payload jsonb,
+  error_state text,
+  error_message text
+);
+grant select, insert on captured_sub_only_phase_results to service_role;
 set role service_role;
 begin read only;
 insert into captured_phase_payloads
@@ -424,7 +440,214 @@ select 'game_log_no_game', public.mobile_profile_phase_facts_v1(
   'bdd94b26-b344-459f-9727-8cddae9783df',
   '20000000-0000-4000-8000-000000000001'
 );
+do $capture_sub_only_phases$
+declare
+  v_payload jsonb;
+  v_state text;
+  v_message text;
+begin
+  begin
+    v_payload := public.mobile_profile_phase_facts_v1(
+      'timeline',
+      'd6e55507-6eae-4d94-978c-47c6c30a36f1',
+      '10000000-0000-4000-8000-000000000008',
+      null
+    );
+    insert into captured_sub_only_phase_results values ('timeline', v_payload, null, null);
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    insert into captured_sub_only_phase_results values ('timeline', null, v_state, v_message);
+  end;
+
+  begin
+    v_payload := public.mobile_profile_phase_facts_v1(
+      'selected_stats',
+      'd6e55507-6eae-4d94-978c-47c6c30a36f1',
+      '10000000-0000-4000-8000-000000000008',
+      '20000000-0000-4000-8000-000000000002'
+    );
+    insert into captured_sub_only_phase_results values ('selected_stats', v_payload, null, null);
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    insert into captured_sub_only_phase_results values ('selected_stats', null, v_state, v_message);
+  end;
+
+  begin
+    v_payload := public.mobile_profile_phase_facts_v1(
+      'game_log',
+      'd6e55507-6eae-4d94-978c-47c6c30a36f1',
+      '10000000-0000-4000-8000-000000000008',
+      '20000000-0000-4000-8000-000000000002'
+    );
+    insert into captured_sub_only_phase_results values ('game_log', v_payload, null, null);
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate, v_message = message_text;
+    insert into captured_sub_only_phase_results values ('game_log', null, v_state, v_message);
+  end;
+end;
+$capture_sub_only_phases$;
 commit;
+
+-- V14.6 regressions: a player with one historical league roster and only an
+-- exact accepted-sub relationship in the selected season must retain that
+-- canonical game season in timeline, and selected_stats/game_log must admit
+-- the selected season without leaking unrelated facts.
+do $accepted_sub_scope_closure$
+declare
+  v_result record;
+  v_failures text[] := array[]::text[];
+  v_expected_teams text[];
+  v_expected_seasons text[];
+begin
+  if exists (
+    select 1 from public.team_rosters tr
+    where tr.player_id = '10000000-0000-4000-8000-000000000008'
+      and tr.league_id = 'd6e55507-6eae-4d94-978c-47c6c30a36f1'
+      and tr.season_id = '20000000-0000-4000-8000-000000000002'
+  ) or exists (
+    select 1 from public.player_stats ps
+    where ps.player_id = '10000000-0000-4000-8000-000000000008'
+      and ps.league_id = 'd6e55507-6eae-4d94-978c-47c6c30a36f1'
+      and ps.season_id = '20000000-0000-4000-8000-000000000002'
+  ) or exists (
+    select 1 from public.goalie_stats gs
+    where gs.player_id = '10000000-0000-4000-8000-000000000008'
+      and gs.league_id = 'd6e55507-6eae-4d94-978c-47c6c30a36f1'
+      and gs.season_id = '20000000-0000-4000-8000-000000000002'
+  ) then
+    raise exception 'accepted-sub-only fixture unexpectedly has selected-season roster or stats';
+  end if;
+
+  if not exists (
+    select 1
+    from public.sub_invitations si
+    join public.games g on g.id = si.game_id
+    join public.seasons s on s.id = g.season_id and s.league_id = g.league_id
+    join public.teams t on t.id = si.team_id and t.league_id = g.league_id
+    where si.id = '92000000-0000-4000-8000-000000000097'
+      and si.invited_player_id = '10000000-0000-4000-8000-000000000008'
+      and si.status = 'accepted'
+      and g.league_id = 'd6e55507-6eae-4d94-978c-47c6c30a36f1'
+      and g.season_id = '20000000-0000-4000-8000-000000000002'
+      and si.team_id in (g.home_team_id, g.away_team_id)
+  ) then
+    raise exception 'accepted-sub-only fixture lacks exact canonical selected-season authorization';
+  end if;
+
+  for v_result in
+    select phase, payload, error_state, error_message
+    from captured_sub_only_phase_results
+    order by phase
+  loop
+    if v_result.error_state is not null then
+      v_failures := pg_catalog.array_append(
+        v_failures,
+        v_result.phase || ' raised ' || v_result.error_state || ': ' || v_result.error_message
+      );
+      continue;
+    end if;
+
+    if v_result.payload #>> '{scope,league_id}' <> 'd6e55507-6eae-4d94-978c-47c6c30a36f1'
+       or v_result.payload #>> '{scope,player_id}' <> '10000000-0000-4000-8000-000000000008'
+       or (v_result.phase = 'timeline' and v_result.payload #> '{scope,season_id}' <> 'null'::jsonb)
+       or (v_result.phase <> 'timeline' and v_result.payload #>> '{scope,season_id}' <> '20000000-0000-4000-8000-000000000002') then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' returned the wrong scope');
+    end if;
+
+    if pg_catalog.jsonb_array_length(v_result.payload #> '{facts,games}') <> 1
+       or v_result.payload #>> '{facts,games,0,id}' <> '80000000-0000-4000-8000-000000000007'
+       or v_result.payload #>> '{facts,games,0,season_id}' <> '20000000-0000-4000-8000-000000000002' then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' did not return the exact accepted-sub game');
+    end if;
+
+    if pg_catalog.jsonb_array_length(v_result.payload #> '{facts,acceptedSubs}') <> 1
+       or v_result.payload #>> '{facts,acceptedSubs,0,id}' <> '92000000-0000-4000-8000-000000000097'
+       or v_result.payload #>> '{facts,acceptedSubs,0,game_id}' <> '80000000-0000-4000-8000-000000000007'
+       or v_result.payload #>> '{facts,acceptedSubs,0,team_id}' <> '70000000-0000-4000-8000-000000000007'
+       or v_result.payload #>> '{facts,acceptedSubs,0,invited_player_id}' <> '10000000-0000-4000-8000-000000000008' then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' did not return the exact accepted-sub fact');
+    end if;
+
+    v_expected_teams := case when v_result.phase = 'timeline' then
+      array[
+        '70000000-0000-4000-8000-000000000007',
+        '71500000-0000-4000-8000-000000000007',
+        '72500000-0000-4000-8000-000000000007'
+      ]::text[]
+    else
+      array[
+        '70000000-0000-4000-8000-000000000007',
+        '71500000-0000-4000-8000-000000000007'
+      ]::text[]
+    end;
+    if (
+      select pg_catalog.array_agg(team->>'id' order by team->>'id')
+      from pg_catalog.jsonb_array_elements(v_result.payload #> '{facts,teams}') team
+    ) is distinct from v_expected_teams then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' returned non-exact team facts');
+    end if;
+
+    if v_result.phase <> 'selected_stats' then
+      v_expected_seasons := case when v_result.phase = 'timeline' then
+        array[
+          '20000000-0000-4000-8000-000000000001',
+          '20000000-0000-4000-8000-000000000002'
+        ]::text[]
+      else
+        array['20000000-0000-4000-8000-000000000002']::text[]
+      end;
+      if (
+        select pg_catalog.array_agg(season->>'id' order by season->>'id')
+        from pg_catalog.jsonb_array_elements(v_result.payload #> '{facts,seasons}') season
+      ) is distinct from v_expected_seasons then
+        v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' returned non-exact season facts');
+      end if;
+      if exists (
+        select 1
+        from pg_catalog.jsonb_array_elements(v_result.payload #> '{facts,games}') game
+        where not exists (
+          select 1
+          from pg_catalog.jsonb_array_elements(v_result.payload #> '{facts,seasons}') season
+          where season->>'id' = game->>'season_id'
+        )
+      ) then
+        v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' emitted a game with an unresolved season');
+      end if;
+    elsif v_result.payload #> '{facts,seasons}' is not null then
+      v_failures := pg_catalog.array_append(v_failures, 'selected_stats unexpectedly changed its source schema');
+    end if;
+
+    if pg_catalog.jsonb_array_length(v_result.payload #> '{facts,profiles}') <> 1
+       or v_result.payload #>> '{facts,profiles,0,id}' <> '10000000-0000-4000-8000-000000000008' then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' leaked an unrelated profile');
+    end if;
+
+    if (v_result.phase = 'timeline' and (
+      pg_catalog.jsonb_array_length(v_result.payload #> '{facts,rosters}') <> 1
+      or v_result.payload #>> '{facts,rosters,0,id}' <> '10000000-0000-4000-8000-000000000017'
+    )) or (v_result.phase <> 'timeline' and pg_catalog.jsonb_array_length(v_result.payload #> '{facts,rosters}') <> 0) then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' returned non-exact roster facts');
+    end if;
+
+    if pg_catalog.jsonb_array_length(v_result.payload #> '{facts,checkins}') <> 0
+       or pg_catalog.jsonb_array_length(v_result.payload #> '{facts,availabilities}') <> 0
+       or pg_catalog.jsonb_array_length(v_result.payload #> '{facts,playerStats}') <> 0
+       or pg_catalog.jsonb_array_length(v_result.payload #> '{facts,goalieStats}') <> 0
+       or pg_catalog.jsonb_array_length(v_result.payload #> '{facts,goalieAppearances}') <> 0 then
+      v_failures := pg_catalog.array_append(v_failures, v_result.phase || ' leaked unrelated player child facts');
+    end if;
+  end loop;
+
+  if (select pg_catalog.count(*) from captured_sub_only_phase_results) <> 3 then
+    v_failures := pg_catalog.array_append(v_failures, 'not all accepted-sub-only phases were captured');
+  end if;
+
+  if pg_catalog.array_length(v_failures, 1) is not null then
+    raise exception 'V14.6 accepted-sub scope closure failed: %', pg_catalog.array_to_string(v_failures, '; ');
+  end if;
+end;
+$accepted_sub_scope_closure$;
+reset role;
 
 -- A target player's valid historical roster remains a first-class fact even
 -- when its same-league team has no qualifying game. Every emitted roster team
@@ -611,6 +834,10 @@ begin
   begin
     perform public.mobile_profile_phase_facts_v1('selected_stats', 'd6e55507-6eae-4d94-978c-47c6c30a36f1', 'bdd94b26-b344-459f-9727-8cddae9783df', '20000000-0000-4000-8000-000000000003');
     raise exception 'player unrelated to selected season accepted';
+  exception when sqlstate '22023' then null; end;
+  begin
+    perform public.mobile_profile_phase_facts_v1('selected_stats', 'd6e55507-6eae-4d94-978c-47c6c30a36f1', '10000000-0000-4000-8000-000000000009', '20000000-0000-4000-8000-000000000002');
+    raise exception 'non-participating-team accepted sub admitted selected season';
   exception when sqlstate '22023' then null; end;
   begin
     execute $sql$select public.mobile_profile_phase_facts_v1('timeline', 'not-a-uuid', 'bdd94b26-b344-459f-9727-8cddae9783df', null)$sql$;
@@ -1109,6 +1336,7 @@ grant execute on function public.mobile_profile_phase_facts_v1(text, uuid, uuid,
 set role trusted_migration_role;
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
 \ir ../migrations/20261019040025_mobile_profile_roster_team_closure.sql
+\ir ../migrations/20261019052543_mobile_profile_sub_scope_closure.sql
 reset role;
 
 do $reapply$
@@ -1126,6 +1354,7 @@ drop function public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid);
 set role trusted_migration_role;
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
 \ir ../migrations/20261019040025_mobile_profile_roster_team_closure.sql
+\ir ../migrations/20261019052543_mobile_profile_sub_scope_closure.sql
 reset role;
 
 do $clean_reapply$
