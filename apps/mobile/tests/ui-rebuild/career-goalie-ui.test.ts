@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { adaptStatsScopePlayersToHomeLeaders, buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, shouldShowChampionships, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { adaptStatsScopePlayersToHomeLeaders, buildCompleteRows, buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, shouldShowChampionships, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
 import { formatPublicMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
 
@@ -68,7 +68,7 @@ function compileStats(
     '../context/LeagueContext': { useLeague: () => league },
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: false }) },
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(args) },
-    '../lib/statsPresentationModel': { adaptStatsScopePlayersToHomeLeaders, buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows, shouldShowChampionships },
+    '../lib/statsPresentationModel': { adaptStatsScopePlayersToHomeLeaders, buildCompleteRows, buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows, shouldShowChampionships },
     '../lib/supabase/publicStats': { getPublicStatsScope: load, getPublicGoalies: loadGoalies, formatPublicMetric },
     '../theme/colors': colors,
     '../theme/ui': { getSurfacePalette: () => ({ surface: '#102030', elevated: '#182838', interactive: '#203040', stroke: '#406080' }) },

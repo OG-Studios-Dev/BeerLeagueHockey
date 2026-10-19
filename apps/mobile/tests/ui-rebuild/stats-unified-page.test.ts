@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { adaptStatsScopePlayersToHomeLeaders, buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, shouldShowChampionships, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
+import { adaptStatsScopePlayersToHomeLeaders, buildCompleteRows, buildGoalieRows, buildLeaderRows, buildRankedRows, buildSkaterRows, shouldShowChampionships, type StatsScopePlayer } from '../../src/lib/statsPresentationModel';
 import * as leaderModel from '../../src/lib/homeLeagueLeaders';
 import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 import { compileCommonJs, createElement, createHookHarness, findNode, flattenStyle, nodeText } from './component-harness';
@@ -105,7 +105,7 @@ function runtime(width = 390, fontScale = 1, options: {
     '../context/LeagueContext': { useLeague: () => league },
     '../context/AccessibilityPreferencesContext': { useAccessibilityPreferences: () => ({ reduceTransparency: options.reduceTransparency ?? false }) },
     '../navigation/playerCard': { navigateToPlayerCard: (...args: any[]) => navigationCalls.push(['player-card', ...args]) },
-    '../lib/statsPresentationModel': { adaptStatsScopePlayersToHomeLeaders, buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows, shouldShowChampionships },
+    '../lib/statsPresentationModel': { adaptStatsScopePlayersToHomeLeaders, buildCompleteRows, buildSkaterRows, buildGoalieRows, buildLeaderRows, buildRankedRows, shouldShowChampionships },
     '../lib/homeLeagueLeaders': { ...leaderModel, resolveLeaderArtwork: () => null },
     '../lib/playerArtworkManifest': { loadPlayerArtworkManifest: async () => null, findApprovedPlayerArtwork: () => null },
     '../lib/supabase/publicStats': {
@@ -398,16 +398,86 @@ describe('unified Stats page controls', () => {
 });
 
 describe('unified Stats ranked section', () => {
+  it('keeps a Connor-like current goalie with unknown GAA in the complete FlatList but out of League Leaders', async () => {
+    const connor: StatsScopePlayer = {
+      playerId: 'connor', playerName: 'Connor Geraghty', avatarUrl: null,
+      displayTeam: { id: 'team-connor', name: 'Team Connor', logoUrl: null }, skater: null,
+      goalie: {
+        gamesPlayed: statMetric(null), goalsAgainst: statMetric(null),
+        goalsAgainstAverage: statMetric(null), championships: statMetric(0),
+      },
+    };
+    const result = runtime(390, 1, { payload: payloadWith([...rankedPlayers(), connor]) });
+    let output = await settle(result);
+
+    findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')?.props.onPress();
+    output = result.h.render();
+
+    const tableIDs = (findNode(output, (node) => node.type === 'FlatList')?.props.data ?? []).map((row: any) => row.playerId);
+    const leaderIDs = findNodes(output, (node) => /^stats-leader-row-/.test(String(node.props.testID ?? '')))
+      .map((node) => String(node.props.testID).replace('stats-leader-row-', ''));
+    const row = findNode(output, (node) => node.props.testID === 'stats-ranked-row-connor');
+
+    assert.ok(tableIDs.includes('connor'));
+    assert.ok(!leaderIDs.includes('connor'));
+    assert.equal(nodeText(findNode(row, (node) => node.props.testID === 'stats-ranked-rank-connor')), '—');
+    assert.equal(nodeText(findNode(row, (node) => node.props.testID === 'stats-ranked-primary-connor')), '—GAA');
+    assert.match(row?.props.accessibilityLabel ?? '', /^Unranked\..*Connor Geraghty.*GAA unavailable.*Open player card\.$/i);
+    assert.doesNotMatch(row?.props.accessibilityLabel ?? '', /Rank null|estimated|candidate/i);
+    assert.equal(flattenStyle(row?.props.style({ pressed: false })).backgroundColor, 'rgba(4,13,24,0.12)');
+  });
+
+  it('keeps an Adam-like all-time skater with unknown scoring in the complete FlatList but out of League Leaders', async () => {
+    const adam: StatsScopePlayer = {
+      playerId: 'adam', playerName: 'Adam Klimowicz', avatarUrl: null,
+      displayTeam: { id: 'team-adam', name: 'Team Adam', logoUrl: null }, goalie: null,
+      skater: {
+        gamesPlayed: statMetric(null), goals: statMetric(null), assists: statMetric(null),
+        points: statMetric(null), championships: statMetric(0),
+      },
+    };
+    const allTimePayload = {
+      ...payloadWith([...rankedPlayers(), adam], 'All time'),
+      scope: { ...currentPayload.scope, kind: 'all', label: 'All time' },
+    };
+    const result = runtime(390, 1, {
+      getScope: async (_slug, _leagueId, selection) => selection.kind === 'all' ? allTimePayload : currentPayload,
+    });
+    let output = await settle(result);
+
+    findNode(output, (node) => node.props.testID === 'stats-timeline-open')?.props.onPress();
+    output = result.h.render();
+    findNode(output, (node) => node.props.testID === 'stats-timeline-mode-all')?.props.onPress();
+    output = result.h.render();
+    findNode(output, (node) => node.props.accessibilityLabel === 'Apply timeline')?.props.onPress();
+    output = await settle(result);
+
+    const tableIDs = (findNode(output, (node) => node.type === 'FlatList')?.props.data ?? []).map((row: any) => row.playerId);
+    const leaderIDs = findNodes(output, (node) => /^stats-leader-row-/.test(String(node.props.testID ?? '')))
+      .map((node) => String(node.props.testID).replace('stats-leader-row-', ''));
+    const row = findNode(output, (node) => node.props.testID === 'stats-ranked-row-adam');
+
+    assert.ok(tableIDs.includes('adam'));
+    assert.ok(!leaderIDs.includes('adam'));
+    assert.equal(nodeText(findNode(row, (node) => node.props.testID === 'stats-ranked-rank-adam')), '—');
+    assert.equal(nodeText(findNode(row, (node) => node.props.testID === 'stats-ranked-primary-adam')), '—PTS');
+    assert.match(row?.props.accessibilityLabel ?? '', /^Unranked\..*Adam Klimowicz.*PTS unavailable.*Open player card\.$/i);
+    assert.doesNotMatch(row?.props.accessibilityLabel ?? '', /Rank null|estimated|candidate/i);
+    assert.equal(flattenStyle(row?.props.style({ pressed: false })).backgroundColor, 'rgba(4,13,24,0.12)');
+  });
+
   it('describes unavailable footer values without exposing the legacy estimate state', async () => {
     const result = runtime(390, 1, { payload: payloadWith(rankedPlayers()) });
     let output = await settle(result);
 
-    assert.match(nodeText(output), /Unavailable selected values are excluded; other unavailable values remain —\./);
+    assert.match(nodeText(output), /Players with unavailable selected metrics remain unranked\./);
+    assert.match(nodeText(output), /League Leaders include known selected metrics only; other unavailable values remain —\./);
     assert.doesNotMatch(nodeText(output), /estimated/i);
 
     findNode(output, (node) => node.props.testID === 'stats-role-option-goalie')?.props.onPress();
     output = result.h.render();
-    assert.match(nodeText(output), /Unavailable GAA values are excluded\./);
+    assert.match(nodeText(output), /Goalies with unavailable GAA remain unranked\./);
+    assert.match(nodeText(output), /League Leaders include known GAA only; known GAA ranks lowest to highest\./);
     assert.doesNotMatch(nodeText(output), /estimated/i);
   });
 
@@ -427,7 +497,7 @@ describe('unified Stats ranked section', () => {
 
     findNode(output, (node) => node.props.testID === 'stats-leaders-tab-goals')?.props.onPress();
     output = result.h.render();
-    assert.deepEqual(dataIDs(), ['b', 'd', 'e', 'c', 'f', 'a']);
+    assert.deepEqual(dataIDs(), ['b', 'd', 'e', 'c', 'f', 'a', 'g']);
     assert.deepEqual(leaderIDs(), dataIDs().slice(0, 5));
     const playerRow = findNode(output, (node) => node.props.testID === 'stats-ranked-row-b');
     assert.match(playerRow?.props.accessibilityLabel ?? '', /Rank 1.*Beta Blue.*Team B.*G 8.*Open player card/i);

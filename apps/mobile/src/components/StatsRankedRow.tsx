@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { fitLeagueLeaderNameLine, splitLeagueLeaderLineLosslessly, splitLeagueLeaderName } from '../lib/leaderPresentation';
-import { buildGoalieRows, buildSkaterRows, type StatsLeaderMetric, type StatsLeaderRow, type StatsTableColumn } from '../lib/statsPresentationModel';
+import { buildGoalieRows, buildSkaterRows, type StatsCompleteRow, type StatsLeaderMetric, type StatsTableColumn } from '../lib/statsPresentationModel';
 import { getSurfacePalette } from '../theme/ui';
 import Avatar from './Avatar';
 
@@ -11,13 +11,13 @@ const PRIMARY_COLUMN: Readonly<Record<StatsLeaderMetric, StatsTableColumn['key']
   goals: 'g', assists: 'a', points: 'pts', gaa: 'gaa',
 };
 
-function visibleMetrics(row: StatsLeaderRow, metric: StatsLeaderMetric, showChampionships: boolean) {
+function visibleMetrics(row: StatsCompleteRow, metric: StatsLeaderMetric, showChampionships: boolean) {
   const columns = metric === 'gaa' ? buildGoalieRows([row])[0].columns : buildSkaterRows([row])[0].columns;
   return columns.filter((column) => column.key !== 'ch' || showChampionships);
 }
 
 type Props = {
-  row: StatsLeaderRow;
+  row: StatsCompleteRow;
   metric: StatsLeaderMetric;
   showChampionships?: boolean;
   onOpenPlayer: (playerId: string) => void;
@@ -47,6 +47,8 @@ export default function StatsRankedRow({ row, metric, showChampionships = false,
     minimumFontSize: 9.5,
   }));
   const teamName = row.displayTeam?.name ?? 'unknown team';
+  const isTopThree = row.rank !== null && row.rank <= 3;
+  const rankDescription = row.rank === null ? 'Unranked' : `Rank ${row.rank}`;
   const columns = visibleMetrics(row, metric, showChampionships);
   const secondary = columns.filter((column) => column.key !== PRIMARY_COLUMN[metric]);
   const metricSummary = columns.map((column) => {
@@ -58,17 +60,17 @@ export default function StatsRankedRow({ row, metric, showChampionships = false,
     <Pressable
       testID={`stats-ranked-row-${row.playerId}`}
       accessibilityRole="button"
-      accessibilityLabel={`Rank ${row.rank}. ${name.fullName}, ${teamName}. ${metricSummary}. Open player card.`}
+      accessibilityLabel={`${rankDescription}. ${name.fullName}, ${teamName}. ${metricSummary}. Open player card.`}
       onPress={() => onOpenPlayer(row.playerId)}
       style={({ pressed }) => [
         styles.row,
-        row.rank <= 3 && styles.topThree,
-        reduceTransparency && { backgroundColor: row.rank <= 3 ? '#292513' : surface.surface, borderColor: surface.stroke },
+        isTopThree && styles.topThree,
+        reduceTransparency && { backgroundColor: isTopThree ? '#292513' : surface.surface, borderColor: surface.stroke },
         pressed && styles.pressed,
-        pressed && reduceTransparency && { opacity: 1, backgroundColor: row.rank <= 3 ? '#3B3217' : surface.interactive, borderColor: '#61E2E8' },
+        pressed && reduceTransparency && { opacity: 1, backgroundColor: isTopThree ? '#3B3217' : surface.interactive, borderColor: '#61E2E8' },
       ]}
     >
-      <Text maxFontSizeMultiplier={1.5} style={[styles.rank, row.rank <= 3 && styles.rankTop]}>{row.rank}</Text>
+      <Text testID={`stats-ranked-rank-${row.playerId}`} maxFontSizeMultiplier={1.5} style={[styles.rank, isTopThree && styles.rankTop]}>{row.rank ?? '—'}</Text>
       <Avatar uri={row.avatarUrl} name={row.playerName} size={36} />
       <View style={styles.playerInfo}>
         <View
