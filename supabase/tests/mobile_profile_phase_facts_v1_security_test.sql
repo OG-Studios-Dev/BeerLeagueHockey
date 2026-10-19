@@ -205,7 +205,9 @@ insert into public.seasons values
 insert into public.teams values
   ('70000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1',null,'Home','home'),
   ('71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1',null,'Away','away'),
+  ('71500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1',null,'Game Only Opponent','game-only-opponent'),
   ('72000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1',null,'Unrelated','unrelated'),
+  ('72500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1',null,'Historical No Game','historical-no-game'),
   ('73000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f2',null,'Private','private'),
   ('74000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f3',null,'Inactive','inactive');
 insert into public.profiles values
@@ -221,10 +223,11 @@ insert into public.games values
   ('80000000-0000-4000-8000-000000000003','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000012','completed','70000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',9,9,'2026-09-22T20:00:00Z','Forged season','complete','complete','complete'),
   ('80000000-0000-4000-8000-000000000004','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','completed','73000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',9,9,'2026-09-23T20:00:00Z','Forged team','complete','complete','complete'),
   ('80000000-0000-4000-8000-000000000005','d6e55507-6eae-4d94-978c-47c6c30a36f2','20000000-0000-4000-8000-000000000002','completed','70000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',9,9,'2026-09-24T20:00:00Z','Forged league','complete','complete','complete'),
-  ('80000000-0000-4000-8000-000000000006','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','completed','70000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',4,3,'2026-09-25T20:00:00Z','Accepted sub game','complete','complete','complete');
+  ('80000000-0000-4000-8000-000000000006','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','completed','70000000-0000-4000-8000-000000000007','71000000-0000-4000-8000-000000000007',4,3,'2026-09-25T20:00:00Z','Accepted sub game','complete','complete','complete'),
+  ('80000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','completed','70000000-0000-4000-8000-000000000007','71500000-0000-4000-8000-000000000007',1,0,'2026-09-26T20:00:00Z','Game-only team proof','complete','complete','complete');
 insert into public.team_rosters values
   ('10000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,false,'C','active','regular',false,null),
-  ('10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000003','70000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,true,'G','active','regular',false,null),
+  ('10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000003','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,true,'G','active','regular',false,null),
   ('10000000-0000-4000-8000-000000000008','10000000-0000-4000-8000-000000000004','72000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,true,'G','inactive','regular',false,999),
   ('10000000-0000-4000-8000-000000000009','10000000-0000-4000-8000-000000000006','73000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f2','20000000-0000-4000-8000-000000000012','2026-09-01',null,false,'C','active','regular',false,null),
   ('10000000-0000-4000-8000-000000000010','10000000-0000-4000-8000-000000000007','74000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f3','20000000-0000-4000-8000-000000000013','2026-09-01',null,false,'C','active','regular',false,null),
@@ -232,13 +235,15 @@ insert into public.team_rosters values
   ('10000000-0000-4000-8000-000000000012','bdd94b26-b344-459f-9727-8cddae9783df','73000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,false,'C','active','regular',false,null),
   ('10000000-0000-4000-8000-000000000013','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,false,'C','inactive','regular',false,null),
   ('10000000-0000-4000-8000-000000000014','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-09-01',null,false,'C','active','part_time',false,null),
-  ('10000000-0000-4000-8000-000000000015','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-10-01',null,false,'C','active','regular',false,null);
+  ('10000000-0000-4000-8000-000000000015','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','2026-10-01',null,false,'C','active','regular',false,null),
+  ('10000000-0000-4000-8000-000000000016','bdd94b26-b344-459f-9727-8cddae9783df','72500000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000001','2026-03-01','2026-04-30',false,'C','inactive','regular',true,7);
 insert into public.game_checkins values
   ('90000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','confirmed'),
   ('90000000-0000-4000-8000-000000000002','80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000005','72000000-0000-4000-8000-000000000007','confirmed'),
   ('90000000-0000-4000-8000-000000000003','80000000-0000-4000-8000-000000000003','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','confirmed'),
   ('90000000-0000-4000-8000-000000000098','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','confirmed'),
-  ('90000000-0000-4000-8000-000000000099','80000000-0000-4000-8000-000000000006','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','confirmed');
+  ('90000000-0000-4000-8000-000000000099','80000000-0000-4000-8000-000000000006','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','confirmed'),
+  ('90000000-0000-4000-8000-000000000007','80000000-0000-4000-8000-000000000007','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','confirmed');
 insert into public.player_availability values
   ('91000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','20000000-0000-4000-8000-000000000002','out'),
   ('91000000-0000-4000-8000-000000000002','80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000005','72000000-0000-4000-8000-000000000007','20000000-0000-4000-8000-000000000001','out'),
@@ -257,14 +262,14 @@ insert into public.player_stats values
   ('a0000000-0000-4000-8000-000000000098','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002',9,9,9,'event_derived',pg_catalog.now()),
   ('a0000000-0000-4000-8000-000000000099','80000000-0000-4000-8000-000000000006','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002',1,1,0,'event_derived',pg_catalog.now());
 insert into public.goalie_stats values
-  ('b0000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','70000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','W',20,21,1,false,'event_derived'),
+  ('b0000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','W',20,21,1,false,'event_derived'),
   ('b0000000-0000-4000-8000-000000000002','80000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000004','72000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','W',999,999,0,true,null),
   ('b0000000-0000-4000-8000-000000000003','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','72000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000001','W',999,999,0,true,null),
   ('b0000000-0000-4000-8000-000000000004','80000000-0000-4000-8000-000000000003','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000012','W',999,999,0,true,null),
   ('b0000000-0000-4000-8000-000000000098','80000000-0000-4000-8000-000000000001','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','L',9,10,1,false,'event_derived'),
   ('b0000000-0000-4000-8000-000000000099','80000000-0000-4000-8000-000000000006','bdd94b26-b344-459f-9727-8cddae9783df','71000000-0000-4000-8000-000000000007','d6e55507-6eae-4d94-978c-47c6c30a36f1','20000000-0000-4000-8000-000000000002','W',19,22,3,false,'event_derived');
 insert into public.game_goalie_appearances values
-  ('80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','70000000-0000-4000-8000-000000000007','home'),
+  ('80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','71000000-0000-4000-8000-000000000007','away'),
   ('80000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000004','72000000-0000-4000-8000-000000000007','home'),
   ('80000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000005','72000000-0000-4000-8000-000000000007','away'),
   ('80000000-0000-4000-8000-000000000003','bdd94b26-b344-459f-9727-8cddae9783df','70000000-0000-4000-8000-000000000007','home'),
@@ -283,6 +288,7 @@ grant execute on function public.mobile_profile_phase_facts_v1(text, uuid, uuid,
   to hostile_extra_grantee;
 
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
+\ir ../migrations/20261019040025_mobile_profile_roster_team_closure.sql
 reset role;
 
 do $post_migration_schema_create$
@@ -404,7 +410,167 @@ select 'game_log', public.mobile_profile_phase_facts_v1(
   'bdd94b26-b344-459f-9727-8cddae9783df',
   '20000000-0000-4000-8000-000000000002'
 );
+insert into captured_phase_payloads
+select 'selected_stats_no_game', public.mobile_profile_phase_facts_v1(
+  'selected_stats',
+  'd6e55507-6eae-4d94-978c-47c6c30a36f1',
+  'bdd94b26-b344-459f-9727-8cddae9783df',
+  '20000000-0000-4000-8000-000000000001'
+);
+insert into captured_phase_payloads
+select 'game_log_no_game', public.mobile_profile_phase_facts_v1(
+  'game_log',
+  'd6e55507-6eae-4d94-978c-47c6c30a36f1',
+  'bdd94b26-b344-459f-9727-8cddae9783df',
+  '20000000-0000-4000-8000-000000000001'
+);
 commit;
+
+-- A target player's valid historical roster remains a first-class fact even
+-- when its same-league team has no qualifying game. Every emitted roster team
+-- must be present in the phase-local team dictionary.
+do $roster_team_closure$
+declare
+  v_phase record;
+begin
+  if exists (
+    select 1
+    from public.games g
+    where g.league_id = 'd6e55507-6eae-4d94-978c-47c6c30a36f1'
+      and g.season_id = '20000000-0000-4000-8000-000000000001'
+      and '72500000-0000-4000-8000-000000000007' in (g.home_team_id, g.away_team_id)
+  ) then
+    raise exception 'no-game roster fixture unexpectedly has a qualifying game';
+  end if;
+
+  for v_phase in
+    select phase, payload
+    from captured_phase_payloads
+  loop
+    if exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(v_phase.payload #> '{facts,rosters}') roster
+      where not exists (
+        select 1
+        from pg_catalog.jsonb_array_elements(v_phase.payload #> '{facts,teams}') team
+        where team->>'id' = roster->>'team_id'
+      )
+    ) then
+      raise exception 'emitted roster team is unresolved in phase %', v_phase.phase;
+    end if;
+  end loop;
+
+  if exists (
+    select 1
+    from (values ('timeline'), ('selected_stats_no_game'), ('game_log_no_game')) required(phase)
+    where not exists (
+      select 1
+      from captured_phase_payloads captured
+      cross join lateral pg_catalog.jsonb_array_elements(captured.payload #> '{facts,rosters}') roster
+      where captured.phase = required.phase
+        and roster->>'id' = '10000000-0000-4000-8000-000000000016'
+    )
+  )
+  or exists (
+    select 1
+    from (values ('timeline'), ('selected_stats_no_game'), ('game_log_no_game')) required(phase)
+    where not exists (
+      select 1
+      from captured_phase_payloads captured
+      cross join lateral pg_catalog.jsonb_array_elements(captured.payload #> '{facts,teams}') team
+      where captured.phase = required.phase
+        and team->>'id' = '72500000-0000-4000-8000-000000000007'
+    )
+  ) then
+    raise exception 'target no-game roster/team closure is incomplete';
+  end if;
+
+  if exists (
+    select 1
+    from captured_phase_payloads captured
+    cross join lateral pg_catalog.jsonb_array_elements(captured.payload #> '{facts,games}') game
+    where captured.phase in ('selected_stats_no_game', 'game_log_no_game')
+  ) then
+    raise exception 'no-game selected season unexpectedly emitted a game';
+  end if;
+end;
+$roster_team_closure$;
+
+-- Keep the roster closure narrow while proving the pre-existing game-derived
+-- team and selected competing-goalie branches remain independently necessary.
+do $team_scope_retention$
+declare
+  v_selected jsonb;
+begin
+  if exists (
+    select 1
+    from public.team_rosters tr
+    where tr.player_id = 'bdd94b26-b344-459f-9727-8cddae9783df'
+      and tr.team_id = '71500000-0000-4000-8000-000000000007'
+  ) then
+    raise exception 'game-only opponent fixture unexpectedly has a target-player roster';
+  end if;
+
+  if exists (
+    select 1
+    from captured_phase_payloads captured
+    cross join lateral pg_catalog.jsonb_array_elements(captured.payload #> '{facts,teams}') team
+    where team->>'id' in (
+      '72000000-0000-4000-8000-000000000007',
+      '73000000-0000-4000-8000-000000000007',
+      '74000000-0000-4000-8000-000000000007'
+    )
+  ) then
+    raise exception 'unrelated or cross-league team leaked through facts.teams';
+  end if;
+
+  if exists (
+    select 1
+    from (values ('timeline'), ('selected_stats'), ('game_log')) required(phase)
+    where not exists (
+      select 1
+      from captured_phase_payloads captured
+      cross join lateral pg_catalog.jsonb_array_elements(captured.payload #> '{facts,games}') game
+      where captured.phase = required.phase
+        and game->>'id' = '80000000-0000-4000-8000-000000000007'
+    )
+      or not exists (
+        select 1
+        from captured_phase_payloads captured
+        cross join lateral pg_catalog.jsonb_array_elements(captured.payload #> '{facts,teams}') team
+        where captured.phase = required.phase
+          and team->>'id' = '71500000-0000-4000-8000-000000000007'
+      )
+  ) then
+    raise exception 'authorized game-only opponent team was not preserved';
+  end if;
+
+  select payload into v_selected
+  from captured_phase_payloads
+  where phase = 'selected_stats';
+
+  if not exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(v_selected #> '{facts,rosters}') row
+    where row->>'id' = '10000000-0000-4000-8000-000000000002'
+      and row->>'player_id' = '10000000-0000-4000-8000-000000000003'
+  ) or not exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(v_selected #> '{facts,goalieStats}') row
+    where row->>'id' = 'b0000000-0000-4000-8000-000000000001'
+      and row->>'player_id' = '10000000-0000-4000-8000-000000000003'
+  ) or not exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(v_selected #> '{facts,goalieAppearances}') row
+    where row->>'game_id' = '80000000-0000-4000-8000-000000000001'
+      and row->>'player_id' = '10000000-0000-4000-8000-000000000003'
+      and row->>'team_id' = '71000000-0000-4000-8000-000000000007'
+      and row->>'team_type' = 'away'
+  ) then
+    raise exception 'selected competing-goalie facts were not preserved';
+  end if;
+end;
+$team_scope_retention$;
 
 -- Null, unknown, malformed/enumerated UUIDs, private/inactive tenants, and an
 -- unrelated selected-season player are all denied by the function itself.
@@ -703,6 +869,7 @@ end;
 $source_over$;
 reset role;
 delete from public.player_career_baselines where source_system = 'source-cap-fixture';
+vacuum analyze public.player_career_baselines;
 
 -- A same-player cap must stop from a source-backed index after cap+1 tuples.
 -- auto_explain provides the exact nested plan; table/index counters make the
@@ -941,6 +1108,7 @@ grant execute on function public.mobile_profile_phase_facts_v1(text, uuid, uuid,
   to hostile_extra_grantee;
 set role trusted_migration_role;
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
+\ir ../migrations/20261019040025_mobile_profile_roster_team_closure.sql
 reset role;
 
 do $reapply$
@@ -957,6 +1125,7 @@ $reapply$;
 drop function public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid);
 set role trusted_migration_role;
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
+\ir ../migrations/20261019040025_mobile_profile_roster_team_closure.sql
 reset role;
 
 do $clean_reapply$
