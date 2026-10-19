@@ -6578,6 +6578,8 @@ export async function getPlayerCareerStatsTimeline(
     strict?: boolean;
     profileSafeStrictAppearanceHydration?: boolean;
     profileSafeStrictAppearanceBatchConcurrency?: number;
+    preloadedClient?: Awaited<ReturnType<typeof createClient>>;
+    preloadedServiceClient?: ReturnType<typeof createServiceRoleClient>;
   } = {},
 ): Promise<PlayerCareerSeasonRow[]> {
   const {
@@ -6588,8 +6590,8 @@ export async function getPlayerCareerStatsTimeline(
   const profileSafeStrictAppearanceBatchConcurrency = options.profileSafeStrictAppearanceBatchConcurrency === undefined
     ? 1
     : resolveStrictBatchConcurrency(options.profileSafeStrictAppearanceBatchConcurrency);
-  const supabase = await createClient();
-  const serviceSupabase = createServiceRoleClient();
+  const supabase = options.preloadedClient ?? await createClient();
+  const serviceSupabase = options.preloadedServiceClient ?? createServiceRoleClient();
   const seasonQuery = supabase.from('seasons');
   const { data: seasonRecords, error: seasonRecordsError, count: seasonRecordsCount } = await (strict
     ? seasonQuery.select('id, name, start_date', { count: 'exact' })
@@ -7333,6 +7335,7 @@ export async function getPlayerGameLog(
   options: CanonicalReadOptions & {
     strictBatchConcurrency?: number;
     strictEvidenceBatchConcurrency?: number;
+    preloadedClient?: Awaited<ReturnType<typeof createClient>>;
   } = {},
 ): Promise<PlayerGameLogEntry[]> {
   const strictBatchConcurrency = options.strict || options.strictBatchConcurrency !== undefined
@@ -7341,7 +7344,7 @@ export async function getPlayerGameLog(
   const strictEvidenceBatchConcurrency = options.strict || options.strictEvidenceBatchConcurrency !== undefined
     ? resolveStrictBatchConcurrency(options.strictEvidenceBatchConcurrency ?? strictBatchConcurrency)
     : undefined;
-  const supabase = await createClient();
+  const supabase = options.preloadedClient ?? await createClient();
 
   if (seasonId) {
     const { data: seasonRecord, error: seasonError } = await supabase

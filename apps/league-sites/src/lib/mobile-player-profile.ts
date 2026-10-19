@@ -10,8 +10,6 @@ import {
   getPlayerArticles,
   getPlayerBadges,
   getPlayerCareerStats,
-  getPlayerCareerStatsTimeline,
-  getPlayerGameLog,
   getPlayerGoalieMatchups,
   getSeasons,
   summarizePlayerCareerTotalsFromTimeline,
@@ -21,22 +19,23 @@ import { countChampionshipBadges, summarizePlayerCareerAchievements } from '@/li
 import { isAggregateOnlySeasonView, isImportedAggregateSeasonId } from '@/lib/imported-aggregate-season-overrides';
 import { resolvePlayerPhotoUrl } from '@/lib/player-photo';
 import {
-  aggregatePublicSeasonStats,
-  readPublicStatMetricRows,
   type PublicGoalieMetricGroup,
   type PublicMetricState,
   type PublicSeasonMetricPlayer,
   type PublicStatMetric,
 } from '@/lib/public-stat-metrics';
+import {
+  getMobileProfileGameLog,
+  getMobileProfileSelectedSeasonPlayer,
+  getMobileProfileTimeline,
+} from '@/lib/mobile-profile-rpc-bundles';
 import { createClient } from '@/lib/supabase/server';
 import type { NewsArticle, Player, PlayerBadge, PlayerGameLogEntry, PlayerStats, Season } from '@/lib/types';
 
 export const HOCKEY_LIFE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 const HOCKEY_LIFE_SLUG = 'hockey-life';
 const SITE_ORIGIN = 'https://hockey-life.beerleaguehockey.ca';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-// Keep player-scoped canonical hydration comfortably inside Build 46's fixed 8-second request timeout.
-const MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS = 5_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MOBILE_PLAYER_PROFILE_DEPENDENCY_CONCURRENCY = 2;
 const PUBLISHABLE_PUBLIC_METRIC_STATES = new Set<PublicMetricState>(['verified', 'recorded', 'reported']);
 const CANONICAL_SKATER_METRICS = [
@@ -270,24 +269,9 @@ export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = 
   getSeasons: (leagueId) => getSeasons(leagueId, { strict: true }),
   getCurrentSeason: (leagueId) => getCurrentSeason(leagueId, { strict: true }),
   getStats: (playerId, seasonId, leagueId, isGoalie) => getPlayerCareerStats(playerId, seasonId, { leagueId, isGoalie, strict: true }),
-  getPublicSeasonPlayer: async (leagueId, seasonId, playerId) => {
-    const scope = { leagueId, seasonId, playerId };
-    const rows = await readPublicStatMetricRows(scope, {
-      maxTotalRows: MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS,
-    });
-    return aggregatePublicSeasonStats(rows, scope).players.find((player) => player.playerId === playerId) ?? null;
-  },
-  getTimeline: (leagueId, playerId, isGoalie, includeHistoricalBaseline) => getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, {
-    includeHistoricalBaseline,
-    strict: true,
-    profileSafeStrictAppearanceHydration: true,
-    profileSafeStrictAppearanceBatchConcurrency: 2,
-  }),
-  getGames: (playerId, seasonId) => getPlayerGameLog(playerId, seasonId, 20, {
-    strict: true,
-    strictBatchConcurrency: 2,
-    strictEvidenceBatchConcurrency: 2,
-  }),
+  getPublicSeasonPlayer: getMobileProfileSelectedSeasonPlayer,
+  getTimeline: getMobileProfileTimeline,
+  getGames: (playerId, seasonId) => getMobileProfileGameLog(HOCKEY_LIFE_ID, playerId, seasonId),
   getBadges: (playerId) => getPlayerBadges(playerId, { leagueId: HOCKEY_LIFE_ID, strict: true }),
   getImportedAchievements: (playerId, leagueId) => getImportedPlayerCareerAchievements(playerId, { leagueId, strict: true }),
   getArticles: (playerId) => getPlayerArticles(playerId, 5, { leagueId: HOCKEY_LIFE_ID, strict: true }),

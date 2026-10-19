@@ -27,16 +27,18 @@ import {
   type PlayerCareerSeasonRow,
 } from '@/lib/data';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { createStrictServiceRoleClient } from '@/lib/supabase/strict-service-role';
 import {
   aggregatePublicSeasonStats,
   type PublicSeasonMetricPlayer,
   type PublicStatMetricRows,
 } from '@/lib/public-stat-metrics';
-import * as dataModule from '@/lib/data';
 
 jest.mock('@/lib/supabase/server', () => ({ createClient: jest.fn(), createServiceRoleClient: jest.fn() }));
+jest.mock('@/lib/supabase/strict-service-role', () => ({ createStrictServiceRoleClient: jest.fn() }));
 const mockedCreateClient = jest.mocked(createClient);
 const mockedCreateServiceRoleClient = jest.mocked(createServiceRoleClient);
+const mockedCreateStrictServiceRoleClient = jest.mocked(createStrictServiceRoleClient);
 
 const PROFILE_ID = 'add94b26-b344-459f-9727-8cddae9783de';
 const ROSTER_ID = '10000000-0000-4000-8000-000000000001';
@@ -46,6 +48,21 @@ const WINTER_2026_ID = '30ee2c0b-5981-4df4-b0cc-d7cae05b9e37';
 const OTHER_SEASON_ID = '20000000-0000-4000-8000-000000000002';
 const OTHER_LEAGUE_ID = '30000000-0000-4000-8000-000000000003';
 const HISTORICAL_BASELINE_ID = 'e813368a-6389-4678-b596-294e70e89a9a';
+const CANONICAL_POSTGRES_UUIDS = [
+  ['nil', '00000000-0000-0000-0000-000000000000'],
+  ['version 1', '01890f47-789a-1bcd-8def-0123456789ab'],
+  ['version 7', '01890f47-789a-7bcd-8def-0123456789ab'],
+  ['unassigned version nibble', '01890f47-789a-fbcd-fdef-0123456789ab'],
+  ['uppercase version 7', '01890F47-789A-7BCD-8DEF-0123456789AB'],
+] as const;
+const NONCANONICAL_POSTGRES_UUIDS = [
+  ['leading whitespace', ` ${PROFILE_ID}`],
+  ['trailing whitespace', `${PROFILE_ID} `],
+  ['braces', `{${PROFILE_ID}}`],
+  ['missing hyphens', PROFILE_ID.replaceAll('-', '')],
+  ['invalid hexadecimal', `g${PROFILE_ID.slice(1)}`],
+  ['wrong group width', PROFILE_ID.slice(0, -1)],
+] as const;
 
 function req(query: string) {
   return new NextRequest(`https://hockey-life.beerleaguehockey.ca/api/mobile/player-profile?${query}`);
@@ -101,38 +118,35 @@ function deps(): jest.Mocked<MobilePlayerProfileDependencies> {
 }
 
 describe('mobile Player Profile production dependencies', () => {
-  it('[v13 mobile wiring] opts production Profile timeline hydration into a strict concurrency of two', async () => {
-    const getTimeline = jest.spyOn(dataModule, 'getPlayerCareerStatsTimeline').mockResolvedValue([]);
+  it('[v14 mobile wiring] routes timeline through one versioned timeline RPC', async () => {
+    const fixture = productionCoordinatorPressureClient();
+    mockedCreateStrictServiceRoleClient.mockReturnValue(fixture.client as never);
 
-    try {
-      await mobilePlayerProfileDependencies.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, true);
-      expect(getTimeline).toHaveBeenCalledWith(HOCKEY_LIFE_ID, PROFILE_ID, false, {
-        includeHistoricalBaseline: true,
-        strict: true,
-        profileSafeStrictAppearanceHydration: true,
-        profileSafeStrictAppearanceBatchConcurrency: 2,
-      });
-    } finally {
-      getTimeline.mockRestore();
-    }
+    await productionPressurePhase.run('timeline', () => (
+      mobilePlayerProfileDependencies.getTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, true)
+    ));
+
+    expect(fixture.traces.map((trace) => ({ table: trace.table, rpcArgs: trace.rpcArgs }))).toEqual([{
+      table: 'rpc/mobile_profile_phase_facts_v1',
+      rpcArgs: { p_phase: 'timeline', p_league_id: HOCKEY_LIFE_ID, p_player_id: PROFILE_ID, p_season_id: null },
+    }]);
   });
 
-  it('[v13 mobile wiring] opts production Profile game-log batches and evidence into a strict concurrency of two', async () => {
-    const getGames = jest.spyOn(dataModule, 'getPlayerGameLog').mockResolvedValue([]);
+  it('[v14 mobile wiring] routes game log through one versioned game-log RPC', async () => {
+    const fixture = productionCoordinatorPressureClient();
+    mockedCreateStrictServiceRoleClient.mockReturnValue(fixture.client as never);
 
-    try {
-      await mobilePlayerProfileDependencies.getGames(PROFILE_ID, SEASON_ID);
-      expect(getGames).toHaveBeenCalledWith(PROFILE_ID, SEASON_ID, 20, {
-        strict: true,
-        strictBatchConcurrency: 2,
-        strictEvidenceBatchConcurrency: 2,
-      });
-    } finally {
-      getGames.mockRestore();
-    }
+    await productionPressurePhase.run('gameLog', () => (
+      mobilePlayerProfileDependencies.getGames(PROFILE_ID, SEASON_ID)
+    ));
+
+    expect(fixture.traces.map((trace) => ({ table: trace.table, rpcArgs: trace.rpcArgs }))).toEqual([{
+      table: 'rpc/mobile_profile_phase_facts_v1',
+      rpcArgs: { p_phase: 'game_log', p_league_id: HOCKEY_LIFE_ID, p_player_id: PROFILE_ID, p_season_id: SEASON_ID },
+    }]);
   });
 
-  it('[v13 production coordinator pressure] preserves the V12.1 graph and body while capping one route at two provider reads and three routes at six', async () => {
+  it('[v14 RPC architecture] preserves the Build46 body with exactly three ordered phase RPCs and no Profile table fanout', async () => {
     const production = await runProductionCoordinatorPressure();
     const aggregate = await runProductionCoordinatorPressure(undefined, 3);
 
@@ -156,11 +170,14 @@ describe('mobile Player Profile production dependencies', () => {
       overlappingPhasePairs: production.overlappingPhasePairs,
       aggregateRequestCount: aggregate.requestCount,
       aggregateMaxActive: aggregate.maxActive,
+      aggregatePhaseMaxActive: aggregate.phaseMaxActive,
       aggregateActiveAtReturn: aggregate.activeAtReturn,
       aggregateAllSettledAtReturn: aggregate.allSettledAtReturn,
+      rpcCalls: production.rpcCalls,
+      profileTableReads: production.profileTableReads,
     }).toEqual({
-      fullRouteRequestCount: 42,
-      responseGraphRequestCount: 37,
+      fullRouteRequestCount: 12,
+      responseGraphRequestCount: 7,
       healthHeadRequests: [],
       hasProductionHealthHook: false,
       maxActive: 2,
@@ -169,20 +186,61 @@ describe('mobile Player Profile production dependencies', () => {
       phaseMaxActive: {
         prerequisites: 2,
         selectedStats: 1,
-        timeline: 2,
-        gameLog: 2,
+        timeline: 1,
+        gameLog: 1,
         decorative: 2,
       },
       phaseOrder: ['prerequisites', 'selectedStats', 'timeline', 'gameLog', 'decorative'],
       overlappingPhasePairs: [],
-      aggregateRequestCount: 126,
+      aggregateRequestCount: 36,
       aggregateMaxActive: 6,
+      aggregatePhaseMaxActive: {
+        prerequisites: 6,
+        selectedStats: 3,
+        timeline: 3,
+        gameLog: 3,
+        decorative: 6,
+      },
       aggregateActiveAtReturn: 0,
       aggregateAllSettledAtReturn: true,
+      rpcCalls: [
+        { p_phase: 'selected_stats', p_league_id: HOCKEY_LIFE_ID, p_player_id: PROFILE_ID, p_season_id: SEASON_ID },
+        { p_phase: 'timeline', p_league_id: HOCKEY_LIFE_ID, p_player_id: PROFILE_ID, p_season_id: null },
+        { p_phase: 'game_log', p_league_id: HOCKEY_LIFE_ID, p_player_id: PROFILE_ID, p_season_id: SEASON_ID },
+      ],
+      profileTableReads: [],
     });
     expect(production.maxActive).not.toBe(4);
     expect(aggregate.maxActive).not.toBe(12);
     expect(Math.max(...Object.values(production.phaseMaxActive))).toBeLessThanOrEqual(2);
+  });
+
+  it.each([
+    ['selected_stats', 'stats', ['selected_stats']],
+    ['timeline', 'timeline', ['selected_stats', 'timeline']],
+    ['game_log', 'games', ['selected_stats', 'timeline', 'game_log']],
+  ] as const)('[v14 RPC failure boundary] maps %s to stage=%s and starts no later phase', async (failedPhase, stage, expectedPhases) => {
+    const fixture = productionCoordinatorPressureClient(failedPhase);
+    mockedCreateClient.mockResolvedValue(fixture.client as never);
+    mockedCreateServiceRoleClient.mockReturnValue(fixture.client as never);
+    mockedCreateStrictServiceRoleClient.mockReturnValue(fixture.client as never);
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await handleMobilePlayerProfileRequest(
+      req(`playerId=${PROFILE_ID}`),
+      productionPressureDependencies(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ error: { code: 'UPSTREAM_FAILURE', message: 'Player profile data is temporarily unavailable.' } });
+    expect(log).toHaveBeenCalledWith('mobile_player_profile_dependency_failure', {
+      stage,
+      providerCode: '57014',
+    });
+    expect(fixture.traces.filter((trace) => trace.rpcArgs).map((trace) => trace.rpcArgs?.p_phase)).toEqual(expectedPhases);
+    expect(fixture.traces.every((trace) => trace.settled)).toBe(true);
+    log.mockRestore();
   });
 });
 
@@ -221,6 +279,83 @@ describe('GET /api/mobile/player-profile', () => {
       expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     }
   });
+
+  it.each(CANONICAL_POSTGRES_UUIDS)(
+    '[v14.3 route UUID] forwards canonical PostgreSQL playerId unchanged to lookup: %s',
+    async (_label, playerId) => {
+      const d = deps();
+      d.resolvePlayer.mockResolvedValue(null);
+
+      const response = await handleMobilePlayerProfileRequest(
+        req(`playerId=${encodeURIComponent(playerId)}`),
+        d,
+      );
+
+      expect(response.status).toBe(404);
+      expect(d.getLeague).toHaveBeenCalledTimes(1);
+      expect(d.resolvePlayer).toHaveBeenCalledTimes(1);
+      expect(d.resolvePlayer).toHaveBeenCalledWith(playerId, HOCKEY_LIFE_ID);
+      expect(d.getSeasons).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(CANONICAL_POSTGRES_UUIDS)(
+    '[v14.3 route UUID] forwards canonical PostgreSQL season unchanged to canonical helpers: %s',
+    async (_label, seasonId) => {
+      const d = deps();
+      d.getSeasons.mockResolvedValue([{
+        id: seasonId,
+        name: 'Canonical UUID Season',
+        start_date: '2026-09-01',
+        status: 'active',
+        league_id: HOCKEY_LIFE_ID,
+      }]);
+
+      const response = await handleMobilePlayerProfileRequest(
+        req(`playerId=${PROFILE_ID}&season=${encodeURIComponent(seasonId)}`),
+        d,
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.selectedSeasonId).toBe(seasonId);
+      expect(d.resolvePlayer).toHaveBeenCalledWith(PROFILE_ID, HOCKEY_LIFE_ID);
+      expect(d.getPublicSeasonPlayer).toHaveBeenCalledWith(HOCKEY_LIFE_ID, seasonId, PROFILE_ID);
+      expect(d.getGames).toHaveBeenCalledWith(PROFILE_ID, seasonId);
+    },
+  );
+
+  it.each(NONCANONICAL_POSTGRES_UUIDS)(
+    '[v14.3 route UUID] rejects noncanonical playerId with zero lookup: %s',
+    async (_label, playerId) => {
+      const d = deps();
+
+      const response = await handleMobilePlayerProfileRequest(
+        req(`playerId=${encodeURIComponent(playerId)}`),
+        d,
+      );
+
+      expect(response.status).toBe(400);
+      expect(d.getLeague).not.toHaveBeenCalled();
+      expect(d.resolvePlayer).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(NONCANONICAL_POSTGRES_UUIDS)(
+    '[v14.3 route UUID] rejects noncanonical season with zero lookup: %s',
+    async (_label, seasonId) => {
+      const d = deps();
+
+      const response = await handleMobilePlayerProfileRequest(
+        req(`playerId=${PROFILE_ID}&season=${encodeURIComponent(seasonId)}`),
+        d,
+      );
+
+      expect(response.status).toBe(400);
+      expect(d.getLeague).not.toHaveBeenCalled();
+      expect(d.resolvePlayer).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects malformed and invalid selection input before player helpers', async () => {
     const d = deps();
@@ -1376,48 +1511,51 @@ describe('GET /api/mobile/player-profile', () => {
     expect(body.data).toMatchObject({ isGoalie: true, position: 'G' });
   });
 
-  it('fails closed at the profile metric budget before hydrating later source tables', async () => {
-    const gameRows = Array.from({ length: 5_001 }, (_, index) => ({
-      id: `80000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`,
-      league_id: HOCKEY_LIFE_ID,
-      season_id: SEASON_ID,
-      status: 'completed',
-      home_team_id: TEAM_ID,
-      away_team_id: '71000000-0000-4000-8000-000000000007',
-      home_score: 2,
-      away_score: 1,
-      scheduled_at: '2026-09-01T20:00:00Z',
-      penalty_capture_status: null,
-      goalie_capture_status: null,
-      skater_capture_status: null,
-    }));
-    const queriedTables: string[] = [];
-    const ranges: Array<[string, number, number]> = [];
-    const client = {
-      from(table: string) {
-        queriedTables.push(table);
-        const query = {
-          eq() { return this; },
-          in() { return this; },
-          order() { return this; },
-          async range(from: number, to: number) {
-            ranges.push([table, from, to]);
-            const data = table === 'games' ? gameRows.slice(from, to + 1) : [];
-            return { data, count: table === 'games' ? gameRows.length : 0, error: null };
-          },
-        };
-        return { select: () => query };
-      },
+  it('fails closed at the profile RPC source budget before accepting facts', async () => {
+    const games = Array.from({ length: 5_001 }, (_, index) => ({ id: index }));
+    const facts = {
+      games,
+      teams: [],
+      profiles: [],
+      rosters: [],
+      checkins: [],
+      availabilities: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
     };
-    mockedCreateServiceRoleClient.mockReturnValueOnce(client as never);
+    const rpc = jest.fn().mockResolvedValue({
+      error: null,
+      data: {
+        schema_version: 'mobile_profile_phase_facts_v1',
+        phase: 'selected_stats',
+        scope: { league_id: HOCKEY_LIFE_ID, player_id: PROFILE_ID, season_id: SEASON_ID },
+        limits: { source_cap: 5000, total_cap: 5000 },
+        counts: {
+          games: games.length,
+          teams: 0,
+          profiles: 0,
+          rosters: 0,
+          checkins: 0,
+          availabilities: 0,
+          acceptedSubs: 0,
+          playerStats: 0,
+          goalieStats: 0,
+          goalieAppearances: 0,
+          total: games.length,
+        },
+        facts,
+      },
+    });
+    mockedCreateStrictServiceRoleClient.mockReturnValueOnce({ rpc } as never);
 
     await expect(mobilePlayerProfileDependencies.getPublicSeasonPlayer(
       HOCKEY_LIFE_ID,
       SEASON_ID,
       PROFILE_ID,
-    )).rejects.toThrow('metric source total row limit exceeded');
-    expect(queriedTables).toEqual(['games']);
-    expect(ranges).toEqual([['games', 0, 999]]);
+    )).rejects.toThrow('source row limit exceeded');
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed for unproven goalie saves and save percentage in selected-season timeline and game rows', async () => {
@@ -2151,7 +2289,7 @@ function productionPressureDependencies(
   };
 }
 
-function productionCoordinatorPressureClient() {
+function productionCoordinatorPressureClient(rpcFailurePhase?: string) {
   type Trace = {
     table: string;
     selection: string;
@@ -2160,6 +2298,7 @@ function productionCoordinatorPressureClient() {
     activeAtStart: number;
     phase: ProductionPressurePhase;
     settled: boolean;
+    rpcArgs?: Record<string, unknown>;
   };
   const state = {
     active: 0,
@@ -2255,55 +2394,96 @@ function productionCoordinatorPressureClient() {
       || table === 'game_goalie_appearances' || table === 'player_career_baselines') return [];
     if (table === 'player_stats') return playerStats;
     if (table === 'profiles') return [{ id: PROFILE_ID, full_name: 'Fixture Player', avatar_url: null, photo_url: null }];
-    if (table === 'player_season_stats') return seasons.map((season, index) => ({
-      player_id: PROFILE_ID,
-      season_id: season.id,
-      team_id: TEAM_ID,
-      team_name: 'Bad Bunny',
-      position: 'C',
-      games_played: 1,
-      goals: index + 1,
-      assists: 1,
-      points: index + 2,
-    }));
     if (table === 'player_badges') return [{
-      id: 'b1000000-0000-4000-8000-000000000001',
-      player_id: PROFILE_ID,
-      league_id: HOCKEY_LIFE_ID,
-      season_id: SEASON_ID,
-      badge_type: 'top_scorer',
-      created_at: '2026-10-01',
-      season: { name: 'Fall 2026' },
-      team: { name: 'Bad Bunny' },
+      id: 'b1000000-0000-4000-8000-000000000001', player_id: PROFILE_ID, league_id: HOCKEY_LIFE_ID,
+      season_id: SEASON_ID, badge_type: 'top_scorer', created_at: '2026-10-01',
+      season: { name: 'Fall 2026' }, team: { name: 'Bad Bunny' },
     }];
     if (table === 'article_player_tags') return [{ article_id: 'a1000000-0000-4000-8000-000000000001', player_id: PROFILE_ID }];
     if (table === 'articles') return [{
-      id: 'a1000000-0000-4000-8000-000000000001',
-      league_id: HOCKEY_LIFE_ID,
-      slug: 'fixture',
-      title: 'Fixture',
-      excerpt: 'Fixture',
-      published_at: '2026-10-01',
-      image_url: null,
-      type: 'news',
-      published: true,
-      player_tags: [{ player_id: PROFILE_ID }],
+      id: 'a1000000-0000-4000-8000-000000000001', league_id: HOCKEY_LIFE_ID, slug: 'fixture',
+      title: 'Fixture', excerpt: 'Fixture', published_at: '2026-10-01', image_url: null,
+      type: 'news', published: true, player_tags: [{ player_id: PROFILE_ID }],
     }];
     if (table === 'player_goalie_matchups') return [{
-      id: '91000000-0000-4000-8000-000000000001',
-      league_id: HOCKEY_LIFE_ID,
-      season_id: SEASON_ID,
-      player_id: PROFILE_ID,
-      goalie_id: 'bdd94b26-b344-459f-9727-8cddae9783df',
-      games_played: 1,
-      goals: 1,
-      assists: 0,
-      points: 1,
-      shots: 2,
-      shooting_percentage: 50,
+      id: '91000000-0000-4000-8000-000000000001', league_id: HOCKEY_LIFE_ID, season_id: SEASON_ID,
+      player_id: PROFILE_ID, goalie_id: 'bdd94b26-b344-459f-9727-8cddae9783df', games_played: 1,
+      goals: 1, assists: 0, points: 1, shots: 2, shooting_percentage: 50,
       goalie: { id: 'bdd94b26-b344-459f-9727-8cddae9783df', full_name: 'Goalie' },
     }];
     return [];
+  };
+  const rpcRows = {
+    seasons: seasons.map(({ id, league_id, name, start_date }) => ({ id, league_id, name, start_date })),
+    games,
+    teams: [
+      { id: TEAM_ID, league_id: HOCKEY_LIFE_ID, division_id: null, name: 'Bad Bunny', slug: 'bad-bunny' },
+      { id: '71000000-0000-4000-8000-000000000007', league_id: HOCKEY_LIFE_ID, division_id: null, name: 'Visitors', slug: 'visitors' },
+    ],
+    profiles: [{ id: PROFILE_ID, full_name: 'Fixture Player', avatar_url: null, photo_url: null }],
+    rosters: rosters.map(({ id, player_id, team_id, league_id, season_id, start_date, end_date, status, player_type, historical_retained, games_played_override, position, is_goalie }) => ({
+      id, player_id, team_id, league_id, season_id, start_date, end_date, status, player_type,
+      historical_retained, games_played_override, position, is_goalie,
+    })),
+    checkins: checkins.map(({ id, game_id, player_id, team_id, status }) => ({ id, game_id, player_id, team_id, status })),
+    availabilities: [],
+    acceptedSubs: [],
+    playerStats: playerStats.map(({ game: _game, ...row }) => ({
+      ...row,
+      scorekeeping_provenance: row.scorekeeping_provenance === 'event_derived' ? 'event_derived' : null,
+      created_at: null,
+    })),
+    goalieStats: [],
+    goalieAppearances: [],
+    baselines: [],
+    teamPlayerSignals: [],
+    teamGoalieSignals: [],
+  };
+  const bundle = (args: Record<string, unknown>) => {
+    const phase = String(args.p_phase);
+    const selectedGames = rpcRows.games.filter((game) => game.season_id === args.p_season_id);
+    const selectedGameIds = new Set(selectedGames.map((game) => game.id));
+    const facts = phase === 'selected_stats'
+      ? {
+          games: selectedGames,
+          teams: rpcRows.teams,
+          profiles: rpcRows.profiles,
+          rosters: rpcRows.rosters.filter((row) => row.season_id === args.p_season_id),
+          checkins: rpcRows.checkins.filter((row) => selectedGameIds.has(row.game_id)),
+          availabilities: [],
+          acceptedSubs: [],
+          playerStats: rpcRows.playerStats.filter((row) => row.season_id === args.p_season_id),
+          goalieStats: [],
+          goalieAppearances: [],
+        }
+      : {
+          ...rpcRows,
+          seasons: phase === 'game_log'
+            ? rpcRows.seasons.filter((row) => row.id === args.p_season_id)
+            : rpcRows.seasons,
+          games: phase === 'game_log' ? selectedGames : rpcRows.games,
+          rosters: phase === 'game_log'
+            ? rpcRows.rosters.filter((row) => row.season_id === args.p_season_id)
+            : rpcRows.rosters,
+          checkins: phase === 'game_log'
+            ? rpcRows.checkins.filter((row) => selectedGameIds.has(row.game_id))
+            : rpcRows.checkins,
+          playerStats: phase === 'game_log'
+            ? rpcRows.playerStats.filter((row) => row.season_id === args.p_season_id)
+            : rpcRows.playerStats,
+        };
+    const sourceCounts = Object.fromEntries(Object.entries(facts).map(([name, rows]) => [name, rows.length]));
+    return {
+      schema_version: 'mobile_profile_phase_facts_v1',
+      phase,
+      scope: { league_id: args.p_league_id, player_id: args.p_player_id, season_id: args.p_season_id },
+      limits: { source_cap: 5000, total_cap: 5000 },
+      counts: {
+        ...sourceCounts,
+        total: Object.values(sourceCounts).reduce((total, count) => total + count, 0),
+      },
+      facts,
+    };
   };
   const client = { from: jest.fn((table: string) => {
     let selection = '';
@@ -2372,6 +2552,36 @@ function productionCoordinatorPressureClient() {
     query.maybeSingle = jest.fn(() => execute('maybeSingle'));
     query.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => execute('then').then(resolve, reject);
     return query;
+  }), rpc: jest.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name !== 'mobile_profile_phase_facts_v1') return { data: null, error: { code: 'PGRST202' } };
+    const phase = productionPressurePhase.getStore();
+    if (!phase) throw new Error('unclassified production pressure RPC');
+    const trace: Trace = {
+      table: `rpc/${name}`,
+      selection: '',
+      selectOptions: null,
+      filters: [],
+      activeAtStart: state.active + 1,
+      phase,
+      settled: false,
+      rpcArgs: args,
+    };
+    traces.push(trace);
+    for (const [activePhase, activeCount] of Object.entries(state.phaseActive)) {
+      if (activeCount > 0 && activePhase !== phase) state.overlappingPhasePairs.add([activePhase, phase].sort().join('|'));
+    }
+    state.active += 1;
+    state.maxActive = Math.max(state.maxActive, state.active);
+    state.phaseActive[phase] += 1;
+    state.phaseMaxActive[phase] = Math.max(state.phaseMaxActive[phase], state.phaseActive[phase]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    state.active -= 1;
+    state.phaseActive[phase] -= 1;
+    trace.settled = true;
+    if (args.p_phase === rpcFailurePhase) {
+      return { data: null, error: { code: '57014', message: 'statement timeout' } };
+    }
+    return { data: bundle(args), error: null };
   }) };
   return { client, traces, state };
 }
@@ -2383,6 +2593,7 @@ async function runProductionCoordinatorPressure(
   const { client, traces, state } = productionCoordinatorPressureClient();
   mockedCreateClient.mockResolvedValue(client as never);
   mockedCreateServiceRoleClient.mockReturnValue(client as never);
+  mockedCreateStrictServiceRoleClient.mockReturnValue(client as never);
   const pressureDependencies = productionPressureDependencies(dependencies);
   const responses = await Promise.all(Array.from({ length: routeCount }, () => (
     handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), pressureDependencies)
@@ -2408,6 +2619,10 @@ async function runProductionCoordinatorPressure(
     overlappingPhasePairs: [...state.overlappingPhasePairs].sort(),
     activeAtReturn: state.active,
     allSettledAtReturn: traces.every((trace) => trace.settled),
+    rpcCalls: traces.filter((trace) => trace.rpcArgs).map((trace) => trace.rpcArgs!),
+    profileTableReads: traces.filter((trace) => (
+      ['selectedStats', 'timeline', 'gameLog'].includes(trace.phase) && !trace.rpcArgs
+    )).map((trace) => trace.table),
   };
 }
 
