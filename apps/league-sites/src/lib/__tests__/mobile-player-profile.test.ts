@@ -824,59 +824,99 @@ describe('GET /api/mobile/player-profile', () => {
     const d = deps();
     const starts: string[] = [];
     const settled: string[] = [];
+    const completions = new Map<string, {
+      resolve: () => void;
+      reject: (failure: unknown) => void;
+    }>();
     let active = 0;
     let maxActive = 0;
-    const decorativeRead = <T,>(name: string, value: T, delay: number, failure?: unknown) => {
+    const decorativeRead = <T,>(name: string, value: T) => {
       starts.push(name);
       active += 1;
       maxActive = Math.max(maxActive, active);
       return new Promise<T>((resolve, reject) => {
-        setTimeout(() => {
+        const settle = (complete: () => void) => {
           active -= 1;
           settled.push(name);
-          if (failure) reject(failure);
-          else resolve(value);
-        }, delay);
+          complete();
+        };
+        completions.set(name, {
+          resolve: () => settle(() => resolve(value)),
+          reject: (failure) => settle(() => reject(failure)),
+        });
       });
     };
-    d.getBadges.mockImplementation(() => decorativeRead('badges', [], 20, { code: 'PGRST500' }));
-    d.getImportedAchievements.mockImplementation(() => decorativeRead(
-      'achievements',
-      { championships: 0 },
-      1,
-      { code: '57014' },
-    ));
-    d.getArticles.mockImplementation(() => decorativeRead('articles', [], 5));
-    d.getMatchups.mockImplementation(() => decorativeRead('matchups', [], 5));
-    d.generateHotFacts.mockImplementation(() => decorativeRead('hotFacts', [], 5));
+    d.getBadges.mockImplementation(() => decorativeRead('badges', []));
+    d.getImportedAchievements.mockImplementation(() => decorativeRead('achievements', { championships: 0 }));
+    d.getArticles.mockImplementation(() => decorativeRead('articles', []));
+    d.getMatchups.mockImplementation(() => decorativeRead('matchups', []));
+    d.generateHotFacts.mockImplementation(() => decorativeRead('hotFacts', []));
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     const unhandled: unknown[] = [];
     const captureUnhandled = (reason: unknown) => { unhandled.push(reason); };
     process.on('unhandledRejection', captureUnhandled);
 
-    let response: Awaited<ReturnType<typeof handleMobilePlayerProfileRequest>>;
     let activeAtReturn = -1;
+    let settledAtReturn: string[] = [];
+    let responseReturned = false;
     try {
-      response = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`), d);
-      activeAtReturn = active;
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      const pendingResponse = handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`), d)
+        .then((response) => {
+          activeAtReturn = active;
+          settledAtReturn = [...settled];
+          responseReturned = true;
+          return response;
+        });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(starts).toEqual(['badges', 'achievements']);
+      expect(active).toBe(2);
+
+      completions.get('achievements')!.reject({ code: '57014' });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(starts).toEqual(['badges', 'achievements', 'articles']);
+      expect(settled).toEqual(['achievements']);
+      expect(active).toBe(2);
+
+      completions.get('articles')!.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(starts).toEqual(['badges', 'achievements', 'articles', 'matchups']);
+      expect(settled).toEqual(['achievements', 'articles']);
+      expect(active).toBe(2);
+
+      completions.get('matchups')!.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(starts).toEqual(['badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
+      expect(settled).toEqual(['achievements', 'articles', 'matchups']);
+      expect(active).toBe(2);
+
+      completions.get('hotFacts')!.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(settled).toEqual(['achievements', 'articles', 'matchups', 'hotFacts']);
+      expect(active).toBe(1);
+      expect(responseReturned).toBe(false);
+
+      completions.get('badges')!.reject({ code: 'PGRST500' });
+      const response = await pendingResponse;
+      await new Promise((resolve) => setImmediate(resolve));
+      const body = await response.json();
+
+      expect(response.status).toBe(502);
+      expect(body).toEqual({ error: { code: 'UPSTREAM_FAILURE', message: 'Player profile data is temporarily unavailable.' } });
+      expect(starts).toEqual(['badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
+      expect(settled).toEqual(['achievements', 'articles', 'matchups', 'hotFacts', 'badges']);
+      expect(maxActive).toBe(2);
+      expect(settledAtReturn).toEqual(['achievements', 'articles', 'matchups', 'hotFacts', 'badges']);
+      expect(activeAtReturn).toBe(0);
+      expect(active).toBe(0);
+      expect(unhandled).toHaveLength(0);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith('mobile_player_profile_dependency_failure', {
+        stage: 'badges', providerCode: 'UNKNOWN',
+      });
     } finally {
       process.off('unhandledRejection', captureUnhandled);
+      log.mockRestore();
     }
-    const body = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(body).toEqual({ error: { code: 'UPSTREAM_FAILURE', message: 'Player profile data is temporarily unavailable.' } });
-    expect(starts).toEqual(['badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
-    expect(settled).toEqual(['achievements', 'articles', 'matchups', 'hotFacts', 'badges']);
-    expect(maxActive).toBe(2);
-    expect(activeAtReturn).toBe(0);
-    expect(active).toBe(0);
-    expect(unhandled).toHaveLength(0);
-    expect(log).toHaveBeenCalledWith('mobile_player_profile_dependency_failure', {
-      stage: 'badges', providerCode: 'UNKNOWN',
-    });
-    log.mockRestore();
   });
 
   it('[v13 decorative scheduler] consumes the active pair after abort and starts no later provider dependency', async () => {
