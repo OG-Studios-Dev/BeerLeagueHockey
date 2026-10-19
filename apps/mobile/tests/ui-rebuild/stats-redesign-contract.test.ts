@@ -63,7 +63,7 @@ describe('approved Stats redesign source contract', () => {
   });
 
   it('renders one complete metric-ranked list with complete truthful metrics and player-card navigation', () => {
-    assert.match(screen, /buildRankedRows/);
+    assert.match(screen, /buildCompleteRows/);
     assert.match(screen, /<StatsRankedRow/);
     assert.match(screen, /showChampionships=\{showChampionships\}/);
     assert.match(screen, /'Goalie Stats' : 'Player Stats'/);
@@ -73,8 +73,10 @@ describe('approved Stats redesign source contract', () => {
     assert.match(rankedRow, /'Champs'/);
     assert.match(rankedRow, /stats-ranked-row-/);
     assert.match(rankedRow, /Open player card/);
-    assert.match(screen, /Unavailable selected values are excluded/);
-    assert.match(screen, /Unavailable GAA values are excluded/);
+    assert.match(screen, /Players with unavailable selected metrics remain unranked/);
+    assert.match(screen, /Goalies with unavailable GAA remain unranked/);
+    assert.match(screen, /League Leaders include known selected metrics only/);
+    assert.match(screen, /League Leaders include known GAA only/);
     assert.doesNotMatch(screen, /estimated selected values|estimated GAA values/i);
   });
 

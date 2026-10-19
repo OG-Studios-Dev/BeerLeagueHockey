@@ -52,6 +52,7 @@ export type StatsTableRow = StatsScopePlayer & {
 };
 export type StatsLeaderMetric = 'points' | 'goals' | 'assists' | 'gaa';
 export type StatsLeaderRow = StatsScopePlayer & { rank: number; value: PublicStatMetric; display: string };
+export type StatsCompleteRow = Omit<StatsLeaderRow, 'rank'> & { rank: number | null };
 
 const STATUS_PRIORITY: Readonly<Record<string, number>> = {
   active: 0,
@@ -313,6 +314,21 @@ export function buildRankedRows(
     if (index === 0 || player.value.value !== candidates[index - 1].value.value) competitionRank = index + 1;
     return { ...player, rank: competitionRank };
   });
+}
+
+export function buildCompleteRows(
+  players: readonly StatsScopePlayer[],
+  metric: StatsLeaderMetric,
+): StatsCompleteRow[] {
+  const ranked = buildRankedRows(players, metric);
+  const rankedIds = new Set(ranked.map((row) => row.playerId));
+  const unavailable = players.flatMap((player) => {
+    const value = metric === 'gaa' ? player.goalie?.goalsAgainstAverage : player.skater?.[metric];
+    return value && !rankedIds.has(player.playerId)
+      ? [{ ...player, rank: null, value, display: display(value) }]
+      : [];
+  }).sort(deterministicName);
+  return [...ranked, ...unavailable];
 }
 
 export function buildLeaderRows(

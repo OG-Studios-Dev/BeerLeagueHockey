@@ -4,6 +4,7 @@ import type { PublicStatMetric } from '../../src/lib/supabase/publicStats';
 
 import {
   adaptStatsScopePlayersToHomeLeaders,
+  buildCompleteRows,
   buildGoalieRows,
   buildLeaderRows,
   buildRankedRows,
@@ -339,5 +340,47 @@ describe('stats presentation model', () => {
     assert.equal(goals.length, 5, 'unknown and conflicted selected values are excluded without placeholders');
     assert.equal(assists.length, 7, 'every eligible player is retained beyond the League Leaders top five');
     assert.equal(goalies.length, 7, 'every eligible goalie is retained and sorted by GAA ascending');
+  });
+
+  it('retains Adam-like unknown all-time scoring and Connor-like unknown current GAA as deterministically unranked complete rows', () => {
+    const tiedAlpha = player({
+      playerId: 'tied-alpha', playerName: 'Alpha Tie',
+      skater: { gamesPlayed: metric(4), goals: metric(2), assists: metric(3), points: metric(5), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(3), goalsAgainstAverage: metric(1.5), championships: metric(0) },
+    });
+    const tiedZulu = player({
+      playerId: 'tied-zulu', playerName: 'Zulu Tie',
+      skater: { gamesPlayed: metric(4), goals: metric(1), assists: metric(4), points: metric(5), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(3), goalsAgainstAverage: metric(1.5), championships: metric(0) },
+    });
+    const third = player({
+      playerId: 'third', playerName: 'Third Place',
+      skater: { gamesPlayed: metric(4), goals: metric(1), assists: metric(2), points: metric(3), championships: metric(0) },
+      goalie: { gamesPlayed: metric(2), goalsAgainst: metric(4), goalsAgainstAverage: metric(2), championships: metric(0) },
+    });
+    const adam = player({
+      playerId: 'adam', playerName: 'Adam Klimowicz',
+      skater: { gamesPlayed: metric(null), goals: metric(null), assists: metric(null), points: metric(null), championships: metric(0) },
+      goalie: null,
+    });
+    const connor = player({
+      playerId: 'connor', playerName: 'Connor Geraghty', skater: null,
+      goalie: { gamesPlayed: metric(null), goalsAgainst: metric(null), goalsAgainstAverage: metric(null), championships: metric(0) },
+    });
+
+    const input = [connor, tiedZulu, adam, third, tiedAlpha];
+    const points = buildCompleteRows(input, 'points');
+    const goalies = buildCompleteRows(input, 'gaa');
+
+    assert.deepEqual(points.map((row) => [row.playerId, row.rank, row.display]), [
+      ['tied-alpha', 1, '5'], ['tied-zulu', 1, '5'], ['third', 3, '3'], ['adam', null, '—'],
+    ]);
+    assert.deepEqual(goalies.map((row) => [row.playerId, row.rank, row.display]), [
+      ['tied-alpha', 1, '1.5'], ['tied-zulu', 1, '1.5'], ['third', 3, '2.0'], ['connor', null, '—'],
+    ]);
+    assert.deepEqual(buildCompleteRows([...input].reverse(), 'points'), points);
+    assert.deepEqual(buildCompleteRows([...input].reverse(), 'gaa'), goalies);
+    assert.deepEqual(buildRankedRows(input, 'points').map((row) => row.playerId), ['tied-alpha', 'tied-zulu', 'third']);
+    assert.deepEqual(buildRankedRows(input, 'gaa').map((row) => row.playerId), ['tied-alpha', 'tied-zulu', 'third']);
   });
 });

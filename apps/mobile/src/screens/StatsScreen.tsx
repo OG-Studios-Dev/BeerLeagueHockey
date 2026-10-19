@@ -13,7 +13,7 @@ import StatsRoleToggle from '../components/StatsRoleToggle';
 import StatsTimelineFilter from '../components/StatsTimelineFilter';
 import { useAccessibilityPreferences } from '../context/AccessibilityPreferencesContext';
 import { useLeague } from '../context/LeagueContext';
-import { adaptStatsScopePlayersToHomeLeaders, buildRankedRows, shouldShowChampionships, type StatsLeaderMetric } from '../lib/statsPresentationModel';
+import { adaptStatsScopePlayersToHomeLeaders, buildCompleteRows, shouldShowChampionships, type StatsLeaderMetric } from '../lib/statsPresentationModel';
 import { getPublicStatsScope, type PublicStatsScope, type PublicStatsScopeSelection } from '../lib/supabase/publicStats';
 import { cutIceContentEdges } from '../navigation/cutIceSafeAreaPolicy';
 import { navigateToPlayerCard } from '../navigation/playerCard';
@@ -85,7 +85,7 @@ export default function StatsScreen() {
   const players = view.payload?.players ?? [];
   const selectedTab = statsView.role === 'goalie' ? 'Goalies' : 'Skaters';
   const leaderMetric = statsView.metric;
-  const rankedRows = buildRankedRows(players, leaderMetric);
+  const completeRows = buildCompleteRows(players, leaderMetric);
   const homeLeaders = adaptStatsScopePlayersToHomeLeaders(players);
   const showChampionships = shouldShowChampionships(view.payload?.scope);
   const scopeLabel = view.payload?.scope.label ?? (selection.kind === 'current' ? 'Current season' : selection.kind === 'all' ? 'All time' : selection.kind === 'single' ? 'One season' : `${selection.seasonIds?.length ?? 0} seasons`);
@@ -111,7 +111,7 @@ export default function StatsScreen() {
         testID="stats-page-list"
         style={styles.horizontalOverflow}
         contentContainerStyle={styles.content}
-        data={view.status === 'ready' ? rankedRows : []}
+        data={view.status === 'ready' ? completeRows : []}
         keyExtractor={(row) => row.playerId}
         ListHeaderComponent={<>
           <View testID="stats-timeline-control-row" style={styles.timelineControlRow}>{timeline}</View>
@@ -148,7 +148,7 @@ export default function StatsScreen() {
           : view.status === 'error' ? <View style={styles.tableState}><Text style={styles.emptyTitle}>Complete authoritative stats are unavailable for this timeline.</Text><Pressable testID="stats-scope-retry" accessibilityRole="button" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></Pressable></View>
             : <View style={styles.tableState}><Text style={styles.emptyTitle}>No eligible {selectedTab === 'Goalies' ? 'goalie' : 'player'} stats yet</Text></View>}
         renderItem={({ item }) => <StatsRankedRow row={item} metric={leaderMetric} showChampionships={showChampionships} onOpenPlayer={openPlayer} />}
-        ListFooterComponent={<View style={styles.foot}><View style={styles.footDot} /><Text style={styles.footText}>{selectedTab === 'Skaters' ? 'Rankings include every player with a known selected metric. Unavailable selected values are excluded; other unavailable values remain —.' : 'GAA ranks every eligible goalie from lowest to highest. Unavailable GAA values are excluded.'}</Text></View>}
+        ListFooterComponent={<View style={styles.foot}><View style={styles.footDot} /><Text style={styles.footText}>{selectedTab === 'Skaters' ? 'Players with unavailable selected metrics remain unranked. League Leaders include known selected metrics only; other unavailable values remain —.' : 'Goalies with unavailable GAA remain unranked. League Leaders include known GAA only; known GAA ranks lowest to highest.'}</Text></View>}
       />
     </SafeAreaView>
   );
