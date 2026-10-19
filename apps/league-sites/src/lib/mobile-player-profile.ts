@@ -424,7 +424,7 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       matchups, articles: safeArticles.map((article) => ({ id: article.id, slug: article.slug, title: article.title, excerpt: article.excerpt, publishedAt: article.published_at, imageUrl: absolutePublicUrl(article.image_url), type: article.type ?? null })),
       heroAwards: buildHeroAwards(safeBadges, achievementSummary.championships), aggregateOnly, hotFacts,
     };
-    return NextResponse.json({ version: 1, league: { id: league.id, slug: league.slug }, data }, { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300', 'X-Content-Type-Options': 'nosniff' } });
+    return NextResponse.json({ version: 1, league: { id: league.id, slug: league.slug }, data }, { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300', 'Vercel-CDN-Cache-Control': 'public, max-age=60, must-revalidate', 'X-Content-Type-Options': 'nosniff' } });
   } catch (caught) {
     const failure = caught instanceof MobilePlayerProfileDependencyError
       ? caught

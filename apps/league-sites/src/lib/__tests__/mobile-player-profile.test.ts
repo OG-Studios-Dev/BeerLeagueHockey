@@ -179,6 +179,41 @@ describe('mobile Player Profile production dependencies', () => {
 });
 
 describe('GET /api/mobile/player-profile', () => {
+  it('[v12 response headers] separates the successful browser and Vercel CDN cache policies', async () => {
+    const response = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), deps());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('public, s-maxage=60, stale-while-revalidate=300');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('public, max-age=60, must-revalidate');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).not.toContain('s-maxage');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).not.toContain('stale-while-revalidate');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).not.toContain('stale-if-error');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  it('[v12 response headers] keeps representative 400, 404, and dependency 502 responses uncached', async () => {
+    const invalid = await handleMobilePlayerProfileRequest(req('playerId=nope'), deps());
+    const missingPlayerDeps = deps();
+    missingPlayerDeps.resolvePlayer.mockResolvedValue(null);
+    const missingPlayer = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), missingPlayerDeps);
+    const failingDeps = deps();
+    failingDeps.getPublicSeasonPlayer.mockRejectedValue({ code: '57014' });
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const dependencyFailure = await handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), failingDeps);
+    log.mockRestore();
+
+    for (const [response, status] of [
+      [invalid, 400],
+      [missingPlayer, 404],
+      [dependencyFailure, 502],
+    ] as const) {
+      expect(response.status).toBe(status);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('Vercel-CDN-Cache-Control')).toBeNull();
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    }
+  });
+
   it('rejects malformed and invalid selection input before player helpers', async () => {
     const d = deps();
     expect((await handleMobilePlayerProfileRequest(req('playerId=nope'), d)).status).toBe(400);
