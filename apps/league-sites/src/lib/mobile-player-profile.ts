@@ -10,8 +10,6 @@ import {
   getPlayerArticles,
   getPlayerBadges,
   getPlayerCareerStats,
-  getPlayerCareerStatsTimeline,
-  getPlayerGameLog,
   getPlayerGoalieMatchups,
   getSeasons,
   summarizePlayerCareerTotalsFromTimeline,
@@ -21,22 +19,24 @@ import { countChampionshipBadges, summarizePlayerCareerAchievements } from '@/li
 import { isAggregateOnlySeasonView, isImportedAggregateSeasonId } from '@/lib/imported-aggregate-season-overrides';
 import { resolvePlayerPhotoUrl } from '@/lib/player-photo';
 import {
-  aggregatePublicSeasonStats,
-  readPublicStatMetricRows,
   type PublicGoalieMetricGroup,
   type PublicMetricState,
   type PublicSeasonMetricPlayer,
   type PublicStatMetric,
 } from '@/lib/public-stat-metrics';
+import {
+  getMobileProfileGameLog,
+  getMobileProfileSelectedSeasonPlayer,
+  getMobileProfileTimeline,
+} from '@/lib/mobile-profile-rpc-bundles';
 import { createClient } from '@/lib/supabase/server';
 import type { NewsArticle, Player, PlayerBadge, PlayerGameLogEntry, PlayerStats, Season } from '@/lib/types';
 
 export const HOCKEY_LIFE_ID = 'd6e55507-6eae-4d94-978c-47c6c30a36f1';
 const HOCKEY_LIFE_SLUG = 'hockey-life';
 const SITE_ORIGIN = 'https://hockey-life.beerleaguehockey.ca';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-// Keep player-scoped canonical hydration comfortably inside Build 46's fixed 8-second request timeout.
-const MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS = 5_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MOBILE_PLAYER_PROFILE_DEPENDENCY_CONCURRENCY = 2;
 const PUBLISHABLE_PUBLIC_METRIC_STATES = new Set<PublicMetricState>(['verified', 'recorded', 'reported']);
 const CANONICAL_SKATER_METRICS = [
   ['games_played', 'gamesPlayed'],
@@ -99,15 +99,27 @@ function settleDependency<T>(read: Promise<T>): SettledDependency<T> {
   );
 }
 
-async function consumeAllDependencies<T extends readonly unknown[]>(
+async function consumeBoundedDependencies<T extends readonly unknown[]>(
   reads: { [Index in keyof T]: () => Promise<T[Index]> },
 ): Promise<T> {
   const settled: Array<
     { status: 'fulfilled'; value: unknown }
     | { status: 'rejected'; reason: unknown }
-  > = [];
-  for (const read of reads as readonly (() => Promise<unknown>)[]) {
-    settled.push(await settleDependency(Promise.resolve().then(read)));
+  > = new Array(reads.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < reads.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      settled[index] = await settleDependency(Promise.resolve().then(reads[index]));
+    }
+  };
+  const workers = Array.from(
+    { length: Math.min(MOBILE_PLAYER_PROFILE_DEPENDENCY_CONCURRENCY, reads.length) },
+    worker,
+  );
+  for (const pendingWorker of workers) {
+    await pendingWorker;
   }
   const failure = settled.find((result) => result.status === 'rejected');
   if (failure?.status === 'rejected') throw failure.reason;
@@ -257,23 +269,9 @@ export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = 
   getSeasons: (leagueId) => getSeasons(leagueId, { strict: true }),
   getCurrentSeason: (leagueId) => getCurrentSeason(leagueId, { strict: true }),
   getStats: (playerId, seasonId, leagueId, isGoalie) => getPlayerCareerStats(playerId, seasonId, { leagueId, isGoalie, strict: true }),
-  getPublicSeasonPlayer: async (leagueId, seasonId, playerId) => {
-    const scope = { leagueId, seasonId, playerId };
-    const rows = await readPublicStatMetricRows(scope, {
-      maxTotalRows: MOBILE_PLAYER_PROFILE_MAX_PUBLIC_METRIC_ROWS,
-    });
-    return aggregatePublicSeasonStats(rows, scope).players.find((player) => player.playerId === playerId) ?? null;
-  },
-  getTimeline: (leagueId, playerId, isGoalie, includeHistoricalBaseline) => getPlayerCareerStatsTimeline(leagueId, playerId, isGoalie, {
-    includeHistoricalBaseline,
-    strict: true,
-    profileSafeStrictAppearanceHydration: true,
-  }),
-  getGames: (playerId, seasonId) => getPlayerGameLog(playerId, seasonId, 20, {
-    strict: true,
-    strictBatchConcurrency: 1,
-    strictEvidenceBatchConcurrency: 1,
-  }),
+  getPublicSeasonPlayer: getMobileProfileSelectedSeasonPlayer,
+  getTimeline: getMobileProfileTimeline,
+  getGames: (playerId, seasonId) => getMobileProfileGameLog(HOCKEY_LIFE_ID, playerId, seasonId),
   getBadges: (playerId) => getPlayerBadges(playerId, { leagueId: HOCKEY_LIFE_ID, strict: true }),
   getImportedAchievements: (playerId, leagueId) => getImportedPlayerCareerAchievements(playerId, { leagueId, strict: true }),
   getArticles: (playerId) => getPlayerArticles(playerId, 5, { leagueId: HOCKEY_LIFE_ID, strict: true }),
@@ -311,9 +309,17 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
 
     const profileId = player.player_id;
     assertRequestActive(request);
-    const seasons = await atDependencyStage('seasons', () => deps.getSeasons(league.id));
-    assertRequestActive(request);
-    const currentSeason = await atDependencyStage('current_season', () => deps.getCurrentSeason(league.id));
+    const whileRequestActive = <T,>(read: () => Promise<T>) => () => {
+      assertRequestActive(request);
+      return read();
+    };
+    const [seasons, currentSeason] = await consumeBoundedDependencies<[
+      Season[],
+      Pick<Season, 'id' | 'name'> | null,
+    ]>([
+      whileRequestActive(() => atDependencyStage('seasons', () => deps.getSeasons(league.id))),
+      whileRequestActive(() => atDependencyStage('current_season', () => deps.getCurrentSeason(league.id))),
+    ]);
     const season = requestedSeason && requestedSeason !== 'all'
       ? seasons.find((candidate) => candidate.id === requestedSeason) ?? null
       : requestedSeason === 'all' ? null : currentSeason;
@@ -357,11 +363,7 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       : [];
 
     assertRequestActive(request);
-    const whileRequestActive = <T,>(read: () => Promise<T>) => () => {
-      assertRequestActive(request);
-      return read();
-    };
-    const [badges, achievements, articles, matchups, hotFacts] = await consumeAllDependencies<[
+    const [badges, achievements, articles, matchups, hotFacts] = await consumeBoundedDependencies<[
       PlayerBadge[],
       { championships: number },
       NewsArticle[],
@@ -424,7 +426,7 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       matchups, articles: safeArticles.map((article) => ({ id: article.id, slug: article.slug, title: article.title, excerpt: article.excerpt, publishedAt: article.published_at, imageUrl: absolutePublicUrl(article.image_url), type: article.type ?? null })),
       heroAwards: buildHeroAwards(safeBadges, achievementSummary.championships), aggregateOnly, hotFacts,
     };
-    return NextResponse.json({ version: 1, league: { id: league.id, slug: league.slug }, data }, { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300', 'X-Content-Type-Options': 'nosniff' } });
+    return NextResponse.json({ version: 1, league: { id: league.id, slug: league.slug }, data }, { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300', 'Vercel-CDN-Cache-Control': 'public, max-age=60, must-revalidate', 'X-Content-Type-Options': 'nosniff' } });
   } catch (caught) {
     const failure = caught instanceof MobilePlayerProfileDependencyError
       ? caught

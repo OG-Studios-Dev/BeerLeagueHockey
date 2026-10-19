@@ -6577,6 +6577,9 @@ export async function getPlayerCareerStatsTimeline(
     includeHistoricalBaseline?: boolean;
     strict?: boolean;
     profileSafeStrictAppearanceHydration?: boolean;
+    profileSafeStrictAppearanceBatchConcurrency?: number;
+    preloadedClient?: Awaited<ReturnType<typeof createClient>>;
+    preloadedServiceClient?: ReturnType<typeof createServiceRoleClient>;
   } = {},
 ): Promise<PlayerCareerSeasonRow[]> {
   const {
@@ -6584,8 +6587,11 @@ export async function getPlayerCareerStatsTimeline(
     strict = false,
     profileSafeStrictAppearanceHydration = false,
   } = options;
-  const supabase = await createClient();
-  const serviceSupabase = createServiceRoleClient();
+  const profileSafeStrictAppearanceBatchConcurrency = options.profileSafeStrictAppearanceBatchConcurrency === undefined
+    ? 1
+    : resolveStrictBatchConcurrency(options.profileSafeStrictAppearanceBatchConcurrency);
+  const supabase = options.preloadedClient ?? await createClient();
+  const serviceSupabase = options.preloadedServiceClient ?? createServiceRoleClient();
   const seasonQuery = supabase.from('seasons');
   const { data: seasonRecords, error: seasonRecordsError, count: seasonRecordsCount } = await (strict
     ? seasonQuery.select('id, name, start_date', { count: 'exact' })
@@ -6609,7 +6615,7 @@ export async function getPlayerCareerStatsTimeline(
             seasonIds: activeSeasonIds,
             playerIds: [playerId],
             strict: true,
-            strictBatchConcurrency: 1,
+            strictBatchConcurrency: profileSafeStrictAppearanceBatchConcurrency,
           })
         : [];
       const fallbackAppearances = activeSeasonIds.length > 0
@@ -6617,8 +6623,8 @@ export async function getPlayerCareerStatsTimeline(
             seasonIds: activeSeasonIds,
             playerIds: [playerId],
             strict: true,
-            strictBatchConcurrency: 1,
-            strictEvidenceBatchConcurrency: 1,
+            strictBatchConcurrency: profileSafeStrictAppearanceBatchConcurrency,
+            strictEvidenceBatchConcurrency: profileSafeStrictAppearanceBatchConcurrency,
           })
         : [];
       return [confirmedCheckins, fallbackAppearances];
@@ -7329,6 +7335,7 @@ export async function getPlayerGameLog(
   options: CanonicalReadOptions & {
     strictBatchConcurrency?: number;
     strictEvidenceBatchConcurrency?: number;
+    preloadedClient?: Awaited<ReturnType<typeof createClient>>;
   } = {},
 ): Promise<PlayerGameLogEntry[]> {
   const strictBatchConcurrency = options.strict || options.strictBatchConcurrency !== undefined
@@ -7337,7 +7344,7 @@ export async function getPlayerGameLog(
   const strictEvidenceBatchConcurrency = options.strict || options.strictEvidenceBatchConcurrency !== undefined
     ? resolveStrictBatchConcurrency(options.strictEvidenceBatchConcurrency ?? strictBatchConcurrency)
     : undefined;
-  const supabase = await createClient();
+  const supabase = options.preloadedClient ?? await createClient();
 
   if (seasonId) {
     const { data: seasonRecord, error: seasonError } = await supabase
