@@ -101,7 +101,7 @@ function deps(): jest.Mocked<MobilePlayerProfileDependencies> {
 }
 
 describe('mobile Player Profile production dependencies', () => {
-  it('[v8 mobile wiring] opts only its strict timeline call into profile-safe appearance hydration', async () => {
+  it('[v13 mobile wiring] opts production Profile timeline hydration into a strict concurrency of two', async () => {
     const getTimeline = jest.spyOn(dataModule, 'getPlayerCareerStatsTimeline').mockResolvedValue([]);
 
     try {
@@ -110,28 +110,29 @@ describe('mobile Player Profile production dependencies', () => {
         includeHistoricalBaseline: true,
         strict: true,
         profileSafeStrictAppearanceHydration: true,
+        profileSafeStrictAppearanceBatchConcurrency: 2,
       });
     } finally {
       getTimeline.mockRestore();
     }
   });
 
-  it('[v11 mobile wiring] opts only production Profile game logs into serial strict fallback hydration', async () => {
+  it('[v13 mobile wiring] opts production Profile game-log batches and evidence into a strict concurrency of two', async () => {
     const getGames = jest.spyOn(dataModule, 'getPlayerGameLog').mockResolvedValue([]);
 
     try {
       await mobilePlayerProfileDependencies.getGames(PROFILE_ID, SEASON_ID);
       expect(getGames).toHaveBeenCalledWith(PROFILE_ID, SEASON_ID, 20, {
         strict: true,
-        strictBatchConcurrency: 1,
-        strictEvidenceBatchConcurrency: 1,
+        strictBatchConcurrency: 2,
+        strictEvidenceBatchConcurrency: 2,
       });
     } finally {
       getGames.mockRestore();
     }
   });
 
-  it('[v11 production coordinator pressure] preserves the exact v10 graph and body while capping one route at one provider read and three routes at three', async () => {
+  it('[v13 production coordinator pressure] preserves the V12.1 graph and body while capping one route at two provider reads and three routes at six', async () => {
     const production = await runProductionCoordinatorPressure();
     const aggregate = await runProductionCoordinatorPressure(undefined, 3);
 
@@ -151,6 +152,8 @@ describe('mobile Player Profile production dependencies', () => {
       activeAtReturn: production.activeAtReturn,
       allSettledAtReturn: production.allSettledAtReturn,
       phaseMaxActive: production.phaseMaxActive,
+      phaseOrder: production.phaseOrder,
+      overlappingPhasePairs: production.overlappingPhasePairs,
       aggregateRequestCount: aggregate.requestCount,
       aggregateMaxActive: aggregate.maxActive,
       aggregateActiveAtReturn: aggregate.activeAtReturn,
@@ -160,21 +163,26 @@ describe('mobile Player Profile production dependencies', () => {
       responseGraphRequestCount: 37,
       healthHeadRequests: [],
       hasProductionHealthHook: false,
-      maxActive: 1,
+      maxActive: 2,
       activeAtReturn: 0,
       allSettledAtReturn: true,
       phaseMaxActive: {
-        prerequisites: 1,
+        prerequisites: 2,
         selectedStats: 1,
-        timeline: 1,
-        gameLog: 1,
-        decorative: 1,
+        timeline: 2,
+        gameLog: 2,
+        decorative: 2,
       },
+      phaseOrder: ['prerequisites', 'selectedStats', 'timeline', 'gameLog', 'decorative'],
+      overlappingPhasePairs: [],
       aggregateRequestCount: 126,
-      aggregateMaxActive: 3,
+      aggregateMaxActive: 6,
       aggregateActiveAtReturn: 0,
       aggregateAllSettledAtReturn: true,
     });
+    expect(production.maxActive).not.toBe(4);
+    expect(aggregate.maxActive).not.toBe(12);
+    expect(Math.max(...Object.values(production.phaseMaxActive))).toBeLessThanOrEqual(2);
   });
 });
 
@@ -265,7 +273,7 @@ describe('GET /api/mobile/player-profile', () => {
     }
   });
 
-  it('[v11 prerequisite scheduler] serializes season listing before current-season selection', async () => {
+  it('[v13 prerequisite scheduler] starts only the independent season pair together and consumes both before selected stats', async () => {
     const d = deps();
     const starts: string[] = [];
     const resolvers = new Map<string, () => void>();
@@ -291,27 +299,37 @@ describe('GET /api/mobile/player-profile', () => {
 
     const pendingResponse = handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
     await new Promise((resolve) => setImmediate(resolve));
-    expect(starts).toEqual(['seasons']);
-    resolvers.get('seasons')!();
-    await new Promise((resolve) => setImmediate(resolve));
     expect(starts).toEqual(['seasons', 'currentSeason']);
+    expect(maxActive).toBe(2);
     resolvers.get('currentSeason')!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(d.getPublicSeasonPlayer).not.toHaveBeenCalled();
+    resolvers.get('seasons')!();
     const response = await pendingResponse;
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.data.selectedSeasonId).toBe(SEASON_ID);
-    expect(maxActive).toBe(1);
+    expect(maxActive).toBe(2);
     expect(active).toBe(0);
   });
 
-  it('[v11 prerequisite scheduler] preserves the abort boundary between seasons and current-season reads', async () => {
+  it('[v13 prerequisite scheduler] consumes the started pair after abort and starts no selected or later dependency', async () => {
     const d = deps();
     const seasons = await d.getSeasons(HOCKEY_LIFE_ID);
+    const currentSeason = await d.getCurrentSeason(HOCKEY_LIFE_ID);
     d.getSeasons.mockClear();
+    d.getCurrentSeason.mockClear();
     let resolveSeasons!: () => void;
+    let resolveCurrentSeason!: () => void;
+    let active = 0;
     d.getSeasons.mockImplementation(() => new Promise((resolve) => {
-      resolveSeasons = () => resolve(seasons);
+      active += 1;
+      resolveSeasons = () => { active -= 1; resolve(seasons); };
+    }));
+    d.getCurrentSeason.mockImplementation(() => new Promise((resolve) => {
+      active += 1;
+      resolveCurrentSeason = () => { active -= 1; resolve(currentSeason); };
     }));
     const controller = new AbortController();
     const request = new NextRequest(
@@ -322,18 +340,24 @@ describe('GET /api/mobile/player-profile', () => {
 
     const pendingResponse = handleMobilePlayerProfileRequest(request, d);
     await new Promise((resolve) => setImmediate(resolve));
+    expect(d.getSeasons).toHaveBeenCalledTimes(1);
+    expect(d.getCurrentSeason).toHaveBeenCalledTimes(1);
+    expect(active).toBe(2);
     controller.abort();
+    resolveCurrentSeason();
     resolveSeasons();
     const response = await pendingResponse;
     log.mockRestore();
 
     expect(response.status).toBe(502);
-    expect(d.getCurrentSeason).not.toHaveBeenCalled();
+    expect(active).toBe(0);
     expect(d.getPublicSeasonPlayer).not.toHaveBeenCalled();
     expect(d.getTimeline).not.toHaveBeenCalled();
+    expect(d.getGames).not.toHaveBeenCalled();
+    expect(d.getBadges).not.toHaveBeenCalled();
   });
 
-  it('[v11 deterministic waves] accounts for twelve serial fake-delay waves with no hidden dependency overlap', async () => {
+  it('[v13 deterministic waves] retains sequential major phases with only prerequisite and decorative pairs overlapping', async () => {
     jest.useFakeTimers({ now: 0 });
     const d = deps();
     const starts: Array<{ name: string; at: number }> = [];
@@ -371,14 +395,27 @@ describe('GET /api/mobile/player-profile', () => {
 
     try {
       const responseRead = handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}`), d);
-      await jest.advanceTimersByTimeAsync(120);
+      await jest.advanceTimersByTimeAsync(90);
       const response = await responseRead;
 
       expect(response.status).toBe(200);
-      expect(starts).toEqual(dependencyNames.map((name, index) => ({ name, at: index * 10 })));
-      expect(new Set(starts.map((start) => start.at)).size).toBe(12);
-      expect(Date.now()).toBe(120);
-      expect(maxActive).toBe(1);
+      expect(starts).toEqual([
+        { name: 'getLeague', at: 0 },
+        { name: 'resolvePlayer', at: 10 },
+        { name: 'getSeasons', at: 20 },
+        { name: 'getCurrentSeason', at: 20 },
+        { name: 'getPublicSeasonPlayer', at: 30 },
+        { name: 'getTimeline', at: 40 },
+        { name: 'getGames', at: 50 },
+        { name: 'getBadges', at: 60 },
+        { name: 'getImportedAchievements', at: 60 },
+        { name: 'getArticles', at: 70 },
+        { name: 'getMatchups', at: 70 },
+        { name: 'generateHotFacts', at: 80 },
+      ]);
+      expect(new Set(starts.map((start) => start.at)).size).toBe(9);
+      expect(Date.now()).toBe(90);
+      expect(maxActive).toBe(2);
       expect(active).toBe(0);
     } finally {
       jest.useRealTimers();
@@ -733,7 +770,7 @@ describe('GET /api/mobile/player-profile', () => {
     expect(d.getPublicSeasonPlayer).not.toHaveBeenCalled();
   });
 
-  it('[v11 decorative scheduler] isolates game log and serially consumes all five later dependencies in stage order', async () => {
+  it('[v13 decorative scheduler] isolates game log and consumes later dependencies in deterministic pairs', async () => {
     const d = deps();
     const starts: string[] = [];
     const resolvers = new Map<string, () => void>();
@@ -760,21 +797,30 @@ describe('GET /api/mobile/player-profile', () => {
     const pendingResponse = handleMobilePlayerProfileRequest(req(`playerId=${PROFILE_ID}&season=${SEASON_ID}`), d);
     await new Promise((resolve) => setImmediate(resolve));
     expect(starts).toEqual(['games']);
-    for (const name of ['games', 'badges', 'achievements', 'articles', 'matchups', 'hotFacts']) {
-      expect(starts.at(-1)).toBe(name);
-      resolvers.get(name)!();
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+    resolvers.get('games')!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(starts).toEqual(['games', 'badges', 'achievements']);
+    resolvers.get('achievements')!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(starts).toEqual(['games', 'badges', 'achievements', 'articles']);
+    resolvers.get('badges')!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(starts).toEqual(['games', 'badges', 'achievements', 'articles', 'matchups']);
+    resolvers.get('articles')!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(starts).toEqual(['games', 'badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
+    resolvers.get('matchups')!();
+    resolvers.get('hotFacts')!();
     const response = await pendingResponse;
 
     expect(response.status).toBe(200);
     expect(starts).toEqual(['games', 'badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
-    expect(maxProviderReads).toBe(1);
+    expect(maxProviderReads).toBe(2);
     expect(activeProviderReads).toBe(0);
     expect(d.getStats).not.toHaveBeenCalled();
   });
 
-  it('[v11 decorative scheduler] drains every dependency and reports the earliest stage after earlier and later failures', async () => {
+  it('[v13 decorative scheduler] drains bounded work and reports the earliest scheduled failure regardless of settlement order', async () => {
     const d = deps();
     const starts: string[] = [];
     const settled: string[] = [];
@@ -822,8 +868,8 @@ describe('GET /api/mobile/player-profile', () => {
     expect(response.status).toBe(502);
     expect(body).toEqual({ error: { code: 'UPSTREAM_FAILURE', message: 'Player profile data is temporarily unavailable.' } });
     expect(starts).toEqual(['badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
-    expect(settled).toEqual(['badges', 'achievements', 'articles', 'matchups', 'hotFacts']);
-    expect(maxActive).toBe(1);
+    expect(settled).toEqual(['achievements', 'articles', 'matchups', 'hotFacts', 'badges']);
+    expect(maxActive).toBe(2);
     expect(activeAtReturn).toBe(0);
     expect(active).toBe(0);
     expect(unhandled).toHaveLength(0);
@@ -833,11 +879,18 @@ describe('GET /api/mobile/player-profile', () => {
     log.mockRestore();
   });
 
-  it('[v11 decorative scheduler] starts no later provider dependency after aborting the active decorative read', async () => {
+  it('[v13 decorative scheduler] consumes the active pair after abort and starts no later provider dependency', async () => {
     const d = deps();
     let resolveBadges!: () => void;
+    let resolveAchievements!: () => void;
+    let active = 0;
     d.getBadges.mockImplementation(() => new Promise((resolve) => {
-      resolveBadges = () => resolve([]);
+      active += 1;
+      resolveBadges = () => { active -= 1; resolve([]); };
+    }));
+    d.getImportedAchievements.mockImplementation(() => new Promise((resolve) => {
+      active += 1;
+      resolveAchievements = () => { active -= 1; resolve({ championships: 0 }); };
     }));
     const controller = new AbortController();
     const request = new NextRequest(
@@ -849,13 +902,16 @@ describe('GET /api/mobile/player-profile', () => {
     const pendingResponse = handleMobilePlayerProfileRequest(request, d);
     await new Promise((resolve) => setImmediate(resolve));
     expect(d.getBadges).toHaveBeenCalledTimes(1);
+    expect(d.getImportedAchievements).toHaveBeenCalledTimes(1);
+    expect(active).toBe(2);
     controller.abort();
+    resolveAchievements();
     resolveBadges();
     const response = await pendingResponse;
     log.mockRestore();
 
     expect(response.status).toBe(502);
-    expect(d.getImportedAchievements).not.toHaveBeenCalled();
+    expect(active).toBe(0);
     expect(d.getArticles).not.toHaveBeenCalled();
     expect(d.getMatchups).not.toHaveBeenCalled();
     expect(d.generateHotFacts).not.toHaveBeenCalled();
@@ -2082,6 +2138,7 @@ function productionCoordinatorPressureClient() {
       gameLog: 0,
       decorative: 0,
     } satisfies Record<ProductionPressurePhase, number>,
+    overlappingPhasePairs: new Set<string>(),
   };
   const traces: Trace[] = [];
   const seasons = [
@@ -2253,6 +2310,11 @@ function productionCoordinatorPressureClient() {
         settled: false,
       };
       traces.push(trace);
+      for (const [activePhase, activeCount] of Object.entries(state.phaseActive)) {
+        if (activeCount > 0 && activePhase !== phase) {
+          state.overlappingPhasePairs.add([activePhase, phase].sort().join('|'));
+        }
+      }
       state.active += 1;
       state.maxActive = Math.max(state.maxActive, state.active);
       state.phaseActive[phase] += 1;
@@ -2300,6 +2362,10 @@ async function runProductionCoordinatorPressure(
     })),
     maxActive: state.maxActive,
     phaseMaxActive: state.phaseMaxActive,
+    phaseOrder: traces.map((trace) => trace.phase).filter((phase, index, phases) => (
+      index === 0 || phase !== phases[index - 1]
+    )),
+    overlappingPhasePairs: [...state.overlappingPhasePairs].sort(),
     activeAtReturn: state.active,
     allSettledAtReturn: traces.every((trace) => trace.settled),
   };
@@ -4685,6 +4751,41 @@ describe('strict career appearance query scoping', () => {
     expect(appearance.active).toBe(0);
     expect(appearance.events.lastIndexOf('settle:confirmed'))
       .toBeLessThan(appearance.events.indexOf('start:fallback'));
+  });
+
+  it('[v13 profile-safe timeline] caps the production override at exactly two without changing the serial default', async () => {
+    const defaultFixture = strictTimelineProductionClient({
+      appearanceGameCount: 201,
+      trackAppearanceConcurrency: true,
+    });
+    mockedCreateClient.mockResolvedValue(defaultFixture.client as never);
+    mockedCreateServiceRoleClient.mockReturnValue(defaultFixture.client as never);
+    const baseline = await getPlayerCareerStatsTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, {
+      strict: true,
+      profileSafeStrictAppearanceHydration: true,
+    });
+
+    const boundedFixture = strictTimelineProductionClient({
+      appearanceGameCount: 201,
+      trackAppearanceConcurrency: true,
+    });
+    mockedCreateClient.mockResolvedValue(boundedFixture.client as never);
+    mockedCreateServiceRoleClient.mockReturnValue(boundedFixture.client as never);
+    const bounded = await getPlayerCareerStatsTimeline(HOCKEY_LIFE_ID, PROFILE_ID, false, {
+      strict: true,
+      profileSafeStrictAppearanceHydration: true,
+      profileSafeStrictAppearanceBatchConcurrency: 2,
+    } as Parameters<typeof getPlayerCareerStatsTimeline>[3] & {
+      profileSafeStrictAppearanceBatchConcurrency: number;
+    });
+
+    expect(bounded).toEqual(baseline);
+    expect(defaultFixture.appearance.maxActive).toBe(1);
+    expect(boundedFixture.appearance.maxActive).toBe(2);
+    expect(boundedFixture.appearance.maxActive).not.toBe(4);
+    expect(boundedFixture.appearance.overlap).toBe(false);
+    expect(boundedFixture.appearance.settled).toEqual(boundedFixture.appearance.started);
+    expect(boundedFixture.appearance.active).toBe(0);
   });
 
   it.each([

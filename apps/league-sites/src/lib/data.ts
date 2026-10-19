@@ -6577,6 +6577,7 @@ export async function getPlayerCareerStatsTimeline(
     includeHistoricalBaseline?: boolean;
     strict?: boolean;
     profileSafeStrictAppearanceHydration?: boolean;
+    profileSafeStrictAppearanceBatchConcurrency?: number;
   } = {},
 ): Promise<PlayerCareerSeasonRow[]> {
   const {
@@ -6584,6 +6585,9 @@ export async function getPlayerCareerStatsTimeline(
     strict = false,
     profileSafeStrictAppearanceHydration = false,
   } = options;
+  const profileSafeStrictAppearanceBatchConcurrency = options.profileSafeStrictAppearanceBatchConcurrency === undefined
+    ? 1
+    : resolveStrictBatchConcurrency(options.profileSafeStrictAppearanceBatchConcurrency);
   const supabase = await createClient();
   const serviceSupabase = createServiceRoleClient();
   const seasonQuery = supabase.from('seasons');
@@ -6609,7 +6613,7 @@ export async function getPlayerCareerStatsTimeline(
             seasonIds: activeSeasonIds,
             playerIds: [playerId],
             strict: true,
-            strictBatchConcurrency: 1,
+            strictBatchConcurrency: profileSafeStrictAppearanceBatchConcurrency,
           })
         : [];
       const fallbackAppearances = activeSeasonIds.length > 0
@@ -6617,8 +6621,8 @@ export async function getPlayerCareerStatsTimeline(
             seasonIds: activeSeasonIds,
             playerIds: [playerId],
             strict: true,
-            strictBatchConcurrency: 1,
-            strictEvidenceBatchConcurrency: 1,
+            strictBatchConcurrency: profileSafeStrictAppearanceBatchConcurrency,
+            strictEvidenceBatchConcurrency: profileSafeStrictAppearanceBatchConcurrency,
           })
         : [];
       return [confirmedCheckins, fallbackAppearances];
