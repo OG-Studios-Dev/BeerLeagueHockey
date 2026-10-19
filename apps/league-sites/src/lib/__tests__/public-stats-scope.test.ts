@@ -1,7 +1,12 @@
 import { NextRequest } from 'next/server';
 
 import { HLHL_WINTER_2026_SEASON_ID } from '@/lib/imported-aggregate-season-overrides';
-import { loadPublicStatMetricRows, type PublicStatMetric } from '@/lib/public-stat-metrics';
+import {
+  aggregatePublicSeasonStats,
+  loadPublicStatMetricRows,
+  type PublicStatMetric,
+  type PublicStatMetricRows,
+} from '@/lib/public-stat-metrics';
 import {
   aggregatePublicStatsScope,
   assertPublicStatsScopeResponseBytes,
@@ -347,6 +352,278 @@ describe('public stats-scope aggregation', () => {
     });
     expect(result[0].avatarUrl).toBe('photo.png');
     expect(result[0].displayTeam).toEqual({ id: TEAM_ID, name: 'Wolves', logoUrl: 'crest.png' });
+  });
+
+  it('combines an authoritative Out-only goalie season with a resolved season as GP 1, GA 3, and GAA 3', () => {
+    const opponentId = '51000000-0000-4000-8000-000000000005';
+    const seasonRows = (
+      selected: StatsScopeSeason,
+      gameId: string,
+      rosterId: string,
+      outCheckinId: string | null,
+    ): PublicStatMetricRows => ({
+      games: [{
+        id: gameId,
+        league_id: LEAGUE_ID,
+        season_id: selected.id,
+        status: 'completed',
+        home_team_id: TEAM_ID,
+        away_team_id: opponentId,
+        home_score: 1,
+        away_score: 3,
+        scheduled_at: `${selected.start_date.slice(0, 10)}T20:00:00Z`,
+        penalty_capture_status: null,
+        goalie_capture_status: null,
+        skater_capture_status: null,
+      }],
+      teams: [
+        { id: TEAM_ID, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Wolves' },
+        { id: opponentId, league_id: LEAGUE_ID, division_id: DIVISION_ID, name: 'Opponent' },
+      ],
+      profiles: [{ id: PLAYER_ID, full_name: 'Contract Pat', avatar_url: null, photo_url: null }],
+      rosters: [{
+        id: rosterId,
+        player_id: PLAYER_ID,
+        team_id: TEAM_ID,
+        league_id: LEAGUE_ID,
+        season_id: selected.id,
+        start_date: selected.start_date.slice(0, 10),
+        end_date: null,
+        is_goalie: true,
+        position: 'Goalie',
+        status: 'active',
+        player_type: 'regular',
+      }],
+      checkins: outCheckinId ? [{
+        id: outCheckinId,
+        game_id: gameId,
+        player_id: PLAYER_ID,
+        team_id: TEAM_ID,
+        status: 'out',
+      }] : [],
+      availabilities: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
+    });
+    const outRows = seasonRows(
+      ACTIVE,
+      '81000000-0000-4000-8000-000000000001',
+      '91000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001',
+    );
+    const resolvedRows = seasonRows(
+      OLD,
+      '82000000-0000-4000-8000-000000000001',
+      '92000000-0000-4000-8000-000000000001',
+      null,
+    );
+    const nativePayload = (selected: StatsScopeSeason, source: PublicStatMetricRows): StatsScopeSeasonPayload => ({
+      presentationSeason: {
+        id: selected.id,
+        name: selected.name,
+        league_id: selected.league_id,
+        status: selected.status,
+      },
+      sourceRowCount: Object.values(source).reduce((sum, collection) => sum + collection.length, 0),
+      ...aggregatePublicSeasonStats(source, { leagueId: LEAGUE_ID, seasonId: selected.id }),
+    });
+
+    const outSeason = nativePayload(ACTIVE, outRows);
+    expect(outSeason.players[0].goalie).toMatchObject({
+      gamesPlayed: { value: 0, state: 'reported', sources: ['attendance', 'roster_window'] },
+      goalsAgainst: { value: 0, state: 'reported', sources: ['attendance', 'roster_window'] },
+      goalsAgainstAverage: { value: null, state: 'unknown', sources: ['attendance', 'roster_window'] },
+    });
+
+    const result = aggregatePublicStatsScope({
+      payloads: [outSeason, nativePayload(OLD, resolvedRows)],
+      profiles,
+      teams,
+      badges: [],
+      baselines: [],
+      includeBaselines: false,
+    });
+
+    expect(result[0].goalie).toMatchObject({
+      gamesPlayed: { value: 1, state: 'reported', sources: ['attendance', 'roster_window'] },
+      goalsAgainst: { value: 3, state: 'reported', sources: ['attendance', 'roster_window'] },
+      goalsAgainstAverage: { value: 3, state: 'reported', sources: ['attendance', 'roster_window'] },
+    });
+  });
+
+  it("publishes Adam's complete all-time points as the unique rank-one total when Fall has supported participation and no sparse scoring rows", () => {
+    const adamId = 'd9f346ab-516a-4f9b-b34c-7eb0bfd4b5c0';
+    const runnerUpId = '1e86482b-c6ba-451f-8012-a5c3624fbf51';
+    const fall = season('145ac7ee-99fb-4a50-a0b5-37f24e9991f3', 'Fall 2026', 'active', '2026-10-01');
+    const summer = season('1df8f917-a87e-4053-8650-f55aff2c0fcb', 'Summer 2026', 'completed', '2026-07-02');
+    const spring = season('6e2f732c-5c6c-4642-b645-f7dd040d0fa5', 'Spring 2026', 'completed', '2026-04-02');
+    const winter = season(HLHL_WINTER_2026_SEASON_ID, 'Winter 2026', 'completed', '2026-01-08');
+    const firstGeneral = '453d62d9-80b4-4f26-a2ee-861f0c063402';
+    const opponents = [
+      '093f611c-0cdc-4509-afde-9c661b5833c9',
+      'e4be829d-952c-4531-8376-215907fab3b7',
+      '346833e0-2780-492d-86db-94df0b0cb3e1',
+    ];
+    const fallGames: PublicStatMetricRows['games'] = [
+      ['508ee689-b548-518e-b083-5e896533bf25', '2026-10-02T02:30:00Z', 2, 6],
+      ['d2b3e1f1-b6d6-5973-98ae-10a837dcb1ae', '2026-10-09T02:30:00Z', 3, 5],
+      ['474af804-0c78-5754-905b-c0cb7d17381e', '2026-10-16T02:15:00Z', 8, 4],
+    ].map(([id, scheduledAt, homeScore, awayScore], index) => ({
+      id: id as string,
+      league_id: LEAGUE_ID,
+      season_id: fall.id,
+      status: 'completed',
+      home_team_id: firstGeneral,
+      away_team_id: opponents[index],
+      home_score: homeScore as number,
+      away_score: awayScore as number,
+      scheduled_at: scheduledAt as string,
+      penalty_capture_status: null,
+      goalie_capture_status: null,
+      skater_capture_status: null,
+    }));
+    const fallRows: PublicStatMetricRows = {
+      games: fallGames,
+      teams: [
+        { id: firstGeneral, league_id: LEAGUE_ID, division_id: null, name: 'First General London' },
+        ...opponents.map((id, index) => ({ id, league_id: LEAGUE_ID, division_id: null, name: `Opponent ${index + 1}` })),
+      ],
+      profiles: [{ id: adamId, full_name: 'Adam Klimowicz', avatar_url: null, photo_url: null }],
+      rosters: [{
+        id: '529d7c74-3905-443a-af66-16138b5f059d',
+        player_id: adamId,
+        team_id: firstGeneral,
+        league_id: LEAGUE_ID,
+        season_id: fall.id,
+        start_date: '2026-10-01',
+        end_date: null,
+        is_goalie: false,
+        position: 'Forward',
+        status: 'active',
+        player_type: 'regular',
+      }],
+      checkins: [],
+      availabilities: [],
+      acceptedSubs: [],
+      playerStats: [],
+      goalieStats: [],
+      goalieAppearances: [],
+    };
+    const fallAggregate = aggregatePublicSeasonStats(fallRows, {
+      leagueId: LEAGUE_ID,
+      seasonId: fall.id,
+    });
+    const adamFall = fallAggregate.players.find((player) => player.playerId === adamId)!;
+
+    expect(adamFall.metrics).toMatchObject({
+      gamesPlayed: { value: 3, state: 'reported', sources: ['roster_window'] },
+      goals: { value: 0, state: 'reported', sources: ['roster_window'] },
+      assists: { value: 0, state: 'reported', sources: ['roster_window'] },
+      points: { value: 0, state: 'reported', sources: ['roster_window'] },
+    });
+
+    const adamPayload = (
+      selected: StatsScopeSeason,
+      gamesPlayed: number,
+      goals: number,
+      assists: number,
+      metricSources: PublicStatMetric['sources'],
+    ): StatsScopeSeasonPayload => {
+      const produced = payload(selected, {
+        gamesPlayed: publicMetric(gamesPlayed, 'reported', metricSources),
+        goals: publicMetric(goals, 'reported', metricSources),
+        assists: publicMetric(assists, 'reported', metricSources),
+        points: publicMetric(goals + assists, 'reported', metricSources),
+      });
+      return {
+        ...produced,
+        players: [{
+          ...produced.players[0],
+          playerId: adamId,
+          playerName: 'Adam Klimowicz',
+          roles: ['skater'],
+          goalie: null,
+        }],
+      };
+    };
+    const allTime = aggregatePublicStatsScope({
+      payloads: [
+        {
+          presentationSeason: {
+            id: fall.id,
+            name: fall.name,
+            league_id: fall.league_id,
+            status: fall.status,
+          },
+          sourceRowCount: fallRows.games.length + fallRows.teams.length + fallRows.profiles.length + fallRows.rosters.length,
+          ...fallAggregate,
+        },
+        adamPayload(summer, 13, 2, 11, ['skater_stats']),
+        adamPayload(spring, 13, 4, 4, ['skater_stats']),
+        adamPayload(winter, 11, 9, 14, ['imported']),
+      ],
+      profiles: new Map([
+        [adamId, { id: adamId, full_name: 'Adam Klimowicz', avatar_url: null, photo_url: null }],
+        [runnerUpId, { id: runnerUpId, full_name: 'Cris Cervoni', avatar_url: null, photo_url: null }],
+      ]),
+      teams: new Map([
+        [firstGeneral, { id: firstGeneral, league_id: LEAGUE_ID, name: 'First General London', logo_url: null, division_id: null }],
+        [TEAM_ID, teams.get(TEAM_ID)!],
+      ]),
+      badges: [],
+      baselines: [
+        {
+          id: '5239c12b-1595-4e01-a80a-711ccc802b71',
+          player_id: adamId,
+          is_goalie: false,
+          games_played: 786,
+          goals: 854,
+          assists: 958,
+          points: 1812,
+          goals_against: 0,
+          moosehead_cup_wins: 7,
+        },
+        {
+          id: '6d3122dd-e51a-45a7-aaac-d130d4c35f92',
+          player_id: runnerUpId,
+          is_goalie: false,
+          games_played: 644,
+          goals: 660,
+          assists: 684,
+          points: 1344,
+          goals_against: 0,
+          moosehead_cup_wins: 0,
+        },
+      ],
+      includeBaselines: true,
+    });
+    const adam = allTime.find((player) => player.playerId === adamId)!;
+    const ranked = allTime
+      .filter((player) => player.skater?.points.value !== null
+        && ['verified', 'recorded', 'reported'].includes(player.skater?.points.state ?? ''))
+      .sort((left, right) => (right.skater?.points.value ?? 0) - (left.skater?.points.value ?? 0));
+    let priorValue: number | null = null;
+    let priorRank = 0;
+    const ranks = ranked.map((player, index) => {
+      const value = player.skater!.points.value!;
+      const rank = value === priorValue ? priorRank : index + 1;
+      priorValue = value;
+      priorRank = rank;
+      return { playerId: player.playerId, rank, points: value };
+    });
+
+    expect(adam.skater).toMatchObject({
+      goals: { value: 869, state: 'reported' },
+      assists: { value: 987, state: 'reported' },
+      points: { value: 1856, state: 'reported' },
+    });
+    expect(ranks.find((entry) => entry.playerId === adamId)).toEqual({
+      playerId: adamId,
+      rank: 1,
+      points: 1856,
+    });
   });
 
   it('resolves a null baseline identity only through one league-proven exact-name profile', () => {
