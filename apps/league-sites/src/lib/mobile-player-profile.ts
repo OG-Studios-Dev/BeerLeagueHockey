@@ -99,10 +99,21 @@ function settleDependency<T>(read: Promise<T>): SettledDependency<T> {
   );
 }
 
-async function unwrapDependency<T>(read: SettledDependency<T>): Promise<T> {
-  const result = await read;
-  if (result.status === 'rejected') throw result.reason;
-  return result.value;
+async function consumeAllDependencies<T extends readonly unknown[]>(
+  reads: { [Index in keyof T]: () => Promise<T[Index]> },
+): Promise<T> {
+  const settled: Array<
+    { status: 'fulfilled'; value: unknown }
+    | { status: 'rejected'; reason: unknown }
+  > = [];
+  for (const read of reads as readonly (() => Promise<unknown>)[]) {
+    settled.push(await settleDependency(Promise.resolve().then(read)));
+  }
+  const failure = settled.find((result) => result.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
+  return settled.map((result) => (
+    result.status === 'fulfilled' ? result.value : undefined
+  )) as unknown as T;
 }
 
 function assertRequestActive(request: NextRequest) {
@@ -258,7 +269,11 @@ export const mobilePlayerProfileDependencies: MobilePlayerProfileDependencies = 
     strict: true,
     profileSafeStrictAppearanceHydration: true,
   }),
-  getGames: (playerId, seasonId) => getPlayerGameLog(playerId, seasonId, 20, { strict: true }),
+  getGames: (playerId, seasonId) => getPlayerGameLog(playerId, seasonId, 20, {
+    strict: true,
+    strictBatchConcurrency: 1,
+    strictEvidenceBatchConcurrency: 1,
+  }),
   getBadges: (playerId) => getPlayerBadges(playerId, { leagueId: HOCKEY_LIFE_ID, strict: true }),
   getImportedAchievements: (playerId, leagueId) => getImportedPlayerCareerAchievements(playerId, { leagueId, strict: true }),
   getArticles: (playerId) => getPlayerArticles(playerId, 5, { leagueId: HOCKEY_LIFE_ID, strict: true }),
@@ -296,10 +311,9 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
 
     const profileId = player.player_id;
     assertRequestActive(request);
-    const [seasons, currentSeason] = await Promise.all([
-      atDependencyStage('seasons', () => deps.getSeasons(league.id)),
-      atDependencyStage('current_season', () => deps.getCurrentSeason(league.id)),
-    ]);
+    const seasons = await atDependencyStage('seasons', () => deps.getSeasons(league.id));
+    assertRequestActive(request);
+    const currentSeason = await atDependencyStage('current_season', () => deps.getCurrentSeason(league.id));
     const season = requestedSeason && requestedSeason !== 'all'
       ? seasons.find((candidate) => candidate.id === requestedSeason) ?? null
       : requestedSeason === 'all' ? null : currentSeason;
@@ -343,28 +357,30 @@ export async function handleMobilePlayerProfileRequest(request: NextRequest, dep
       : [];
 
     assertRequestActive(request);
-    const badgesRead = settleDependency(atDependencyStage('badges', () => deps.getBadges(profileId)));
-    const achievementsRead = settleDependency(atDependencyStage(
-      'achievements',
-      () => deps.getImportedAchievements(profileId, league.id),
-    ));
-    const articlesRead = settleDependency(atDependencyStage('articles', () => deps.getArticles(profileId)));
-    const matchupsRead = settleDependency(hasSelectedCanonicalScope
-      ? atDependencyStage('matchups', () => deps.getMatchups(profileId, selectedSeasonId, isGoalie))
-      : Promise.resolve([]));
-    const hotFactsRead = settleDependency(atDependencyStage('hot_facts', () => deps.generateHotFacts({
-      playerName: player.profile?.full_name?.trim() || 'Unknown Player',
-      seasons: visibleTimeline,
-      careerTotalsSeasons: totalsTimeline,
-      isGoalie,
-      distinctSeasonComparisons: true,
-    })));
-    const [badges, achievements, articles, matchups, hotFacts] = await Promise.all([
-      unwrapDependency(badgesRead),
-      unwrapDependency(achievementsRead),
-      unwrapDependency(articlesRead),
-      unwrapDependency(matchupsRead),
-      unwrapDependency(hotFactsRead),
+    const whileRequestActive = <T,>(read: () => Promise<T>) => () => {
+      assertRequestActive(request);
+      return read();
+    };
+    const [badges, achievements, articles, matchups, hotFacts] = await consumeAllDependencies<[
+      PlayerBadge[],
+      { championships: number },
+      NewsArticle[],
+      Matchup[],
+      string[],
+    ]>([
+      whileRequestActive(() => atDependencyStage('badges', () => deps.getBadges(profileId))),
+      whileRequestActive(() => atDependencyStage('achievements', () => deps.getImportedAchievements(profileId, league.id))),
+      whileRequestActive(() => atDependencyStage('articles', () => deps.getArticles(profileId))),
+      whileRequestActive(() => hasSelectedCanonicalScope
+        ? atDependencyStage('matchups', () => deps.getMatchups(profileId, selectedSeasonId, isGoalie))
+        : Promise.resolve([])),
+      whileRequestActive(() => atDependencyStage('hot_facts', () => deps.generateHotFacts({
+        playerName: player.profile?.full_name?.trim() || 'Unknown Player',
+        seasons: visibleTimeline,
+        careerTotalsSeasons: totalsTimeline,
+        isGoalie,
+        distinctSeasonComparisons: true,
+      }))),
     ]);
     assertRequestActive(request);
     const safeBadges = badges.filter((badge) => badge.league_id === league.id && leagueSeasonIds.has(badge.season_id));
