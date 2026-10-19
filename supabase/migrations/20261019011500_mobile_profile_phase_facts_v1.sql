@@ -5,6 +5,28 @@
 
 begin;
 
+-- Snapshot the effective service_role schema privilege before this migration
+-- changes any database object. The namespaced setting is transaction-local and
+-- disappears at commit/rollback; the ownership lifecycle below restores it.
+do $function_owner_privilege_snapshot$
+declare
+  v_service_role_had_schema_create boolean;
+begin
+  select pg_catalog.has_schema_privilege('service_role', 'public', 'CREATE')
+    into v_service_role_had_schema_create;
+  if v_service_role_had_schema_create is null then
+    raise exception using
+      errcode = '55000',
+      message = 'mobile profile service_role schema CREATE privilege snapshot unavailable';
+  end if;
+  perform pg_catalog.set_config(
+    'hockey_life.mobile_profile_service_role_public_create_before',
+    v_service_role_had_schema_create::text,
+    true
+  );
+end;
+$function_owner_privilege_snapshot$;
+
 -- Every required access path is preflighted before the first CREATE. A same-name
 -- object is reusable only when pg_get_indexdef plus valid/ready state match
 -- exactly. Only indexes created here receive the ownership marker used by the
@@ -1436,8 +1458,37 @@ $function$;
 
 -- Ownership is part of the execution boundary: PostgreSQL function owners have
 -- implicit EXECUTE even after ACL revocation, so service_role must be the owner.
-alter function public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid)
-  owner to service_role;
+-- Some Supabase environments intentionally deny service_role persistent CREATE
+-- on public. Snapshot that effective privilege exactly, add it transactionally
+-- only when required for ALTER OWNER, and restore the snapshot before commit.
+do $function_owner_lifecycle$
+declare
+  v_service_role_had_schema_create boolean;
+  v_service_role_has_schema_create boolean;
+begin
+  v_service_role_had_schema_create := pg_catalog.current_setting(
+    'hockey_life.mobile_profile_service_role_public_create_before'
+  )::boolean;
+
+  if not v_service_role_had_schema_create then
+    execute 'GRANT CREATE ON SCHEMA public TO service_role';
+  end if;
+
+  execute 'ALTER FUNCTION public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid) OWNER TO service_role';
+
+  if not v_service_role_had_schema_create then
+    execute 'REVOKE CREATE ON SCHEMA public FROM service_role';
+  end if;
+
+  select pg_catalog.has_schema_privilege('service_role', 'public', 'CREATE')
+    into v_service_role_has_schema_create;
+  if v_service_role_has_schema_create is distinct from v_service_role_had_schema_create then
+    raise exception using
+      errcode = '55000',
+      message = 'mobile profile service_role schema CREATE privilege was not restored';
+  end if;
+end;
+$function_owner_lifecycle$;
 
 comment on function public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid) is
   'V1 server-only, invoker-rights mobile Player Profile phase facts with pre-aggregation work/row/byte caps.';

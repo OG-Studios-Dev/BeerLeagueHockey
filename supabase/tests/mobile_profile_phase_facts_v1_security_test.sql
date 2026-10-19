@@ -7,9 +7,25 @@ create role authenticated nologin;
 create role service_role nologin bypassrls;
 create role hostile_function_owner nologin;
 create role hostile_extra_grantee nologin;
+create role trusted_migration_role nologin;
 
 grant usage on schema public to anon, authenticated, service_role, hostile_function_owner;
 grant create on schema public to hostile_function_owner;
+revoke create on schema public from public, service_role;
+alter schema public owner to trusted_migration_role;
+grant service_role, hostile_function_owner to trusted_migration_role;
+set role trusted_migration_role;
+
+do $pre_migration_schema_create$
+begin
+  if pg_catalog.has_schema_privilege('service_role', 'public', 'CREATE') is distinct from false then
+    raise exception 'service_role unexpectedly has CREATE on public before migration';
+  end if;
+  if pg_catalog.has_schema_privilege('trusted_migration_role', 'public', 'CREATE') is distinct from true then
+    raise exception 'trusted migration role lacks CREATE on public';
+  end if;
+end;
+$pre_migration_schema_create$;
 
 create table public.leagues (
   id uuid primary key,
@@ -267,6 +283,15 @@ grant execute on function public.mobile_profile_phase_facts_v1(text, uuid, uuid,
   to hostile_extra_grantee;
 
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
+reset role;
+
+do $post_migration_schema_create$
+begin
+  if pg_catalog.has_schema_privilege('service_role', 'public', 'CREATE') is distinct from false then
+    raise exception 'service_role CREATE on public was not restored after migration';
+  end if;
+end;
+$post_migration_schema_create$;
 
 -- Catalog, replacement, ACL, qualification, and pre-aggregation cap contract.
 do $catalog$
@@ -914,24 +939,34 @@ do $cross_tenant_marker$ begin raise log 'V14_2_CROSS_TENANT_20K_END'; end $cros
 -- forward installation after an explicit rollback-equivalent removal.
 grant execute on function public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid)
   to hostile_extra_grantee;
+set role trusted_migration_role;
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
+reset role;
 
 do $reapply$
 begin
   if pg_catalog.has_function_privilege('hostile_extra_grantee', 'public.mobile_profile_phase_facts_v1(text,uuid,uuid,uuid)', 'execute') then
     raise exception 'hostile direct grant survived same-signature reapply';
   end if;
+  if pg_catalog.has_schema_privilege('service_role', 'public', 'CREATE') is distinct from false then
+    raise exception 'service_role CREATE on public was not restored after hostile reapply';
+  end if;
 end;
 $reapply$;
 
 drop function public.mobile_profile_phase_facts_v1(text, uuid, uuid, uuid);
+set role trusted_migration_role;
 \ir ../migrations/20261019011500_mobile_profile_phase_facts_v1.sql
+reset role;
 
 do $clean_reapply$
 begin
   if not pg_catalog.has_function_privilege('service_role', 'public.mobile_profile_phase_facts_v1(text,uuid,uuid,uuid)', 'execute')
      or pg_catalog.has_function_privilege('anon', 'public.mobile_profile_phase_facts_v1(text,uuid,uuid,uuid)', 'execute') then
     raise exception 'clean reapply ACL mismatch';
+  end if;
+  if pg_catalog.has_schema_privilege('service_role', 'public', 'CREATE') is distinct from false then
+    raise exception 'service_role CREATE on public was not restored after clean reapply';
   end if;
 end;
 $clean_reapply$;
