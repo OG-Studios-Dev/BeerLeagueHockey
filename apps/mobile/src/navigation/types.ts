@@ -36,6 +36,7 @@ export type GameAvailabilityIntent = 'invite-sub';
 
 export type CaptainStackParamList = {
   CaptainDashboard: undefined;
+  Scoreboard: { gameId: string; teamId: string; leagueId: string; seasonId: string };
   GameAvailability: { gameId: string; teamId: string; leagueId: string; intent?: GameAvailabilityIntent };
   BeerTracker: { teamId: string; seasonId: string };
 };
