@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AccessibleChoiceGroup from '../../components/AccessibleChoiceGroup';
+import FindSpareModal from '../../components/captain/FindSpareModal';
 import Avatar from '../../components/Avatar';
 import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 import { SECTION_HEADING_TEXT_STYLE } from '../../components/SectionHeader';
@@ -11,14 +12,13 @@ import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import { useAuth } from '../../context/AuthContext';
 import {
   clearPlayerCheckinAsCaptain, createGoalieRequest, getCaptainRoleForSeason, getGameCheckinStatusMap,
-  getLeagueSubPlayers, getOpenGoalieRequest, getTeamSubInvitations, inviteSub,
-  updatePlayerCheckinAsCaptain, type CaptainRole, type GoalieRequestRow, type SubCandidate,
-  type TeamSubInvitation,
+  getOpenGoalieRequest,
+  updatePlayerCheckinAsCaptain, type CaptainRole, type GoalieRequestRow,
 } from '../../lib/supabase/captain';
 import { type CheckinStatus } from '../../lib/supabase/checkins';
 import { supabase } from '../../lib/supabase/client';
-import { getTeamRoster, type RosterMemberRow } from '../../lib/supabase/data';
-import { getTeamActiveSeason } from '../../lib/supabase/team';
+import { getBeerGuyGameState, manageBeerGuyAsCaptain, type BeerGuyAssignment } from '../../lib/supabase/beerGuy';
+import { getActiveSeasonRoster, getTeamActiveSeason, type TeamRosterMember } from '../../lib/supabase/team';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 import colors from '../../theme/colors';
 
@@ -48,6 +48,8 @@ type ScreenProps = {
   navigation: { goBack(): void };
 };
 
+type BeerFact = { scope: string; assignment: BeerGuyAssignment | null; error: string | null; revision: number };
+
 type ScopedStatusFact = {
   value: CheckinStatus | null;
   revision: number;
@@ -60,7 +62,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
   const userId = user?.id ?? null;
   const routeKey = `${leagueId}:${teamId}:${gameId}`;
   const controlKey = `${userId ?? 'anonymous'}:${routeKey}`;
-  const [roster, setRoster] = React.useState<RosterMemberRow[]>([]);
+  const [roster, setRoster] = React.useState<TeamRosterMember[]>([]);
   const [checkinMap, setCheckinMap] = React.useState<Record<string, CheckinStatus>>({});
   const [gameInfo, setGameInfo] = React.useState<{ opponent: string; date: string; location: string | null } | null>(null);
   const [captainRole, setCaptainRole] = React.useState<CaptainRole | null>(null);
@@ -71,20 +73,18 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [statusSavingPlayerId, setStatusSavingPlayerId] = React.useState<string | null>(null);
   const [subModalVisible, setSubModalVisible] = React.useState(false);
-  const [subCandidates, setSubCandidates] = React.useState<SubCandidate[]>([]);
-  const [subInvitations, setSubInvitations] = React.useState<TeamSubInvitation[]>([]);
-  const [subSearch, setSubSearch] = React.useState('');
-  const [loadingSubs, setLoadingSubs] = React.useState(false);
-  const [subSavingPlayerId, setSubSavingPlayerId] = React.useState<string | null>(null);
   const [goalieModalVisible, setGoalieModalVisible] = React.useState(false);
   const [goalieRequest, setGoalieRequest] = React.useState<GoalieRequestRow | null>(null);
   const [goalieSkillLevel, setGoalieSkillLevel] = React.useState('intermediate');
   const [goalieCompensation, setGoalieCompensation] = React.useState('Free');
   const [goalieSaving, setGoalieSaving] = React.useState(false);
+  const [beerFact, setBeerFact] = React.useState<BeerFact | null>(null);
+  const confirmedBeerRef = React.useRef<Map<string, BeerFact>>(new Map());
+  const beerRevisionRef = React.useRef(0);
+  const beerReadGenerationRef = React.useRef<Map<string, number>>(new Map());
   const loadGenerationRef = React.useRef(0);
   const validatedRouteRef = React.useRef<string | null>(null);
   const activeScopeRef = React.useRef<string | null>(null);
-  const subLoadTokenRef = React.useRef(0);
   const consumedInviteIntentKeysRef = React.useRef<Set<string>>(new Set());
   const confirmedStatusRef = React.useRef<Map<string, ScopedStatusFact>>(new Map());
   const confirmedStatusRevisionRef = React.useRef(0);
@@ -93,21 +93,38 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
   const writeGuardsRef = React.useRef<Map<string, 'pending' | 'succeeded'>>(new Map());
   const [writeGuardStates, setWriteGuardStates] = React.useState<Record<string, 'pending' | 'succeeded'>>({});
 
+  // All authoritative observations share the same scope-local revision. A canonical
+  // holder also proves confirmed attendance (the existing RPC's atomic invariant).
+  const recordBeerFact = React.useCallback((scope: string, assignment: BeerGuyAssignment | null, error: string | null) => {
+    const previous = confirmedBeerRef.current.get(scope);
+    if (!error && assignment && previous?.assignment?.id === assignment.id
+      && previous.assignment.version > assignment.version) return previous;
+    const fact = { scope, assignment, error, revision: ++beerRevisionRef.current };
+    confirmedBeerRef.current.set(scope, fact);
+    const holder = !error ? assignment?.player_id : null;
+    if (holder) confirmedStatusRef.current.set(`${scope}:${holder}`, { value: 'confirmed', revision: ++confirmedStatusRevisionRef.current });
+    if (validatedRouteRef.current === scope) {
+      setBeerFact(fact);
+      if (holder) setCheckinMap(current => ({ ...current, [holder]: 'confirmed' }));
+    }
+    return fact;
+  }, []);
+
   const loadData = React.useCallback(async () => {
     const generation = ++loadGenerationRef.current;
+    const beerReadGeneration = (beerReadGenerationRef.current.get(controlKey) ?? 0) + 1;
+    beerReadGenerationRef.current.set(controlKey, beerReadGeneration);
+    const beerRevisionAtLoad = confirmedBeerRef.current.get(controlKey)?.revision ?? 0;
     const confirmedRevisionsAtLoad = new Map(
       [...confirmedStatusRef.current].map(([key, fact]) => [key, fact.revision]),
     );
     validatedRouteRef.current = null;
     setValidatedRouteKey(null);
-    subLoadTokenRef.current += 1;
-    setSubCandidates([]); setLoadingSubs(false);
     if (activeScopeRef.current !== controlKey) {
       activeScopeRef.current = controlKey;
-      setSubSearch('');
       setGoalieSkillLevel('intermediate'); setGoalieCompensation('Free');
     }
-    setStatusSavingPlayerId(null); setSubSavingPlayerId(null); setGoalieSaving(false);
+    setStatusSavingPlayerId(null); setGoalieSaving(false);
     setSubModalVisible(false); setGoalieModalVisible(false);
     setLoading(true); setAccessMessage(null); setActionError(null); setCaptainRole(null);
     try {
@@ -139,7 +156,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       if (generation !== loadGenerationRef.current) return;
       validatedRouteRef.current = controlKey;
       setValidatedRouteKey(controlKey);
-      const rosterData = await getTeamRoster(teamId, leagueId);
+      const rosterData = await getActiveSeasonRoster(teamId, leagueId, season.id);
       if (generation !== loadGenerationRef.current) return;
       setRoster(rosterData); setCaptainRole(role);
       const home = Array.isArray(g.home_team) ? g.home_team[0] : g.home_team;
@@ -151,10 +168,13 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       location: g.location ?? null,
       });
       if (role) {
-      const [checkins, invitations, request] = await Promise.all([
-        getGameCheckinStatusMap(gameId, teamId), getTeamSubInvitations(teamId, [gameId]), getOpenGoalieRequest(gameId, teamId),
+      const [checkins, request, beer] = await Promise.all([
+        getGameCheckinStatusMap(gameId, teamId), getOpenGoalieRequest(gameId, teamId), getBeerGuyGameState(gameId, teamId),
       ]);
       if (generation !== loadGenerationRef.current) return;
+      const confirmedBeer = confirmedBeerRef.current.get(controlKey);
+      if (confirmedBeer && (confirmedBeer.revision > beerRevisionAtLoad || beerReadGenerationRef.current.get(controlKey) !== beerReadGeneration)) setBeerFact(confirmedBeer);
+      else if (beerReadGenerationRef.current.get(controlKey) === beerReadGeneration) recordBeerFact(controlKey, beer.data?.assignment ?? null, beer.error ?? (!beer.data ? 'Beer Guy unavailable' : null));
       const authoritativeRevision = ++authoritativeStatusRevisionRef.current;
       for (const player of rosterData) {
         const statusKey = `${controlKey}:${player.player_id}`;
@@ -174,9 +194,9 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
         }
         return merged;
       });
-      setSubInvitations(invitations.data ?? []); setGoalieRequest(request);
+      setGoalieRequest(request);
       } else {
-      setCheckinMap({}); setSubInvitations([]); setGoalieRequest(null);
+      setCheckinMap({}); setGoalieRequest(null);
       }
     } catch {
       if (generation === loadGenerationRef.current) {
@@ -185,9 +205,12 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
         setAccessMessage('Unable to load game availability.');
       }
     } finally {
-      if (generation === loadGenerationRef.current) setLoading(false);
+      if (generation === loadGenerationRef.current) {
+        setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
+        setLoading(false);
+      }
     }
-  }, [controlKey, gameId, leagueId, teamId, userId]);
+  }, [controlKey, gameId, leagueId, recordBeerFact, teamId, userId]);
 
   React.useEffect(() => {
     void loadData();
@@ -204,7 +227,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     const operationPrefix = `status:${controlKey}:${playerId}:`;
     const operationKey = `${operationPrefix}${nextStatus}`;
     const anotherStatusPending = [...writeGuardsRef.current].some(([key, state]) => key.startsWith(operationPrefix) && state === 'pending');
-    if (!canMutate || anotherStatusPending || writeGuardsRef.current.get(operationKey) === 'pending') return;
+    if (!canMutate || validatedRouteRef.current !== controlKey || !roster.some(player => player.player_id === playerId) || writeGuardsRef.current.has(`beer:${controlKey}`) || anotherStatusPending || writeGuardsRef.current.get(operationKey) === 'pending') return;
     const operationControlKey = controlKey;
     const operationGameId = gameId;
     const operationTeamId = teamId;
@@ -250,6 +273,12 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
           return confirmed;
         });
       }
+      const beerReadGeneration = (beerReadGenerationRef.current.get(operationControlKey) ?? 0) + 1;
+      beerReadGenerationRef.current.set(operationControlKey, beerReadGeneration);
+      const beer = await getBeerGuyGameState(operationGameId, operationTeamId);
+      if (beerReadGenerationRef.current.get(operationControlKey) === beerReadGeneration) {
+        recordBeerFact(operationControlKey, beer.data?.assignment ?? null, beer.error ?? (!beer.data ? 'Beer Guy unavailable' : null));
+      }
     } catch {
       writeGuardsRef.current.delete(operationKey);
       if (validatedRouteRef.current === operationControlKey) {
@@ -271,26 +300,46 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     }
   }
 
-  const openSubModal = React.useCallback(async () => {
-    if (!canMutate) return;
-    setSubModalVisible(true); setSubSearch(''); setActionError(null);
-    if (subCandidates.length || loadingSubs) return;
+  async function handleBeerChange(playerId: string) {
+    const operationKey = `beer:${controlKey}`;
+    const observed = beerFact?.scope === controlKey ? beerFact : null;
+    const pendingStatus = [...writeGuardsRef.current].some(([key, state]) => key.startsWith(`status:${controlKey}:`) && state === 'pending');
+    if (!canMutate || validatedRouteRef.current !== controlKey || !roster.some(player => player.player_id === playerId)
+      || !observed || observed.error || pendingStatus || writeGuardsRef.current.has(operationKey)) return;
     const operationControlKey = controlKey;
-    const loadToken = ++subLoadTokenRef.current;
-    setLoadingSubs(true);
+    const target = observed.assignment?.player_id === playerId ? null : playerId;
+    writeGuardsRef.current.set(operationKey, 'pending');
+    setWriteGuardStates(Object.fromEntries(writeGuardsRef.current)); setActionError(null);
     try {
-      const result = await getLeagueSubPlayers(leagueId, teamId);
-      if (loadToken !== subLoadTokenRef.current || validatedRouteRef.current !== operationControlKey) return;
-      if (!result.success) { setActionError(result.error ?? 'Unable to load sub players.'); return; }
-      setSubCandidates(result.data ?? []);
-    } catch {
-      if (loadToken === subLoadTokenRef.current && validatedRouteRef.current === operationControlKey) {
-        setActionError('Unable to load sub players.');
+      const result = await manageBeerGuyAsCaptain(gameId, teamId, target, observed.assignment?.id ?? null, observed.assignment?.version ?? null);
+      if (result.error || !result.data) {
+        if (validatedRouteRef.current === operationControlKey) setActionError(result.error ?? 'Unable to update Beer Guy.');
+        return;
       }
+      if (result.data.outcome === 'conflict') {
+        const beerReadGeneration = (beerReadGenerationRef.current.get(operationControlKey) ?? 0) + 1;
+        beerReadGenerationRef.current.set(operationControlKey, beerReadGeneration);
+        const refreshed = await getBeerGuyGameState(gameId, teamId);
+        if (beerReadGenerationRef.current.get(operationControlKey) === beerReadGeneration) {
+          recordBeerFact(operationControlKey, refreshed.data?.assignment ?? null, refreshed.error ?? (!refreshed.data ? 'Beer Guy unavailable' : null));
+        }
+        if (validatedRouteRef.current === operationControlKey) {
+          setActionError('Beer Guy changed. Review the current assignment and try again.');
+        }
+        return;
+      }
+      beerReadGenerationRef.current.set(operationControlKey, (beerReadGenerationRef.current.get(operationControlKey) ?? 0) + 1);
+      recordBeerFact(operationControlKey, result.data.assignment, null);
     } finally {
-      if (loadToken === subLoadTokenRef.current && validatedRouteRef.current === operationControlKey) setLoadingSubs(false);
+      writeGuardsRef.current.delete(operationKey);
+      if (validatedRouteRef.current === operationControlKey) setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
     }
-  }, [canMutate, controlKey, leagueId, loadingSubs, subCandidates.length, teamId]);
+  }
+
+  const openSubModal = React.useCallback(() => {
+    if (!canMutate || validatedRouteRef.current !== controlKey) return;
+    setSubModalVisible(true);
+  }, [canMutate, controlKey]);
 
   React.useEffect(() => {
     if (routeIntent !== 'invite-sub' || !canMutate || validatedRouteRef.current !== controlKey) return;
@@ -299,42 +348,6 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
     consumedInviteIntentKeysRef.current.add(intentKey);
     void openSubModal();
   }, [canMutate, controlKey, openSubModal, routeIntent]);
-
-  async function handleInviteSub(playerId: string) {
-    const operationKey = `invite:${controlKey}:${playerId}`;
-    if (!canMutate || writeGuardsRef.current.has(operationKey)) return;
-    const operationControlKey = controlKey;
-    const operationGameId = gameId;
-    const operationTeamId = teamId;
-    writeGuardsRef.current.set(operationKey, 'pending');
-    setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
-    setSubSavingPlayerId(playerId); setActionError(null);
-    try {
-      const result = await inviteSub(operationGameId, operationTeamId, playerId);
-      if (!result.success) {
-        writeGuardsRef.current.delete(operationKey);
-        if (validatedRouteRef.current === operationControlKey) {
-          setActionError(result.error ?? 'Unable to invite this sub.');
-        }
-        return;
-      }
-
-      writeGuardsRef.current.set(operationKey, 'succeeded');
-      setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
-      try {
-        const refreshed = await getTeamSubInvitations(operationTeamId, [operationGameId]);
-        if (validatedRouteRef.current === operationControlKey) setSubInvitations(refreshed.data ?? []);
-      } catch {
-        // The write is confirmed. A readback failure must not make it retryable.
-      }
-    } catch {
-      writeGuardsRef.current.delete(operationKey);
-      if (validatedRouteRef.current === operationControlKey) setActionError('Unable to invite this sub.');
-    } finally {
-      setWriteGuardStates(Object.fromEntries(writeGuardsRef.current));
-      if (validatedRouteRef.current === operationControlKey) setSubSavingPlayerId(null);
-    }
-  }
 
   async function handleRequestGoalie() {
     const operationKey = `goalie:${controlKey}`;
@@ -379,7 +392,7 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
   }
 
   const groups = React.useMemo(() => {
-    const grouped: Record<string, RosterMemberRow[]> = { confirmed: [], tentative: [], out: [], noResponse: [] };
+    const grouped: Record<string, TeamRosterMember[]> = { confirmed: [], tentative: [], out: [], noResponse: [] };
     roster.forEach((player) => grouped[checkinMap[player.player_id] ?? 'noResponse'].push(player));
     return [
       { key: 'confirmed', label: 'In', icon: 'checkmark-circle', color: colors.accentGreen, players: grouped.confirmed },
@@ -388,12 +401,6 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       { key: 'noResponse', label: 'No Response', icon: 'ellipse-outline', color: colors.textSecondary, players: grouped.noResponse },
     ];
   }, [checkinMap, roster]);
-  const invitedIds = React.useMemo(() => new Set(subInvitations.map((invite) => invite.invitedPlayerId)), [subInvitations]);
-  const visibleSubs = React.useMemo(() => {
-    const query = subSearch.trim().toLowerCase();
-    return subCandidates.filter((candidate) => !query || (candidate.full_name ?? '').toLowerCase().includes(query) || (candidate.email ?? '').toLowerCase().includes(query));
-  }, [subCandidates, subSearch]);
-  const goalieGuardState = writeGuardStates[`goalie:${controlKey}`];
   const dataBelongsToIdentity = validatedRouteKey === controlKey;
   const captainAccess = dataBelongsToIdentity ? captainRole : null;
 
@@ -407,23 +414,26 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
         <Text style={styles.gameTitle}>vs {gameInfo.opponent}</Text><Text style={styles.secondary}>{gameInfo.date}</Text>
         {gameInfo.location && <View style={styles.inline}><Ionicons name="location-outline" size={13} color={colors.textSecondary} /><Text style={styles.secondary}>{gameInfo.location}</Text></View>}
       </FocusCard>}
-      {captainAccess && <FocusCard focusId={`availability:${gameId}:captain`} style={styles.card}>
-        <Text style={styles.sectionTitle}>Captain tools</Text><Text style={styles.secondary}>Manage this game for your current Hockey Life team.</Text>
-        {actionError && <Text testID="captain-action-error" accessibilityRole="alert" style={styles.error}>{actionError}</Text>}
-        <View style={styles.actions}>
-          <Pressable testID="captain-request-sub" accessibilityRole="button" onPress={() => void openSubModal()} style={styles.primaryButton}><Text style={styles.buttonText}>Request Sub</Text></Pressable>
-          <Pressable testID="captain-request-goalie" accessibilityRole="button" disabled={Boolean(goalieRequest) || Boolean(goalieGuardState)} onPress={() => setGoalieModalVisible(true)} style={[styles.primaryButton, (goalieRequest || goalieGuardState) && styles.disabled]}><Text style={styles.buttonText}>{goalieRequest || goalieGuardState === 'succeeded' ? 'Goalie Requested' : goalieGuardState === 'pending' ? 'Posting…' : 'Request Goalie'}</Text></Pressable>
-        </View>
-      </FocusCard>}
+      {captainAccess && actionError && <Text testID="captain-action-error" accessibilityRole="alert" style={styles.error}>{actionError}</Text>}
       <View style={styles.counts}>{groups.map((group) => <View key={group.key} style={styles.countCard}><Text style={[styles.count, { color: group.color }]}>{group.players.length}</Text><Text style={styles.countLabel}>{group.label}</Text></View>)}</View>
       {groups.map((group) => group.players.length ? <FocusCard key={group.key} focusId={`availability:${gameId}:${group.key}`} accentColor={group.color} style={styles.card}>
         <Text style={[styles.sectionTitle, { color: group.color }]}>{group.label} ({group.players.length})</Text>
         {group.players.map((player) => {
           const statusPrefix = `status:${controlKey}:${player.player_id}:`;
-          const statusPending = statusSavingPlayerId === player.player_id || Object.entries(writeGuardStates).some(([key, state]) => key.startsWith(statusPrefix) && state === 'pending');
+          const beerPending = writeGuardStates[`beer:${controlKey}`] === 'pending';
+          const beerKnown = beerFact?.scope === controlKey && !beerFact.error;
+          const isBeerGuy = Boolean(beerKnown && beerFact?.assignment?.player_id === player.player_id && checkinMap[player.player_id] === 'confirmed');
+          const anyStatusPending = Object.entries(writeGuardStates).some(([key, state]) => key.startsWith(`status:${controlKey}:`) && state === 'pending');
+          const statusPending = beerPending || statusSavingPlayerId === player.player_id || Object.entries(writeGuardStates).some(([key, state]) => key.startsWith(statusPrefix) && state === 'pending');
           return <View key={player.player_id} style={styles.playerRow}>
             <Avatar uri={player.avatar_url ?? null} name={player.player_name} size={36} />
             <View style={styles.playerInfo}><Text style={styles.playerName}>{player.player_name}</Text><Text style={styles.secondary}>#{player.jersey_number ?? '--'} {player.position ?? ''}</Text></View>
+            {captainAccess && <Pressable testID={`captain-beer-${player.player_id}`} accessibilityRole="checkbox"
+              accessibilityLabel={`${player.player_name} Beer Guy`} accessibilityHint={isBeerGuy ? 'Clear Beer Guy and remain In.' : 'Assign Beer Guy and check in as In.'}
+              accessibilityState={{ checked: beerKnown ? isBeerGuy : 'mixed', disabled: !beerKnown || beerPending || anyStatusPending, busy: beerPending }}
+              disabled={!beerKnown || beerPending || anyStatusPending} onPress={() => void handleBeerChange(player.player_id)} style={styles.beerButton}>
+              <Text style={styles.secondary}>{beerPending ? 'Updating Beer Guy…' : !beerKnown ? '🍺 Beer Guy unavailable' : isBeerGuy ? '🍺 Beer Guy ✓' : '🍺 Beer Guy'}</Text>
+            </Pressable>}
             {captainAccess ? <SelectableControlGroup role="radiogroup" accessibilityLabel={`${player.player_name} check-in status`} contentContainerStyle={styles.statusActions}>{STATUS_CHOICES.map((choice) => <SelectableControl key={choice.value}
               testID={`captain-status-${player.player_id}-${choice.value}`} role="radio" label={choice.label}
               selected={(checkinMap[player.player_id] ?? 'waiting') === choice.value}
@@ -435,18 +445,8 @@ export default function GameAvailabilityScreen({ route, navigation }: ScreenProp
       {!roster.length && <View style={styles.emptyCard}><Text style={styles.emptyTitle}>No roster data available</Text></View>}
     </FocusScrollView>
 
-    <Modal visible={subModalVisible} transparent animationType="fade" onRequestClose={() => setSubModalVisible(false)}><View style={styles.overlay}><View style={styles.modal}>
-      <Text style={styles.sectionTitle}>Invite a Sub</Text><TextInput testID="captain-sub-search" style={styles.input} value={subSearch} onChangeText={setSubSearch} placeholder="Search by name or email" placeholderTextColor={colors.textSecondary} />
-      {loadingSubs ? <ActivityIndicator color={colors.primary} /> : visibleSubs.map((candidate) => {
-        const guardState = writeGuardStates[`invite:${controlKey}:${candidate.id}`];
-        const invited = invitedIds.has(candidate.id) || guardState === 'succeeded';
-        const sending = subSavingPlayerId === candidate.id || guardState === 'pending';
-        return <View key={candidate.id} style={styles.playerRow}><View style={styles.playerInfo}><Text style={styles.playerName}>{candidate.full_name ?? 'Unknown player'}</Text>{candidate.email && <Text style={styles.secondary}>{candidate.email}</Text>}</View>
-          <Pressable testID={`captain-invite-sub-${candidate.id}`} accessibilityRole="button" disabled={invited || sending} onPress={() => void handleInviteSub(candidate.id)} style={styles.primaryButton}><Text style={styles.buttonText}>{invited ? 'Invited' : sending ? 'Sending…' : 'Invite'}</Text></Pressable>
-        </View>;
-      })}
-      <Pressable testID="captain-close-sub-modal" accessibilityRole="button" onPress={() => setSubModalVisible(false)} style={styles.secondaryButton}><Text style={styles.buttonText}>Close</Text></Pressable>
-    </View></View></Modal>
+    <FindSpareModal scope={{ gameId, teamId, leagueId }} actorId={userId} visible={subModalVisible && canMutate} gameDateLabel={gameInfo?.date}
+      onClose={() => { setSubModalVisible(false); void loadData(); }} />
 
     <Modal visible={goalieModalVisible} transparent animationType="fade" onRequestClose={() => setGoalieModalVisible(false)}><View style={styles.overlay}><View style={styles.modal}>
       <Text style={styles.sectionTitle}>Request a Goalie</Text><Text style={styles.secondary}>Skill level needed</Text>
@@ -463,6 +463,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.bgSurface, borderRadius: 16, borderWidth: 1, borderColor: colors.glassStroke, padding: 14, gap: 10 }, gameTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary }, sectionTitle: { ...SECTION_HEADING_TEXT_STYLE, color: colors.textPrimary }, secondary: { fontSize: 12, fontWeight: '600', color: colors.textSecondary }, inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   error: { color: colors.accentRed, fontSize: 12, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, primaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.primary }, secondaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.bgInteractive }, buttonText: { color: colors.textPrimary, fontSize: 12, fontWeight: '800' }, disabled: { opacity: 0.5 },
   counts: { flexDirection: 'row', gap: 8 }, countCard: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, backgroundColor: colors.bgSurface }, count: { fontSize: 22, fontWeight: '900' }, countLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
+  beerButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 10, backgroundColor: colors.bgInteractive },
   playerRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingVertical: 8 }, playerInfo: { flex: 1, minWidth: 100 }, playerName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary }, statusActions: { width: '100%', gap: 6 }, statusButton: { minWidth: 88 }, dot: { width: 10, height: 10, borderRadius: 5 },
   emptyCard: { padding: 32, alignItems: 'center', borderRadius: 16, backgroundColor: colors.bgSurface }, emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.textSecondary, textAlign: 'center' }, overlay: { flex: 1, justifyContent: 'center', padding: 16, backgroundColor: '#000000AA' }, modal: { borderRadius: 16, padding: 16, gap: 12, backgroundColor: colors.bgModal, borderWidth: 1, borderColor: colors.glassStroke }, input: { minHeight: 44, borderRadius: 10, paddingHorizontal: 12, color: colors.textPrimary, backgroundColor: colors.bgInteractive },
 });

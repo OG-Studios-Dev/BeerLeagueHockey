@@ -150,6 +150,7 @@ function mountDashboard(options: {
     '../../config/hockeyLife': { HOCKEY_LIFE_ID },
     '../../config/publicLinks': captainLinkMock,
     '../../lib/publicLinks': publicLinkMock,
+    '../../lib/supabase/captainScoring': { getScoringTarget: async () => ({ gameId:'scoring-due',teamId:'team-current',leagueId:HOCKEY_LIFE_ID,seasonId:activeSeason.id }) },
     '../../lib/supabase/team': {
       getTeamActiveSeason: async (...args: any[]) => {
         calls.season.push(args);
@@ -342,7 +343,7 @@ describe('captain dashboard active-season scoping', () => {
 
     const rendered = nodeText(run.h.output);
     assert.match(rendered, /No upcoming game/);
-    for (const testID of ['captain-edit-attendance', 'captain-invite-sub', 'captain-set-lineup', 'captain-score-game']) {
+    for (const testID of ['captain-edit-attendance', 'captain-invite-sub', 'captain-set-lineup']) {
       assert.equal(findNode(run.h.output, node => node.props.testID === testID), undefined, testID);
     }
     const fees = findNode(run.h.output, node => node.props.testID === 'captain-team-fees');
@@ -376,9 +377,9 @@ describe('captain dashboard active-season scoping', () => {
     const grid = findNode(run.h.output, node => node.props.testID === 'captain-game-actions');
     assert.ok(grid);
     assert.deepEqual(grid.props.children.map((child: any) => child.props.testID), [
-      'captain-edit-attendance', 'captain-invite-sub', 'captain-set-lineup', 'captain-score-game',
+      'captain-edit-attendance', 'captain-invite-sub', 'captain-set-lineup',
     ]);
-    for (const testID of [...grid.props.children.map((child: any) => child.props.testID), 'captain-team-fees']) {
+    for (const testID of [...grid.props.children.map((child: any) => child.props.testID), 'captain-score-game', 'captain-team-fees']) {
       findNode(run.h.output, node => node.props.testID === testID)?.props.onPress();
     }
     await settle(run.h);
@@ -386,10 +387,10 @@ describe('captain dashboard active-season scoping', () => {
     assert.deepEqual(run.calls.navigate, [
       ['GameAvailability', { gameId: 'game-current', teamId: 'team-current', leagueId: HOCKEY_LIFE_ID }],
       ['GameAvailability', { gameId: 'game-current', teamId: 'team-current', leagueId: HOCKEY_LIFE_ID, intent: 'invite-sub' }],
+      ['Scoreboard', {gameId:'scoring-due',teamId:'team-current',leagueId:HOCKEY_LIFE_ID,seasonId:activeSeason.id}],
     ]);
     assert.deepEqual(run.calls.openedUrls, [
       'https://hockey-life.beerleaguehockey.ca/hockey-life/captain/lineups/game-current?mode=lineup',
-      'https://hockey-life.beerleaguehockey.ca/hockey-life/captain',
       'https://hockey-life.beerleaguehockey.ca/hockey-life/captain/fees',
     ]);
   });
@@ -653,10 +654,11 @@ function mountAvailability(options: {
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     '../../navigation/cutIceSafeAreaPolicy': { cutIceContentEdges: (value: any) => value },
     '../../components/Avatar': () => null,
+    '../../components/captain/FindSpareModal': (props: any) => props.visible ? createElement('FindSpareBoundary', { ...props, testID: 'find-spare-boundary' }, createElement('Pressable', { testID: 'find-spare-boundary-close', onPress: props.onClose })) : null,
     '../../components/AccessibleChoiceGroup': (p: any) => createElement('ChoiceGroup', p),
     '../../context/AuthContext': { useAuth: () => ({ user: authUser }) },
     '../../config/hockeyLife': { HOCKEY_LIFE_ID },
-    '../../lib/supabase/team': { getTeamActiveSeason: async (...args: any[]) => {
+    '../../lib/supabase/team': { getActiveSeasonRoster: async (...args: any[]) => { calls.roster.push(args); return options.rosterData ?? roster; }, getTeamActiveSeason: async (...args: any[]) => {
       calls.season.push(args);
       if (options.seasonLoader) return options.seasonLoader(...args);
       return { season: options.season === undefined ? activeSeason : options.season, error: null };
@@ -667,8 +669,8 @@ function mountAvailability(options: {
       if (options.gameLoader) builder.maybeSingle = () => options.gameLoader!(currentParams);
       return builder;
     } } },
-    '../../lib/supabase/data': { getTeamRoster: async (...args: any[]) => { calls.roster.push(args); return options.rosterData ?? roster; } },
     '../../lib/supabase/captain': services,
+    '../../lib/supabase/beerGuy': { getBeerGuyGameState: async () => ({ data: { assignment: null }, error: null }) },
     '../../theme/colors': { __esModule: true, default: {
       bgBase: '#000', bgSurface: '#111', bgInteractive: '#222', borderCard: '#333', glassStroke: '#444',
       textPrimary: '#fff', textSecondary: '#aaa', primary: '#06f', accentGreen: '#0f0', accentRed: '#f00',
@@ -683,84 +685,23 @@ function mountAvailability(options: {
   };
 }
 
-describe('Invite sub route intent lifecycle', () => {
-  it('opens the existing Request Sub flow once only after the current route is authorized', async () => {
-    const run = mountAvailability({ params: { ...routeParams, intent: 'invite-sub' } });
-    await settle(run.h);
-
-    assert.deepEqual(run.calls.role, [['team-1', HOCKEY_LIFE_ID, activeSeason.id]]);
-    assert.deepEqual(run.calls.subs, [[HOCKEY_LIFE_ID, 'team-1']]);
-    assert.ok(findNode(run.h.output, node => node.props.testID === 'captain-sub-search'));
-    findNode(run.h.output, node => node.props.testID === 'captain-close-sub-modal')?.props.onPress();
-    await settle(run.h);
-    assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-sub-search'), undefined);
-
-    await refresh(run);
-    assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-sub-search'), undefined, 'refresh does not consume the same intent again');
-    assert.equal(run.calls.subs.length, 1);
+describe('Find Spare route intent boundary lifecycle', () => {
+  it('opens the new modal only once for an authorized intent and refresh does not reopen it', async () => {
+    const run = mountAvailability({ params: { ...routeParams, intent: 'invite-sub' } }); await settle(run.h);
+    const modal = findNode(run.h.output, node => node.props.testID === 'find-spare-boundary'); assert.ok(modal);
+    assert.deepEqual(modal.props.scope, routeParams); assert.equal(modal.props.actorId, 'captain-1');
+    modal.props.onClose(); await settle(run.h); await refresh(run);
+    assert.equal(findNode(run.h.output, node => node.props.testID === 'find-spare-boundary'), undefined);
+    assert.equal(run.calls.subs.length, 0, 'legacy candidate service must never be called');
   });
-
-  it('does not open before canMutate and suppresses the intent for a noncaptain', async () => {
-    const pendingRole = deferred<'captain' | null>();
-    const pending = mountAvailability({
-      params: { ...routeParams, intent: 'invite-sub' },
-      getRole: async () => pendingRole.promise,
-    });
-    await settle(pending.h);
-    assert.equal(pending.calls.subs.length, 0);
-    assert.equal(findNode(pending.h.output, node => node.props.testID === 'captain-sub-search'), undefined);
-
-    pendingRole.resolve('captain');
-    await settle(pending.h);
-    assert.equal(pending.calls.subs.length, 1);
-    assert.ok(findNode(pending.h.output, node => node.props.testID === 'captain-sub-search'));
-
-    const rejected = mountAvailability({ params: { ...routeParams, intent: 'invite-sub' }, role: null });
-    await settle(rejected.h);
-    assert.equal(rejected.calls.subs.length, 0);
-    assert.equal(findNode(rejected.h.output, node => node.props.testID === 'captain-sub-search'), undefined);
-  });
-
-  it('consumes independently after an A-to-B route change and ignores A candidate completion', async () => {
-    const pendingA = deferred<any>();
-    const run = mountAvailability({
-      params: { ...routeParams, intent: 'invite-sub' },
-      getSubs: async (_leagueId, teamId) => teamId === 'team-1'
-        ? pendingA.promise
-        : { success: true, error: null, data: [{ id: 'sub-b', full_name: 'Route B Sub', email: null }] },
-    });
-    await settle(run.h);
-    assert.deepEqual(run.calls.subs, [[HOCKEY_LIFE_ID, 'team-1']]);
-
-    run.setParams({ gameId: 'game-2', teamId: 'team-2', leagueId: HOCKEY_LIFE_ID, intent: 'invite-sub' });
-    await settle(run.h);
-    assert.deepEqual(run.calls.subs, [[HOCKEY_LIFE_ID, 'team-1'], [HOCKEY_LIFE_ID, 'team-2']]);
-    assert.match(nodeText(run.h.output), /Route B Sub/);
-
-    pendingA.resolve({ success: true, error: null, data: [{ id: 'sub-a', full_name: 'Stale Route A Sub', email: null }] });
-    await settle(run.h);
-    assert.match(nodeText(run.h.output), /Route B Sub/);
-    assert.doesNotMatch(nodeText(run.h.output), /Stale Route A Sub/);
-  });
-
-  it('suppresses intent completion after unmount and leaves ordinary availability unopened', async () => {
-    const candidates = deferred<any>();
-    const intentRun = mountAvailability({
-      params: { ...routeParams, intent: 'invite-sub' },
-      getSubs: async () => candidates.promise,
-    });
-    await settle(intentRun.h);
-    assert.equal(intentRun.calls.subs.length, 1);
-    const updatesBeforeUnmount = intentRun.h.stateUpdateCount;
-    intentRun.h.unmount();
-    candidates.resolve({ success: true, error: null, data: [{ id: 'late', full_name: 'Late Sub', email: null }] });
-    await settle(intentRun.h);
-    assert.equal(intentRun.h.stateUpdateCount, updatesBeforeUnmount);
-
-    const ordinary = mountAvailability();
-    await settle(ordinary.h);
-    assert.equal(ordinary.calls.subs.length, 0);
-    assert.equal(findNode(ordinary.h.output, node => node.props.testID === 'captain-sub-search'), undefined);
+  it('does not expose the modal before scoped role authorization or to a noncaptain', async () => {
+    const role = deferred<'captain' | null>();
+    const run = mountAvailability({ params: { ...routeParams, intent: 'invite-sub' }, getRole: () => role.promise }); await settle(run.h);
+    assert.equal(findNode(run.h.output, node => node.props.testID === 'find-spare-boundary'), undefined);
+    role.resolve('captain'); await settle(run.h); assert.ok(findNode(run.h.output, node => node.props.testID === 'find-spare-boundary'));
+    const denied = mountAvailability({ params: { ...routeParams, intent: 'invite-sub' }, role: null }); await settle(denied.h);
+    assert.equal(findNode(denied.h.output, node => node.props.testID === 'find-spare-boundary'), undefined);
+    const ordinary = mountAvailability(); await settle(ordinary.h); assert.equal(findNode(ordinary.h.output, node => node.props.testID === 'find-spare-boundary'), undefined);
   });
 });
 
@@ -857,10 +798,10 @@ describe('GameAvailability exact operational-season authorization', () => {
     });
     await settle(roleFailure.h);
     assert.deepEqual(roleFailure.calls.role, [['team-1', HOCKEY_LIFE_ID, activeSeason.id]]);
-    assert.deepEqual(roleFailure.calls.roster, [['team-1', HOCKEY_LIFE_ID]], 'ordinary roster remains readable only after exact route/season checks');
+    assert.deepEqual(roleFailure.calls.roster, [['team-1', HOCKEY_LIFE_ID, activeSeason.id]], 'ordinary roster remains readable only after exact route/season checks');
     assert.equal(roleFailure.calls.checkins.length, 0);
     assert.equal(roleFailure.calls.subs.length, 0);
-    assert.equal(findNode(roleFailure.h.output, node => node.props.testID === 'captain-request-sub'), undefined);
+    assert.equal(findNode(roleFailure.h.output, node => node.props.testID === 'captain-status-player-1-out'), undefined);
   });
 
   it('authorizes exact current and playoff operational seasons with the scoped role', async () => {
@@ -872,8 +813,8 @@ describe('GameAvailability exact operational-season authorization', () => {
       });
       await settle(run.h);
       assert.deepEqual(run.calls.role, [['team-1', HOCKEY_LIFE_ID, season.id]]);
-      assert.equal(run.calls.subs.length, 1);
-      assert.ok(findNode(run.h.output, node => node.props.testID === 'captain-sub-search'));
+      assert.equal(run.calls.subs.length, 0);
+      assert.ok(findNode(run.h.output, node => node.props.testID === 'find-spare-boundary'));
     }
   });
 
@@ -890,20 +831,22 @@ describe('GameAvailability exact operational-season authorization', () => {
       getSubs: async (_leagueId, teamId) => ({ success: true, error: null, data: [{ id: `sub-${teamId}`, full_name: `Sub ${teamId}`, email: null }] }),
     });
     await settle(run.h);
-    findNode(run.h.output, node => node.props.testID === 'captain-close-sub-modal')?.props.onPress();
+    findNode(run.h.output, node => node.props.testID === 'find-spare-boundary-close')?.props.onPress();
     await settle(run.h);
 
     run.setParams({ gameId: 'game-2', teamId: 'team-2', leagueId: HOCKEY_LIFE_ID, intent: 'invite-sub' });
     await settle(run.h);
-    findNode(run.h.output, node => node.props.testID === 'captain-close-sub-modal')?.props.onPress();
+    findNode(run.h.output, node => node.props.testID === 'find-spare-boundary-close')?.props.onPress();
     await settle(run.h);
 
     run.setParams({ ...routeParams, intent: 'invite-sub' });
     await settle(run.h);
-    assert.deepEqual(run.calls.subs, [[HOCKEY_LIFE_ID, 'team-1'], [HOCKEY_LIFE_ID, 'team-2']]);
-    assert.equal(findNode(run.h.output, node => node.props.testID === 'captain-sub-search'), undefined, 'returning to consumed A does not reopen its intent');
+    assert.deepEqual(run.calls.subs, [], 'legacy reader remains unused');
+    assert.equal(findNode(run.h.output, node => node.props.testID === 'find-spare-boundary'), undefined, 'returning to consumed A does not reopen its intent');
     assert.deepEqual(run.calls.role, [
       ['team-1', HOCKEY_LIFE_ID, activeSeason.id],
+      ['team-1', HOCKEY_LIFE_ID, activeSeason.id], // Done revalidates authoritative team facts.
+      ['team-2', HOCKEY_LIFE_ID, activeSeason.id],
       ['team-2', HOCKEY_LIFE_ID, activeSeason.id],
       ['team-1', HOCKEY_LIFE_ID, activeSeason.id],
     ]);
@@ -954,14 +897,13 @@ describe('private captain operations relocation', () => {
     const authorized = mountAvailability();
     await settle(authorized.h);
     assert.deepEqual(authorized.calls.role, [['team-1', HOCKEY_LIFE_ID, activeSeason.id]]);
-    assert.deepEqual(authorized.calls.roster, [['team-1', HOCKEY_LIFE_ID]]);
-    assert.ok(findNode(authorized.h.output, node => node.props.testID === 'captain-request-sub'));
-    assert.ok(findNode(authorized.h.output, node => node.props.testID === 'captain-request-goalie'));
+    assert.deepEqual(authorized.calls.roster, [['team-1', HOCKEY_LIFE_ID, activeSeason.id]]);
+    assert.ok(findNode(authorized.h.output, node => node.props.testID === 'captain-beer-player-1'));
     assert.ok(findNode(authorized.h.output, node => node.props.testID === 'captain-status-player-1-tentative'));
 
     const alternate = mountAvailability({ role: 'alternate_captain' });
     await settle(alternate.h);
-    assert.ok(findNode(alternate.h.output, node => node.props.testID === 'captain-request-sub'), 'alternate captains retain the same protected tools');
+    assert.ok(findNode(alternate.h.output, node => node.props.testID === 'captain-status-player-1-out'), 'alternate captains retain the same protected attendance controls');
 
     for (const rejected of [
       mountAvailability({ user: null }),
@@ -970,14 +912,14 @@ describe('private captain operations relocation', () => {
       mountAvailability({ role: null }),
     ]) {
       await settle(rejected.h);
-      assert.equal(findNode(rejected.h.output, node => node.props.testID === 'captain-request-sub'), undefined);
+      assert.equal(findNode(rejected.h.output, node => node.props.testID === 'captain-status-player-1-out'), undefined);
       assert.equal(rejected.calls.checkins.length, 0, 'rejected route does not fetch privileged check-ins');
       assert.equal(rejected.calls.subs.length, 0, 'rejected route does not fetch sub candidates');
       assert.equal(rejected.calls.goalieLoad.length, 0, 'rejected route does not fetch goalie requests');
     }
     const nonCaptain = mountAvailability({ role: null });
     await settle(nonCaptain.h);
-    assert.deepEqual(nonCaptain.calls.roster, [['team-1', HOCKEY_LIFE_ID]], 'noncaptains keep prior read-only roster behavior');
+    assert.deepEqual(nonCaptain.calls.roster, [['team-1', HOCKEY_LIFE_ID, activeSeason.id]], 'noncaptains keep prior read-only roster behavior');
     assert.match(nodeText(nonCaptain.h.output), /Alex Skater/);
   });
 
@@ -1018,140 +960,9 @@ describe('private captain operations relocation', () => {
     assert.doesNotMatch(nodeText(mounted.h.output), /stale failure/);
   });
 
-  it('invites the selected league sub exactly once and settles transport errors', async () => {
-    const mounted = mountAvailability();
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress();
-    await settle(mounted.h);
-    assert.deepEqual(mounted.calls.subs, [[HOCKEY_LIFE_ID, 'team-1']]);
-    const invite = findNode(mounted.h.output, node => node.props.testID === 'captain-invite-sub-sub-7');
-    assert.match(nodeText(invite), /Invite/);
-    assert.match(nodeText(mounted.h.output), /Sam Sub/);
-    invite?.props.onPress();
-    invite?.props.onPress();
-    assert.deepEqual(mounted.calls.invite, [['game-1', 'team-1', 'sub-7']]);
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    await settle(mounted.h);
-    assert.equal(mounted.calls.invite.length, 1, 'a completed invitation is not retried even if refresh is eventually consistent');
-    assert.deepEqual(mounted.calls.invitations.at(-1), ['team-1', ['game-1']]);
 
-    const failed = mountAvailability({ inviteResult: { success: false, error: 'Invite failed' } });
-    await settle(failed.h);
-    findNode(failed.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress();
-    await settle(failed.h);
-    findNode(failed.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    await settle(failed.h);
-    assert.match(nodeText(findNode(failed.h.output, node => node.props.testID === 'captain-action-error')), /Invite failed/);
-    assert.equal(findNode(failed.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.disabled, false);
-  });
 
-  it('posts the fixed goalie request exactly once and settles transport errors', async () => {
-    const mounted = mountAvailability();
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress();
-    mounted.h.render();
-    const submit = findNode(mounted.h.output, node => node.props.testID === 'captain-submit-goalie-request');
-    submit?.props.onPress();
-    submit?.props.onPress();
-    assert.deepEqual(mounted.calls.goalie, [[
-      'game-1', 'team-1', HOCKEY_LIFE_ID,
-      { skillLevelNeeded: 'intermediate', compensation: 'Free', notes: null },
-    ]]);
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress();
-    mounted.h.render();
-    findNode(mounted.h.output, node => node.props.testID === 'captain-submit-goalie-request')?.props.onPress();
-    await settle(mounted.h);
-    assert.equal(mounted.calls.goalie.length, 1, 'a completed goalie request is not retried if refresh is eventually consistent');
-    assert.deepEqual(mounted.calls.goalieLoad.at(-1), ['game-1', 'team-1']);
 
-    const failed = mountAvailability({ goalieResult: { success: false, error: 'Goalie request failed' } });
-    await settle(failed.h);
-    findNode(failed.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress();
-    failed.h.render();
-    findNode(failed.h.output, node => node.props.testID === 'captain-submit-goalie-request')?.props.onPress();
-    await settle(failed.h);
-    assert.match(nodeText(findNode(failed.h.output, node => node.props.testID === 'captain-action-error')), /Goalie request failed/);
-    assert.equal(findNode(failed.h.output, node => node.props.testID === 'captain-submit-goalie-request')?.props.disabled, false);
-  });
-
-  it('resets exclusion-scoped sub state and lets the next validated route load while the old request is pending', async () => {
-    const pendingA = deferred<any>();
-    const mounted = mountAvailability({
-      getSubs: async (_leagueId, excludedTeamId) => excludedTeamId === 'team-1'
-        ? pendingA.promise
-        : { success: true, error: null, data: [{ id: 'sub-team-2', full_name: 'Team Two Sub', email: null }] },
-    });
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress();
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-sub-search')?.props.onChangeText('old team search');
-    mounted.setParams({ ...routeParams, teamId: 'team-2' });
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress();
-    await settle(mounted.h);
-    assert.deepEqual(mounted.calls.subs, [[HOCKEY_LIFE_ID, 'team-1'], [HOCKEY_LIFE_ID, 'team-2']]);
-    assert.match(nodeText(mounted.h.output), /Team Two Sub/);
-    assert.doesNotMatch(nodeText(mounted.h.output), /Sam Sub/);
-    assert.equal(findNode(mounted.h.output, node => node.props.testID === 'captain-sub-search')?.props.value, '');
-    pendingA.resolve({ success: true, error: null, data: [{ id: 'stale-a', full_name: 'Stale A', email: null }] });
-    await settle(mounted.h);
-    assert.doesNotMatch(nodeText(mounted.h.output), /Stale A/);
-
-    const draftRun = mountAvailability();
-    await settle(draftRun.h);
-    findNode(draftRun.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress(); draftRun.h.render();
-    findNode(draftRun.h.output, node => node.props.accessibilityLabel === 'Goalie skill level needed')?.props.onSelect('expert');
-    findNode(draftRun.h.output, node => node.props.accessibilityLabel === 'Goalie compensation')?.props.onSelect('Paid');
-    draftRun.setParams({ ...routeParams, teamId: 'team-2' }); await settle(draftRun.h);
-    findNode(draftRun.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress(); draftRun.h.render();
-    assert.equal(findNode(draftRun.h.output, node => node.props.accessibilityLabel === 'Goalie skill level needed')?.props.selectedValue, 'intermediate');
-    assert.equal(findNode(draftRun.h.output, node => node.props.accessibilityLabel === 'Goalie compensation')?.props.selectedValue, 'Free');
-  });
-
-  it('retains pinned invite and goalie guards across refresh without retrying issued writes', async () => {
-    const invitePending = deferred<any>();
-    const inviteRun = mountAvailability({ invite: async () => invitePending.promise });
-    await settle(inviteRun.h);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress();
-    await settle(inviteRun.h);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    await refresh(inviteRun);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress();
-    await settle(inviteRun.h);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    assert.equal(inviteRun.calls.invite.length, 1);
-    invitePending.resolve({ success: true });
-    await settle(inviteRun.h);
-
-    const goaliePending = deferred<any>();
-    const goalieRun = mountAvailability({ goalie: async () => goaliePending.promise });
-    await settle(goalieRun.h);
-    findNode(goalieRun.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress(); goalieRun.h.render();
-    findNode(goalieRun.h.output, node => node.props.testID === 'captain-submit-goalie-request')?.props.onPress();
-    await refresh(goalieRun);
-    findNode(goalieRun.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress(); goalieRun.h.render();
-    findNode(goalieRun.h.output, node => node.props.testID === 'captain-submit-goalie-request')?.props.onPress();
-    assert.equal(goalieRun.calls.goalie.length, 1);
-    goaliePending.resolve({ success: true, notifiedGoalies: 1 });
-    await settle(goalieRun.h);
-  });
-
-  it('retains same-identity action guards across A-B-A navigation until original writes settle', async () => {
-    const invitePending = deferred<any>();
-    const mounted = mountAvailability({ invite: async () => invitePending.promise });
-    await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress(); await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    mounted.setParams({ ...routeParams, teamId: 'team-2' }); await settle(mounted.h);
-    mounted.setParams(routeParams); await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress(); await settle(mounted.h);
-    findNode(mounted.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    assert.equal(mounted.calls.invite.length, 1);
-    invitePending.resolve({ success: true });
-    await settle(mounted.h);
-  });
 
   it('retains the exact pending status write guard across refresh', async () => {
     const pending = deferred<any>();
@@ -1180,58 +991,17 @@ describe('private captain operations relocation', () => {
   it('invalidates loaded captain data and controls synchronously when identity changes on the same route', async () => {
     const mounted = mountAvailability();
     await settle(mounted.h);
-    assert.ok(findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub'));
+    assert.ok(findNode(mounted.h.output, node => node.props.testID === 'captain-status-player-1-out'));
     mounted.setUser({ id: 'replacement-user' });
-    assert.equal(findNode(mounted.h.output, node => node.props.testID === 'captain-request-sub'), undefined);
+    assert.equal(findNode(mounted.h.output, node => node.props.testID === 'captain-status-player-1-out'), undefined);
     assert.doesNotMatch(nodeText(mounted.h.output), /Alex Skater/);
     await settle(mounted.h);
     assert.deepEqual(mounted.calls.role.at(-1), ['team-1', HOCKEY_LIFE_ID, activeSeason.id]);
 
-    const pending = deferred<any>();
-    const reentry = mountAvailability({ invite: async () => pending.promise });
-    await settle(reentry.h);
-    findNode(reentry.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress(); await settle(reentry.h);
-    findNode(reentry.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    reentry.setUser({ id: 'other-account' }); await settle(reentry.h);
-    reentry.setUser({ id: 'captain-1' }); await settle(reentry.h);
-    findNode(reentry.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress(); await settle(reentry.h);
-    findNode(reentry.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    assert.equal(reentry.calls.invite.length, 1, 'component-local identity keys preserve the original guard without blocking another account');
-    pending.resolve({ success: true }); await settle(reentry.h);
+
   });
 
-  it('settles rejected action promises, preserves confirmed writes across rejected readback, and suppresses stale alerts', async () => {
-    let inviteAttempts = 0;
-    let invitationReads = 0;
-    const inviteRun = mountAvailability({
-      invite: async () => {
-        inviteAttempts += 1;
-        if (inviteAttempts === 1) throw new Error('unexpected invite rejection');
-        return { success: true };
-      },
-      invitations: async () => {
-        invitationReads += 1;
-        if (invitationReads > 1) throw new Error('readback rejected');
-        return { success: true, error: null, data: [] };
-      },
-    });
-    await settle(inviteRun.h);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-request-sub')?.props.onPress(); await settle(inviteRun.h);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress(); await settle(inviteRun.h);
-    assert.match(nodeText(inviteRun.h.output), /Unable to invite this sub/);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress(); await settle(inviteRun.h);
-    findNode(inviteRun.h.output, node => node.props.testID === 'captain-invite-sub-sub-7')?.props.onPress();
-    assert.equal(inviteRun.calls.invite.length, 2, 'failed write is retryable, confirmed write with rejected readback is not');
 
-    const pendingGoalie = deferred<any>();
-    const goalieRun = mountAvailability({ goalie: async () => pendingGoalie.promise });
-    await settle(goalieRun.h);
-    findNode(goalieRun.h.output, node => node.props.testID === 'captain-request-goalie')?.props.onPress(); goalieRun.h.render();
-    findNode(goalieRun.h.output, node => node.props.testID === 'captain-submit-goalie-request')?.props.onPress();
-    goalieRun.setParams({ ...routeParams, teamId: 'team-2' }); await settle(goalieRun.h);
-    pendingGoalie.resolve({ success: true, notifiedGoalies: 3 }); await settle(goalieRun.h);
-    assert.equal(goalieRun.calls.alert.length, 0, 'route A completion does not alert or navigate route B');
-  });
 });
 
 function press(run: ReturnType<typeof mountAvailability>, testID: string) {
@@ -1266,51 +1036,7 @@ describe('captain attendance lifecycle correction v3', () => {
     assert.equal(findNode(retry.h.output, node => node.props.testID === 'captain-status-player-1-out')?.props.accessibilityState.selected, true);
   });
 
-  it('settles a candidate read invalidated during same-route refresh and allows a fresh reopen query', async () => {
-    const candidate = deferred<any>();
-    const refreshedGame = deferred<any>();
-    let gameReads = 0;
-    let subReads = 0;
-    const run = mountAvailability({
-      gameLoader: async () => ++gameReads === 1 ? { data: validGame, error: null } : refreshedGame.promise,
-      getSubs: async () => ++subReads === 1
-        ? candidate.promise
-        : { success: true, error: null, data: [{ id: 'fresh-sub', full_name: 'Fresh Sub', email: null }] },
-    });
-    await settle(run.h);
-    press(run, 'captain-request-sub'); await settle(run.h);
-    const scroll = findNode(run.h.output, node => node.type === 'ScrollView');
-    const refreshPromise = scroll?.props.refreshControl.props.onRefresh();
-    await settle(run.h);
-    candidate.resolve({ success: true, error: null, data: [{ id: 'old-sub', full_name: 'Old Sub', email: null }] });
-    await settle(run.h);
-    refreshedGame.resolve({ data: validGame, error: null });
-    await refreshPromise; await settle(run.h);
-    press(run, 'captain-request-sub'); await settle(run.h);
-    assert.equal(run.calls.subs.length, 2);
-    assert.match(nodeText(run.h.output), /Fresh Sub/);
-    assert.doesNotMatch(nodeText(run.h.output), /Old Sub/);
-  });
 
-  it('reloads candidates when the invalidated read finishes before or after same-route validation', async () => {
-    for (const timing of ['before', 'after'] as const) {
-      const oldRead = deferred<any>();
-      let subReads = 0;
-      const run = mountAvailability({
-        getSubs: async () => ++subReads === 1
-          ? oldRead.promise
-          : { success: true, error: null, data: [{ id: `fresh-${timing}`, full_name: `Fresh ${timing}`, email: null }] },
-      });
-      await settle(run.h);
-      press(run, 'captain-request-sub'); await settle(run.h);
-      if (timing === 'before') { oldRead.resolve({ success: true, error: null, data: [{ id: 'old', full_name: 'Old', email: null }] }); await settle(run.h); }
-      await refresh(run);
-      if (timing === 'after') { oldRead.resolve({ success: true, error: null, data: [{ id: 'old', full_name: 'Old', email: null }] }); await settle(run.h); }
-      press(run, 'captain-request-sub'); await settle(run.h);
-      assert.equal(run.calls.subs.length, 2);
-      assert.match(nodeText(run.h.output), new RegExp(`Fresh ${timing}`));
-    }
-  });
 
   it('merges parallel per-player success and failure in both completion orders', async () => {
     const rosterTwo = [

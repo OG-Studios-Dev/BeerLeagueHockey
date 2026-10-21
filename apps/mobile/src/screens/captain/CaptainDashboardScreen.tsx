@@ -19,13 +19,13 @@ import { FocusCard, FocusScrollView } from '../../components/CardFocus';
 import { HOCKEY_LIFE_ID } from '../../config/hockeyLife';
 import {
   HOCKEY_LIFE_CAPTAIN_FEES_URL,
-  HOCKEY_LIFE_CAPTAIN_URL,
   buildHockeyLifeCaptainLineupUrl,
 } from '../../config/publicLinks';
 import { useAccessibilityPreferences } from '../../context/AccessibilityPreferencesContext';
 import { useAuth } from '../../context/AuthContext';
 import { openPublicLink } from '../../lib/publicLinks';
 import { supabase } from '../../lib/supabase/client';
+import type { ScoringScope } from '../../lib/supabase/captainScoring';
 import { getTeamActiveSeason } from '../../lib/supabase/team';
 import { cutIceContentEdges } from '../../navigation/cutIceSafeAreaPolicy';
 import type { CaptainStackParamList } from '../../navigation/types';
@@ -171,7 +171,12 @@ export default function CaptainDashboardScreen({ navigation }: ScreenProps) {
   const currentUserIdRef = React.useRef<string | null>(userId);
   const mountedRef = React.useRef(false);
   const lifecycleGenerationRef = React.useRef(0);
-  currentUserIdRef.current = userId;
+  React.useLayoutEffect(()=>{currentUserIdRef.current=userId;},[userId]);
+  const addNavigationListener=navigation.addListener;
+  const scoringOwner=React.useRef<{actor:string | null;generation:number}>({actor:null,generation:0});
+  const [scoring,setScoring]=React.useState<{owner:typeof scoringOwner.current;target:ScoringScope | null;error:string | null} | null>(null);
+  React.useLayoutEffect(()=>{const owner={actor:userId,generation:scoringOwner.current.generation+1};scoringOwner.current=owner;return()=>{if(scoringOwner.current===owner)scoringOwner.current={actor:null,generation:owner.generation+1};};},[userId]);
+  React.useEffect(()=>{let stopped=false;const owner=scoringOwner.current;let request=0;const load=async()=>{const id=++request;if(!userId)return;try{const {getScoringTarget}=await import('../../lib/supabase/captainScoring');const target=await getScoringTarget(userId,HOCKEY_LIFE_ID);if(!stopped&&owner===scoringOwner.current&&id===request)setScoring({owner,target,error:null});}catch{if(!stopped&&owner===scoringOwner.current&&id===request)setScoring({owner,target:null,error:'Scoring is temporarily unavailable.'});}};void load();const remove=addNavigationListener?.('focus',()=>void load());return()=>{stopped=true;request+=1;remove?.();};},[userId,addNavigationListener]);
 
   React.useEffect(() => {
     mountedRef.current = true;
@@ -354,6 +359,7 @@ export default function CaptainDashboardScreen({ navigation }: ScreenProps) {
   }
 
   const game = selectedTeam.nextGame;
+  const scoringTarget=scoring?.owner===scoringOwner.current&&scoring.owner.actor===userId?scoring.target:null;
   const openCaptainLink = async (url: string | null) => {
     if (!url) {
       Alert.alert('Unable to open link', 'This link is not available in Hockey Life.');
@@ -407,9 +413,9 @@ export default function CaptainDashboardScreen({ navigation }: ScreenProps) {
               <ActionTile testID="captain-edit-attendance" icon="clipboard-outline" label="Edit attendance" opaque={reduceTransparency} onPress={() => navigation.navigate('GameAvailability', { gameId: game.id, teamId: selectedTeam.teamId, leagueId: selectedTeam.leagueId })} />
               <ActionTile testID="captain-invite-sub" icon="person-add-outline" label="Invite sub" opaque={reduceTransparency} onPress={() => navigation.navigate('GameAvailability', { gameId: game.id, teamId: selectedTeam.teamId, leagueId: selectedTeam.leagueId, intent: 'invite-sub' })} />
               <ActionTile testID="captain-set-lineup" icon="shirt-outline" label="Set lineup" opaque={reduceTransparency} onPress={() => void openCaptainLink(buildHockeyLifeCaptainLineupUrl(game.id))} />
-              <ActionTile testID="captain-score-game" icon="trophy-outline" label="Score game" opaque={reduceTransparency} onPress={() => void openCaptainLink(HOCKEY_LIFE_CAPTAIN_URL)} />
             </View>
           ) : null}
+          {scoringTarget ? <ActionTile testID="captain-score-game" icon="trophy-outline" label="Score game" opaque={reduceTransparency} onPress={() => {if(scoring?.owner===scoringOwner.current&&scoringOwner.current.actor===userId)navigation.navigate('Scoreboard',scoringTarget);}} /> : <Text testID="captain-scoring-unavailable" style={styles.emptyBody}>{scoring?.error ?? 'No ongoing or due game to score.'}</Text>}
         </FocusCard>
 
         <FocusCard focusId="captain-season-tools" testID="captain-season-tools-section" style={styles.section}>

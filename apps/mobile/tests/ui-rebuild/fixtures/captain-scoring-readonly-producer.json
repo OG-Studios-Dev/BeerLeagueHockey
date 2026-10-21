@@ -1,0 +1,1471 @@
+{
+  "provenance": {
+    "actualSqlProducer": true,
+    "candidateDescriptorSha256": "728958c46b8c7a03a2497eb59debbb1b8a3a6396d5df15857a0bde585786940c",
+    "candidateTree": "551b341764581fa6c094f2977e24283debed8037",
+    "migrationSha256": "55fe9aa1150e0a9b1799a32b92536a0bd267f1daf6085f04650da43634539fdd",
+    "sourceSamplesSha256": "8b338132907292af79bc55aa1aeb00a5e241bae3ac39511ad3a192d78b1f3085",
+    "sourceSamples": "review/actual-findings-v2/actual-samples.json",
+    "additionalCaptureNullScorer": {
+      "packetSha256": "d8edc0700489bac58bcc0c1743e8dcc21258206e0dc21a1e3cfff5b6bb5fae61",
+      "migrationSha256": "55fe9aa1150e0a9b1799a32b92536a0bd267f1daf6085f04650da43634539fdd",
+      "generatorSha256": "c417f0931fa8ef216d3a58787081738285e165f63dac17ae0630760a9442a682",
+      "origin": "isolated PostgreSQL17 frozen candidate-v2 public authenticated read; legacy NULL scorer precedes capture_complete"
+    }
+  },
+  "samples": [
+    {
+      "label": "future_game-attributed-read",
+      "rpc": "captain_get_game_scoring_context",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000010",
+          "game_id": "50000000-0000-4000-8000-000000000002",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      "response": {
+        "code": null,
+        "kind": "get_context",
+        "game_id": "50000000-0000-4000-8000-000000000002",
+        "outcome": "ok",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "scheduled",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-21T20:43:58.673593-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": null,
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [
+                "ce5a7928-d204-43cd-b5d9-33e466b230a2"
+              ],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": true
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "0",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": false,
+              "event_id": "ce5a7928-d204-43cd-b5d9-33e466b230a2",
+              "scorer_id": "40000000-0000-4000-8000-000000000011",
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:43:58.673015-04:00",
+              "event_version": 1,
+              "blocked_reason": null
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "",
+            "version": 0
+          },
+          "permissions": {
+            "can_comment": false,
+            "can_add_goal": false,
+            "blocked_reason": "future_game",
+            "can_correct_goal": false,
+            "can_manage_roster": false
+          },
+          "server_time": "2026-10-20T20:43:58.745051-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000010",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "wireSha256": "9f5d4060f96a9ed71e3a35cb3c99ce3ca3ed7ea21a4c44c45c81a6200f8c83d3",
+      "rawWire": "{\"code\": null, \"kind\": \"get_context\", \"game_id\": \"50000000-0000-4000-8000-000000000002\", \"outcome\": \"ok\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"scheduled\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-21T20:43:58.673593-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": null, \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [\"ce5a7928-d204-43cd-b5d9-33e466b230a2\"], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": true}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"0\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": false, \"event_id\": \"ce5a7928-d204-43cd-b5d9-33e466b230a2\", \"scorer_id\": \"40000000-0000-4000-8000-000000000011\", \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:43:58.673015-04:00\", \"event_version\": 1, \"blocked_reason\": null}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"\", \"version\": 0}, \"permissions\": {\"can_comment\": false, \"can_add_goal\": false, \"blocked_reason\": \"future_game\", \"can_correct_goal\": false, \"can_manage_roster\": false}, \"server_time\": \"2026-10-20T20:43:58.745051-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000010\", \"schema_version\": 1}"
+    },
+    {
+      "label": "future_game-definitive-terminal",
+      "rpc": "captain_manage_game_scoring",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000011",
+          "game_id": "50000000-0000-4000-8000-000000000002",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001",
+          "kind": "set_commentary",
+          "expected_version": 0,
+          "text": "must not write"
+        }
+      },
+      "response": {
+        "code": "future_game",
+        "kind": "set_commentary",
+        "game_id": "50000000-0000-4000-8000-000000000002",
+        "outcome": "rejected",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "scheduled",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-21T20:43:58.673593-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": null,
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [
+                "ce5a7928-d204-43cd-b5d9-33e466b230a2"
+              ],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": true
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "0",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": false,
+              "event_id": "ce5a7928-d204-43cd-b5d9-33e466b230a2",
+              "scorer_id": "40000000-0000-4000-8000-000000000011",
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:43:58.673015-04:00",
+              "event_version": 1,
+              "blocked_reason": null
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "",
+            "version": 0
+          },
+          "permissions": {
+            "can_comment": false,
+            "can_add_goal": false,
+            "blocked_reason": "future_game",
+            "can_correct_goal": false,
+            "can_manage_roster": false
+          },
+          "server_time": "2026-10-20T20:43:58.897945-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000011",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "wireSha256": "56eeaca5236228887085e50efa5ced0a640c298e7addb15c9c8416328c627934",
+      "rawWire": "{\"code\": \"future_game\", \"kind\": \"set_commentary\", \"game_id\": \"50000000-0000-4000-8000-000000000002\", \"outcome\": \"rejected\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"scheduled\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-21T20:43:58.673593-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": null, \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [\"ce5a7928-d204-43cd-b5d9-33e466b230a2\"], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": true}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"0\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": false, \"event_id\": \"ce5a7928-d204-43cd-b5d9-33e466b230a2\", \"scorer_id\": \"40000000-0000-4000-8000-000000000011\", \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:43:58.673015-04:00\", \"event_version\": 1, \"blocked_reason\": null}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"\", \"version\": 0}, \"permissions\": {\"can_comment\": false, \"can_add_goal\": false, \"blocked_reason\": \"future_game\", \"can_correct_goal\": false, \"can_manage_roster\": false}, \"server_time\": \"2026-10-20T20:43:58.897945-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000011\", \"schema_version\": 1}"
+    },
+    {
+      "label": "legacy_score_mismatch-attributed-read",
+      "rpc": "captain_get_game_scoring_context",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000020",
+          "game_id": "50000000-0000-4000-8000-000000000003",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      "response": {
+        "code": null,
+        "kind": "get_context",
+        "game_id": "50000000-0000-4000-8000-000000000003",
+        "outcome": "ok",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "scheduled",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-20T19:43:58.669261-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": null,
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [
+                "bb2f042b-ba47-464e-b0dc-659fd6bf958f"
+              ],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": true
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "0",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": false,
+              "event_id": "bb2f042b-ba47-464e-b0dc-659fd6bf958f",
+              "scorer_id": "40000000-0000-4000-8000-000000000011",
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:43:58.673015-04:00",
+              "event_version": 1,
+              "blocked_reason": null
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "",
+            "version": 0
+          },
+          "permissions": {
+            "can_comment": false,
+            "can_add_goal": false,
+            "blocked_reason": "legacy_score_mismatch",
+            "can_correct_goal": false,
+            "can_manage_roster": false
+          },
+          "server_time": "2026-10-20T20:43:58.992765-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000020",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "wireSha256": "568865b093441b51c511df2e6c43c970994982be1257f83b2f159be7681de8c6",
+      "rawWire": "{\"code\": null, \"kind\": \"get_context\", \"game_id\": \"50000000-0000-4000-8000-000000000003\", \"outcome\": \"ok\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"scheduled\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-20T19:43:58.669261-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": null, \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [\"bb2f042b-ba47-464e-b0dc-659fd6bf958f\"], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": true}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"0\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": false, \"event_id\": \"bb2f042b-ba47-464e-b0dc-659fd6bf958f\", \"scorer_id\": \"40000000-0000-4000-8000-000000000011\", \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:43:58.673015-04:00\", \"event_version\": 1, \"blocked_reason\": null}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"\", \"version\": 0}, \"permissions\": {\"can_comment\": false, \"can_add_goal\": false, \"blocked_reason\": \"legacy_score_mismatch\", \"can_correct_goal\": false, \"can_manage_roster\": false}, \"server_time\": \"2026-10-20T20:43:58.992765-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000020\", \"schema_version\": 1}"
+    },
+    {
+      "label": "legacy_score_mismatch-definitive-terminal",
+      "rpc": "captain_manage_game_scoring",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000021",
+          "game_id": "50000000-0000-4000-8000-000000000003",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001",
+          "kind": "set_commentary",
+          "expected_version": 0,
+          "text": "must not write"
+        }
+      },
+      "response": {
+        "code": "legacy_score_mismatch",
+        "kind": "set_commentary",
+        "game_id": "50000000-0000-4000-8000-000000000003",
+        "outcome": "conflict",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "scheduled",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-20T19:43:58.669261-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": null,
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [
+                "bb2f042b-ba47-464e-b0dc-659fd6bf958f"
+              ],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": true
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "0",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": false,
+              "event_id": "bb2f042b-ba47-464e-b0dc-659fd6bf958f",
+              "scorer_id": "40000000-0000-4000-8000-000000000011",
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:43:58.673015-04:00",
+              "event_version": 1,
+              "blocked_reason": null
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "",
+            "version": 0
+          },
+          "permissions": {
+            "can_comment": false,
+            "can_add_goal": false,
+            "blocked_reason": "legacy_score_mismatch",
+            "can_correct_goal": false,
+            "can_manage_roster": false
+          },
+          "server_time": "2026-10-20T20:43:59.079795-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000021",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "wireSha256": "3575bc8492d7f871986056ea7b7adfcf4faa0d48a51fcf19c3161eea4555d6bd",
+      "rawWire": "{\"code\": \"legacy_score_mismatch\", \"kind\": \"set_commentary\", \"game_id\": \"50000000-0000-4000-8000-000000000003\", \"outcome\": \"conflict\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"scheduled\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-20T19:43:58.669261-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": null, \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [\"bb2f042b-ba47-464e-b0dc-659fd6bf958f\"], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": true}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"0\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": false, \"event_id\": \"bb2f042b-ba47-464e-b0dc-659fd6bf958f\", \"scorer_id\": \"40000000-0000-4000-8000-000000000011\", \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:43:58.673015-04:00\", \"event_version\": 1, \"blocked_reason\": null}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"\", \"version\": 0}, \"permissions\": {\"can_comment\": false, \"can_add_goal\": false, \"blocked_reason\": \"legacy_score_mismatch\", \"can_correct_goal\": false, \"can_manage_roster\": false}, \"server_time\": \"2026-10-20T20:43:59.079795-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000021\", \"schema_version\": 1}"
+    },
+    {
+      "label": "normal-attributed-read",
+      "rpc": "captain_get_game_scoring_context",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000031",
+          "game_id": "50000000-0000-4000-8000-000000000007",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      "response": {
+        "code": null,
+        "kind": "get_context",
+        "game_id": "50000000-0000-4000-8000-000000000007",
+        "outcome": "ok",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "in_progress",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-19T20:43:58.357324-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": "2026-10-20T20:43:59.201517-04:00",
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [
+                "aaaaaaaa-0000-4000-8000-000000000901"
+              ],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": true
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "2",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": true,
+              "event_id": "aaaaaaaa-0000-4000-8000-000000000901",
+              "scorer_id": "40000000-0000-4000-8000-000000000011",
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:43:59.20214-04:00",
+              "event_version": 1,
+              "blocked_reason": null
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "",
+            "version": 0
+          },
+          "permissions": {
+            "can_comment": true,
+            "can_add_goal": true,
+            "blocked_reason": null,
+            "can_correct_goal": true,
+            "can_manage_roster": true
+          },
+          "server_time": "2026-10-20T20:43:59.234335-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000031",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "wireSha256": "fd6f7a3daf9ffaf92d3130ee7cae4f0a8ed45bfe6673c29781b251b0682a9cc6",
+      "rawWire": "{\"code\": null, \"kind\": \"get_context\", \"game_id\": \"50000000-0000-4000-8000-000000000007\", \"outcome\": \"ok\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"in_progress\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-19T20:43:58.357324-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": \"2026-10-20T20:43:59.201517-04:00\", \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [\"aaaaaaaa-0000-4000-8000-000000000901\"], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": true}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"2\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": true, \"event_id\": \"aaaaaaaa-0000-4000-8000-000000000901\", \"scorer_id\": \"40000000-0000-4000-8000-000000000011\", \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:43:59.20214-04:00\", \"event_version\": 1, \"blocked_reason\": null}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"\", \"version\": 0}, \"permissions\": {\"can_comment\": true, \"can_add_goal\": true, \"blocked_reason\": null, \"can_correct_goal\": true, \"can_manage_roster\": true}, \"server_time\": \"2026-10-20T20:43:59.234335-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000031\", \"schema_version\": 1}"
+    },
+    {
+      "label": "capture-complete-attributed-read",
+      "rpc": "captain_get_game_scoring_context",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000070",
+          "game_id": "50000000-0000-4000-8000-000000000007",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      "response": {
+        "code": null,
+        "kind": "get_context",
+        "game_id": "50000000-0000-4000-8000-000000000007",
+        "outcome": "ok",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "in_progress",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-19T20:43:58.357324-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": "2026-10-20T20:43:59.201517-04:00",
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": "confirmed",
+              "presence_version": 0,
+              "blocking_goal_ids": [
+                "aaaaaaaa-0000-4000-8000-000000000902"
+              ],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": true
+            },
+            {
+              "state": "checked_in",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": "confirmed",
+              "presence_version": 2,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": true,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "11",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": false,
+              "event_id": "aaaaaaaa-0000-4000-8000-000000000902",
+              "scorer_id": "40000000-0000-4000-8000-000000000011",
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:43:59.861744-04:00",
+              "event_version": 1,
+              "blocked_reason": "capture_complete"
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "version two",
+            "version": 2
+          },
+          "permissions": {
+            "can_comment": false,
+            "can_add_goal": false,
+            "blocked_reason": "capture_complete",
+            "can_correct_goal": false,
+            "can_manage_roster": false
+          },
+          "server_time": "2026-10-20T20:44:00.500698-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000070",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "wireSha256": "2dde0d251d4ff3efa4896553a167ca96d988c861170ae05080f50ceacc9fe4e4",
+      "rawWire": "{\"code\": null, \"kind\": \"get_context\", \"game_id\": \"50000000-0000-4000-8000-000000000007\", \"outcome\": \"ok\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"in_progress\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-19T20:43:58.357324-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": \"2026-10-20T20:43:59.201517-04:00\", \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": \"confirmed\", \"presence_version\": 0, \"blocking_goal_ids\": [\"aaaaaaaa-0000-4000-8000-000000000902\"], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": true}, {\"state\": \"checked_in\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": \"confirmed\", \"presence_version\": 2, \"blocking_goal_ids\": [], \"eligible_for_goal\": true, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"11\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": false, \"event_id\": \"aaaaaaaa-0000-4000-8000-000000000902\", \"scorer_id\": \"40000000-0000-4000-8000-000000000011\", \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:43:59.861744-04:00\", \"event_version\": 1, \"blocked_reason\": \"capture_complete\"}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"version two\", \"version\": 2}, \"permissions\": {\"can_comment\": false, \"can_add_goal\": false, \"blocked_reason\": \"capture_complete\", \"can_correct_goal\": false, \"can_manage_roster\": false}, \"server_time\": \"2026-10-20T20:44:00.500698-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000070\", \"schema_version\": 1}"
+    },
+    {
+      "label": "capture-complete-null-scorer-read",
+      "rpc": "captain_get_game_scoring_context",
+      "args": {
+        "p_request": {
+          "schema_version": 1,
+          "request_id": "aaaaaaaa-0000-4000-8000-000000000991",
+          "game_id": "50000000-0000-4000-8000-000000000007",
+          "team_id": "30000000-0000-4000-8000-000000000001",
+          "league_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      "response": {
+        "code": null,
+        "kind": "get_context",
+        "game_id": "50000000-0000-4000-8000-000000000007",
+        "outcome": "ok",
+        "receipt": null,
+        "team_id": "30000000-0000-4000-8000-000000000001",
+        "conflict": null,
+        "snapshot": {
+          "game": {
+            "status": "scheduled",
+            "timezone": "America/Toronto",
+            "away_score": 0,
+            "home_score": 1,
+            "away_team_id": "30000000-0000-4000-8000-000000000002",
+            "home_team_id": "30000000-0000-4000-8000-000000000001",
+            "scheduled_at": "2026-10-20T19:55:20.996445-04:00",
+            "own_team_type": "home",
+            "away_team_name": "Away Team",
+            "home_team_name": "Home Team",
+            "game_started_at": null,
+            "away_team_logo_url": null,
+            "home_team_logo_url": null
+          },
+          "counts": {
+            "roster": 9,
+            "own_goals": 1
+          },
+          "roster": [
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Alternate",
+              "player_id": "40000000-0000-4000-8000-000000000002",
+              "jersey_number": 2,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Captain",
+              "player_id": "40000000-0000-4000-8000-000000000001",
+              "jersey_number": 1,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": null,
+              "full_name": "Deleting Player",
+              "player_id": "40000000-0000-4000-8000-000000000020",
+              "jersey_number": 20,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Merge Source",
+              "player_id": "40000000-0000-4000-8000-000000000021",
+              "jersey_number": 21,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Part Time Player",
+              "player_id": "40000000-0000-4000-8000-000000000015",
+              "jersey_number": 15,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Goalie",
+              "full_name": "Regular Goalie",
+              "player_id": "40000000-0000-4000-8000-000000000013",
+              "jersey_number": 13,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Forward",
+              "full_name": "Regular One",
+              "player_id": "40000000-0000-4000-8000-000000000011",
+              "jersey_number": 11,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "regular",
+              "position": "Defense",
+              "full_name": "Regular Two",
+              "player_id": "40000000-0000-4000-8000-000000000012",
+              "jersey_number": 12,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            },
+            {
+              "state": "waiting",
+              "source": "team_spare",
+              "position": "Forward",
+              "full_name": "Sub Player",
+              "player_id": "40000000-0000-4000-8000-000000000014",
+              "jersey_number": 14,
+              "checkin_status": null,
+              "presence_version": 0,
+              "blocking_goal_ids": [],
+              "eligible_for_goal": false,
+              "availability_state": "none",
+              "has_credited_stats": false
+            }
+          ],
+          "complete": true,
+          "revision": "0",
+          "own_goals": [
+            {
+              "team_id": "30000000-0000-4000-8000-000000000001",
+              "can_edit": false,
+              "event_id": "a86ae471-0a85-46c1-b382-f48add85befb",
+              "scorer_id": null,
+              "assist1_id": null,
+              "assist2_id": null,
+              "entered_at": "2026-10-20T20:55:20.998032-04:00",
+              "event_version": 1,
+              "blocked_reason": "legacy_unattributed"
+            }
+          ],
+          "season_id": "20000000-0000-4000-8000-000000000001",
+          "commentary": {
+            "text": "",
+            "version": 0
+          },
+          "permissions": {
+            "can_comment": false,
+            "can_add_goal": false,
+            "blocked_reason": "capture_complete",
+            "can_correct_goal": false,
+            "can_manage_roster": false
+          },
+          "server_time": "2026-10-20T20:55:21.058642-04:00"
+        },
+        "league_id": "10000000-0000-4000-8000-000000000001",
+        "request_id": "aaaaaaaa-0000-4000-8000-000000000991",
+        "schema_version": 1
+      },
+      "expectedSeasonId": "20000000-0000-4000-8000-000000000001",
+      "rawWire": "{\"code\": null, \"kind\": \"get_context\", \"game_id\": \"50000000-0000-4000-8000-000000000007\", \"outcome\": \"ok\", \"receipt\": null, \"team_id\": \"30000000-0000-4000-8000-000000000001\", \"conflict\": null, \"snapshot\": {\"game\": {\"status\": \"scheduled\", \"timezone\": \"America/Toronto\", \"away_score\": 0, \"home_score\": 1, \"away_team_id\": \"30000000-0000-4000-8000-000000000002\", \"home_team_id\": \"30000000-0000-4000-8000-000000000001\", \"scheduled_at\": \"2026-10-20T19:55:20.996445-04:00\", \"own_team_type\": \"home\", \"away_team_name\": \"Away Team\", \"home_team_name\": \"Home Team\", \"game_started_at\": null, \"away_team_logo_url\": null, \"home_team_logo_url\": null}, \"counts\": {\"roster\": 9, \"own_goals\": 1}, \"roster\": [{\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Alternate\", \"player_id\": \"40000000-0000-4000-8000-000000000002\", \"jersey_number\": 2, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Captain\", \"player_id\": \"40000000-0000-4000-8000-000000000001\", \"jersey_number\": 1, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": null, \"full_name\": \"Deleting Player\", \"player_id\": \"40000000-0000-4000-8000-000000000020\", \"jersey_number\": 20, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Merge Source\", \"player_id\": \"40000000-0000-4000-8000-000000000021\", \"jersey_number\": 21, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Part Time Player\", \"player_id\": \"40000000-0000-4000-8000-000000000015\", \"jersey_number\": 15, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Goalie\", \"full_name\": \"Regular Goalie\", \"player_id\": \"40000000-0000-4000-8000-000000000013\", \"jersey_number\": 13, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Forward\", \"full_name\": \"Regular One\", \"player_id\": \"40000000-0000-4000-8000-000000000011\", \"jersey_number\": 11, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"regular\", \"position\": \"Defense\", \"full_name\": \"Regular Two\", \"player_id\": \"40000000-0000-4000-8000-000000000012\", \"jersey_number\": 12, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}, {\"state\": \"waiting\", \"source\": \"team_spare\", \"position\": \"Forward\", \"full_name\": \"Sub Player\", \"player_id\": \"40000000-0000-4000-8000-000000000014\", \"jersey_number\": 14, \"checkin_status\": null, \"presence_version\": 0, \"blocking_goal_ids\": [], \"eligible_for_goal\": false, \"availability_state\": \"none\", \"has_credited_stats\": false}], \"complete\": true, \"revision\": \"0\", \"own_goals\": [{\"team_id\": \"30000000-0000-4000-8000-000000000001\", \"can_edit\": false, \"event_id\": \"a86ae471-0a85-46c1-b382-f48add85befb\", \"scorer_id\": null, \"assist1_id\": null, \"assist2_id\": null, \"entered_at\": \"2026-10-20T20:55:20.998032-04:00\", \"event_version\": 1, \"blocked_reason\": \"legacy_unattributed\"}], \"season_id\": \"20000000-0000-4000-8000-000000000001\", \"commentary\": {\"text\": \"\", \"version\": 0}, \"permissions\": {\"can_comment\": false, \"can_add_goal\": false, \"blocked_reason\": \"capture_complete\", \"can_correct_goal\": false, \"can_manage_roster\": false}, \"server_time\": \"2026-10-20T20:55:21.058642-04:00\"}, \"league_id\": \"10000000-0000-4000-8000-000000000001\", \"request_id\": \"aaaaaaaa-0000-4000-8000-000000000991\", \"schema_version\": 1}",
+      "wireSha256": "654a42416d1ab0774601098ae09c6f598cb5fbda77dec10243696439f40cc30d"
+    }
+  ]
+}
