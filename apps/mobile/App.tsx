@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { AccessibilityPreferencesProvider } from './src/context/AccessibilityPreferencesContext';
 import { LeagueProvider } from './src/context/LeagueContext';
 import RootNavigation from './src/navigation';
 import LeagueSelectScreen from './src/screens/auth/LeagueSelectScreen';
@@ -62,14 +63,16 @@ function AppContent() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <LeagueProvider>
-          <NavigationContainer>
-            <StatusBar style="light" />
-            <AppContent />
-          </NavigationContainer>
-        </LeagueProvider>
-      </AuthProvider>
+      <AccessibilityPreferencesProvider>
+        <AuthProvider>
+          <LeagueProvider>
+            <NavigationContainer>
+              <StatusBar style="light" />
+              <AppContent />
+            </NavigationContainer>
+          </LeagueProvider>
+        </AuthProvider>
+      </AccessibilityPreferencesProvider>
     </SafeAreaProvider>
   );
 }

@@ -2,17 +2,16 @@ import React from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../../context/AuthContext';
+import AuthShell from '../../components/AuthShell';
 import colors from '../../theme/colors';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,18 +71,10 @@ export default function SignUpScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.container}>
-          <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
+    <AuthShell title="Join the league" subtitle="Create your player account and get game-ready.">
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to sign in" style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </Pressable>
-
-          <Text style={styles.heading}>Create Account</Text>
 
           {isSuccess ? (
             <View style={styles.successContainer}>
@@ -167,44 +158,20 @@ export default function SignUpScreen() {
               </Pressable>
             </>
           )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.bgBase,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 24,
-  },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
-    marginBottom: 16,
-  },
-  heading: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: colors.textPrimary,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   input: {
-    height: 52,
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.borderCard,
     backgroundColor: colors.bgSurface,
@@ -224,7 +191,8 @@ const styles = StyleSheet.create({
   signUpButton: {
     marginTop: 4,
     width: '100%',
-    borderRadius: 12,
+    minHeight: 48,
+    borderRadius: 14,
     backgroundColor: colors.primary,
     alignItems: 'center',
     paddingVertical: 14,
@@ -237,7 +205,8 @@ const styles = StyleSheet.create({
   signInLink: {
     marginTop: 16,
     alignItems: 'center',
-    paddingVertical: 6,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   signInLinkText: {
     color: colors.textSecondary,
@@ -266,7 +235,9 @@ const styles = StyleSheet.create({
   },
   backToLoginButton: {
     marginTop: 16,
-    paddingVertical: 14,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 12,
     borderWidth: 1,

@@ -4,6 +4,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { addGameToCalendar } from '../lib/calendar';
 import colors from '../theme/colors';
+import { ui } from '../theme/ui';
+import GlassSurface from './GlassSurface';
 
 export type GameStatus = 'Upcoming' | 'Live' | 'Final';
 
@@ -65,7 +67,7 @@ export default function GameCard({
   }
 
   const cardContent = (
-    <View style={styles.card}>
+    <GlassSurface style={styles.card}>
       <LinearGradient
         colors={['rgba(255,255,255,0.08)', 'transparent', 'rgba(79,216,255,0.08)']}
         start={{ x: 0, y: 0 }}
@@ -107,17 +109,24 @@ export default function GameCard({
         </View>
 
         {status === 'Upcoming' && scheduledAt && !compact && (
-          <Pressable style={styles.calendarBtn} onPress={handleAddToCalendar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${awayTeam} at ${homeTeam} to calendar`}
+            hitSlop={4}
+            style={styles.calendarBtn}
+            onPress={handleAddToCalendar}
+          >
             <Ionicons name="calendar-outline" size={13} color={colors.primary} />
             <Text style={styles.calendarBtnText}>Add to Calendar</Text>
           </Pressable>
         )}
       </View>
-    </View>
+    </GlassSurface>
   );
 
   return (
     <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
       style={({ pressed }) => [
         styles.shadowWrap,
         compact ? styles.compactShadowWrap : undefined,
@@ -134,7 +143,7 @@ export default function GameCard({
 const styles = StyleSheet.create({
   shadowWrap: {
     marginVertical: 4,
-    borderRadius: 14,
+    borderRadius: ui.radius.card,
     shadowColor: colors.brandRink,
     shadowOpacity: 0.16,
     shadowRadius: 14,
@@ -149,8 +158,7 @@ const styles = StyleSheet.create({
   },
   card: {
     flexDirection: 'row',
-    borderRadius: 14,
-    backgroundColor: colors.bgSurface,
+    borderRadius: ui.radius.card,
     borderWidth: 1,
     borderColor: colors.glassStroke,
     overflow: 'hidden',
@@ -258,6 +266,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignSelf: 'flex-end',
     paddingHorizontal: 10,
+    minHeight: ui.minTouchTarget,
     paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,

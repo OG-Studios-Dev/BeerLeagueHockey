@@ -5,17 +5,15 @@ import {
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import blhLogo from '../../../assets/blh-logo.png';
+import AuthShell from '../../components/AuthShell';
 import { useAuth } from '../../context/AuthContext';
 import colors from '../../theme/colors';
 
@@ -129,15 +127,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.container}>
-          <Image source={blhLogo} style={styles.logo} />
-          <Text style={styles.heading}>Sign in to BLH</Text>
+    <AuthShell title="Welcome back" subtitle="Your next game, team, and league are waiting.">
 
           {Platform.OS === 'ios' ? (
             <Pressable
@@ -241,44 +231,15 @@ export default function LoginScreen() {
               <Text style={styles.legalText}>Terms of Service</Text>
             </Pressable>
           </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.bgBase,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 36,
-    paddingBottom: 24,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-    alignSelf: 'center',
-    marginBottom: 24,
-  },
-  heading: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: colors.textPrimary,
-    marginBottom: 20,
-  },
   oauthButton: {
     width: '100%',
-    borderRadius: 12,
+    minHeight: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -328,8 +289,8 @@ const styles = StyleSheet.create({
     textTransform: 'lowercase',
   },
   input: {
-    height: 52,
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.borderCard,
     backgroundColor: colors.bgSurface,
@@ -342,6 +303,8 @@ const styles = StyleSheet.create({
   },
   forgotPasswordButton: {
     alignSelf: 'flex-end',
+    minHeight: 44,
+    justifyContent: 'center',
     marginBottom: 12,
     marginTop: -4,
   },
@@ -353,7 +316,8 @@ const styles = StyleSheet.create({
   signInButton: {
     marginTop: 4,
     width: '100%',
-    borderRadius: 12,
+    minHeight: 48,
+    borderRadius: 14,
     backgroundColor: colors.primary,
     alignItems: 'center',
     paddingVertical: 14,
@@ -373,7 +337,8 @@ const styles = StyleSheet.create({
   signUpLink: {
     marginTop: 16,
     alignItems: 'center',
-    paddingVertical: 6,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   signUpLinkText: {
     color: colors.textSecondary,
@@ -386,7 +351,8 @@ const styles = StyleSheet.create({
   guestButton: {
     marginTop: 8,
     alignItems: 'center',
-    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   guestText: {
     color: colors.textSecondary,
