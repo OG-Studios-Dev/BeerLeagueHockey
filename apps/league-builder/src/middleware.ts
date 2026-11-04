@@ -124,6 +124,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(`/${locale}/privacy`, request.url));
   }
 
+  // Public mobile disclosures and technical help must also work when account
+  // services are unavailable. Keep locale redirects/rewrites from next-intl.
+  if (['/privacy', '/terms', '/mobile-support'].includes(pathWithoutLocale)) {
+    return response;
+  }
+
   // Create Supabase client for auth — cookies are read from the request
   // and any refreshed tokens are written to the intl response
   const supabase = createServerClient(
